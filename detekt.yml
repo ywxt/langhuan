@@ -7,8 +7,6 @@ formatting:
   active: true
   NoWildcardImports:
     active: false
-  MaximumLineLength:
-    active: false
 
 style:
   active: true
@@ -19,3 +17,7 @@ style:
   ForbiddenComment:
     values: ['TODO', 'FIXME', 'STOPSHIP']
     allowedPatterns: https://github.com/ywxt/langhuan/issues/\d+
+
+naming:
+  FunctionNaming:
+    functionPattern: "[a-zA-Z][a-zA-Z0-9]*"

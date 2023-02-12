@@ -19,4 +19,3 @@ data class Content(val type: String, val body: ByteArray) {
         return result
     }
 }
-

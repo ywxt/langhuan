@@ -1,3 +1,3 @@
 package me.ywxt.langhuan.core.schema
 
-data class SearchInterface(val template:String)
+data class SearchInterface(val template: String)

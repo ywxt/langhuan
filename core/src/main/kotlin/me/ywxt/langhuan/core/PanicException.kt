@@ -11,6 +11,5 @@ inline fun <reified R, reified E : Any> Result<R, E>.getOrThrow(): R {
         is Ok -> return this.value
         is Err ->
             throw PanicException(this.error)
-
     }
 }

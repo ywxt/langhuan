@@ -1,4 +1,3 @@
-@file:Suppress("UnstableApiUsage")
 import me.ywxt.langhuan.constant.JDK_VERSION
 
 plugins {

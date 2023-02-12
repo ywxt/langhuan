@@ -1,5 +1,3 @@
-@file:Suppress("UnstableApiUsage")
-
 import io.gitlab.arturbosch.detekt.Detekt
 import me.ywxt.langhuan.constant.JDK_VERSION
 import me.ywxt.langhuan.constant.KOTLIN_VERSION

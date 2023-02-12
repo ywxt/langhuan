@@ -51,10 +51,5 @@ class HttpClient(private val defaultHeaders: Map<String, Any>? = null) : AutoClo
             }
         }
         response.bodyAsText(resource.charset)
-
     }.mapError { NetworkError.KtorError(it.stackTraceToString()) }
-
-
 }
-
-

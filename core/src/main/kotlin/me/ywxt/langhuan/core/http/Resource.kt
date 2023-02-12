@@ -31,4 +31,3 @@ fun Resource(
     }
     return encodedUrl.map { Resource(Request(it, method, content), charset) }
 }
-
