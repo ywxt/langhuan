@@ -7,14 +7,16 @@ dokka = "1.7.20"
 detekt = "1.21.0"
 kotest = "5.5.4"
 kotlin-result = "1.1.11"
-ktor-client = "2.2.2"
+ktor-client = "2.2.3"
 coroutines = "1.6.4"
+korte = "3.4.0"
 
 [libraries]
 # project dependencies
 kotlin-logging = { module = "io.github.microutils:kotlin-logging", version.ref = "kotlin-logging" }
 lorem = { module = "com.thedeanda:lorem", version.ref = "lorem" }
 kotlin-result = { module = "com.michael-bull.kotlin-result:kotlin-result", version.ref = "kotlin-result" }
+korte = {module="com.soywiz.korlibs.korte:korte", version.ref = "korte"}
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor-client" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor-client" }
 coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -35,6 +37,7 @@ kotlinLogging = ["kotlin-logging"]
 lorem = ["lorem"]
 kotest = ["kotest-runner", "kotest-assertions"]
 result = ["kotlin-result"]
+korte = ["korte"]
 ktorClient = ["ktor-client-core", "ktor-client-cio"]
 coroutines = ["coroutines"]
 
