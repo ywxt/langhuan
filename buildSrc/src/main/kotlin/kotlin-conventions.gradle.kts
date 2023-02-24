@@ -56,6 +56,7 @@ detekt {
     buildUponDefaultConfig = true
     config = files("$rootDir/detekt.yml")
     parallel = true
+    autoCorrect = true
 }
 
 val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")

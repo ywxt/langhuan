@@ -16,4 +16,5 @@ sealed class NetworkError : LanghuanError() {
 
 sealed class InterfaceError : LanghuanError() {
     class InvalidVariable(val message: String) : InterfaceError()
+    class ParsingError(val message: String) : InterfaceError()
 }

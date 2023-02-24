@@ -1,32 +1,46 @@
 package me.ywxt.langhuan.core.schema
 
 class ParsedSources(val document: String) {
-    val selectorSource by lazy {
+    private val selectorSource: ParsedSource<String> by lazy {
         SelectorSource(document)
     }
-    val jsonSource by lazy {
+    private val jsonSource: ParsedSource<String> by lazy {
         JSONSource(document)
+    }
+
+    fun getSelectorSource(): ParsedSource<String> = selectorSource
+
+    fun getJSONSource(): ParsedSource<String> = jsonSource
+}
+
+sealed class ParsedSource<T>(val document: String) {
+    abstract fun parse(path: T): Iterable<String>
+}
+
+class SelectorSource(document: String) : ParsedSource<String>(document) {
+    override fun parse(path: String): Iterable<String> {
+        TODO("Not yet implemented")
     }
 }
 
-sealed class ParsedSource(val document: String)
-
-class SelectorSource(document: String) : ParsedSource(document)
-
-class JSONSource(document: String) : ParsedSource(document)
+class JSONSource(document: String) : ParsedSource<String>(document) {
+    override fun parse(path: String): Iterable<String> {
+        TODO("Not yet implemented")
+    }
+}
 
 sealed class Parser(val path: String) {
-    abstract fun parse(source: ParsedSources): String
+    abstract fun parse(source: ParsedSources): Iterable<String>
 }
 
 class SelectorParser(selector: String) : Parser(selector) {
-    override fun parse(source: ParsedSources): String {
+    override fun parse(source: ParsedSources): Iterable<String> {
         TODO("Not yet implemented")
     }
 }
 
 class JSONParser(path: String) : Parser(path) {
-    override fun parse(source: ParsedSources): String {
+    override fun parse(source: ParsedSources): Iterable<String> {
         TODO("Not yet implemented")
     }
 }
