@@ -1,14 +1,14 @@
 package me.ywxt.langhuan.core.schema
 
 class ParsedSources(val document: String) {
-    private val selectorSource: ParsedSource<String> by lazy {
+    private val cssSelectorSource: ParsedSource<String> by lazy {
         SelectorSource(document)
     }
     private val jsonSource: ParsedSource<String> by lazy {
         JSONSource(document)
     }
 
-    fun getSelectorSource(): ParsedSource<String> = selectorSource
+    fun getSelectorSource(): ParsedSource<String> = cssSelectorSource
 
     fun getJSONSource(): ParsedSource<String> = jsonSource
 }
