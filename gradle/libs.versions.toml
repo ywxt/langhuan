@@ -10,6 +10,7 @@ kotlin-result = "1.1.16"
 ktor-client = "2.2.3"
 coroutines = "1.6.4"
 korte = "3.4.0"
+jsoup = "1.15.4"
 
 [libraries]
 # project dependencies
@@ -21,6 +22,7 @@ korte = { module = "com.soywiz.korlibs.korte:korte", version.ref = "korte" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor-client" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor-client" }
 coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 
 # test dependencies
 kotest-runner = { module = "io.kotest:kotest-runner-junit5", version.ref = "kotest" }
@@ -41,6 +43,7 @@ result = ["kotlin-result", "kotlin-result-coroutines"]
 korte = ["korte"]
 ktorClient = ["ktor-client-core", "ktor-client-cio"]
 coroutines = ["coroutines"]
+jsoup = ["jsoup"]
 
 [plugins]
 detekt-gradle = { id = "io.gitlab.arturbosch.detekt:detekt-gradle-plugin", version.ref = "detekt" }

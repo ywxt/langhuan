@@ -18,3 +18,5 @@ sealed class InterfaceError : LanghuanError() {
     class InvalidVariable(val message: String) : InterfaceError()
     class ParsingError(val message: String) : InterfaceError()
 }
+
+class ConfigParsingError(val message: String) : LanghuanError()
