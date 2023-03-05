@@ -17,13 +17,15 @@ internal suspend fun parseField(
     env: InterfaceEnvironment,
     sources: ParsedSources,
     field: ParsableField,
-): Result<String, InterfaceError.ParsingError> = runCatching {
+): Result<String?, InterfaceError.ParsingError> = runCatching {
     val parser = field.parser
     val template = field.template
     val environment = InterfaceEnvironment(env)
-    environment.setVariable("result", parser.parse(sources).first())
-    val fieldVariables = environment.getAllVariables()
-    template(fieldVariables)
+    parser.parse(sources).firstOrNull()?.let {
+        environment.setVariable("result", it)
+        val fieldVariables = environment.getAllVariables()
+        template(fieldVariables)
+    }
 }.mapError { InterfaceError.ParsingError(it.stackTraceToString()) }
 
 internal suspend fun parseList(

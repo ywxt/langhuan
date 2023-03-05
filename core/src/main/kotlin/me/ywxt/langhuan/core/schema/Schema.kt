@@ -23,5 +23,5 @@ data class Schema(
         context
     }
 
-    fun initialContext() = InterfaceEnvironment(schemaContext)
+    fun initialEnvironment() = InterfaceEnvironment(schemaContext)
 }

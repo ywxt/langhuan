@@ -7,6 +7,10 @@ formatting:
   active: true
   NoWildcardImports:
     active: false
+  TrailingCommaOnCallSite:
+    useTrailingCommaOnCallSite: true
+  TrailingCommaOnDeclarationSite:
+    useTrailingCommaOnDeclarationSite: true
 
 style:
   active: true

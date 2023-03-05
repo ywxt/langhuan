@@ -7,7 +7,6 @@ import com.github.michaelbull.result.runCatching
 import io.ktor.http.*
 import io.ktor.utils.io.charsets.*
 import me.ywxt.langhuan.core.NetworkError
-import java.net.URLEncoder
 
 data class Action(val request: Request, val charset: Charset) {
     class Builder private constructor(
@@ -15,7 +14,7 @@ data class Action(val request: Request, val charset: Charset) {
         private var method: HttpMethod = HttpMethod.Get,
         private var charset: Charset = Charset.forName("UTF-8"),
         private var headers: Map<String, String>? = null,
-        private var contentType: ContentType? = null,
+        private var contentType: io.ktor.http.ContentType? = null,
         private var body: String? = null
     ) {
         constructor(url: String) : this(url, HttpMethod.Get)
@@ -35,25 +34,27 @@ data class Action(val request: Request, val charset: Charset) {
             return this
         }
 
-        fun headers(headers: Map<String, String>?): Builder {
+        fun headers(headers: Map<String, String>): Builder {
             this.headers = headers
             return this
         }
 
-        fun contentType(contentType: ContentType?): Builder {
-            this.contentType = contentType
+        fun contentType(contentType: ContentType): Builder {
+            this.contentType = when (contentType) {
+                ContentType.JSON -> io.ktor.http.ContentType.Application.Json
+                ContentType.FORM -> io.ktor.http.ContentType.Application.FormUrlEncoded
+            }
             return this
         }
 
-        fun body(body: String?): Builder {
+        fun body(body: String): Builder {
             this.body = body
             return this
         }
 
         fun build(): Result<Action, NetworkError.InvalidUrl> {
-            val safeUrl = URLEncoder.encode(url, charset)
             val encodedUrl = runCatching {
-                Url(safeUrl)
+                Url(url)
             }.mapError { NetworkError.InvalidUrl(url) }
             val contentType = this.contentType
             val body = this.body
