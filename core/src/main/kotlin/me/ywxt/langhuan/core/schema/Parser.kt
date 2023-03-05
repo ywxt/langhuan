@@ -32,6 +32,8 @@ class SelectorSource(document: String) : ParsedSource<SelectorSource.SelectorPat
     override fun parse(path: SelectorPath): Iterable<String> = doc.select(path.evaluator).map { element ->
         if (path.attribute.compareTo("html", true) == 0) {
             element.outerHtml()
+        } else if (path.attribute.compareTo("text", true) == 0) {
+            element.text()
         } else {
             element.attr(path.attribute)
         }
@@ -70,7 +72,7 @@ sealed class Parser(val path: String) {
         ): Result<Parser, ConfigParsingError> = if (isList) {
             Ok(SelectorParser(sections[1], sections.getOrElse(2) { "html" }))
         } else {
-            Ok(SelectorParser(sections[1], sections.getOrElse(2) { "content" }))
+            Ok(SelectorParser(sections[1], sections.getOrElse(2) { "text" }))
         }
     }
 }
