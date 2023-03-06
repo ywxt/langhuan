@@ -1,8 +1,8 @@
 package me.ywxt.langhuan.core.schema
 
-import com.github.michaelbull.result.*
-import com.github.michaelbull.result.coroutines.binding.binding
-import io.ktor.utils.io.charsets.*
+import arrow.core.Either
+import arrow.core.continuations.either
+import arrow.core.flatMap
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.http.Action
 
@@ -15,36 +15,20 @@ class SearchInterface(
         searchRule.request.headers?.forEach { (name, value) -> env.setHeader(name, value) }
     }
 
-    override suspend fun buildAction(env: InterfaceEnvironment): Result<Action, InterfaceError> =
+    override suspend fun buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action> =
         this.searchRule.request.buildAction(env)
 
     override suspend fun parse(
         sources: ParsedSources,
-        env: InterfaceEnvironment
-    ): Result<IndicateHasNext<List<SearchResultItem>>, InterfaceError> = binding {
+        env: InterfaceEnvironment,
+    ): Either<InterfaceError, IndicateHasNext<List<SearchResultItem>>> = either {
         val items = searchRule.area.parse(sources).map { source ->
             val itemSources = ParsedSources(source)
-            val title = parseField(env, itemSources, searchRule.title).andThen {
-                if (it == null) {
-                    Err(
-                        InterfaceError.ParsingError(
-                            "Cannot find field in the document by given rule(`${searchRule.title}`)."
-                        )
-                    )
-                } else {
-                    Ok(it)
-                }
+            val title = parseField(env, itemSources, searchRule.title).flatMap {
+                needNonNullableField(it, searchRule.title)
             }.bind()
-            val infoUrl = parseField(env, itemSources, searchRule.infoUrl).andThen {
-                if (it == null) {
-                    Err(
-                        InterfaceError.ParsingError(
-                            "Cannot find field in the document by given rule(`${searchRule.infoUrl}`)."
-                        )
-                    )
-                } else {
-                    Ok(it)
-                }
+            val infoUrl = parseField(env, itemSources, searchRule.infoUrl).flatMap {
+                needNonNullableField(it, searchRule.infoUrl)
             }.bind()
             val author = searchRule.author?.let { parseField(env, itemSources, it).bind() }
             val description = searchRule.description?.let { parseField(env, itemSources, it).bind() }

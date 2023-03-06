@@ -1,4 +1,4 @@
-# Gradle, Kotlin, Spring Skeleton ![main](https://github.com/mrclrchtr/gradle-kotlin-spring/workflows/CI/badge.svg)
+# Langhuan ![main](https://github.com/ywxt/langhuan/actions/workflows/gradle-build-pr.yml/badge.svg)
 
 Do you already know how to set up a Gradle multi-project / multi-module with Kotlin DSL and Spring Dependency
 Management?

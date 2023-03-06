@@ -1,23 +1,23 @@
 package me.ywxt.langhuan.core.schema
 
-import com.github.michaelbull.result.*
+import arrow.core.Either
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.http.Action
 
 interface ResourceInterface<T> {
     fun init(env: InterfaceEnvironment)
-    suspend fun buildAction(env: InterfaceEnvironment): Result<Action, InterfaceError>
+    suspend fun buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action>
     suspend fun parse(
         sources: ParsedSources,
         env: InterfaceEnvironment
-    ): Result<IndicateHasNext<List<T>>, InterfaceError>
+    ): Either<InterfaceError, IndicateHasNext<List<T>>>
 }
 
 internal suspend fun parseField(
     env: InterfaceEnvironment,
     sources: ParsedSources,
     field: ParsableField,
-): Result<String?, InterfaceError.ParsingError> = runCatching {
+): Either<InterfaceError.ParsingError, String?> = Either.catch {
     val parser = field.parser
     val template = field.template
     val environment = InterfaceEnvironment(env)
@@ -26,13 +26,13 @@ internal suspend fun parseField(
         val fieldVariables = environment.getAllVariables()
         template(fieldVariables)
     }
-}.mapError { InterfaceError.ParsingError(it.stackTraceToString()) }
+}.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }
 
 internal suspend fun parseList(
     env: InterfaceEnvironment,
     sources: ParsedSources,
     field: ParsableField,
-): Result<List<String>, InterfaceError.ParsingError> = runCatching {
+): Either<InterfaceError.ParsingError, List<String>> = Either.catch {
     val parser = field.parser
     val template = field.template
     val environment = InterfaceEnvironment(env)
@@ -41,4 +41,14 @@ internal suspend fun parseList(
         val fieldVariables = environment.getAllVariables()
         template(fieldVariables)
     }
-}.mapError { InterfaceError.ParsingError(it.stackTraceToString()) }
+}.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }
+
+internal fun needNonNullableField(it: String?, field: ParsableField) = if (it == null) {
+    Either.Left(
+        InterfaceError.ParsingError(
+            "Cannot find field in the document by given rule(`$field`)."
+        )
+    )
+} else {
+    Either.Right(it)
+}

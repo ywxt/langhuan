@@ -17,7 +17,7 @@ dependencies {
     // will be set to the same for all other Kotlin dependencies / plugins in the project.
     add("implementation", libs.findLibrary("kotlin-gradle").get())
 
-   
+
     // https://github.com/Kotlin/dokka
     // Dokka is a documentation engine for Kotlin like JavaDoc for Java
     add("implementation", libs.findLibrary("dokka-gradle").get())
@@ -25,5 +25,7 @@ dependencies {
     // https://detekt.dev/docs/gettingstarted/gradle/
     // A static code analyzer for Kotlin
     add("implementation", libs.findLibrary("detekt-gradle").get())
+
+    add("implementation", libs.findLibrary("gradle-versions").get())
 
 }

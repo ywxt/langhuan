@@ -1,15 +1,17 @@
 package me.ywxt.langhuan.core
 
-import com.github.michaelbull.result.Err
-import com.github.michaelbull.result.Ok
-import com.github.michaelbull.result.Result
+import arrow.core.Either
 
 class PanicException(val error: Any) : Exception(error.toString())
 
-inline fun <reified R, reified E : Any> Result<R, E>.getOrThrow(): R {
+/**
+ * Returns the encapsulated value [R] if this instance represents Either.Right or
+ * throws a [PanicException] if it is Either.Left.
+ * **/
+inline fun <reified L : Any, reified R> Either<L, R>.get(): R {
     when (this) {
-        is Ok -> return this.value
-        is Err ->
-            throw PanicException(this.error)
+        is Either.Right -> return this.value
+        is Either.Left ->
+            throw PanicException(this.value)
     }
 }

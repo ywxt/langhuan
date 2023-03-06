@@ -1,9 +1,6 @@
 package me.ywxt.langhuan.core.http
 
-import com.github.michaelbull.result.Result
-import com.github.michaelbull.result.map
-import com.github.michaelbull.result.mapError
-import com.github.michaelbull.result.runCatching
+import arrow.core.Either
 import io.ktor.http.*
 import io.ktor.utils.io.charsets.*
 import me.ywxt.langhuan.core.NetworkError
@@ -52,10 +49,10 @@ data class Action(val request: Request, val charset: Charset) {
             return this
         }
 
-        fun build(): Result<Action, NetworkError.InvalidUrl> {
-            val encodedUrl = runCatching {
+        fun build(): Either<NetworkError.InvalidUrl, Action> {
+            val encodedUrl = Either.catch {
                 Url(url)
-            }.mapError { NetworkError.InvalidUrl(url) }
+            }.mapLeft { NetworkError.InvalidUrl(url) }
             val contentType = this.contentType
             val body = this.body
             val content = if (contentType != null && body != null) {

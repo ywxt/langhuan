@@ -1,8 +1,6 @@
 package me.ywxt.langhuan.core.http
 
-import com.github.michaelbull.result.Err
-import com.github.michaelbull.result.Ok
-import com.github.michaelbull.result.Result
+import arrow.core.Either
 import me.ywxt.langhuan.core.InvalidContentType
 
 data class Content(val type: String, val body: ByteArray) {
@@ -30,13 +28,13 @@ enum class ContentType {
     FORM;
 
     companion object {
-        fun parse(type: String): Result<ContentType, InvalidContentType> =
+        fun parse(type: String): Either<InvalidContentType, ContentType> =
             if (type.compareTo("json", true) == 0) {
-                Ok(JSON)
+                Either.Right(JSON)
             } else if (type.compareTo("form", true) == 0) {
-                Ok(FORM)
+                Either.Right(FORM)
             } else {
-                Err(InvalidContentType(type))
+                Either.Left(InvalidContentType(type))
             }
     }
 }

@@ -1,7 +1,7 @@
 package me.ywxt.langhuan.core.schema
 
-import com.github.michaelbull.result.*
-import com.github.michaelbull.result.coroutines.binding.binding
+import arrow.core.Either
+import arrow.core.continuations.either
 import com.soywiz.korte.Template
 import io.ktor.http.*
 import io.ktor.utils.io.charsets.*
@@ -16,14 +16,14 @@ data class RuleRequest(
     val body: Pair<ContentType, String>? = null,
 )
 
-suspend fun RuleRequest.buildAction(env: InterfaceEnvironment): Result<Action, InterfaceError> = binding {
+suspend fun RuleRequest.buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action> = either {
     val variables = env.getAllVariables()
     val url =
-        runCatching { url(variables) }.mapError { InterfaceError.ParsingError(it.stackTraceToString()) }
+        Either.catch { url(variables) }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }
             .bind()
-    val charset = runCatching {
+    val charset = Either.catch {
         env.getVariable("charset") as Charset
-    }.mapError { InterfaceError.InvalidVariable("charset") }.bind()
+    }.mapLeft { InterfaceError.InvalidVariable("charset") }.bind()
     val builder = Action.Builder(url).charset(charset)
     val headers = env.getAllHeaders()
     builder.headers(headers).method(method)
@@ -31,5 +31,5 @@ suspend fun RuleRequest.buildAction(env: InterfaceEnvironment): Result<Action, I
         builder.contentType(body.first).body(body.second)
     }
 
-    builder.build().mapError { InterfaceError.NetworkError(it) }.bind()
+    builder.build().mapLeft { InterfaceError.NetworkError(it) }.bind()
 }

@@ -17,9 +17,9 @@ class SearchInterfaceTest : FunSpec({
         )
         val searchRule = SearchRule(
             request,
-            area = Parser("css@@#main > div.novelslistss > li", true).getOrThrow(),
-            title = ParsableField(Parser("css@@span.s2 > a", false).getOrThrow(), Template("{}")),
-            infoUrl = ParsableField(Parser("css@@span.s2 > a@@href", false).getOrThrow(), Template("{}")),
+            area = Parser("css@@#main > div.novelslistss > li", true).get(),
+            title = ParsableField(Parser("css@@span.s2 > a", false).get(), Template("{}")),
+            infoUrl = ParsableField(Parser("css@@span.s2 > a@@href", false).get(), Template("{}")),
         )
         val schema = Schema(
             id = "me.ywxt",
@@ -33,7 +33,7 @@ class SearchInterfaceTest : FunSpec({
         val searchInterface = SearchInterface(searchRule)
         searchInterface.init(env)
         env.setVariable("query", "重生")
-        val action = searchInterface.buildAction(env).getOrThrow()
+        val action = searchInterface.buildAction(env).get()
         action should {
             it.request.content shouldBe null
             it.request.url.toString() shouldBe "https://ywxt.me/search?q=%D6%D8%C9%FA&page=1"

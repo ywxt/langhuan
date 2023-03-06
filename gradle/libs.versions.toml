@@ -1,23 +1,23 @@
 [versions]
-kotlin-logging = "3.0.4"
+kotlin-logging = "3.0.5"
 lorem = "2.1"
-kotlin = "1.8.0"
+kotlin = "1.8.10"
 springBoot = "3.0.1"
-dokka = "1.7.20"
+dokka = "1.8.10"
 detekt = "1.22.0"
-kotest = "5.5.4"
-kotlin-result = "1.1.16"
-ktor-client = "2.2.3"
+kotest = "5.5.5"
+ktor-client = "2.2.4"
 coroutines = "1.6.4"
 korte = "3.4.0"
 jsoup = "1.15.4"
+arrow = "1.1.5"
+versions = "0.46.0"
 
 [libraries]
 # project dependencies
+arrow-core = { module = "io.arrow-kt:arrow-core", version.ref = "arrow" }
 kotlin-logging = { module = "io.github.microutils:kotlin-logging", version.ref = "kotlin-logging" }
 lorem = { module = "com.thedeanda:lorem", version.ref = "lorem" }
-kotlin-result = { module = "com.michael-bull.kotlin-result:kotlin-result", version.ref = "kotlin-result" }
-kotlin-result-coroutines = { module = "com.michael-bull.kotlin-result:kotlin-result-coroutines", version.ref = "kotlin-result" }
 korte = { module = "com.soywiz.korlibs.korte:korte", version.ref = "korte" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor-client" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor-client" }
@@ -33,13 +33,14 @@ kotlin-gradle = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.
 dokka-gradle = { module = "org.jetbrains.dokka:dokka-gradle-plugin", version.ref = "dokka" }
 detekt-gradle = { module = "io.gitlab.arturbosch.detekt:detekt-gradle-plugin", version.ref = "detekt" }
 detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detekt" }
+gradle-versions = { module = "com.github.ben-manes:gradle-versions-plugin", version.ref = "versions" }
 
 
 [bundles]
+arrow = ["arrow-core"]
 kotlinLogging = ["kotlin-logging"]
 lorem = ["lorem"]
 kotest = ["kotest-runner", "kotest-assertions"]
-result = ["kotlin-result", "kotlin-result-coroutines"]
 korte = ["korte"]
 ktorClient = ["ktor-client-core", "ktor-client-cio"]
 coroutines = ["coroutines"]

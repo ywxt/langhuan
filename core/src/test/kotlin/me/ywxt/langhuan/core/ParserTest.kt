@@ -22,9 +22,9 @@ class ParserTest : FunSpec({
             |</body>
             """.trimMargin()
         )
-        val titleParser = Parser("css@@div > span:nth-of-type(1)", false).getOrThrow()
-        val authorParser = Parser("css@@div>span:nth-of-type(2)", false).getOrThrow()
-        val chapterListParser = Parser("css@@div>a@@href", true).getOrThrow()
+        val titleParser = Parser("css@@div > span:nth-of-type(1)", false).get()
+        val authorParser = Parser("css@@div>span:nth-of-type(2)", false).get()
+        val chapterListParser = Parser("css@@div>a@@href", true).get()
         titleParser.parse(sources).toList().should {
             it.size shouldBe 1
             it[0] shouldBe "title"

@@ -1,8 +1,6 @@
 package me.ywxt.langhuan.core.schema
 
-import com.github.michaelbull.result.Err
-import com.github.michaelbull.result.Ok
-import com.github.michaelbull.result.Result
+import arrow.core.Either
 import me.ywxt.langhuan.core.ConfigParsingError
 import org.jsoup.Jsoup
 import org.jsoup.select.Evaluator
@@ -50,10 +48,10 @@ sealed class Parser(val path: String) {
     abstract fun parse(sources: ParsedSources): Iterable<String>
 
     companion object {
-        operator fun invoke(path: String, isList: Boolean): Result<Parser, ConfigParsingError> {
+        operator fun invoke(path: String, isList: Boolean): Either<ConfigParsingError, Parser> {
             val sections = path.split("@@")
             if (sections.size < 2) {
-                return Err(
+                return Either.Left(
                     ConfigParsingError(
                         "the number of sections for list parser path must be more than 1. yours is " +
                             "${sections.size}. \n path: (`$path`)."
@@ -62,17 +60,17 @@ sealed class Parser(val path: String) {
             }
             return when (sections[0]) {
                 "css" -> parseSelectorParser(sections, isList)
-                else -> Err(ConfigParsingError("Unknown path type (`${sections[0]}`). \n path: $path"))
+                else -> Either.Left(ConfigParsingError("Unknown path type (`${sections[0]}`). \n path: $path"))
             }
         }
 
         private fun parseSelectorParser(
             sections: List<String>,
             isList: Boolean
-        ): Result<Parser, ConfigParsingError> = if (isList) {
-            Ok(SelectorParser(sections[1], sections.getOrElse(2) { "html" }))
+        ): Either<ConfigParsingError, Parser> = if (isList) {
+            Either.Right(SelectorParser(sections[1], sections.getOrElse(2) { "html" }))
         } else {
-            Ok(SelectorParser(sections[1], sections.getOrElse(2) { "text" }))
+            Either.Right(SelectorParser(sections[1], sections.getOrElse(2) { "text" }))
         }
     }
 }
