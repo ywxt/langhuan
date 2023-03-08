@@ -10,7 +10,7 @@ interface ResourceInterface<T> {
     suspend fun parse(
         sources: ParsedSources,
         env: InterfaceEnvironment
-    ): Either<InterfaceError, IndicateHasNext<List<T>>>
+    ): Either<InterfaceError, IndicateHasNext<ResourceValue<T>>>
 }
 
 internal suspend fun parseField(

@@ -7,35 +7,35 @@ import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.http.Action
 
 class SearchInterface(
-    private val searchRule: SearchRule,
+    private val rule: SearchRule,
 ) : ResourceInterface<SearchResultItem> {
 
     override fun init(env: InterfaceEnvironment) {
         env.setVariable("page", 0)
-        searchRule.request.headers?.forEach { (name, value) -> env.setHeader(name, value) }
+        rule.request.headers?.forEach { (name, value) -> env.setHeader(name, value) }
     }
 
     override suspend fun buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action> =
-        this.searchRule.request.buildAction(env)
+        this.rule.request.buildAction(env)
 
     override suspend fun parse(
         sources: ParsedSources,
         env: InterfaceEnvironment,
-    ): Either<InterfaceError, IndicateHasNext<List<SearchResultItem>>> = either {
-        val items = searchRule.area.parse(sources).map { source ->
+    ): Either<InterfaceError, IndicateHasNext<ResourceValue<SearchResultItem>>> = either {
+        val items = rule.area.parse(sources).map { source ->
             val itemSources = ParsedSources(source)
-            val title = parseField(env, itemSources, searchRule.title).flatMap {
-                needNonNullableField(it, searchRule.title)
+            val title = parseField(env, itemSources, rule.title).flatMap {
+                needNonNullableField(it, rule.title)
             }.bind()
-            val infoUrl = parseField(env, itemSources, searchRule.infoUrl).flatMap {
-                needNonNullableField(it, searchRule.infoUrl)
+            val infoUrl = parseField(env, itemSources, rule.infoUrl).flatMap {
+                needNonNullableField(it, rule.infoUrl)
             }.bind()
-            val author = searchRule.author?.let { parseField(env, itemSources, it).bind() }
-            val description = searchRule.description?.let { parseField(env, itemSources, it).bind() }
-            val extraTags = searchRule.extraTags?.let { parseList(env, itemSources, it).bind() }
+            val author = rule.author?.let { parseField(env, itemSources, it).bind() }
+            val description = rule.description?.let { parseField(env, itemSources, it).bind() }
+            val extraTags = rule.extraTags?.let { parseList(env, itemSources, it).bind() }
             SearchResultItem(title, infoUrl, author, description, extraTags)
         }
         env.setVariable("page", env.getVariable("page") as Int + 1)
-        NextIndication(items, false)
+        NextIndication(ResourceValue.List(items), false)
     }
 }
