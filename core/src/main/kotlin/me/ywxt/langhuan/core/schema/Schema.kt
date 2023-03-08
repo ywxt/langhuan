@@ -10,7 +10,8 @@ data class Schema(
     val defaultHeaders: Map<String, String>,
     val site: Url,
     val charset: Charset = Charsets.UTF_8,
-    val searchRule: SearchRule
+    val searchRule: SearchRule,
+    val bookInfoRule: BookInfoRule,
 ) {
     private val schemaContext by lazy {
         val context = InterfaceEnvironment(null).apply {

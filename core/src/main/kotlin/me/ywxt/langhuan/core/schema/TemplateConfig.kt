@@ -25,5 +25,12 @@ val urlDecodingFilter = Filter("url_decode") {
     URLDecoder.decode(subject.toDynamicString(), charset)
 }
 
+val intFilter = Filter("int") {
+    subject.toDynamicInt()
+}
+
 val templateConfig =
-    TemplateConfig(extraFilters = listOf(urlDecodingFilter, urlEncodingFilter), autoEscapeMode = AutoEscapeMode.RAW)
+    TemplateConfig(
+        extraFilters = listOf(urlDecodingFilter, urlEncodingFilter, intFilter),
+        autoEscapeMode = AutoEscapeMode.RAW
+    )

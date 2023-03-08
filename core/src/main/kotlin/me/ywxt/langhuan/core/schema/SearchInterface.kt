@@ -16,12 +16,12 @@ class SearchInterface(
     }
 
     override suspend fun buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action> =
-        this.rule.request.buildAction(env)
+        rule.request.buildAction(env)
 
     override suspend fun parse(
         sources: ParsedSources,
         env: InterfaceEnvironment,
-    ): Either<InterfaceError, IndicateHasNext<ResourceValue<SearchResultItem>>> = either {
+    ): Either<InterfaceError, ResourceValue<SearchResultItem>> = either {
         val items = rule.area.parse(sources).map { source ->
             val itemSources = ParsedSources(source)
             val title = parseField(env, itemSources, rule.title).flatMap {
@@ -35,7 +35,14 @@ class SearchInterface(
             val extraTags = rule.extraTags?.let { parseList(env, itemSources, it).bind() }
             SearchResultItem(title, infoUrl, author, description, extraTags)
         }
+        val hasNextPage = if (rule.hasNextPage == null) {
+            items.isEmpty()
+        } else {
+            parseField(env, sources, rule.hasNextPage).flatMap { needNonNullableField(it, rule.hasNextPage) }.map {
+                it.toBoolean()
+            }.bind()
+        }
         env.setVariable("page", env.getVariable("page") as Int + 1)
-        NextIndication(ResourceValue.List(items), false)
+        ResourceValue.List(items, hasNextPage)
     }
 }

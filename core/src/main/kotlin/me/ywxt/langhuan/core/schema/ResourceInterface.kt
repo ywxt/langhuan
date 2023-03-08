@@ -10,7 +10,7 @@ interface ResourceInterface<T> {
     suspend fun parse(
         sources: ParsedSources,
         env: InterfaceEnvironment
-    ): Either<InterfaceError, IndicateHasNext<ResourceValue<T>>>
+    ): Either<InterfaceError, ResourceValue<T>>
 }
 
 internal suspend fun parseField(
@@ -43,12 +43,12 @@ internal suspend fun parseList(
     }
 }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }
 
-internal fun needNonNullableField(it: String?, field: ParsableField) = if (it == null) {
+internal fun needNonNullableField(field: String?, fieldRule: ParsableField) = if (field == null) {
     Either.Left(
         InterfaceError.ParsingError(
-            "Cannot find field in the document by given rule(`$field`)."
+            "Cannot find field in the document by given rule(`$fieldRule`)."
         )
     )
 } else {
-    Either.Right(it)
+    Either.Right(field)
 }
