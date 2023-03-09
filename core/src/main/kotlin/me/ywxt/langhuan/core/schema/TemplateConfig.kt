@@ -10,7 +10,7 @@ import java.net.URLEncoder
 val urlEncodingFilter = Filter("url_encode") {
 
     val charset =
-        args.firstOrNull()?.run { charset(toDynamicString()) } ?: this.context.scope.get("charset")
+        args.firstOrNull()?.run { charset(toDynamicString()) } ?: this.context.scope.get(Variables.CHARSET)
             ?.run { this as Charset }
             ?: Charsets.UTF_8
 
@@ -19,7 +19,7 @@ val urlEncodingFilter = Filter("url_encode") {
 
 val urlDecodingFilter = Filter("url_decode") {
     val charset =
-        args.firstOrNull()?.run { charset(toDynamicString()) } ?: this.context.scope.get("charset")
+        args.firstOrNull()?.run { charset(toDynamicString()) } ?: this.context.scope.get(Variables.CHARSET)
             ?.run { this as Charset }
             ?: Charsets.UTF_8
     URLDecoder.decode(subject.toDynamicString(), charset)

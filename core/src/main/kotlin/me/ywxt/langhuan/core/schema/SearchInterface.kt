@@ -11,7 +11,7 @@ class SearchInterface(
 ) : ResourceInterface<SearchResultItem> {
 
     override fun init(env: InterfaceEnvironment) {
-        env.setVariable("page", 0)
+        env.setVariable(Variables.PAGE, 0)
         rule.request.headers?.forEach { (name, value) -> env.setHeader(name, value) }
     }
 

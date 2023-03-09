@@ -7,16 +7,13 @@ import org.jsoup.select.Evaluator
 import org.jsoup.select.QueryParser
 
 class ParsedSources(val document: String) {
-    private val cssSelectorSource: ParsedSource<SelectorSource.SelectorPath> by lazy {
+    val selectorSource: ParsedSource<SelectorSource.SelectorPath> by lazy {
         SelectorSource(document)
     }
-    private val jsonSource: ParsedSource<String> by lazy {
+    val jsonSource: ParsedSource<String> by lazy {
         JSONSource(document)
     }
-
-    fun getSelectorSource(): ParsedSource<SelectorSource.SelectorPath> = cssSelectorSource
-
-    fun getJSONSource(): ParsedSource<String> = jsonSource
+    val rawSource: ParsedSource<Unit> = RawSource
 }
 
 sealed class ParsedSource<T>(val document: String) {
@@ -44,33 +41,41 @@ class JSONSource(document: String) : ParsedSource<String>(document) {
     }
 }
 
+object RawSource : ParsedSource<Unit>("") {
+    val value = listOf("")
+    override fun parse(path: Unit): Iterable<String> = value
+}
+
 sealed class Parser(val path: String) {
     abstract fun parse(sources: ParsedSources): Iterable<String>
 
     companion object {
         operator fun invoke(path: String, isList: Boolean): Either<ConfigParsingError, Parser> {
             val sections = path.split("@@")
-            if (sections.size < 2) {
-                return Either.Left(
-                    ConfigParsingError(
-                        "the number of sections for list parser path must be more than 1. yours is " +
-                            "${sections.size}. \n path: (`$path`)."
-                    )
-                )
-            }
             return when (sections[0]) {
-                "css" -> parseSelectorParser(sections, isList)
-                else -> Either.Left(ConfigParsingError("Unknown path type (`${sections[0]}`). \n path: $path"))
+                "", "raw" -> Either.Right(RawParser)
+                "css" -> parseSelectorParser(path, sections, isList)
+                else -> Either.Left(ConfigParsingError("Unknown path type (`${sections[0]}`). \n path: `$path`"))
             }
         }
 
         private fun parseSelectorParser(
+            path: String,
             sections: List<String>,
-            isList: Boolean
-        ): Either<ConfigParsingError, Parser> = if (isList) {
-            Either.Right(SelectorParser(sections[1], sections.getOrElse(2) { "html" }))
-        } else {
-            Either.Right(SelectorParser(sections[1], sections.getOrElse(2) { "text" }))
+            isList: Boolean,
+        ): Either<ConfigParsingError, Parser> {
+            if (sections.size < 2) {
+                return Either.Left(
+                    ConfigParsingError(
+                        "The selector of css parser can not be empty. \n path: `$path`"
+                    )
+                )
+            }
+            return if (isList) {
+                Either.Right(SelectorParser(sections[1], sections.getOrElse(2) { "html" }))
+            } else {
+                Either.Right(SelectorParser(sections[1], sections.getOrElse(2) { "text" }))
+            }
         }
     }
 }
@@ -78,11 +83,15 @@ sealed class Parser(val path: String) {
 class SelectorParser(selector: String, attribute: String) : Parser("$selector@@$attribute") {
     private val selectorPath = SelectorSource.SelectorPath(QueryParser.parse(selector), attribute)
     override fun parse(sources: ParsedSources): Iterable<String> =
-        sources.getSelectorSource().parse(selectorPath)
+        sources.selectorSource.parse(selectorPath)
 }
 
 class JSONParser(path: String) : Parser(path) {
     override fun parse(sources: ParsedSources): Iterable<String> {
         TODO("Not yet implemented")
     }
+}
+
+object RawParser : Parser("") {
+    override fun parse(sources: ParsedSources): Iterable<String> = sources.rawSource.parse(Unit)
 }

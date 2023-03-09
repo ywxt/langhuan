@@ -21,15 +21,15 @@ class SearchInterfaceTest : FunSpec({
             infoUrl = ParsableField(Parser("css@@span.s2 > a@@href", false).get(), Template("{{result}}")),
         )
         val env = InterfaceEnvironment(null).apply {
-            setVariable("schema_id", "me.ywxt")
-            setVariable("schema_name", "test schema")
-            setVariable("schema_site", Url("https://ywxt.me"))
-            setVariable("charset", charset("GBK"))
+            setVariable(Variables.SCHEMA_ID, "me.ywxt")
+            setVariable(Variables.SCHEMA_NAME, "test schema")
+            setVariable(Variables.SCHEMA_SITE, Url("https://ywxt.me"))
+            setVariable(Variables.CHARSET, charset("GBK"))
             setHeader("Refer", "https://ywxt.me")
         }
         val searchInterface = SearchInterface(searchRule)
         searchInterface.init(env)
-        env.setVariable("query", "重生")
+        env.setVariable(Variables.SEARCH_QUERY, "重生")
         val action = searchInterface.buildAction(env).get()
         action.apply {
             request.content shouldBe null
@@ -58,10 +58,10 @@ class SearchInterfaceTest : FunSpec({
             )
         )
         val env = InterfaceEnvironment(null).apply {
-            setVariable("schema_id", "me.ywxt")
-            setVariable("schema_name", "test schema")
-            setVariable("schema_site", Url("https://ywxt.me"))
-            setVariable("charset", charset("GBK"))
+            setVariable(Variables.SCHEMA_ID, "me.ywxt")
+            setVariable(Variables.SCHEMA_NAME, "test schema")
+            setVariable(Variables.SCHEMA_SITE, Url("https://ywxt.me"))
+            setVariable(Variables.CHARSET, charset("GBK"))
             setHeader("Refer", "https://ywxt.me")
         }
         val searchInterface = SearchInterface(searchRule)

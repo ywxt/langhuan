@@ -15,10 +15,10 @@ data class Schema(
 ) {
     private val schemaContext by lazy {
         val context = InterfaceEnvironment(null).apply {
-            setVariable("schema_id", id)
-            setVariable("schema_name", name)
-            setVariable("schema_site", site)
-            setVariable("charset", charset)
+            setVariable(Variables.SCHEMA_ID, id)
+            setVariable(Variables.SCHEMA_NAME, name)
+            setVariable(Variables.SCHEMA_SITE, site)
+            setVariable(Variables.CHARSET, charset)
             defaultHeaders.forEach { (header, value) -> setHeader(header, value) }
         }
         context
