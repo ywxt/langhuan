@@ -16,7 +16,10 @@ class SearchInterfaceTest : FunSpec({
         )
         val searchRule = SearchRule(
             ruleRequest,
-            area = Parser("css@@#main > div.novelslistss > li", true).get(),
+            area = ParsableField(
+                Parser("css@@#main > div.novelslistss > li", true).get(),
+                Template("{{result}}", templateConfig)
+            ),
             title = ParsableField(Parser("css@@span.s2 > a", false).get(), Template("{{result}}")),
             infoUrl = ParsableField(Parser("css@@span.s2 > a@@href", false).get(), Template("{{result}}")),
         )
@@ -48,7 +51,10 @@ class SearchInterfaceTest : FunSpec({
         )
         val searchRule = SearchRule(
             ruleRequest,
-            area = Parser("css@@#main > div.novelslistss > li", true).get(),
+            area = ParsableField(
+                Parser("css@@#main > div.novelslistss > li", true).get(),
+                Template("{{result}}", templateConfig)
+            ),
             title = ParsableField(Parser("css@@span.s2 > a", false).get(), Template("{{result}}")),
             infoUrl = ParsableField(Parser("css@@span.s2 > a@@href", false).get(), Template("{{result}}")),
             author = ParsableField(Parser("css@@span.s4", false).get(), Template("{{result}}")),

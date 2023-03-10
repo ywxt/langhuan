@@ -2,7 +2,6 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import arrow.core.continuations.either
-import arrow.core.flatMap
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.http.Action
 
@@ -18,12 +17,12 @@ class BookInfoInterface(private val rule: BookInfoRule) : ResourceInterface<Book
         sources: ParsedSources,
         env: InterfaceEnvironment,
     ): Either<InterfaceError, ResourceValue<BookInfo>> = either {
-        val title = parseField(env, sources, rule.title).flatMap { needNonNullableField(it, rule.title) }.bind()
+        val title = rule.title.parseNonNullableFiled(env, sources).bind()
         val contentsUrl =
-            parseField(env, sources, rule.contentsUrl).flatMap { needNonNullableField(it, rule.contentsUrl) }.bind()
-        val author = rule.author?.let { parseField(env, sources, it).bind() }
-        val description = rule.description?.let { parseField(env, sources, it).bind() }
-        val extraTags = rule.extraTags?.let { parseList(env, sources, it).bind() }
+            rule.contentsUrl.parseNonNullableFiled(env, sources).bind()
+        val author = rule.author?.parseField(env, sources)?.bind()
+        val description = rule.description?.parseField(env, sources)?.bind()
+        val extraTags = rule.extraTags?.parseList(env, sources)?.bind()
         ResourceValue.Item(BookInfo(title, contentsUrl, author, description, extraTags))
     }
 }

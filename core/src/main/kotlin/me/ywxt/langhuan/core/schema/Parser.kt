@@ -46,8 +46,12 @@ object RawSource : ParsedSource<Unit>("") {
     override fun parse(path: Unit): Iterable<String> = value
 }
 
-sealed class Parser(val path: String) {
+sealed class Parser(val type: String, val path: String) {
     abstract fun parse(sources: ParsedSources): Iterable<String>
+
+    override fun toString(): String {
+        return "`$type Parser, path: $path`"
+    }
 
     companion object {
         operator fun invoke(path: String, isList: Boolean): Either<ConfigParsingError, Parser> {
@@ -80,18 +84,18 @@ sealed class Parser(val path: String) {
     }
 }
 
-class SelectorParser(selector: String, attribute: String) : Parser("$selector@@$attribute") {
+class SelectorParser(selector: String, attribute: String) : Parser("css", "$selector@@$attribute") {
     private val selectorPath = SelectorSource.SelectorPath(QueryParser.parse(selector), attribute)
     override fun parse(sources: ParsedSources): Iterable<String> =
         sources.selectorSource.parse(selectorPath)
 }
 
-class JSONParser(path: String) : Parser(path) {
+class JSONParser(path: String) : Parser("json", path) {
     override fun parse(sources: ParsedSources): Iterable<String> {
         TODO("Not yet implemented")
     }
 }
 
-object RawParser : Parser("") {
+object RawParser : Parser("raw", "") {
     override fun parse(sources: ParsedSources): Iterable<String> = sources.rawSource.parse(Unit)
 }

@@ -2,7 +2,6 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import arrow.core.continuations.either
-import arrow.core.flatMap
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.http.Action
 
@@ -22,26 +21,16 @@ class SearchInterface(
         sources: ParsedSources,
         env: InterfaceEnvironment,
     ): Either<InterfaceError, ResourceValue<SearchResultItem>> = either {
-        val items = rule.area.parse(sources).map { source ->
+        val items = rule.area.parseList(env, sources).bind().map { source ->
             val itemSources = ParsedSources(source)
-            val title = parseField(env, itemSources, rule.title).flatMap {
-                needNonNullableField(it, rule.title)
-            }.bind()
-            val infoUrl = parseField(env, itemSources, rule.infoUrl).flatMap {
-                needNonNullableField(it, rule.infoUrl)
-            }.bind()
-            val author = rule.author?.let { parseField(env, itemSources, it).bind() }
-            val description = rule.description?.let { parseField(env, itemSources, it).bind() }
-            val extraTags = rule.extraTags?.let { parseList(env, itemSources, it).bind() }
+            val title = rule.title.parseNonNullableFiled(env, itemSources).bind()
+            val infoUrl = rule.infoUrl.parseNonNullableFiled(env, sources).bind()
+            val author = rule.author?.parseField(env, itemSources)?.bind()
+            val description = rule.description?.parseField(env, itemSources)?.bind()
+            val extraTags = rule.extraTags?.parseList(env, itemSources)?.bind()
             SearchResultItem(title, infoUrl, author, description, extraTags)
         }
-        val hasNextPage = if (rule.hasNextPage == null) {
-            items.isEmpty()
-        } else {
-            parseField(env, sources, rule.hasNextPage).flatMap { needNonNullableField(it, rule.hasNextPage) }.map {
-                it.toBoolean()
-            }.bind()
-        }
+        val hasNextPage = rule.hasNextPage.hasNextPage(env, sources, items).bind()
         env.setVariable("page", env.getVariable("page") as Int + 1)
         ResourceValue.List(items, hasNextPage)
     }
