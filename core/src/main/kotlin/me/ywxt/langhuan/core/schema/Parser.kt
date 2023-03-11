@@ -15,7 +15,7 @@ sealed class Parser(val type: String, val path: String) {
         operator fun invoke(path: String, isList: Boolean): Either<ConfigParsingError, Parser> {
             val sections = path.split("@@")
             return when (sections[0]) {
-                "", "raw" -> Either.Right(RawParser)
+                "", "unit" -> Either.Right(UnitParser)
                 "css" -> parseSelectorParser(path, sections, isList)
                 else -> Either.Left(ConfigParsingError("Unknown path type (`${sections[0]}`). \n path: `$path`"))
             }
@@ -55,6 +55,6 @@ class JSONParser(path: String) : Parser("json", path) {
     }
 }
 
-object RawParser : Parser("raw", "") {
-    override fun parse(sources: ParsedSources): Sequence<String> = sources.rawSource.parse(Unit)
+object UnitParser : Parser("raw", "") {
+    override fun parse(sources: ParsedSources): Sequence<String> = sources.unitSource.parse(Unit)
 }

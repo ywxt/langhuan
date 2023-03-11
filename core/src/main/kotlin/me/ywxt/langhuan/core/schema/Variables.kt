@@ -11,6 +11,10 @@ object Variables {
 
     const val PAGE = "page"
 
+    const val SEARCH_URL = "search_url"
+
+    const val CONTENTS_URL = "contents_url"
+
     const val BOOK_URL = "book_url"
 
     const val SEARCH_QUERY = "query"

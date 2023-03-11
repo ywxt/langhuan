@@ -29,3 +29,9 @@ fun InterfaceEnvironment.initPage() {
 fun InterfaceEnvironment.incPage() {
     setVariable(Variables.PAGE, getVariable(Variables.PAGE) as Int + 1)
 }
+
+inline fun <reified T> InterfaceEnvironment.setNextPageUrl(name: String, value: ResourceValue<T>) {
+    if (value is ResourceValue.List<T>) {
+        value.nextPageUrl?.let { setVariable(name, it) }
+    }
+}

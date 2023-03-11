@@ -14,7 +14,7 @@ class JSONSource(document: String) : ParsedSource<String>(document) {
     }
 }
 
-object RawSource : ParsedSource<Unit>("") {
+object UnitSource : ParsedSource<Unit>("") {
     const val value = ""
     override fun parse(path: Unit): Sequence<String> = sequenceOf(value)
 }

@@ -2,7 +2,6 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import arrow.core.continuations.either
-import kotlinx.coroutines.flow.map
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.http.Action
 
@@ -16,8 +15,8 @@ class ContentsInterface(private val rule: ContentsRule) : ResourceInterface<Cont
         rule.request.buildAction(env)
 
     override suspend fun parse(
-        sources: ParsedSources,
         env: InterfaceEnvironment,
+        sources: ParsedSources,
     ): Either<InterfaceError, ResourceValue<ContentsItem>> = either {
         val contents = rule.area.parseList(env, sources).bind().map { source ->
             val itemSources = ParsedSources(source)
@@ -27,7 +26,11 @@ class ContentsInterface(private val rule: ContentsRule) : ResourceInterface<Cont
         }
         env.setVariable(Variables.EMPTY_RESULT, contents.isEmpty())
         val hasNextPage = rule.nextPage.nextPageUrl(env, sources).bind()
-        env.incPage()
         ResourceValue.List(contents, hasNextPage)
+    }
+
+    override fun afterParse(env: InterfaceEnvironment, value: ResourceValue<ContentsItem>) {
+        env.incPage()
+        env.setNextPageUrl(Variables.CONTENTS_URL, value)
     }
 }

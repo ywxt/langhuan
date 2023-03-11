@@ -2,8 +2,6 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import arrow.core.continuations.either
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.toList
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.http.Action
 
@@ -20,8 +18,8 @@ class SearchInterface(
         rule.request.buildAction(env)
 
     override suspend fun parse(
-        sources: ParsedSources,
         env: InterfaceEnvironment,
+        sources: ParsedSources,
     ): Either<InterfaceError, ResourceValue<SearchResultItem>> = either {
         val items = rule.area.parseList(env, sources).bind().map { source ->
             val itemSources = ParsedSources(source)
@@ -34,7 +32,11 @@ class SearchInterface(
         }
         env.setVariable(Variables.EMPTY_RESULT, items.isEmpty())
         val nextPageUrl = rule.nextPage.nextPageUrl(env, sources).bind()
-        env.incPage()
         ResourceValue.List(items, nextPageUrl)
+    }
+
+    override fun afterParse(env: InterfaceEnvironment, value: ResourceValue<SearchResultItem>) {
+        env.incPage()
+        env.setNextPageUrl(Variables.SEARCH_URL, value)
     }
 }

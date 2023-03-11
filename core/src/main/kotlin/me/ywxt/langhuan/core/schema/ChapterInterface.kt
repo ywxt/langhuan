@@ -2,7 +2,6 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import arrow.core.continuations.either
-import kotlinx.coroutines.flow.map
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.http.Action
 
@@ -16,15 +15,19 @@ class ChapterInterface(private val rule: ParagraphInfoRule) : ResourceInterface<
         rule.request.buildAction(env)
 
     override suspend fun parse(
-        sources: ParsedSources,
         env: InterfaceEnvironment,
+        sources: ParsedSources,
     ): Either<InterfaceError, ResourceValue<ParagraphInfo>> = either {
         val content = rule.content.parseList(env, sources).bind().map {
             ParagraphInfo(it)
         }
         env.setVariable(Variables.EMPTY_RESULT, content.isEmpty())
         val nextPageUrl = rule.nextPage.nextPageUrl(env, sources).bind()
-        env.incPage()
         ResourceValue.List(content, nextPageUrl)
+    }
+
+    override fun afterParse(env: InterfaceEnvironment, value: ResourceValue<ParagraphInfo>) {
+        env.incPage()
+        env.setNextPageUrl(Variables.CHAPTER_URL, value)
     }
 }

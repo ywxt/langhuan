@@ -7,5 +7,5 @@ class ParsedSources(val document: String) {
     val jsonSource: ParsedSource<String> by lazy {
         JSONSource(document)
     }
-    val rawSource: ParsedSource<Unit> = RawSource
+    val unitSource: ParsedSource<Unit> = UnitSource
 }

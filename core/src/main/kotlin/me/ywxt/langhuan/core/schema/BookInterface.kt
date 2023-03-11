@@ -2,7 +2,6 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import arrow.core.continuations.either
-import kotlinx.coroutines.flow.toList
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.http.Action
 
@@ -15,8 +14,8 @@ class BookInterface(private val rule: BookInfoRule) : ResourceInterface<BookInfo
         rule.request.buildAction(env)
 
     override suspend fun parse(
-        sources: ParsedSources,
         env: InterfaceEnvironment,
+        sources: ParsedSources,
     ): Either<InterfaceError, ResourceValue<BookInfo>> = either {
         val title = rule.title.parseNonNullableFiled(env, sources).bind()
         val contentsUrl =

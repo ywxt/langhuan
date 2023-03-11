@@ -70,7 +70,7 @@ class BookInterfaceTest : FunSpec({
             </div></div>        
         """
         )
-        val value = bookInterface.parse(sources, env).get()
+        val value = bookInterface.parse(env, sources).get()
         value.shouldBeInstanceOf<ResourceValue.Item<BookInfo>>()
         val bookInfo = value.value
         bookInfo.title shouldBe "重生都市仙帝"

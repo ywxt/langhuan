@@ -95,7 +95,7 @@ class ChapterInterfaceTest : FunSpec({
             </div>       
         """
         )
-        val value1 = chapterInterface.parse(sources1, env).get()
+        val value1 = chapterInterface.parse(env, sources1).get()
         value1.shouldBeInstanceOf<ResourceValue.List<ParagraphInfo>>()
         value1.nextPageUrl shouldBe "/bi/1894/1319817_2.html"
         val paraList = value1.list
@@ -115,7 +115,7 @@ class ChapterInterfaceTest : FunSpec({
             </div> 
         """
         )
-        val value2 = chapterInterface.parse(source2, env).get()
+        val value2 = chapterInterface.parse(env, source2).get()
         value2.shouldBeInstanceOf<ResourceValue.List<ParagraphInfo>>()
         value2.nextPageUrl shouldBe null
         value2.list.size shouldBe 2

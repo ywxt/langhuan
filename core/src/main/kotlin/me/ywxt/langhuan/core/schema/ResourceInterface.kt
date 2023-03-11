@@ -8,7 +8,9 @@ interface ResourceInterface<T> {
     fun init(env: InterfaceEnvironment)
     suspend fun buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action>
     suspend fun parse(
+        env: InterfaceEnvironment,
         sources: ParsedSources,
-        env: InterfaceEnvironment
     ): Either<InterfaceError, ResourceValue<T>>
+
+    fun afterParse(env: InterfaceEnvironment, value: ResourceValue<T>) {}
 }
