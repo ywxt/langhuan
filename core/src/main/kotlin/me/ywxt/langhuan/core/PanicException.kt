@@ -2,7 +2,11 @@ package me.ywxt.langhuan.core
 
 import arrow.core.Either
 
-class PanicException(val error: Any) : Exception(error.toString())
+class PanicException(val error: Any) : Exception(error.toString()) {
+    companion object {
+        fun <T> throwString(message: String): T = throw PanicException(message)
+    }
+}
 
 /**
  * Returns the encapsulated value [R] if this instance represents Either.Right or

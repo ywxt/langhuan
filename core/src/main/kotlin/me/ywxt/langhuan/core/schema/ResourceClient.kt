@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import me.ywxt.langhuan.core.InterfaceError
+import me.ywxt.langhuan.core.PanicException
 import me.ywxt.langhuan.core.http.HttpClient
 
 class ResourceClient<T>(
@@ -39,8 +40,7 @@ class ResourceClient<T>(
                 if (result is ResourceValue.List) {
                     value = result
                 } else {
-                    Either.Left(InterfaceError.ParsingError("The parsing result must be a List. \n Result: `$result`"))
-                        .bind<Flow<T>>()
+                    PanicException.throwString("The parsing result must be a List. \n Result: `$result`")
                 }
                 value.list.forEach { emit(it) }
             }
