@@ -2,52 +2,10 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import me.ywxt.langhuan.core.ConfigParsingError
-import org.jsoup.Jsoup
-import org.jsoup.select.Evaluator
 import org.jsoup.select.QueryParser
 
-class ParsedSources(val document: String) {
-    val selectorSource: ParsedSource<SelectorSource.SelectorPath> by lazy {
-        SelectorSource(document)
-    }
-    val jsonSource: ParsedSource<String> by lazy {
-        JSONSource(document)
-    }
-    val rawSource: ParsedSource<Unit> = RawSource
-}
-
-sealed class ParsedSource<T>(val document: String) {
-    abstract fun parse(path: T): Iterable<String>
-}
-
-class SelectorSource(document: String) : ParsedSource<SelectorSource.SelectorPath>(document) {
-    data class SelectorPath(val evaluator: Evaluator, val attribute: String)
-
-    private val doc = Jsoup.parse(document)
-    override fun parse(path: SelectorPath): Iterable<String> = doc.select(path.evaluator).map { element ->
-        if (path.attribute.compareTo("html", true) == 0) {
-            element.outerHtml()
-        } else if (path.attribute.compareTo("text", true) == 0) {
-            element.text()
-        } else {
-            element.attr(path.attribute)
-        }
-    }
-}
-
-class JSONSource(document: String) : ParsedSource<String>(document) {
-    override fun parse(path: String): Iterable<String> {
-        TODO("Not yet implemented")
-    }
-}
-
-object RawSource : ParsedSource<Unit>("") {
-    val value = listOf("")
-    override fun parse(path: Unit): Iterable<String> = value
-}
-
 sealed class Parser(val type: String, val path: String) {
-    abstract fun parse(sources: ParsedSources): Iterable<String>
+    abstract fun parse(sources: ParsedSources): Sequence<String>
 
     override fun toString(): String {
         return "`$type Parser, path: $path`"
@@ -75,27 +33,28 @@ sealed class Parser(val type: String, val path: String) {
                     )
                 )
             }
-            return if (isList) {
-                Either.Right(SelectorParser(sections[1], sections.getOrElse(2) { "html" }))
+            val defaultAttr = if (isList) {
+                "html"
             } else {
-                Either.Right(SelectorParser(sections[1], sections.getOrElse(2) { "text" }))
+                "text"
             }
+            return Either.catch { SelectorParser(sections[1], sections.getOrElse(2) { defaultAttr }) }
+                .mapLeft { ConfigParsingError(it.stackTraceToString()) }
         }
     }
 }
 
 class SelectorParser(selector: String, attribute: String) : Parser("css", "$selector@@$attribute") {
     private val selectorPath = SelectorSource.SelectorPath(QueryParser.parse(selector), attribute)
-    override fun parse(sources: ParsedSources): Iterable<String> =
-        sources.selectorSource.parse(selectorPath)
+    override fun parse(sources: ParsedSources): Sequence<String> = sources.selectorSource.parse(selectorPath)
 }
 
 class JSONParser(path: String) : Parser("json", path) {
-    override fun parse(sources: ParsedSources): Iterable<String> {
+    override fun parse(sources: ParsedSources): Sequence<String> {
         TODO("Not yet implemented")
     }
 }
 
 object RawParser : Parser("raw", "") {
-    override fun parse(sources: ParsedSources): Iterable<String> = sources.rawSource.parse(Unit)
+    override fun parse(sources: ParsedSources): Sequence<String> = sources.rawSource.parse(Unit)
 }

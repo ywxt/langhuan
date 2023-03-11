@@ -30,6 +30,5 @@ suspend fun RuleRequest.buildAction(env: InterfaceEnvironment): Either<Interface
     if (body != null) {
         builder.contentType(body.first).body(body.second)
     }
-
     builder.build().mapLeft { InterfaceError.NetworkError(it) }.bind()
 }

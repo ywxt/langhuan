@@ -14,4 +14,8 @@ object Variables {
     const val BOOK_URL = "book_url"
 
     const val SEARCH_QUERY = "query"
+
+    const val CHAPTER_URL = "chapter_url"
+
+    const val EMPTY_RESULT = "empty_result"
 }

@@ -2,6 +2,8 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import arrow.core.continuations.either
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.toList
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.http.Action
 
@@ -10,7 +12,7 @@ class SearchInterface(
 ) : ResourceInterface<SearchResultItem> {
 
     override fun init(env: InterfaceEnvironment) {
-        env.setVariable(Variables.PAGE, 0)
+        env.initPage()
         rule.request.headers?.forEach { (name, value) -> env.setHeader(name, value) }
     }
 
@@ -27,11 +29,12 @@ class SearchInterface(
             val infoUrl = rule.infoUrl.parseNonNullableFiled(env, sources).bind()
             val author = rule.author?.parseField(env, itemSources)?.bind()
             val description = rule.description?.parseField(env, itemSources)?.bind()
-            val extraTags = rule.extraTags?.parseList(env, itemSources)?.bind()
+            val extraTags = rule.extraTags?.parseList(env, itemSources)?.bind()?.toList()
             SearchResultItem(title, infoUrl, author, description, extraTags)
         }
-        val hasNextPage = rule.hasNextPage.hasNextPage(env, sources, items).bind()
-        env.setVariable("page", env.getVariable("page") as Int + 1)
-        ResourceValue.List(items, hasNextPage)
+        env.setVariable(Variables.EMPTY_RESULT, items.isEmpty())
+        val nextPageUrl = rule.nextPage.nextPageUrl(env, sources).bind()
+        env.incPage()
+        ResourceValue.List(items, nextPageUrl)
     }
 }

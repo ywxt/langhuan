@@ -5,5 +5,5 @@ data class ContentsRule(
     val area: ParsableField,
     val title: ParsableField,
     val chapterUrl: ParsableField,
-    val hasNextPage: ParsableField? = null,
+    val nextPage: NextPageRule,
 )

@@ -2,11 +2,13 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import arrow.core.continuations.either
+import kotlinx.coroutines.flow.map
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.http.Action
 
 class ContentsInterface(private val rule: ContentsRule) : ResourceInterface<ContentsItem> {
     override fun init(env: InterfaceEnvironment) {
+        env.initPage()
         rule.request.headers?.forEach { (name, value) -> env.setHeader(name, value) }
     }
 
@@ -23,7 +25,9 @@ class ContentsInterface(private val rule: ContentsRule) : ResourceInterface<Cont
             val chapterUrl = rule.chapterUrl.parseNonNullableFiled(env, itemSources).bind()
             ContentsItem(title, chapterUrl)
         }
-        val hasNextPage = rule.hasNextPage.hasNextPage(env, sources, contents).bind()
+        env.setVariable(Variables.EMPTY_RESULT, contents.isEmpty())
+        val hasNextPage = rule.nextPage.nextPageUrl(env, sources).bind()
+        env.incPage()
         ResourceValue.List(contents, hasNextPage)
     }
 }

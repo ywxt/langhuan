@@ -14,6 +14,16 @@ class SearchInterfaceTest : FunSpec({
             url = Template("https://ywxt.me/search?q={{query | url_encode}}&page={{page + 1}}", templateConfig),
             headers = mapOf("User-Agent" to "langhuan client")
         )
+        val nextPageRule = NextPageRule(
+            hasNextPage = ParsableField(
+                Parser("css@@#pagelink > strong", false).get(),
+                Template("{{ result|int > page + 1}}", templateConfig)
+            ),
+            nextPageUrl = ParsableField(
+                Parser("", false).get(),
+                Template("/modules/article/search.php?searchkey=%D6%D8%C9%FA&amp;page={{page + 2}}")
+            ),
+        )
         val searchRule = SearchRule(
             ruleRequest,
             area = ParsableField(
@@ -22,6 +32,7 @@ class SearchInterfaceTest : FunSpec({
             ),
             title = ParsableField(Parser("css@@span.s2 > a", false).get(), Template("{{result}}")),
             infoUrl = ParsableField(Parser("css@@span.s2 > a@@href", false).get(), Template("{{result}}")),
+            nextPage = nextPageRule,
         )
         val env = InterfaceEnvironment(null).apply {
             setVariable(Variables.SCHEMA_ID, "me.ywxt")
@@ -49,6 +60,16 @@ class SearchInterfaceTest : FunSpec({
             url = Template("https://ywxt.me/search?q={{query | url_encode}}&page={{page + 1}}", templateConfig),
             headers = mapOf("User-Agent" to "langhuan client")
         )
+        val nextPageRule = NextPageRule(
+            hasNextPage = ParsableField(
+                Parser("css@@#pagelink > strong", false).get(),
+                Template("{{ result|int > page + 1}}", templateConfig)
+            ),
+            nextPageUrl = ParsableField(
+                Parser("", false).get(),
+                Template("/modules/article/search.php?searchkey=%D6%D8%C9%FA&amp;page={{page + 2}}")
+            ),
+        )
         val searchRule = SearchRule(
             ruleRequest,
             area = ParsableField(
@@ -58,10 +79,7 @@ class SearchInterfaceTest : FunSpec({
             title = ParsableField(Parser("css@@span.s2 > a", false).get(), Template("{{result}}")),
             infoUrl = ParsableField(Parser("css@@span.s2 > a@@href", false).get(), Template("{{result}}")),
             author = ParsableField(Parser("css@@span.s4", false).get(), Template("{{result}}")),
-            hasNextPage = ParsableField(
-                Parser("css@@#pagelink > strong", false).get(),
-                Template("{{ result|int > page + 1}}", templateConfig)
-            )
+            nextPage = nextPageRule
         )
         val env = InterfaceEnvironment(null).apply {
             setVariable(Variables.SCHEMA_ID, "me.ywxt")
@@ -100,7 +118,7 @@ class SearchInterfaceTest : FunSpec({
         )
         val value = searchInterface.parse(sources, env).get()
         value.shouldBeInstanceOf<ResourceValue.List<SearchResultItem>>()
-        value.hasNextPage shouldBe true
+        value.nextPageUrl shouldBe "/modules/article/search.php?searchkey=%D6%D8%C9%FA&amp;page=2"
         val list = value.list
         list.size shouldBe 2
         list[0].author shouldBe "万鲤鱼"

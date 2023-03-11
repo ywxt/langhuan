@@ -1,7 +1,7 @@
 package me.ywxt.langhuan.core.schema
 
 class InterfaceEnvironment(
-    private val parentEnvironment: InterfaceEnvironment?
+    private val parentEnvironment: InterfaceEnvironment?,
 ) {
     private val variables: MutableMap<String, Any> = mutableMapOf()
     private val headers: MutableMap<String, String> = mutableMapOf()
@@ -20,4 +20,12 @@ class InterfaceEnvironment(
     }
 
     fun getAllHeaders(): Map<String, String> = ScopeMap(parentEnvironment?.headers, headers)
+}
+
+fun InterfaceEnvironment.initPage() {
+    setVariable(Variables.PAGE, 0)
+}
+
+fun InterfaceEnvironment.incPage() {
+    setVariable(Variables.PAGE, getVariable(Variables.PAGE) as Int + 1)
 }

@@ -8,7 +8,7 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import io.ktor.http.*
 import me.ywxt.langhuan.core.schema.*
 
-class BookInfoInterfaceTest : FunSpec({
+class BookInterfaceTest : FunSpec({
     test("Test BookInfoInterface build action") {
         val ruleRequest = RuleRequest(
             url = Template("https://ywxt.me/{{book_url}}", templateConfig),
@@ -26,10 +26,10 @@ class BookInfoInterfaceTest : FunSpec({
             setVariable(Variables.CHARSET, charset("GBK"))
             setHeader("Refer", "https://ywxt.me")
         }
-        val bookInfoInterface = BookInfoInterface(bookRule)
+        val bookInterface = BookInterface(bookRule)
         env.setVariable(Variables.BOOK_URL, "book/36889/")
-        bookInfoInterface.init(env)
-        val action = bookInfoInterface.buildAction(env).get()
+        bookInterface.init(env)
+        val action = bookInterface.buildAction(env).get()
         action.apply {
             request.content shouldBe null
             request.url.toString() shouldBe "https://ywxt.me/book/36889/"
@@ -57,9 +57,9 @@ class BookInfoInterfaceTest : FunSpec({
             setVariable(Variables.CHARSET, charset("GBK"))
             setHeader("Refer", "https://ywxt.me")
         }
-        val bookInfoInterface = BookInfoInterface(bookRule)
+        val bookInterface = BookInterface(bookRule)
         env.setVariable(Variables.BOOK_URL, "book/36889/")
-        bookInfoInterface.init(env)
+        bookInterface.init(env)
         val sources = ParsedSources(
             """
             <div id="main"><div class="novelslistss"><h2>重生的搜索结果</h2>       
@@ -70,7 +70,7 @@ class BookInfoInterfaceTest : FunSpec({
             </div></div>        
         """
         )
-        val value = bookInfoInterface.parse(sources, env).get()
+        val value = bookInterface.parse(sources, env).get()
         value.shouldBeInstanceOf<ResourceValue.Item<BookInfo>>()
         val bookInfo = value.value
         bookInfo.title shouldBe "重生都市仙帝"
