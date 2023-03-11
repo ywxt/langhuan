@@ -104,7 +104,7 @@ class ContentsInterfaceTest : FunSpec({
             </div>       
         """
         )
-        val value1 = contentsInterface.parse(env, sources1).get()
+        val value1 = contentsInterface.process(env, sources1).get()
         value1.shouldBeInstanceOf<ResourceValue.List<ContentsItem>>()
         value1.nextPageUrl shouldBe "/bi/1894/1319817_2.html"
         val paraList = value1.list
@@ -125,7 +125,7 @@ class ContentsInterfaceTest : FunSpec({
             </div> 
         """
         )
-        val value2 = contentsInterface.parse(env, source2).get()
+        val value2 = contentsInterface.process(env, source2).get()
         value2.shouldBeInstanceOf<ResourceValue.List<ContentsItem>>()
         value2.nextPageUrl shouldBe null
         value2.list.size shouldBe 2

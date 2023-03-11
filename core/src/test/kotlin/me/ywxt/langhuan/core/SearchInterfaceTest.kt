@@ -116,7 +116,7 @@ class SearchInterfaceTest : FunSpec({
             <a href="/modules/article/search.php?searchkey=%D6%D8%C9%FA&amp;page=6" class="last">6</a></div>
         """
         )
-        val value = searchInterface.parse(env, sources).get()
+        val value = searchInterface.process(env, sources).get()
         value.shouldBeInstanceOf<ResourceValue.List<SearchResultItem>>()
         value.nextPageUrl shouldBe "/modules/article/search.php?searchkey=%D6%D8%C9%FA&amp;page=2"
         val list = value.list

@@ -13,7 +13,7 @@ class BookInterface(private val rule: BookInfoRule) : ResourceInterface<BookInfo
     override suspend fun buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action> =
         rule.request.buildAction(env)
 
-    override suspend fun parse(
+    override suspend fun process(
         env: InterfaceEnvironment,
         sources: ParsedSources,
     ): Either<InterfaceError, ResourceValue<BookInfo>> = either {

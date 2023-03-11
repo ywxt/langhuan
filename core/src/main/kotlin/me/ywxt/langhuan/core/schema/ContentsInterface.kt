@@ -14,7 +14,7 @@ class ContentsInterface(private val rule: ContentsRule) : ResourceInterface<Cont
     override suspend fun buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action> =
         rule.request.buildAction(env)
 
-    override suspend fun parse(
+    override suspend fun process(
         env: InterfaceEnvironment,
         sources: ParsedSources,
     ): Either<InterfaceError, ResourceValue<ContentsItem>> = either {
@@ -26,10 +26,12 @@ class ContentsInterface(private val rule: ContentsRule) : ResourceInterface<Cont
         }
         env.setVariable(Variables.EMPTY_RESULT, contents.isEmpty())
         val hasNextPage = rule.nextPage.nextPageUrl(env, sources).bind()
-        ResourceValue.List(contents, hasNextPage)
+        val value = ResourceValue.List(contents, hasNextPage)
+        afterParse(env, value)
+        value
     }
 
-    override fun afterParse(env: InterfaceEnvironment, value: ResourceValue<ContentsItem>) {
+    private fun afterParse(env: InterfaceEnvironment, value: ResourceValue<ContentsItem>) {
         env.incPage()
         env.setNextPageUrl(Variables.CONTENTS_URL, value)
     }

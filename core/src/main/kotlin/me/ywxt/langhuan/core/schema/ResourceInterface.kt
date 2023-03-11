@@ -7,10 +7,8 @@ import me.ywxt.langhuan.core.http.Action
 interface ResourceInterface<T> {
     fun init(env: InterfaceEnvironment)
     suspend fun buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action>
-    suspend fun parse(
+    suspend fun process(
         env: InterfaceEnvironment,
         sources: ParsedSources,
     ): Either<InterfaceError, ResourceValue<T>>
-
-    fun afterParse(env: InterfaceEnvironment, value: ResourceValue<T>) {}
 }

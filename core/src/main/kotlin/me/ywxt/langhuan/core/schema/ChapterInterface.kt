@@ -14,7 +14,7 @@ class ChapterInterface(private val rule: ParagraphInfoRule) : ResourceInterface<
     override suspend fun buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action> =
         rule.request.buildAction(env)
 
-    override suspend fun parse(
+    override suspend fun process(
         env: InterfaceEnvironment,
         sources: ParsedSources,
     ): Either<InterfaceError, ResourceValue<ParagraphInfo>> = either {
@@ -23,10 +23,12 @@ class ChapterInterface(private val rule: ParagraphInfoRule) : ResourceInterface<
         }
         env.setVariable(Variables.EMPTY_RESULT, content.isEmpty())
         val nextPageUrl = rule.nextPage.nextPageUrl(env, sources).bind()
-        ResourceValue.List(content, nextPageUrl)
+        val value = ResourceValue.List(content, nextPageUrl)
+        afterParse(env, value)
+        value
     }
 
-    override fun afterParse(env: InterfaceEnvironment, value: ResourceValue<ParagraphInfo>) {
+    private fun afterParse(env: InterfaceEnvironment, value: ResourceValue<ParagraphInfo>) {
         env.incPage()
         env.setNextPageUrl(Variables.CHAPTER_URL, value)
     }

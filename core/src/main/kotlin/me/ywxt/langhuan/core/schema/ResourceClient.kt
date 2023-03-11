@@ -14,9 +14,7 @@ class ResourceClient<T>(
 ) {
     suspend fun fetch(env: InterfaceEnvironment): Either<InterfaceError, Flow<T>> = either {
         resInterface.init(env)
-        val value = requestAndParse(env).bind()
-        resInterface.afterParse(env, value)
-        when (value) {
+        when (val value = requestAndParse(env).bind()) {
             is ResourceValue.Item -> flowOf(value.value)
             is ResourceValue.List -> nextPages(env, value).bind()
         }
@@ -26,7 +24,7 @@ class ResourceClient<T>(
         val action = resInterface.buildAction(env).bind()
         val response = client.request(action).mapLeft { InterfaceError.NetworkError(it) }.bind()
         val sources = ParsedSources(response)
-        resInterface.parse(env, sources).bind()
+        resInterface.process(env, sources).bind()
     }
 
     private suspend fun nextPages(
