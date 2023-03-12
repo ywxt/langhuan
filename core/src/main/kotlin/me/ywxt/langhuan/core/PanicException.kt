@@ -4,7 +4,7 @@ import arrow.core.Either
 
 class PanicException(val error: Any) : Exception(error.toString()) {
     companion object {
-        fun <T> throwString(message: String): T = throw PanicException(message)
+        fun throwString(message: String): Nothing = throw PanicException(message)
     }
 }
 
