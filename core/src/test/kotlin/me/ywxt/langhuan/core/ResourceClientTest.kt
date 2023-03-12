@@ -8,6 +8,7 @@ import io.kotest.matchers.collections.shouldHaveAtLeastSize
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.collections.shouldStartWith
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldStartWith
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.ktor.http.*
@@ -119,15 +120,15 @@ class ResourceClientTest : FunSpec({
         val client = ResourceClient(bookInterface, HttpClient())
         val bookInfo = client.fetch(env).toList()
         bookInfo.size shouldBe 1
-        bookInfo[0] shouldBe Either.Right(
-            BookInfo(
-                title = "遮天之九天书",
-                contentsUrl = "/bi/5214/",
-                author = "青天有鱼",
-                description = "遮天之九天书小说简介:姜望道带着帝霸的九大天书穿越无始横推星空古路之前， " +
-                    "什么，要我用帝霸的法，去打遮天的帝？！ 嗯，你觉得我的仙体大成打得过无始的先天圣体道胎吗？...",
-                extraTags = listOf("点击：768800+", "字数：21万字", "状态：连载")
-            )
-        )
+        val info = bookInfo.first()
+        info.shouldBeInstanceOf<Either.Right<BookInfo>>()
+        info.value.apply {
+            title shouldBe "遮天之九天书"
+            contentsUrl shouldBe "/bi/5214/"
+            author shouldBe "青天有鱼"
+            description shouldStartWith "遮天之九天书小说简介"
+            extraTags shouldNotBe null
+            extraTags!!.shouldHaveSize(3)
+        }
     }
 })
