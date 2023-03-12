@@ -3,14 +3,20 @@ package me.ywxt.langhuan.core.http
 import arrow.core.Either
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import me.ywxt.langhuan.core.NetworkError
 
+private const val TIMEOUT_MILLIS = 5000L
+
 class HttpClient : AutoCloseable {
     private val client = HttpClient(CIO) {
         expectSuccess = true
+        install(HttpTimeout) {
+            requestTimeoutMillis = TIMEOUT_MILLIS
+        }
     }
 
     override fun close() {

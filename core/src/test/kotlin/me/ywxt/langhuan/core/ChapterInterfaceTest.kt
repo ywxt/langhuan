@@ -24,7 +24,7 @@ class ChapterInterfaceTest : FunSpec({
                 Template("{{result}}")
             ),
         )
-        val paraRule = ParagraphInfoRule(
+        val paraRule = ParagraphRule(
             ruleRequest,
             content = ParsableField(Parser("css@@#content@@para", false).get(), Template("{{result}}")),
             nextPage = nextPageRule,
@@ -65,7 +65,7 @@ class ChapterInterfaceTest : FunSpec({
                 Template("{{result}}")
             ),
         )
-        val paraRule = ParagraphInfoRule(
+        val paraRule = ParagraphRule(
             ruleRequest,
             content = ParsableField(Parser("css@@#content@@para", true).get(), Template("{{result}}")),
             nextPage = nextPageRule,

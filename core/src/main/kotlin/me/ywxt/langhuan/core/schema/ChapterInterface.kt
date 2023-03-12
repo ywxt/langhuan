@@ -5,7 +5,7 @@ import arrow.core.continuations.either
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.http.Action
 
-class ChapterInterface(private val rule: ParagraphInfoRule) : ResourceInterface<ParagraphInfo> {
+class ChapterInterface(private val rule: ParagraphRule) : ResourceInterface<ParagraphInfo> {
     override fun init(env: InterfaceEnvironment) {
         env.initPage()
         rule.request.headers?.forEach { (name, value) -> env.setHeader(name, value) }

@@ -22,13 +22,11 @@ suspend fun RuleRequest.buildAction(env: InterfaceEnvironment): Either<Interface
         Either.catch { url(variables) }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }
             .bind()
     val charset = Either.catch {
-        env.getVariable("charset") as Charset
-    }.mapLeft { InterfaceError.InvalidVariable("charset") }.bind()
+        env.getVariable(Variables.CHARSET) as Charset
+    }.mapLeft { InterfaceError.InvalidVariable(Variables.CHARSET) }.bind()
     val builder = Action.Builder(url).charset(charset)
     val headers = env.getAllHeaders()
     builder.headers(headers).method(method)
-    if (body != null) {
-        builder.contentType(body.first).body(body.second)
-    }
+    body?.apply { builder.contentType(first).body(second) }
     builder.build().mapLeft { InterfaceError.NetworkError(it) }.bind()
 }

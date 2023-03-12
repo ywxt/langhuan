@@ -9,10 +9,10 @@ data class Action(val request: Request, val charset: Charset) {
     class Builder private constructor(
         private var url: String,
         private var method: HttpMethod = HttpMethod.Get,
-        private var charset: Charset = Charset.forName("UTF-8"),
+        private var charset: Charset = Charsets.UTF_8,
         private var headers: Map<String, String>? = null,
         private var contentType: io.ktor.http.ContentType? = null,
-        private var body: String? = null
+        private var body: String? = null,
     ) {
         constructor(url: String) : this(url, HttpMethod.Get)
 
@@ -69,5 +69,5 @@ data class Request(
     val url: Url,
     val method: HttpMethod,
     val headers: Map<String, String>?,
-    val content: Content?
+    val content: Content?,
 )

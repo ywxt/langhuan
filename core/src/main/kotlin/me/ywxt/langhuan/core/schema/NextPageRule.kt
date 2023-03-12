@@ -6,7 +6,7 @@ import me.ywxt.langhuan.core.InterfaceError
 
 data class NextPageRule(
     val hasNextPage: ParsableField,
-    val nextPageUrl: ParsableField?,
+    val nextPageUrl: ParsableField? = null,
 )
 
 internal suspend fun NextPageRule.nextPageUrl(
