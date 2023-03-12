@@ -1,5 +1,6 @@
 package me.ywxt.langhuan.core
 
+import arrow.core.Either
 import com.soywiz.korte.Template
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldEndWith
@@ -7,14 +8,14 @@ import io.kotest.matchers.collections.shouldHaveAtLeastSize
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.collections.shouldStartWith
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldStartWith
+import io.kotest.matchers.types.shouldBeInstanceOf
 import io.ktor.http.*
 import kotlinx.coroutines.flow.toList
 import me.ywxt.langhuan.core.http.HttpClient
 import me.ywxt.langhuan.core.schema.*
 
-class ResourceInterfaceTest : FunSpec({
+class ResourceClientTest : FunSpec({
     test("List test: multiply pages") {
         val ruleRequest = RuleRequest(
             url = Template("{{${Variables.SCHEMA_SITE}}}{{${Variables.CHAPTER_URL}}}", templateConfig),
@@ -45,10 +46,14 @@ class ResourceInterfaceTest : FunSpec({
         val chapterInterface = ChapterInterface(paragraphRule)
         env.setVariable(Variables.CHAPTER_URL, "/bi/5214/3516273.html")
         val client = ResourceClient(chapterInterface, HttpClient())
-        val paragraphs = client.fetch(env).get().toList()
+        val paragraphs = client.fetch(env).toList()
         paragraphs shouldHaveAtLeastSize 1
-        paragraphs.first().content shouldStartWith "《遮天之九天书》"
-        paragraphs.last().content shouldStartWith "姜望道放缓速度"
+        val first = paragraphs.first()
+        first.shouldBeInstanceOf<Either.Right<ParagraphInfo>>()
+        first.value.content shouldStartWith "《遮天之九天书》"
+        val last = paragraphs.last()
+        last.shouldBeInstanceOf<Either.Right<ParagraphInfo>>()
+        last.value.content shouldStartWith "姜望道放缓速度"
     }
     test("List test: single page") {
         val ruleRequest = RuleRequest(
@@ -81,10 +86,10 @@ class ResourceInterfaceTest : FunSpec({
         val contentsInterface = ContentsInterface(contentsRule)
         env.setVariable(Variables.CONTENTS_URL, "/bi/5214/")
         val client = ResourceClient(contentsInterface, HttpClient())
-        val contents = client.fetch(env).get().toList()
+        val contents = client.fetch(env).toList()
         contents shouldHaveSize 186
-        contents shouldStartWith ContentsItem("第一章 姜望道和九天书", "/bi/5214/3516273.html")
-        contents shouldEndWith ContentsItem("第一百八十五章 混沌种青莲", "/bi/5214/5972490.html")
+        contents shouldStartWith Either.Right(ContentsItem("第一章 姜望道和九天书", "/bi/5214/3516273.html"))
+        contents shouldEndWith Either.Right(ContentsItem("第一百八十五章 混沌种青莲", "/bi/5214/5972490.html"))
     }
     test("Value test") {
         val ruleRequest = RuleRequest(
@@ -112,13 +117,17 @@ class ResourceInterfaceTest : FunSpec({
         val bookInterface = BookInterface(bookRule)
         env.setVariable(Variables.BOOK_URL, "/bi/5214/")
         val client = ResourceClient(bookInterface, HttpClient())
-        val bookInfo = client.fetch(env).get().toList()
+        val bookInfo = client.fetch(env).toList()
         bookInfo.size shouldBe 1
-        bookInfo[0].title shouldBe "遮天之九天书"
-        bookInfo[0].contentsUrl shouldBe "/bi/5214/"
-        bookInfo[0].author shouldBe "青天有鱼"
-        bookInfo[0].description shouldStartWith "遮天之九天书小说简介"
-        bookInfo[0].extraTags shouldNotBe null
-        bookInfo[0].extraTags!!.size shouldBe 3
+        bookInfo[0] shouldBe Either.Right(
+            BookInfo(
+                title = "遮天之九天书",
+                contentsUrl = "/bi/5214/",
+                author = "青天有鱼",
+                description = "遮天之九天书小说简介:姜望道带着帝霸的九大天书穿越无始横推星空古路之前， " +
+                    "什么，要我用帝霸的法，去打遮天的帝？！ 嗯，你觉得我的仙体大成打得过无始的先天圣体道胎吗？...",
+                extraTags = listOf("点击：768800+", "字数：21万字", "状态：连载")
+            )
+        )
     }
 })

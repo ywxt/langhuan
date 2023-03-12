@@ -19,7 +19,7 @@ tasks.compileJava {
     options.compilerArgs.addAll(
         listOf(
             "-Xlint:all", // Enables all recommended warnings.
-            "-Werror" // Terminates compilation when warnings occur.
+            "-Werror", // Terminates compilation when warnings occur.
         )
     )
     options.encoding = "UTF-8"

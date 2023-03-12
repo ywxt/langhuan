@@ -2,6 +2,7 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import arrow.core.continuations.either
+import arrow.core.right
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -13,11 +14,14 @@ class ResourceClient<T>(
     private val resInterface: ResourceInterface<T>,
     private val client: HttpClient,
 ) {
-    suspend fun fetch(env: InterfaceEnvironment): Either<InterfaceError, Flow<T>> = either {
+    suspend fun fetch(env: InterfaceEnvironment): Flow<Either<InterfaceError, T>> {
         resInterface.init(env)
-        when (val value = requestAndParse(env).bind()) {
-            is ResourceValue.Item -> flowOf(value.value)
-            is ResourceValue.List -> nextPages(env, value).bind()
+        return when (val either = requestAndParse(env)) {
+            is Either.Left -> flowOf(either)
+            is Either.Right -> when (val value = either.value) {
+                is ResourceValue.Item -> flowOf(value.value.right())
+                is ResourceValue.List -> nextPages(env, value)
+            }
         }
     }
 
@@ -31,19 +35,22 @@ class ResourceClient<T>(
     private suspend fun nextPages(
         env: InterfaceEnvironment,
         list: ResourceValue.List<T>,
-    ): Either<InterfaceError, Flow<T>> = either {
-        flow {
-            var value = list
-            value.list.forEach { emit(it) }
-            while (value.nextPageUrl != null) {
-                val result = requestAndParse(env).bind()
-                if (result is ResourceValue.List) {
-                    value = result
-                } else {
-                    PanicException.throwString("The parsing result must be a List. \n Result: `$result`")
-                }
-                value.list.forEach { emit(it) }
+    ): Flow<Either<InterfaceError, T>> = flow {
+        var value = list
+        value.list.forEach { emit(it.right()) }
+        while (value.nextPageUrl != null) {
+            val result = requestAndParse(env)
+            if (result is Either.Left) {
+                emit(result)
+                break
             }
+            val listValue = (result as Either.Right).value
+            if (listValue is ResourceValue.List) {
+                value = listValue
+            } else {
+                PanicException.throwString("The parsing result must be a List. \n Result: `$result`")
+            }
+            value.list.forEach { emit(it.right()) }
         }
     }
 }

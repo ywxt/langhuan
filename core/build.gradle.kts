@@ -6,7 +6,6 @@ plugins {
 }
 
 
-
 dependencies {
     implementation(libs.bundles.arrow)
     implementation(libs.bundles.kotlinLogging)
