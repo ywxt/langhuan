@@ -1,5 +1,9 @@
 package me.ywxt.langhuan.core.schema
 
+import io.ktor.utils.io.charsets.*
+import me.ywxt.langhuan.core.InterfaceError
+import me.ywxt.langhuan.core.utils.catchException
+
 class InterfaceEnvironment(
     private val parentEnvironment: InterfaceEnvironment?,
 ) {
@@ -35,3 +39,7 @@ inline fun <reified T> InterfaceEnvironment.setNextPageUrl(name: String, value: 
         value.nextPageUrl?.let { setVariable(name, it) }
     }
 }
+
+fun InterfaceEnvironment.getCharset() = catchException {
+    getVariable(Variables.CHARSET) as Charset
+}.mapLeft { InterfaceError.InvalidVariable(Variables.CHARSET) }

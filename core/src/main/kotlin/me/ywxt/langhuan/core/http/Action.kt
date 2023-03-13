@@ -4,6 +4,7 @@ import arrow.core.Either
 import io.ktor.http.*
 import io.ktor.utils.io.charsets.*
 import me.ywxt.langhuan.core.NetworkError
+import me.ywxt.langhuan.core.utils.catchException
 
 data class Action(val request: Request, val charset: Charset) {
     class Builder private constructor(
@@ -50,7 +51,7 @@ data class Action(val request: Request, val charset: Charset) {
         }
 
         fun build(): Either<NetworkError.InvalidUrl, Action> {
-            val encodedUrl = Either.catch {
+            val encodedUrl = catchException {
                 Url(url)
             }.mapLeft { NetworkError.InvalidUrl(url) }
             val contentType = this.contentType

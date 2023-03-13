@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.flatMap
 import com.soywiz.korte.Template
 import me.ywxt.langhuan.core.InterfaceError
+import me.ywxt.langhuan.core.utils.catchException
 
 data class ParsableField(val parser: Parser, val template: Template) {
     override fun toString(): String = "ParsableField(parser=$parser, template=${template.template})"
@@ -12,7 +13,7 @@ data class ParsableField(val parser: Parser, val template: Template) {
 internal suspend fun ParsableField.parseField(
     env: InterfaceEnvironment,
     sources: ParsedSources,
-): Either<InterfaceError.ParsingError, String?> = Either.catch {
+): Either<InterfaceError.ParsingError, String?> = catchException {
     val parser = this.parser
     val template = this.template
     val environment = InterfaceEnvironment(env)
@@ -26,7 +27,7 @@ internal suspend fun ParsableField.parseField(
 internal suspend fun ParsableField.parseList(
     env: InterfaceEnvironment,
     sources: ParsedSources,
-): Either<InterfaceError.ParsingError, List<String>> = Either.catch {
+): Either<InterfaceError.ParsingError, List<String>> = catchException {
     val parser = this.parser
     val template = this.template
     val environment = InterfaceEnvironment(env)

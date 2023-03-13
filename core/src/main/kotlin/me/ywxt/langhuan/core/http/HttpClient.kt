@@ -8,6 +8,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import me.ywxt.langhuan.core.NetworkError
+import me.ywxt.langhuan.core.utils.catchException
 
 private const val TIMEOUT_MILLIS = 5000L
 
@@ -23,7 +24,7 @@ class HttpClient : AutoCloseable {
         client.close()
     }
 
-    suspend fun request(action: Action): Either<NetworkError.KtorError, String> = Either.catch {
+    suspend fun request(action: Action): Either<NetworkError.KtorError, String> = catchException {
         val response = client.request(action.request.url) {
             method = action.request.method
             action.request.headers?.forEach { entry ->

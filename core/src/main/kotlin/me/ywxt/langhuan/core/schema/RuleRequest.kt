@@ -8,6 +8,7 @@ import io.ktor.utils.io.charsets.*
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.http.Action
 import me.ywxt.langhuan.core.http.ContentType
+import me.ywxt.langhuan.core.utils.catchException
 
 data class RuleRequest(
     val url: Template,
@@ -19,11 +20,9 @@ data class RuleRequest(
 suspend fun RuleRequest.buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action> = either {
     val variables = env.getAllVariables()
     val url =
-        Either.catch { url(variables) }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }
+        catchException { url(variables) }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }
             .bind()
-    val charset = Either.catch {
-        env.getVariable(Variables.CHARSET) as Charset
-    }.mapLeft { InterfaceError.InvalidVariable(Variables.CHARSET) }.bind()
+    val charset = env.getCharset().bind()
     val builder = Action.Builder(url).charset(charset)
     val headers = env.getAllHeaders()
     builder.headers(headers).method(method)

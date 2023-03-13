@@ -2,13 +2,13 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import me.ywxt.langhuan.core.ConfigParsingError
+import me.ywxt.langhuan.core.utils.catchException
 import org.jsoup.select.QueryParser
 
 sealed class Parser(val type: String, val path: String) {
     abstract fun parse(sources: ParsedSources): Sequence<String>
-
     override fun toString(): String {
-        return "`$type Parser, path: $path`"
+        return "Parser(type='$type', path='$path')"
     }
 
     companion object {
@@ -32,7 +32,7 @@ sealed class Parser(val type: String, val path: String) {
                     )
                 )
             }
-            return Either.catch { SelectorParser(sections[1], sections.getOrElse(2) { "html" }) }
+            return catchException { SelectorParser(sections[1], sections.getOrElse(2) { "html" }) }
                 .mapLeft { ConfigParsingError(it.stackTraceToString()) }
         }
     }
