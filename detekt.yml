@@ -19,9 +19,22 @@ style:
   UnnecessaryAbstractClass:
     active: false
   ForbiddenComment:
-    values: ['TODO', 'FIXME', 'STOPSHIP']
+    values: [ 'TODO', 'FIXME', 'STOPSHIP' ]
     allowedPatterns: https://github.com/ywxt/langhuan/issues/\d+
 
 naming:
+  active: true
   FunctionNaming:
     functionPattern: "[a-zA-Z][a-zA-Z0-9]*"
+
+exceptions:
+  active: true
+  TooGenericExceptionCaught:
+    exceptionNames:
+      - 'ArrayIndexOutOfBoundsException'
+      - 'Error'
+      - 'IllegalMonitorStateException'
+      - 'IndexOutOfBoundsException'
+      - 'NullPointerException'
+      - 'RuntimeException'
+      - 'Throwable'

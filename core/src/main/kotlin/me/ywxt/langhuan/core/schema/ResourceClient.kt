@@ -48,8 +48,10 @@ class ResourceClient<T>(
             if (listValue is ResourceValue.List) {
                 value = listValue
             } else {
-                Panic.throwString("Internal implementation error. " +
-                    "The parsing result must be a List. \n Result: `$result`")
+                Panic.throwString(
+                    "Internal implementation error. " +
+                        "The parsing result must be a List. \n Result: `$result`"
+                )
             }
             value.list.forEach { emit(it.right()) }
         }
