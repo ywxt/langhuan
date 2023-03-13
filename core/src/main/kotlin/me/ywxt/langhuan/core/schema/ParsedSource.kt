@@ -30,7 +30,7 @@ class SelectorSource(document: String) : ParsedSource<SelectorSource.SelectorPat
                 sequenceOf(element.outerHtml())
             } else if (path.attribute.compareTo("text", true) == 0) {
                 sequenceOf(element.text())
-            } else if (path.attribute.compareTo("para", true) == 0) {
+            } else if (path.attribute.compareTo("para-text", true) == 0) {
                 element.paragraphs()
             } else {
                 sequenceOf(element.attr(path.attribute))

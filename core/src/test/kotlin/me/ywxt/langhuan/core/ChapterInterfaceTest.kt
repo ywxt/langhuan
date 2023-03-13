@@ -67,7 +67,7 @@ class ChapterInterfaceTest : FunSpec({
         )
         val paraRule = ParagraphRule(
             ruleRequest,
-            content = ParsableField(Parser("css@@#content@@para", true).get(), Template("{{result}}")),
+            content = ParsableField(Parser("css@@#content@@para-text", true).get(), Template("{{result}}")),
             nextPage = nextPageRule,
         )
         val env = InterfaceEnvironment(null).apply {
