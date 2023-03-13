@@ -16,20 +16,20 @@ class ContentsInterfaceTest : FunSpec({
         )
         val nextPageRule = NextPageRule(
             hasNextPage = ParsableField(
-                Parser("css@@div.bottom2 > a:nth-child(4)", false).get(),
+                Parser("css@@div.bottom2 > a:nth-child(4)@@text").get(),
                 Template("""{{result == "下一页"}}""")
             ),
             nextPageUrl = ParsableField(
-                Parser("css@@div.bottom2 > a:nth-child(4)@@href", false).get(),
+                Parser("css@@div.bottom2 > a:nth-child(4)@@href").get(),
                 Template("{{result}}")
             ),
         )
         val contentsRule = ContentsRule(
             ruleRequest,
-            area = ParsableField(Parser("css@@dl > dd", true).get(), Template("{{result}}", templateConfig)),
-            title = ParsableField(Parser("css@@a", false).get(), Template("{{result}}")),
+            area = ParsableField(Parser("css@@dl > dd").get(), Template("{{result}}", templateConfig)),
+            title = ParsableField(Parser("css@@a@@text").get(), Template("{{result}}")),
             chapterUrl = ParsableField(
-                Parser("css@@a@@href", false).get(),
+                Parser("css@@a@@href").get(),
                 Template("{{result}}"),
             ),
             nextPage = nextPageRule,
@@ -62,20 +62,20 @@ class ContentsInterfaceTest : FunSpec({
         )
         val nextPageRule = NextPageRule(
             hasNextPage = ParsableField(
-                Parser("css@@div.bottom2 > a:nth-child(4)", false).get(),
+                Parser("css@@div.bottom2 > a:nth-child(4)@@text").get(),
                 Template("""{{result == "下一页"}}""")
             ),
             nextPageUrl = ParsableField(
-                Parser("css@@div.bottom2 > a:nth-child(4)@@href", false).get(),
+                Parser("css@@div.bottom2 > a:nth-child(4)@@href").get(),
                 Template("{{result}}")
             ),
         )
         val contentsRule = ContentsRule(
             ruleRequest,
-            area = ParsableField(Parser("css@@dl > dd", true).get(), Template("{{result}}", templateConfig)),
-            title = ParsableField(Parser("css@@a", false).get(), Template("{{result}}", templateConfig)),
+            area = ParsableField(Parser("css@@dl > dd").get(), Template("{{result}}", templateConfig)),
+            title = ParsableField(Parser("css@@a@@text").get(), Template("{{result}}", templateConfig)),
             chapterUrl = ParsableField(
-                Parser("css@@a@@href", false).get(),
+                Parser("css@@a@@href").get(),
                 Template("{{result}}"),
             ),
             nextPage = nextPageRule,

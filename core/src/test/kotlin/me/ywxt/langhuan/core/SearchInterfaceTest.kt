@@ -16,22 +16,22 @@ class SearchInterfaceTest : FunSpec({
         )
         val nextPageRule = NextPageRule(
             hasNextPage = ParsableField(
-                Parser("css@@#pagelink > strong", false).get(),
+                Parser("css@@#pagelink > strong@@text").get(),
                 Template("{{ result|int > page + 1}}", templateConfig)
             ),
             nextPageUrl = ParsableField(
-                Parser("", false).get(),
+                Parser("").get(),
                 Template("/modules/article/search.php?searchkey=%D6%D8%C9%FA&amp;page={{page + 2}}")
             ),
         )
         val searchRule = SearchRule(
             ruleRequest,
             area = ParsableField(
-                Parser("css@@#main > div.novelslistss > li", true).get(),
+                Parser("css@@#main > div.novelslistss > li").get(),
                 Template("{{result}}", templateConfig)
             ),
-            title = ParsableField(Parser("css@@span.s2 > a", false).get(), Template("{{result}}")),
-            infoUrl = ParsableField(Parser("css@@span.s2 > a@@href", false).get(), Template("{{result}}")),
+            title = ParsableField(Parser("css@@span.s2 > a@@text").get(), Template("{{result}}")),
+            infoUrl = ParsableField(Parser("css@@span.s2 > a@@href").get(), Template("{{result}}")),
             nextPage = nextPageRule,
         )
         val env = InterfaceEnvironment(null).apply {
@@ -62,23 +62,23 @@ class SearchInterfaceTest : FunSpec({
         )
         val nextPageRule = NextPageRule(
             hasNextPage = ParsableField(
-                Parser("css@@#pagelink > strong", false).get(),
+                Parser("css@@#pagelink > strong@@text").get(),
                 Template("{{ result|int > page + 1}}", templateConfig)
             ),
             nextPageUrl = ParsableField(
-                Parser("", false).get(),
+                Parser("").get(),
                 Template("/modules/article/search.php?searchkey=%D6%D8%C9%FA&amp;page={{page + 2}}")
             ),
         )
         val searchRule = SearchRule(
             ruleRequest,
             area = ParsableField(
-                Parser("css@@#main > div.novelslistss > li", true).get(),
+                Parser("css@@#main > div.novelslistss > li").get(),
                 Template("{{result}}", templateConfig)
             ),
-            title = ParsableField(Parser("css@@span.s2 > a", false).get(), Template("{{result}}")),
-            infoUrl = ParsableField(Parser("css@@span.s2 > a@@href", false).get(), Template("{{result}}")),
-            author = ParsableField(Parser("css@@span.s4", false).get(), Template("{{result}}")),
+            title = ParsableField(Parser("css@@span.s2 > a@@text").get(), Template("{{result}}")),
+            infoUrl = ParsableField(Parser("css@@span.s2 > a@@href").get(), Template("{{result}}")),
+            author = ParsableField(Parser("css@@span.s4@@text").get(), Template("{{result}}")),
             nextPage = nextPageRule
         )
         val env = InterfaceEnvironment(null).apply {

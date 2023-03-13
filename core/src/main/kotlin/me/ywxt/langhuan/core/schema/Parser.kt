@@ -12,11 +12,11 @@ sealed class Parser(val type: String, val path: String) {
     }
 
     companion object {
-        operator fun invoke(path: String, isContainer: Boolean): Either<ConfigParsingError, Parser> {
+        operator fun invoke(path: String): Either<ConfigParsingError, Parser> {
             val sections = path.split("@@")
             return when (sections[0]) {
                 "", "unit" -> Either.Right(UnitParser)
-                "css" -> parseSelectorParser(path, sections, isContainer)
+                "css" -> parseSelectorParser(path, sections)
                 else -> Either.Left(ConfigParsingError("Unknown path type (`${sections[0]}`). \n path: `$path`"))
             }
         }
@@ -24,7 +24,6 @@ sealed class Parser(val type: String, val path: String) {
         private fun parseSelectorParser(
             path: String,
             sections: List<String>,
-            isContainer: Boolean,
         ): Either<ConfigParsingError, Parser> {
             if (sections.size < 2) {
                 return Either.Left(
@@ -33,12 +32,7 @@ sealed class Parser(val type: String, val path: String) {
                     )
                 )
             }
-            val defaultAttr = if (isContainer) {
-                "html"
-            } else {
-                "text"
-            }
-            return Either.catch { SelectorParser(sections[1], sections.getOrElse(2) { defaultAttr }) }
+            return Either.catch { SelectorParser(sections[1], sections.getOrElse(2) { "html" }) }
                 .mapLeft { ConfigParsingError(it.stackTraceToString()) }
         }
     }

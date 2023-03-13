@@ -24,17 +24,17 @@ class ResourceClientTest : FunSpec({
         )
         val nextPageRule = NextPageRule(
             hasNextPage = ParsableField(
-                Parser("css@@#wrapper > article > div.bottem2 > a:nth-child(4)", false).get(),
+                Parser("css@@#wrapper > article > div.bottem2 > a:nth-child(4)@@text").get(),
                 Template("""{{result == "下一页"}}"""),
             ),
             nextPageUrl = ParsableField(
-                Parser("css@@#wrapper > article > div.bottem2 > a:nth-child(4)@@href", false).get(),
+                Parser("css@@#wrapper > article > div.bottem2 > a:nth-child(4)@@href").get(),
                 Template("{{result}}")
             )
         )
         val paragraphRule = ParagraphRule(
             ruleRequest,
-            content = ParsableField(Parser("css@@#booktxt > p", false).get(), Template("{{result}}", templateConfig)),
+            content = ParsableField(Parser("css@@#booktxt > p@@text").get(), Template("{{result}}", templateConfig)),
             nextPage = nextPageRule,
         )
         val env = InterfaceEnvironment(null).apply {
@@ -63,16 +63,16 @@ class ResourceClientTest : FunSpec({
         )
         val nextPageRule = NextPageRule(
             hasNextPage = ParsableField(
-                Parser("", false).get(),
+                Parser("").get(),
                 Template("false"),
             ),
         )
         val contentsRule = ContentsRule(
             ruleRequest,
-            area = ParsableField(Parser("css@@#newlist > dd", true).get(), Template("{{result}}", templateConfig)),
-            title = ParsableField(Parser("css@@a", false).get(), Template("{{result}}", templateConfig)),
+            area = ParsableField(Parser("css@@#newlist > dd").get(), Template("{{result}}", templateConfig)),
+            title = ParsableField(Parser("css@@a@@text").get(), Template("{{result}}", templateConfig)),
             chapterUrl = ParsableField(
-                Parser("css@@a@@href", false).get(),
+                Parser("css@@a@@href").get(),
                 Template("{{result}}"),
             ),
             nextPage = nextPageRule,
@@ -99,14 +99,14 @@ class ResourceClientTest : FunSpec({
         )
         val bookRule = BookInfoRule(
             ruleRequest,
-            title = ParsableField(Parser("css@@#info > h1", false).get(), Template("{{result}}")),
+            title = ParsableField(Parser("css@@#info > h1@@text").get(), Template("{{result}}")),
             contentsUrl = ParsableField(
-                Parser("", false).get(),
+                Parser("").get(),
                 Template("{{${Variables.BOOK_URL}}}")
             ),
-            author = ParsableField(Parser("css@@#info > p:nth-child(2) > a", false).get(), Template("{{result}}")),
-            description = ParsableField(Parser("css@@#intro", false).get(), Template("{{result}}")),
-            extraTags = ParsableField(Parser("css@@#info > p.visible-xs", false).get(), Template("{{result}}")),
+            author = ParsableField(Parser("css@@#info > p:nth-child(2) > a@@text").get(), Template("{{result}}")),
+            description = ParsableField(Parser("css@@#intro@@text").get(), Template("{{result}}")),
+            extraTags = ParsableField(Parser("css@@#info > p.visible-xs@@text").get(), Template("{{result}}")),
         )
         val env = InterfaceEnvironment(null).apply {
             setVariable(Variables.SCHEMA_ID, "me.ywxt")

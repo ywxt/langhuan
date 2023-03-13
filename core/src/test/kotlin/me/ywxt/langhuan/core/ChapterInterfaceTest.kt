@@ -16,17 +16,17 @@ class ChapterInterfaceTest : FunSpec({
         )
         val nextPageRule = NextPageRule(
             hasNextPage = ParsableField(
-                Parser("css@@div.bottom2 > a:nth-child(4)", false).get(),
+                Parser("css@@div.bottom2 > a:nth-child(4)@@text").get(),
                 Template("""{{result == "下一页"}}""")
             ),
             nextPageUrl = ParsableField(
-                Parser("css@@div.bottom2 > a:nth-child(4)@@href", false).get(),
+                Parser("css@@div.bottom2 > a:nth-child(4)@@href").get(),
                 Template("{{result}}")
             ),
         )
         val paraRule = ParagraphRule(
             ruleRequest,
-            content = ParsableField(Parser("css@@#content@@para", false).get(), Template("{{result}}")),
+            content = ParsableField(Parser("css@@#content@@para").get(), Template("{{result}}")),
             nextPage = nextPageRule,
         )
         val env = InterfaceEnvironment(null).apply {
@@ -57,17 +57,17 @@ class ChapterInterfaceTest : FunSpec({
         )
         val nextPageRule = NextPageRule(
             hasNextPage = ParsableField(
-                Parser("css@@div.bottom2 > a:nth-child(4)", false).get(),
+                Parser("css@@div.bottom2 > a:nth-child(4)@@text").get(),
                 Template("""{{result == "下一页"}}""")
             ),
             nextPageUrl = ParsableField(
-                Parser("css@@div.bottom2 > a:nth-child(4)@@href", false).get(),
+                Parser("css@@div.bottom2 > a:nth-child(4)@@href").get(),
                 Template("{{result}}")
             ),
         )
         val paraRule = ParagraphRule(
             ruleRequest,
-            content = ParsableField(Parser("css@@#content@@para-text", true).get(), Template("{{result}}")),
+            content = ParsableField(Parser("css@@#content@@para-text").get(), Template("{{result}}")),
             nextPage = nextPageRule,
         )
         val env = InterfaceEnvironment(null).apply {

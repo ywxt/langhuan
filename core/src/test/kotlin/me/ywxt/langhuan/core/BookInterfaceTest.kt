@@ -16,8 +16,8 @@ class BookInterfaceTest : FunSpec({
         )
         val bookRule = BookInfoRule(
             ruleRequest,
-            title = ParsableField(Parser("css@@span.s2 > a", false).get(), Template("{{result}}")),
-            contentsUrl = ParsableField(Parser("css@@span.s2 > a@@href", false).get(), Template("{{result}}")),
+            title = ParsableField(Parser("css@@span.s2 > a@@text").get(), Template("{{result}}")),
+            contentsUrl = ParsableField(Parser("css@@span.s2 > a@@href").get(), Template("{{result}}")),
         )
         val env = InterfaceEnvironment(null).apply {
             setVariable(Variables.SCHEMA_ID, "me.ywxt")
@@ -47,8 +47,8 @@ class BookInterfaceTest : FunSpec({
         )
         val bookRule = BookInfoRule(
             ruleRequest,
-            title = ParsableField(Parser("css@@span.s2 > a", false).get(), Template("{{result}}")),
-            contentsUrl = ParsableField(Parser("", false).get(), Template("https://ywxt.me/{{book_url}}")),
+            title = ParsableField(Parser("css@@span.s2 > a@@text").get(), Template("{{result}}")),
+            contentsUrl = ParsableField(Parser("").get(), Template("https://ywxt.me/{{book_url}}")),
         )
         val env = InterfaceEnvironment(null).apply {
             setVariable(Variables.SCHEMA_ID, "me.ywxt")
