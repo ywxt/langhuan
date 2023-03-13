@@ -14,18 +14,18 @@ data class RuleRequest(
     val url: Template,
     val method: HttpMethod = HttpMethod.Get,
     val headers: Map<String, String>? = null,
-    val body: Pair<ContentType, String>? = null,
+    val body: Pair<ContentType, Template>? = null,
 )
 
 suspend fun RuleRequest.buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action> = either {
     val variables = env.getAllVariables()
-    val url =
-        catchException { url(variables) }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }
-            .bind()
+    val url = catchException { url(variables) }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }.bind()
     val charset = env.getCharset().bind()
     val builder = Action.Builder(url).charset(charset)
     val headers = env.getAllHeaders()
     builder.headers(headers).method(method)
-    body?.apply { builder.contentType(first).body(second) }
+    catchException {
+        body?.apply { builder.contentType(first).body(second(env.getAllVariables())) }
+    }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }.bind()
     builder.build().mapLeft { InterfaceError.NetworkError(it) }.bind()
 }

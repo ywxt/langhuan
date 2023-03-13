@@ -8,11 +8,13 @@ open module langhuan.core {
     requires arrow.core.jvm;
     requires kotlinx.coroutines.core.jvm;
     requires korte.jvm;
+    requires kotlinx.serialization.core;
 
 
     exports me.ywxt.langhuan.core.http;
     exports me.ywxt.langhuan.core.schema;
     exports me.ywxt.langhuan.core.utils;
+    exports me.ywxt.langhuan.core.config;
     exports me.ywxt.langhuan.core;
 
 }

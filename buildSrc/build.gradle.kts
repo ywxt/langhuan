@@ -28,4 +28,6 @@ dependencies {
 
     add("implementation", libs.findLibrary("gradle-versions").get())
 
+    add("implementation", libs.findLibrary("kotlin-serialization").get())
+
 }

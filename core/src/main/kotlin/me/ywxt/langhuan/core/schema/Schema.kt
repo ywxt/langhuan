@@ -2,7 +2,6 @@ package me.ywxt.langhuan.core.schema
 
 import io.ktor.http.*
 import io.ktor.utils.io.charsets.*
-import io.ktor.utils.io.charsets.Charsets
 
 data class Schema(
     val id: String,
@@ -19,6 +18,7 @@ data class Schema(
             setVariable(Variables.SCHEMA_NAME, name)
             setVariable(Variables.SCHEMA_SITE, site)
             setVariable(Variables.CHARSET, charset)
+            setHeader(Headers.REFERER_NAME, site.toString())
             defaultHeaders.forEach { (header, value) -> setHeader(header, value) }
         }
         context
