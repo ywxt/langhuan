@@ -6,7 +6,8 @@ import me.ywxt.langhuan.core.config.ProjectSection
 
 class ConfigParseTest : FunSpec({
     test("Parse project config test") {
-        val project = ProjectSection.fromString("""
+        val project = ProjectSection.fromString(
+            """
         name: Test
         id: Test ID
         author: ywxt
@@ -66,7 +67,8 @@ class ConfigParseTest : FunSpec({
                   eval: "{{result == '下一页'}}"
                 nextPageUrl:
                   expression: css@@div.span@@href
-        """.trimIndent()).get()
+            """.trimIndent()
+        ).get()
         project.id shouldBe "Test ID"
         project.name shouldBe "Test"
         project.author shouldBe "ywxt"
