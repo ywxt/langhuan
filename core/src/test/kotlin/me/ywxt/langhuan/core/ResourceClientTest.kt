@@ -34,7 +34,7 @@ class ResourceClientTest : FunSpec({
         )
         val paragraphRule = ParagraphRule(
             ruleRequest,
-            content = ParsableField(Parser("css@@#booktxt > p@@text").get(), Template("{{result}}", templateConfig)),
+            paragraph = ParsableField(Parser("css@@#booktxt > p@@text").get(), Template("{{result}}", templateConfig)),
             nextPage = nextPageRule,
         )
         val env = InterfaceEnvironment(null).apply {

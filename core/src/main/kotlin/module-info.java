@@ -9,6 +9,7 @@ open module langhuan.core {
     requires kotlinx.coroutines.core.jvm;
     requires korte.jvm;
     requires kotlinx.serialization.core;
+    requires kaml.jvm;
 
 
     exports me.ywxt.langhuan.core.http;

@@ -12,4 +12,7 @@ data class SchemaSection(
     val headers: Map<String, String> = schemaDefaultHeaders,
     val charset: String = SCHEMA_DEFAULT_ENCODING_NAME,
     val search: SearchSection,
+    val bookInfo: BookInfoSection,
+    val contents: ContentsSection,
+    val chapter: ChapterSection,
 )

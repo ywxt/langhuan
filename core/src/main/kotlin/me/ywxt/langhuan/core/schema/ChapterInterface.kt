@@ -18,7 +18,7 @@ class ChapterInterface(private val rule: ParagraphRule) : ResourceInterface<Para
         env: InterfaceEnvironment,
         sources: ParsedSources,
     ): Either<InterfaceError, ResourceValue<ParagraphInfo>> = either {
-        val content = rule.content.parseList(env, sources).bind().map {
+        val content = rule.paragraph.parseList(env, sources).bind().map {
             ParagraphInfo(it)
         }
         env.setVariable(Variables.EMPTY_RESULT, content.isEmpty())

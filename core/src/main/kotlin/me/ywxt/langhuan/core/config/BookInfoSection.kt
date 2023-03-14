@@ -3,17 +3,10 @@ package me.ywxt.langhuan.core.config
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class SearchSection(
+data class BookInfoSection(
     val request: RequestSection,
-    val item: SearchItemSection,
-    val nextPage: NextPageSection,
-)
-
-@Serializable
-data class SearchItemSection(
-    val area: ParsableSection,
     val title: ParsableSection,
-    val infoUrl: ParsableSection,
+    val contentsUrl: ParsableSection,
     val author: ParsableSection? = null,
     val description: ParsableSection? = null,
     val extraTags: ParsableSection? = null,
