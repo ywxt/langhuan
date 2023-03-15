@@ -18,34 +18,13 @@
  * <http://www.gnu.org/licenses/lgpl-3.0.html>.
  *
  */
-package me.ywxt.langhuan.core.config
-
-import kotlinx.serialization.Serializable
-
-@Serializable
-data class RequestSection(
-    val url: String,
-    val method: RequestMethod = RequestMethod.GET,
-    val headers: Map<String, String>? = null,
-    val content: ContentSection? = null,
-)
-
-@Serializable
-data class ContentSection(
-    val contentType: ContentType,
-    val body: String,
-)
-
-@Serializable
-enum class RequestMethod {
-    GET,
-    POST,
-    PUT,
-    DELETE,
+plugins {
+    id("com.jaredsburrows.license")
 }
 
-@Serializable
-enum class ContentType {
-    JSON,
-    FORM,
+licenseReport {
+    generateCsvReport = false
+    generateHtmlReport = false
+    generateJsonReport = false
+    generateTextReport = true
 }

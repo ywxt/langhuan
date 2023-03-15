@@ -1,0 +1,127 @@
+Notice for packages
+
+
+Gradle, Kotlin, Spring Skeleton - MIT license
+Multi-Project/Module example with Gradle, Kotlin and Spring with Kotlin DSL
+
+Animal Sniffer Annotations (1.21) - MIT license
+
+Arrow Annotations (1.1.5) - The Apache Software License, Version 2.0
+Functional companion to Kotlin's Standard Library
+https://github.com/arrow-kt/arrow/
+
+Arrow Continuations (1.1.5) - The Apache Software License, Version 2.0
+Functional companion to Kotlin's Standard Library
+https://github.com/arrow-kt/arrow/
+
+Arrow Core Extensions (1.1.5) - The Apache Software License, Version 2.0
+Functional companion to Kotlin's Standard Library
+https://github.com/arrow-kt/arrow/
+
+IntelliJ IDEA Annotations (13.0) - The Apache Software License, Version 2.0
+A set of annotations used for code inspection support and code documentation.
+http://www.jetbrains.org
+
+jsoup Java HTML Parser (1.15.4) - The MIT License
+jsoup is a Java library for working with real-world HTML. It provides a very convenient API for fetching URLs and extracting and manipulating data, using the best of HTML5 DOM methods and CSS selectors. jsoup implements the WHATWG HTML5 specification, and parses HTML to the same DOM as modern browsers do.
+https://jsoup.org/
+
+kaml (0.52.0) - The Apache License, Version 2.0
+YAML support for kotlinx.serialization
+https://github.com/charleskorn/kaml
+
+korte (3.4.0) - MIT
+Template Engine for Multiplatform Kotlin
+https://github.com/korlibs/korge-next
+
+Kotlin Stdlib (1.8.10) - The Apache License, Version 2.0
+Kotlin Standard Library for JVM
+https://kotlinlang.org/
+
+Kotlin Stdlib Common (1.8.10) - The Apache License, Version 2.0
+Kotlin Common Standard Library
+https://kotlinlang.org/
+
+Kotlin Stdlib Jdk7 (1.8.10) - The Apache License, Version 2.0
+Kotlin Standard Library JDK 7 extension
+https://kotlinlang.org/
+
+Kotlin Stdlib Jdk8 (1.8.10) - The Apache License, Version 2.0
+Kotlin Standard Library JDK 8 extension
+https://kotlinlang.org/
+
+kotlin-logging (3.0.5) - The Apache Software License, Version 2.0
+kotlin-logging 3.0.5 - Lightweight logging framework for Kotlin
+https://github.com/oshai/kotlin-logging
+
+kotlinx-coroutines-core (1.6.4) - The Apache Software License, Version 2.0
+Coroutines support libraries for Kotlin
+https://github.com/Kotlin/kotlinx.coroutines
+
+kotlinx-coroutines-jdk8 (1.6.4) - The Apache Software License, Version 2.0
+Coroutines support libraries for Kotlin
+https://github.com/Kotlin/kotlinx.coroutines
+
+kotlinx-coroutines-slf4j (1.6.4) - The Apache Software License, Version 2.0
+Coroutines support libraries for Kotlin
+https://github.com/Kotlin/kotlinx.coroutines
+
+kotlinx-serialization-core (1.5.0) - The Apache Software License, Version 2.0
+Kotlin multiplatform serialization runtime library
+https://github.com/Kotlin/kotlinx.serialization
+
+ktor-client-cio (2.2.4) - The Apache Software License, Version 2.0
+Ktor is a framework for quickly creating web applications in Kotlin with minimal effort.
+https://github.com/ktorio/ktor
+
+ktor-client-core (2.2.4) - The Apache Software License, Version 2.0
+Ktor is a framework for quickly creating web applications in Kotlin with minimal effort.
+https://github.com/ktorio/ktor
+
+ktor-events (2.2.4) - The Apache Software License, Version 2.0
+Ktor is a framework for quickly creating web applications in Kotlin with minimal effort.
+https://github.com/ktorio/ktor
+
+ktor-http (2.2.4) - The Apache Software License, Version 2.0
+Ktor is a framework for quickly creating web applications in Kotlin with minimal effort.
+https://github.com/ktorio/ktor
+
+ktor-http-cio (2.2.4) - The Apache Software License, Version 2.0
+Ktor is a framework for quickly creating web applications in Kotlin with minimal effort.
+https://github.com/ktorio/ktor
+
+ktor-io (2.2.4) - The Apache Software License, Version 2.0
+Ktor is a framework for quickly creating web applications in Kotlin with minimal effort.
+https://github.com/ktorio/ktor
+
+ktor-network (2.2.4) - The Apache Software License, Version 2.0
+Ktor is a framework for quickly creating web applications in Kotlin with minimal effort.
+https://github.com/ktorio/ktor
+
+ktor-network-tls (2.2.4) - The Apache Software License, Version 2.0
+Ktor is a framework for quickly creating web applications in Kotlin with minimal effort.
+https://github.com/ktorio/ktor
+
+ktor-serialization (2.2.4) - The Apache Software License, Version 2.0
+Ktor is a framework for quickly creating web applications in Kotlin with minimal effort.
+https://github.com/ktorio/ktor
+
+ktor-utils (2.2.4) - The Apache Software License, Version 2.0
+Ktor is a framework for quickly creating web applications in Kotlin with minimal effort.
+https://github.com/ktorio/ktor
+
+ktor-websocket-serialization (2.2.4) - The Apache Software License, Version 2.0
+Ktor is a framework for quickly creating web applications in Kotlin with minimal effort.
+https://github.com/ktorio/ktor
+
+ktor-websockets (2.2.4) - The Apache Software License, Version 2.0
+Ktor is a framework for quickly creating web applications in Kotlin with minimal effort.
+https://github.com/ktorio/ktor
+
+SLF4J API Module (2.0.3) - MIT License
+The slf4j API
+http://www.slf4j.org
+
+SnakeYAML Engine (2.6) - Apache License, Version 2.0
+Core YAML 1.2 parser and emitter for Java
+https://bitbucket.org/snakeyaml/snakeyaml-engine
