@@ -19,6 +19,11 @@
  */
 package me.ywxt.langhuan.core.schema
 
+import arrow.core.Either
+import arrow.core.continuations.either
+import me.ywxt.langhuan.core.ConfigParsingError
+import me.ywxt.langhuan.core.config.SearchSection
+
 data class SearchRule(
     val request: RuleRequest,
     val area: ParsableField,
@@ -28,4 +33,19 @@ data class SearchRule(
     val author: ParsableField? = null,
     val description: ParsableField? = null,
     val extraTags: ParsableField? = null,
-)
+) {
+    companion object {
+        suspend fun fromConfig(config: SearchSection): Either<ConfigParsingError, SearchRule> = either {
+            SearchRule(
+                request = RuleRequest.fromConfig(config.request).bind(),
+                area = ParsableField.fromConfig(config.item.area).bind(),
+                title = ParsableField.fromConfig(config.item.title).bind(),
+                infoUrl = ParsableField.fromConfig(config.item.infoUrl).bind(),
+                nextPage = NextPageRule.fromConfig(config.nextPage).bind(),
+                author = config.item.author?.let { ParsableField.fromConfig(it).bind() },
+                description = config.item.description?.let { ParsableField.fromConfig(it).bind() },
+                extraTags = config.item.extraTags?.let { ParsableField.fromConfig(it).bind() },
+            )
+        }
+    }
+}

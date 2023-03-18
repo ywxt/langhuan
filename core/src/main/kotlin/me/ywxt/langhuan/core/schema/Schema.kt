@@ -19,8 +19,13 @@
  */
 package me.ywxt.langhuan.core.schema
 
+import arrow.core.Either
+import arrow.core.continuations.either
 import io.ktor.http.*
 import io.ktor.utils.io.charsets.*
+import me.ywxt.langhuan.core.ConfigParsingError
+import me.ywxt.langhuan.core.config.SchemaSection
+import me.ywxt.langhuan.core.utils.catchException
 
 data class Schema(
     val id: String,
@@ -30,6 +35,8 @@ data class Schema(
     val charset: Charset = Charsets.UTF_8,
     val searchRule: SearchRule,
     val bookInfoRule: BookInfoRule,
+    val contentsRule: ContentsRule,
+    val chapterRule: ParagraphRule,
 ) {
     private val schemaContext by lazy {
         val context = InterfaceEnvironment(null).apply {
@@ -44,4 +51,26 @@ data class Schema(
     }
 
     fun initialEnvironment() = InterfaceEnvironment(schemaContext)
+
+    companion object {
+        suspend fun fromConfig(config: SchemaSection): Either<ConfigParsingError, Schema> = either {
+            Schema(
+                id = config.id,
+                name = config.name,
+                charset = catchException { charset(config.charset) }.mapLeft {
+                    ConfigParsingError(
+                        it.stackTraceToString()
+                    )
+                }
+                    .bind(),
+                site = catchException { Url(config.site) }.mapLeft { ConfigParsingError(it.stackTraceToString()) }
+                    .bind(),
+                defaultHeaders = config.headers,
+                searchRule = SearchRule.fromConfig(config.search).bind(),
+                bookInfoRule = BookInfoRule.fromConfig(config.bookInfo).bind(),
+                contentsRule = ContentsRule.fromConfig(config.contents).bind(),
+                chapterRule = ParagraphRule.fromConfig(config.chapter).bind(),
+            )
+        }
+    }
 }

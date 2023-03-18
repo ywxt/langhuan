@@ -19,6 +19,11 @@
  */
 package me.ywxt.langhuan.core.schema
 
+import arrow.core.Either
+import arrow.core.continuations.either
+import me.ywxt.langhuan.core.ConfigParsingError
+import me.ywxt.langhuan.core.config.BookInfoSection
+
 data class BookInfoRule(
     val request: RuleRequest,
     val title: ParsableField,
@@ -26,4 +31,16 @@ data class BookInfoRule(
     val author: ParsableField? = null,
     val description: ParsableField? = null,
     val extraTags: ParsableField? = null,
-)
+) {
+    companion object {
+        suspend fun fromConfig(bookInfo: BookInfoSection): Either<ConfigParsingError, BookInfoRule> = either {
+            BookInfoRule(
+                request = RuleRequest.fromConfig(bookInfo.request).bind(),
+                title = ParsableField.fromConfig(bookInfo.title).bind(),
+                contentsUrl = ParsableField.fromConfig(bookInfo.contentsUrl).bind(),
+                author = bookInfo.author?.let { ParsableField.fromConfig(it).bind() },
+                description = bookInfo.description?.let { ParsableField.fromConfig(it).bind() },
+            )
+        }
+    }
+}

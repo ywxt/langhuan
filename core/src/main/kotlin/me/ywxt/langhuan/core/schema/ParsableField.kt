@@ -20,13 +20,25 @@
 package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
+import arrow.core.continuations.either
 import arrow.core.flatMap
 import com.soywiz.korte.Template
+import me.ywxt.langhuan.core.ConfigParsingError
 import me.ywxt.langhuan.core.InterfaceError
+import me.ywxt.langhuan.core.config.ParsableSection
 import me.ywxt.langhuan.core.utils.catchException
 
 data class ParsableField(val parser: Parser, val template: Template) {
     override fun toString(): String = "ParsableField(parser=$parser, template=${template.template})"
+
+    companion object {
+        suspend fun fromConfig(field: ParsableSection): Either<ConfigParsingError, ParsableField> = either {
+            ParsableField(
+                parser = Parser(field.expression).bind(),
+                template = TemplateWithConfig(field.eval).bind(),
+            )
+        }
+    }
 }
 
 internal suspend fun ParsableField.parseField(

@@ -21,12 +21,23 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import arrow.core.continuations.either
+import me.ywxt.langhuan.core.ConfigParsingError
 import me.ywxt.langhuan.core.InterfaceError
+import me.ywxt.langhuan.core.config.NextPageSection
 
 data class NextPageRule(
     val hasNextPage: ParsableField,
     val nextPageUrl: ParsableField? = null,
-)
+) {
+    companion object {
+        suspend fun fromConfig(nextPage: NextPageSection): Either<ConfigParsingError, NextPageRule> = either {
+            NextPageRule(
+                hasNextPage = ParsableField.fromConfig(nextPage.hasNextPage).bind(),
+                nextPageUrl = nextPage.nextPageUrl?.let { ParsableField.fromConfig(it).bind() }
+            )
+        }
+    }
+}
 
 internal suspend fun NextPageRule.nextPageUrl(
     env: InterfaceEnvironment,

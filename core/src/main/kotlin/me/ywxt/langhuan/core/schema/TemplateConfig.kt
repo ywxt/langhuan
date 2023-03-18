@@ -19,10 +19,14 @@
  */
 package me.ywxt.langhuan.core.schema
 
+import arrow.core.Either
 import com.soywiz.korte.AutoEscapeMode
 import com.soywiz.korte.Filter
+import com.soywiz.korte.Template
 import com.soywiz.korte.TemplateConfig
 import io.ktor.utils.io.charsets.*
+import me.ywxt.langhuan.core.ConfigParsingError
+import me.ywxt.langhuan.core.utils.catchException
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -53,3 +57,7 @@ val templateConfig =
         extraFilters = listOf(urlDecodingFilter, urlEncodingFilter, intFilter),
         autoEscapeMode = AutoEscapeMode.RAW
     )
+
+suspend fun TemplateWithConfig(str: String): Either<ConfigParsingError, Template> =
+    catchException { Template(str, templateConfig) }
+        .mapLeft { ConfigParsingError(it.stackTraceToString()) }

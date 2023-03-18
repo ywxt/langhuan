@@ -23,17 +23,49 @@ import arrow.core.Either
 import arrow.core.continuations.either
 import com.soywiz.korte.Template
 import io.ktor.http.*
+import me.ywxt.langhuan.core.ConfigParsingError
 import me.ywxt.langhuan.core.InterfaceError
+import me.ywxt.langhuan.core.config.ContentType
+import me.ywxt.langhuan.core.config.RequestMethod
+import me.ywxt.langhuan.core.config.RequestSection
 import me.ywxt.langhuan.core.http.Action
-import me.ywxt.langhuan.core.http.ContentType
 import me.ywxt.langhuan.core.utils.catchException
 
 data class RuleRequest(
     val url: Template,
     val method: HttpMethod = HttpMethod.Get,
     val headers: Map<String, String>? = null,
-    val body: Pair<ContentType, Template>? = null,
-)
+    val body: Pair<me.ywxt.langhuan.core.http.ContentType, Template>? = null,
+) {
+    companion object {
+        suspend fun fromConfig(request: RequestSection): Either<ConfigParsingError, RuleRequest> = either {
+            RuleRequest(
+                url = TemplateWithConfig(request.url).bind(),
+                method = transformHTTPMethod(request.method),
+                headers = request.headers,
+                body = request.content?.let { transformContentType(it.contentType, it.body).bind() }
+            )
+        }
+    }
+}
+
+private fun transformHTTPMethod(method: RequestMethod) = when (method) {
+    RequestMethod.GET -> HttpMethod.Get
+    RequestMethod.POST -> HttpMethod.Post
+    RequestMethod.PUT -> HttpMethod.Put
+    RequestMethod.DELETE -> HttpMethod.Delete
+}
+
+private suspend fun transformContentType(
+    contentType: ContentType,
+    body: String,
+): Either<ConfigParsingError, Pair<me.ywxt.langhuan.core.http.ContentType, Template>> =
+    either {
+        when (contentType) {
+            ContentType.JSON -> Pair(me.ywxt.langhuan.core.http.ContentType.JSON, TemplateWithConfig(body).bind())
+            ContentType.FORM -> Pair(me.ywxt.langhuan.core.http.ContentType.FORM, TemplateWithConfig(body).bind())
+        }
+    }
 
 suspend fun RuleRequest.buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action> = either {
     val variables = env.getAllVariables()

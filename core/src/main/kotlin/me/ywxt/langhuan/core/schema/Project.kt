@@ -22,19 +22,21 @@ package me.ywxt.langhuan.core.schema
 import arrow.core.Either
 import arrow.core.continuations.either
 import me.ywxt.langhuan.core.ConfigParsingError
-import me.ywxt.langhuan.core.config.ChapterSection
+import me.ywxt.langhuan.core.config.ProjectSection
 
-data class ParagraphRule(
-    val request: RuleRequest,
-    val paragraph: ParsableField,
-    val nextPage: NextPageRule,
+data class Project(
+    val name: String,
+    val id: String,
+    val author: String,
+    val schemas: List<Schema>,
 ) {
     companion object {
-        suspend fun fromConfig(chapter: ChapterSection): Either<ConfigParsingError, ParagraphRule> = either {
-            ParagraphRule(
-                request = RuleRequest.fromConfig(chapter.request).bind(),
-                paragraph = ParsableField.fromConfig(chapter.paragraph).bind(),
-                nextPage = NextPageRule.fromConfig(chapter.nextPage).bind(),
+        suspend fun fromConfig(config: ProjectSection): Either<ConfigParsingError, Project> = either {
+            Project(
+                name = config.name,
+                id = config.id,
+                author = config.author,
+                schemas = config.schemas.map { Schema.fromConfig(it).bind() }
             )
         }
     }
