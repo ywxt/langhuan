@@ -22,7 +22,7 @@ package me.ywxt.langhuan.core.schema
 import arrow.core.Either
 import arrow.core.continuations.either
 import arrow.core.flatMap
-import com.soywiz.korte.Template
+import korlibs.template.Template
 import me.ywxt.langhuan.core.ConfigParsingError
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.config.ParsableSection

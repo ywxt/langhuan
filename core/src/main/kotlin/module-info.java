@@ -25,7 +25,7 @@ open module langhuan.core {
     requires io.ktor.client.cio;
     requires io.ktor.io;
     requires arrow.core.jvm;
-    requires kotlinx.coroutines.core.jvm;
+    requires kotlinx.coroutines.core;
     requires korte.jvm;
     requires kotlinx.serialization.core;
     requires kaml.jvm;

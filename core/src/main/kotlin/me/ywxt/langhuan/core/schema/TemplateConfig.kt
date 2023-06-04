@@ -20,11 +20,11 @@
 package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
-import com.soywiz.korte.AutoEscapeMode
-import com.soywiz.korte.Filter
-import com.soywiz.korte.Template
-import com.soywiz.korte.TemplateConfig
 import io.ktor.utils.io.charsets.*
+import korlibs.template.AutoEscapeMode
+import korlibs.template.Filter
+import korlibs.template.Template
+import korlibs.template.TemplateConfig
 import me.ywxt.langhuan.core.ConfigParsingError
 import me.ywxt.langhuan.core.utils.catchException
 import java.net.URLDecoder

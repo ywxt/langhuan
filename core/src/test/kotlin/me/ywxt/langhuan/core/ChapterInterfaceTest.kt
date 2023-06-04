@@ -19,12 +19,12 @@
  */
 package me.ywxt.langhuan.core
 
-import com.soywiz.korte.Template
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.ktor.http.*
+import korlibs.template.Template
 import me.ywxt.langhuan.core.schema.*
 
 class ChapterInterfaceTest : FunSpec({
