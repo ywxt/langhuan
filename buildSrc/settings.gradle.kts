@@ -18,7 +18,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 dependencyResolutionManagement {
-    @Suppress("UnstableApiUsage")
+//    @Suppress("UnstableApiUsage")
     versionCatalogs {
         create("libs") {
             from(files("../gradle/libs.versions.toml"))
