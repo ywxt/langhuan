@@ -23,6 +23,8 @@ import arrow.core.Either
 import io.ktor.http.*
 import io.ktor.utils.io.charsets.*
 import me.ywxt.langhuan.core.NetworkError
+import me.ywxt.langhuan.core.config.RequestMethod
+import me.ywxt.langhuan.core.schema.transformHttpMethod
 import me.ywxt.langhuan.core.utils.catchException
 
 data class Action(val request: Request, val charset: Charset) {
@@ -41,8 +43,8 @@ data class Action(val request: Request, val charset: Charset) {
             return this
         }
 
-        fun method(method: HttpMethod): Builder {
-            this.method = method
+        fun method(method: RequestMethod): Builder {
+            this.method = method.transformHttpMethod()
             return this
         }
 

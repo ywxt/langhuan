@@ -21,43 +21,49 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import arrow.core.continuations.either
+import kotlinx.coroutines.flow.Flow
 import me.ywxt.langhuan.core.InterfaceError
-import me.ywxt.langhuan.core.http.Action
+import me.ywxt.langhuan.core.http.HttpClient
+
+data class SearchArgs(
+    val keyword: String,
+)
 
 class SearchInterface(
     private val rule: SearchRule,
-) : ResourceInterface<SearchResultItem> {
+    private val schema: SchemaConfig,
+    private val http: HttpClient,
+) : ResourceInterface<SearchResultItem, SearchArgs> {
 
-    override fun init(env: InterfaceEnvironment) {
-        env.initPage()
-        rule.request.headers?.forEach { (name, value) -> env.setHeader(name, value) }
-    }
-
-    override suspend fun buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action> =
-        rule.request.buildAction(env)
+    private data class LocalContext(
+        var keyword: String,
+        var page: Int,
+        var url: String? = null,
+        var items: List<SearchResultItem>? = null,
+    )
 
     override suspend fun process(
-        env: InterfaceEnvironment,
-        sources: ParsedSources,
-    ): Either<InterfaceError, ResourceValue<SearchResultItem>> = either {
-        val items = rule.area.parseList(env, sources).bind().map { source ->
-            val itemSources = ParsedSources(source)
-            val title = rule.title.parseNonNullableFiled(env, itemSources).bind()
-            val infoUrl = rule.infoUrl.parseNonNullableFiled(env, sources).bind()
-            val author = rule.author?.parseField(env, itemSources)?.bind()
-            val description = rule.description?.parseField(env, itemSources)?.bind()
-            val extraTags = rule.extraTags?.parseList(env, itemSources)?.bind()?.toList()
-            SearchResultItem(title, infoUrl, author, description, extraTags)
+        args: SearchArgs,
+    ): Flow<Either<InterfaceError, SearchResultItem>> {
+        val localContext = LocalContext(args.keyword, 0)
+        return processHttpList(schema, localContext, rule.request, http, rule.area, rule.nextPage, { context, items ->
+            run {
+                context.local.items = items
+            }
+        }, { context, url ->
+            run {
+                context.local.url = url
+                context.local.page++
+            }
+        }) { context, sources ->
+            either {
+                val title = rule.title.parseNonNullableFiled(context, sources).bind()
+                val infoUrl = rule.infoUrl.parseNonNullableFiled(context, sources).bind()
+                val author = rule.author?.parseField(context, sources)?.bind()
+                val description = rule.description?.parseField(context, sources)?.bind()
+                val extraTags = rule.extraTags?.parseList(context, sources)?.bind()?.toList()
+                SearchResultItem(title, infoUrl, author, description, extraTags)
+            }
         }
-        env.setVariable(Variables.EMPTY_RESULT, items.isEmpty())
-        val nextPageUrl = rule.nextPage.nextPageUrl(env, sources).bind()
-        val value = ResourceValue.List(items, nextPageUrl)
-        afterParse(env, value)
-        value
-    }
-
-    private fun afterParse(env: InterfaceEnvironment, value: ResourceValue<SearchResultItem>) {
-        env.incPage()
-        env.setNextPageUrl(Variables.SEARCH_URL, value)
     }
 }

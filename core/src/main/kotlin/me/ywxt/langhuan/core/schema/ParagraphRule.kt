@@ -25,14 +25,14 @@ import me.ywxt.langhuan.core.ConfigParsingError
 import me.ywxt.langhuan.core.config.ChapterSection
 
 data class ParagraphRule(
-    val request: RuleRequest,
+    val request: RequestRule,
     val paragraph: ParsableField,
     val nextPage: NextPageRule,
 ) {
     companion object {
         suspend fun fromConfig(chapter: ChapterSection): Either<ConfigParsingError, ParagraphRule> = either {
             ParagraphRule(
-                request = RuleRequest.fromConfig(chapter.request).bind(),
+                request = RequestRule.fromConfig(chapter.request).bind(),
                 paragraph = ParsableField.fromConfig(chapter.paragraph).bind(),
                 nextPage = NextPageRule.fromConfig(chapter.nextPage).bind(),
             )

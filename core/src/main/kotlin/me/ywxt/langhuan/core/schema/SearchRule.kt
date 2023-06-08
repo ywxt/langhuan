@@ -25,7 +25,7 @@ import me.ywxt.langhuan.core.ConfigParsingError
 import me.ywxt.langhuan.core.config.SearchSection
 
 data class SearchRule(
-    val request: RuleRequest,
+    val request: RequestRule,
     val area: ParsableField,
     val title: ParsableField,
     val infoUrl: ParsableField,
@@ -37,7 +37,7 @@ data class SearchRule(
     companion object {
         suspend fun fromConfig(config: SearchSection): Either<ConfigParsingError, SearchRule> = either {
             SearchRule(
-                request = RuleRequest.fromConfig(config.request).bind(),
+                request = RequestRule.fromConfig(config.request).bind(),
                 area = ParsableField.fromConfig(config.item.area).bind(),
                 title = ParsableField.fromConfig(config.item.title).bind(),
                 infoUrl = ParsableField.fromConfig(config.item.infoUrl).bind(),

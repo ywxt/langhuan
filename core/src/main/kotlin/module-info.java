@@ -29,6 +29,7 @@ open module langhuan.core {
     requires korte.jvm;
     requires kotlinx.serialization.core;
     requires kaml.jvm;
+    requires io.ktor.client.logging;
 
 
     exports me.ywxt.langhuan.core.http;

@@ -21,37 +21,39 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import arrow.core.continuations.either
+import kotlinx.coroutines.flow.Flow
 import me.ywxt.langhuan.core.InterfaceError
-import me.ywxt.langhuan.core.http.Action
+import me.ywxt.langhuan.core.http.HttpClient
 
-class ContentsInterface(private val rule: ContentsRule) : ResourceInterface<ContentsItem> {
-    override fun init(env: InterfaceEnvironment) {
-        env.initPage()
-        rule.request.headers?.forEach { (name, value) -> env.setHeader(name, value) }
-    }
+data class ContentsArgs(val url: String)
+class ContentsInterface(
+    private val rule: ContentsRule,
+    private val schema: SchemaConfig,
+    private val http: HttpClient,
+) : ResourceInterface<ContentsItem, ContentsArgs> {
+    private data class LocalContext(
+        var url: String?,
+        var page: Int,
+        var items: List<ContentsItem>? = null,
+    )
 
-    override suspend fun buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action> =
-        rule.request.buildAction(env)
-
-    override suspend fun process(
-        env: InterfaceEnvironment,
-        sources: ParsedSources,
-    ): Either<InterfaceError, ResourceValue<ContentsItem>> = either {
-        val contents = rule.area.parseList(env, sources).bind().map { source ->
-            val itemSources = ParsedSources(source)
-            val title = rule.title.parseNonNullableFiled(env, itemSources).bind()
-            val chapterUrl = rule.chapterUrl.parseNonNullableFiled(env, itemSources).bind()
-            ContentsItem(title, chapterUrl)
+    override suspend fun process(args: ContentsArgs): Flow<Either<InterfaceError, ContentsItem>> {
+        val localContext = LocalContext(args.url, 0)
+        return processHttpList(schema, localContext, rule.request, http, rule.area, rule.nextPage, { context, items ->
+            run {
+                context.local.items = items
+            }
+        }, { context, url ->
+            run {
+                context.local.url = url
+                context.local.page++
+            }
+        }) { context, sources ->
+            either {
+                val title = rule.title.parseNonNullableFiled(context, sources).bind()
+                val chapterUrl = rule.chapterUrl.parseNonNullableFiled(context, sources).bind()
+                ContentsItem(title, chapterUrl)
+            }
         }
-        env.setVariable(Variables.EMPTY_RESULT, contents.isEmpty())
-        val hasNextPage = rule.nextPage.nextPageUrl(env, sources).bind()
-        val value = ResourceValue.List(contents, hasNextPage)
-        afterParse(env, value)
-        value
-    }
-
-    private fun afterParse(env: InterfaceEnvironment, value: ResourceValue<ContentsItem>) {
-        env.incPage()
-        env.setNextPageUrl(Variables.CONTENTS_URL, value)
     }
 }

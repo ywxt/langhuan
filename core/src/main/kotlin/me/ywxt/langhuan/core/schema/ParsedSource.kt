@@ -21,6 +21,7 @@ package me.ywxt.langhuan.core.schema
 
 import me.ywxt.langhuan.core.utils.paragraphs
 import org.jsoup.Jsoup
+import org.jsoup.parser.Parser
 import org.jsoup.select.Evaluator
 
 sealed class ParsedSource<T>(val document: String) {
@@ -41,7 +42,7 @@ object UnitSource : ParsedSource<Unit>("") {
 class SelectorSource(document: String) : ParsedSource<SelectorSource.SelectorPath>(document) {
     data class SelectorPath(val evaluator: Evaluator, val attribute: String)
 
-    private val doc = Jsoup.parse(document)
+    private val doc = Jsoup.parse(document, Parser.xmlParser())
 
     override fun parse(path: SelectorPath): Sequence<String> =
         doc.select(path.evaluator).asSequence().flatMap { element ->
@@ -49,7 +50,7 @@ class SelectorSource(document: String) : ParsedSource<SelectorSource.SelectorPat
                 sequenceOf(element.outerHtml())
             } else if (path.attribute.compareTo("text", true) == 0) {
                 sequenceOf(element.text())
-            } else if (path.attribute.compareTo("para-text", true) == 0) {
+            } else if (path.attribute.compareTo("para", true) == 0) {
                 element.paragraphs()
             } else {
                 sequenceOf(element.attr(path.attribute))

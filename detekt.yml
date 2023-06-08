@@ -21,6 +21,8 @@ style:
   ForbiddenComment:
     values: [ 'TODO', 'FIXME', 'STOPSHIP' ]
     allowedPatterns: https://github.com/ywxt/langhuan/issues/\d+
+  ReturnCount:
+    max: 4
 
 naming:
   active: true

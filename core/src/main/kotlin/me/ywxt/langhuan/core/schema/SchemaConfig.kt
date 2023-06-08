@@ -19,8 +19,20 @@
  */
 package me.ywxt.langhuan.core.schema
 
+import io.ktor.http.*
+import io.ktor.utils.io.charsets.*
+import kotlin.text.Charsets
+
 val schemaDefaultHeaders: Map<String, String> = mapOf(
     Headers.USER_AGENT_NAME to Headers.DEFAULT_USER_AGENT
 )
 
 const val SCHEMA_DEFAULT_ENCODING_NAME: String = "UTF-8"
+
+data class SchemaConfig(
+    val id: String,
+    val name: String,
+    val defaultHeaders: Map<String, String>,
+    val site: Url,
+    val charset: Charset = Charsets.UTF_8,
+)

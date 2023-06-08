@@ -25,7 +25,7 @@ import me.ywxt.langhuan.core.ConfigParsingError
 import me.ywxt.langhuan.core.config.ContentsSection
 
 data class ContentsRule(
-    val request: RuleRequest,
+    val request: RequestRule,
     val area: ParsableField,
     val title: ParsableField,
     val chapterUrl: ParsableField,
@@ -34,7 +34,7 @@ data class ContentsRule(
     companion object {
         suspend fun fromConfig(contents: ContentsSection): Either<ConfigParsingError, ContentsRule> = either {
             ContentsRule(
-                request = RuleRequest.fromConfig(contents.request).bind(),
+                request = RequestRule.fromConfig(contents.request).bind(),
                 area = ParsableField.fromConfig(contents.item.area).bind(),
                 title = ParsableField.fromConfig(contents.item.title).bind(),
                 chapterUrl = ParsableField.fromConfig(contents.item.chapterUrl).bind(),

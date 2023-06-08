@@ -40,12 +40,12 @@ data class NextPageRule(
 }
 
 internal suspend fun NextPageRule.nextPageUrl(
-    env: InterfaceEnvironment,
+    context: Context<*>,
     sources: ParsedSources,
-): Either<InterfaceError.ParsingError, String?> = either {
-    if (hasNextPage.parseField(env, sources).bind().toBoolean()) {
-        nextPageUrl?.parseNonNullableFiled(env, sources)?.bind()
+): Either<InterfaceError.ParsingError, Pair<Boolean, String?>> = either {
+    if (hasNextPage.parseField(context, sources).bind().toBoolean()) {
+        Pair(true, nextPageUrl?.parseField(context, sources)?.bind())
     } else {
-        null
+        Pair(false, null)
     }
 }

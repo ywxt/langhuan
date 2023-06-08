@@ -20,14 +20,87 @@
 package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
+import arrow.core.continuations.either
+import kotlinx.coroutines.flow.*
 import me.ywxt.langhuan.core.InterfaceError
-import me.ywxt.langhuan.core.http.Action
+import me.ywxt.langhuan.core.http.HttpClient
+import me.ywxt.langhuan.core.http.requestSources
 
-interface ResourceInterface<T> {
-    fun init(env: InterfaceEnvironment)
-    suspend fun buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action>
-    suspend fun process(
-        env: InterfaceEnvironment,
-        sources: ParsedSources,
-    ): Either<InterfaceError, ResourceValue<T>>
+interface ResourceInterface<T, A> {
+    suspend fun process(args: A): Flow<Either<InterfaceError, T>>
+}
+
+suspend fun <T, A> ResourceInterface<T, A>.processSingle(args: A): Either<InterfaceError, T> =
+    process(args).singleOrNull() ?: Either.Left(InterfaceError.NotSingleError)
+
+suspend fun <T, A> ResourceInterface<T, A>.processAll(args: A): List<Either<InterfaceError, T>> = process(args).toList()
+
+private class BreakException(val error: InterfaceError) : Exception()
+
+suspend fun <T, A> ResourceInterface<T, A>.processTotal(args: A): Either<InterfaceError, List<T>> = try {
+    Either.Right(
+        process(args).fold(mutableListOf()) { acc: MutableList<T>, value: Either<InterfaceError, T> ->
+            when (value) {
+                is Either.Left -> throw BreakException(value.value)
+                is Either.Right -> {
+                    acc.add(value.value)
+                    acc
+                }
+            }
+        }
+    )
+} catch (e: BreakException) {
+    Either.Left(e.error)
+}
+
+@Suppress("LongParameterList")
+internal suspend inline fun <T, A, CX> ResourceInterface<T, A>.processHttpList(
+    schema: SchemaConfig,
+    localContext: CX,
+    request: RequestRule,
+    http: HttpClient,
+    areaRule: ParsableField,
+    nextPageRule: NextPageRule,
+    crossinline afterParse: suspend (Context<CX>, List<T>) -> Unit,
+    crossinline nextPage: suspend (Context<CX>, url: String?) -> Unit,
+    crossinline processOne: suspend (Context<CX>, ParsedSources) -> Either<InterfaceError, T>,
+): Flow<Either<InterfaceError, T>> = flow {
+    while (true) {
+        val context = schema.toContext(localContext, request)
+        val result = either {
+            val action = request.buildAction(context).bind()
+            val sources = http.requestSources(action).mapLeft { InterfaceError.NetworkError(it) }.bind()
+            val content = areaRule.parseList(context, sources).bind().map {
+                processOne(context, ParsedSources(it)).bind()
+            }
+            content.forEach { emit(Either.Right(it)) }
+            afterParse(context, content)
+            nextPageRule.nextPageUrl(context, sources).bind()
+        }
+        result.onLeft {
+            emit(Either.Left(it))
+            return@flow
+        }.onRight {
+            if (!it.first) {
+                return@flow
+            }
+            nextPage(context, it.second)
+        }
+    }
+}
+
+internal suspend inline fun <T, A, CX> ResourceInterface<T, A>.processHttpOne(
+    schema: SchemaConfig,
+    localContext: CX,
+    request: RequestRule,
+    http: HttpClient,
+    crossinline process: suspend (Context<CX>, ParsedSources) -> Either<InterfaceError, T>,
+): Flow<Either<InterfaceError, T>> {
+    val result = either {
+        val context = schema.toContext(localContext, request)
+        val action = request.buildAction(context).bind()
+        val sources = http.requestSources(action).mapLeft { InterfaceError.NetworkError(it) }.bind()
+        process(context, sources).bind()
+    }
+    return flowOf(result)
 }

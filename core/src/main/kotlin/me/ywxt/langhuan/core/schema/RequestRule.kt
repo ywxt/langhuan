@@ -31,51 +31,46 @@ import me.ywxt.langhuan.core.config.RequestSection
 import me.ywxt.langhuan.core.http.Action
 import me.ywxt.langhuan.core.utils.catchException
 
-data class RuleRequest(
+data class RequestRule(
     val url: Template,
-    val method: HttpMethod = HttpMethod.Get,
+    val method: RequestMethod = RequestMethod.GET,
     val headers: Map<String, String>? = null,
-    val body: Pair<me.ywxt.langhuan.core.http.ContentType, Template>? = null,
+    val body: Pair<ContentType, Template>? = null,
 ) {
     companion object {
-        suspend fun fromConfig(request: RequestSection): Either<ConfigParsingError, RuleRequest> = either {
-            RuleRequest(
+        suspend fun fromConfig(request: RequestSection): Either<ConfigParsingError, RequestRule> = either {
+            RequestRule(
                 url = TemplateWithConfig(request.url).bind(),
-                method = transformHTTPMethod(request.method),
+                method = request.method,
                 headers = request.headers,
-                body = request.content?.let { transformContentType(it.contentType, it.body).bind() }
+                body = request.content?.let { it.contentType to TemplateWithConfig(it.body).bind() }
             )
         }
     }
 }
 
-private fun transformHTTPMethod(method: RequestMethod) = when (method) {
+internal fun RequestMethod.transformHttpMethod() = when (this) {
     RequestMethod.GET -> HttpMethod.Get
     RequestMethod.POST -> HttpMethod.Post
     RequestMethod.PUT -> HttpMethod.Put
     RequestMethod.DELETE -> HttpMethod.Delete
 }
 
-private suspend fun transformContentType(
-    contentType: ContentType,
-    body: String,
-): Either<ConfigParsingError, Pair<me.ywxt.langhuan.core.http.ContentType, Template>> =
-    either {
-        when (contentType) {
-            ContentType.JSON -> Pair(me.ywxt.langhuan.core.http.ContentType.JSON, TemplateWithConfig(body).bind())
-            ContentType.FORM -> Pair(me.ywxt.langhuan.core.http.ContentType.FORM, TemplateWithConfig(body).bind())
-        }
+private suspend fun ContentType.transformContentType(): me.ywxt.langhuan.core.http.ContentType =
+    when (this@transformContentType) {
+        ContentType.JSON -> me.ywxt.langhuan.core.http.ContentType.JSON
+        ContentType.FORM -> me.ywxt.langhuan.core.http.ContentType.FORM
     }
 
-suspend fun RuleRequest.buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action> = either {
-    val variables = env.getAllVariables()
-    val url = catchException { url(variables) }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }.bind()
-    val charset = env.getCharset().bind()
+suspend fun RequestRule.buildAction(context: Context<*>): Either<InterfaceError, Action> = either {
+    val url =
+        catchException { url.render(context) }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }.bind()
+    val charset = context.charset
     val builder = Action.Builder(url).charset(charset)
-    val headers = env.getAllHeaders()
+    val headers = context.headers
     builder.headers(headers).method(method)
     catchException {
-        body?.apply { builder.contentType(first).body(second(env.getAllVariables())) }
+        body?.apply { builder.contentType(first.transformContentType()).body(second.render(context)) }
     }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }.bind()
     builder.build().mapLeft { InterfaceError.NetworkError(it) }.bind()
 }

@@ -21,27 +21,30 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import arrow.core.continuations.either
+import kotlinx.coroutines.flow.Flow
 import me.ywxt.langhuan.core.InterfaceError
-import me.ywxt.langhuan.core.http.Action
+import me.ywxt.langhuan.core.http.HttpClient
 
-class BookInterface(private val rule: BookInfoRule) : ResourceInterface<BookInfo> {
-    override fun init(env: InterfaceEnvironment) {
-        rule.request.headers?.forEach { (name, value) -> env.setHeader(name, value) }
-    }
+data class BookInfoArgs(val url: String)
 
-    override suspend fun buildAction(env: InterfaceEnvironment): Either<InterfaceError, Action> =
-        rule.request.buildAction(env)
+class BookInterface(private val rule: BookInfoRule, private val schema: SchemaConfig, private val http: HttpClient) :
+    ResourceInterface<BookInfo, BookInfoArgs> {
+    private data class LocalContext(val url: String)
 
     override suspend fun process(
-        env: InterfaceEnvironment,
-        sources: ParsedSources,
-    ): Either<InterfaceError, ResourceValue<BookInfo>> = either {
-        val title = rule.title.parseNonNullableFiled(env, sources).bind()
-        val contentsUrl =
-            rule.contentsUrl.parseNonNullableFiled(env, sources).bind()
-        val author = rule.author?.parseField(env, sources)?.bind()
-        val description = rule.description?.parseField(env, sources)?.bind()
-        val extraTags = rule.extraTags?.parseList(env, sources)?.bind()?.toList()
-        ResourceValue.Item(BookInfo(title, contentsUrl, author, description, extraTags))
+        args: BookInfoArgs,
+    ): Flow<Either<InterfaceError, BookInfo>> {
+        val localContext = LocalContext(args.url)
+        return processHttpOne(schema, localContext, rule.request, http) { context, sources ->
+            either {
+                val title = rule.title.parseNonNullableFiled(context, sources).bind()
+                val contentsUrl =
+                    rule.contentsUrl.parseNonNullableFiled(context, sources).bind()
+                val author = rule.author?.parseField(context, sources)?.bind()
+                val description = rule.description?.parseField(context, sources)?.bind()
+                val extraTags = rule.extraTags?.parseList(context, sources)?.bind()?.toList()
+                BookInfo(title, contentsUrl, author, description, extraTags)
+            }
+        }
     }
 }

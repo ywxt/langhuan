@@ -42,30 +42,26 @@ data class ParsableField(val parser: Parser, val template: Template) {
 }
 
 internal suspend fun ParsableField.parseField(
-    env: InterfaceEnvironment,
+    context: Context<*>,
     sources: ParsedSources,
 ): Either<InterfaceError.ParsingError, String?> = catchException {
     val parser = this.parser
     val template = this.template
-    val environment = InterfaceEnvironment(env)
     parser.parse(sources).firstOrNull()?.let {
-        environment.setVariable("result", it)
-        val fieldVariables = environment.getAllVariables()
-        template(fieldVariables)
+        val templateContext = context.toResultContext(it)
+        template.render(templateContext)
     }
 }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }
 
 internal suspend fun ParsableField.parseList(
-    env: InterfaceEnvironment,
+    context: Context<*>,
     sources: ParsedSources,
 ): Either<InterfaceError.ParsingError, List<String>> = catchException {
     val parser = this.parser
     val template = this.template
-    val environment = InterfaceEnvironment(env)
     parser.parse(sources).asIterable().map {
-        environment.setVariable("result", it)
-        val fieldVariables = environment.getAllVariables()
-        template(fieldVariables)
+        val templateContext = context.toResultContext(it)
+        template.render(templateContext)
     }
 }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }
 
@@ -80,6 +76,6 @@ internal fun ParsableField.needNonNullableField(field: String?) = if (field == n
 }
 
 internal suspend fun ParsableField.parseNonNullableFiled(
-    env: InterfaceEnvironment,
+    context: Context<*>,
     sources: ParsedSources,
-): Either<InterfaceError.ParsingError, String> = parseField(env, sources).flatMap { needNonNullableField(it) }
+): Either<InterfaceError.ParsingError, String> = parseField(context, sources).flatMap { needNonNullableField(it) }

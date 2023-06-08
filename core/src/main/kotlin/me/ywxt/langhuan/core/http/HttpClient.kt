@@ -20,6 +20,7 @@
 package me.ywxt.langhuan.core.http
 
 import arrow.core.Either
+import arrow.core.continuations.either
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
@@ -27,6 +28,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import me.ywxt.langhuan.core.NetworkError
+import me.ywxt.langhuan.core.schema.ParsedSources
 import me.ywxt.langhuan.core.utils.catchException
 
 private const val TIMEOUT_MILLIS = 5000L
@@ -57,4 +59,9 @@ class HttpClient : AutoCloseable {
         }
         response.bodyAsText(action.charset)
     }.mapLeft { NetworkError.KtorError(it.stackTraceToString()) }
+}
+
+suspend fun HttpClient.requestSources(action: Action): Either<NetworkError.KtorError, ParsedSources> = either {
+    val response = request(action).bind()
+    ParsedSources(response)
 }

@@ -22,50 +22,34 @@ package me.ywxt.langhuan.core.schema
 import arrow.core.Either
 import arrow.core.continuations.either
 import io.ktor.http.*
-import io.ktor.utils.io.charsets.*
 import me.ywxt.langhuan.core.ConfigParsingError
 import me.ywxt.langhuan.core.config.SchemaSection
 import me.ywxt.langhuan.core.utils.catchException
+import kotlin.text.charset
 
 data class Schema(
-    val id: String,
-    val name: String,
-    val defaultHeaders: Map<String, String>,
-    val site: Url,
-    val charset: Charset = Charsets.UTF_8,
+    val config: SchemaConfig,
     val searchRule: SearchRule,
     val bookInfoRule: BookInfoRule,
     val contentsRule: ContentsRule,
     val chapterRule: ParagraphRule,
 ) {
-    private val schemaContext by lazy {
-        val context = InterfaceEnvironment(null).apply {
-            setVariable(Variables.SCHEMA_ID, id)
-            setVariable(Variables.SCHEMA_NAME, name)
-            setVariable(Variables.SCHEMA_SITE, site)
-            setVariable(Variables.CHARSET, charset)
-            setHeader(Headers.REFERER_NAME, site.toString())
-            defaultHeaders.forEach { (header, value) -> setHeader(header, value) }
-        }
-        context
-    }
-
-    fun initialEnvironment() = InterfaceEnvironment(schemaContext)
-
     companion object {
         suspend fun fromConfig(config: SchemaSection): Either<ConfigParsingError, Schema> = either {
             Schema(
-                id = config.id,
-                name = config.name,
-                charset = catchException { charset(config.charset) }.mapLeft {
-                    ConfigParsingError(
-                        it.stackTraceToString()
-                    )
-                }
-                    .bind(),
-                site = catchException { Url(config.site) }.mapLeft { ConfigParsingError(it.stackTraceToString()) }
-                    .bind(),
-                defaultHeaders = config.headers,
+                config = SchemaConfig(
+                    id = config.id,
+                    name = config.name,
+                    charset = catchException { charset(config.charset) }.mapLeft {
+                        ConfigParsingError(
+                            it.stackTraceToString()
+                        )
+                    }
+                        .bind(),
+                    site = catchException { Url(config.site) }.mapLeft { ConfigParsingError(it.stackTraceToString()) }
+                        .bind(),
+                    defaultHeaders = config.headers,
+                ),
                 searchRule = SearchRule.fromConfig(config.search).bind(),
                 bookInfoRule = BookInfoRule.fromConfig(config.bookInfo).bind(),
                 contentsRule = ContentsRule.fromConfig(config.contents).bind(),

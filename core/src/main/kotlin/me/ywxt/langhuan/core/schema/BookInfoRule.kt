@@ -25,7 +25,7 @@ import me.ywxt.langhuan.core.ConfigParsingError
 import me.ywxt.langhuan.core.config.BookInfoSection
 
 data class BookInfoRule(
-    val request: RuleRequest,
+    val request: RequestRule,
     val title: ParsableField,
     val contentsUrl: ParsableField,
     val author: ParsableField? = null,
@@ -35,7 +35,7 @@ data class BookInfoRule(
     companion object {
         suspend fun fromConfig(bookInfo: BookInfoSection): Either<ConfigParsingError, BookInfoRule> = either {
             BookInfoRule(
-                request = RuleRequest.fromConfig(bookInfo.request).bind(),
+                request = RequestRule.fromConfig(bookInfo.request).bind(),
                 title = ParsableField.fromConfig(bookInfo.title).bind(),
                 contentsUrl = ParsableField.fromConfig(bookInfo.contentsUrl).bind(),
                 author = bookInfo.author?.let { ParsableField.fromConfig(it).bind() },

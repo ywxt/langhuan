@@ -36,6 +36,8 @@ sealed class InterfaceError(message: String) : SchemaError(message) {
     class ParsingError(message: String) : InterfaceError(message)
 
     class NetworkError(causedBy: me.ywxt.langhuan.core.NetworkError) : InterfaceError(causedBy.message)
+
+    object NotSingleError : InterfaceError("Empty result.")
 }
 
 class ConfigParsingError(message: String) : SchemaError(message)
