@@ -19,7 +19,7 @@ style:
   UnnecessaryAbstractClass:
     active: false
   ForbiddenComment:
-    values: [ 'TODO', 'FIXME', 'STOPSHIP' ]
+    comments: [ 'TODO', 'FIXME', 'STOPSHIP' ]
     allowedPatterns: https://github.com/ywxt/langhuan/issues/\d+
   ReturnCount:
     max: 4

@@ -34,8 +34,10 @@ plugins {
 
 val embeddedMajorAndMinorKotlinVersion = project.getKotlinPluginVersion().substringBeforeLast(".")
 if (KOTLIN_VERSION != embeddedMajorAndMinorKotlinVersion) {
-    logger.warn("Constant 'KOTLIN_VERSION' ($KOTLIN_VERSION) differs from embedded Kotlin version in Gradle (${project.getKotlinPluginVersion()})!\n" +
-            "Constant 'KOTLIN_VERSION' should be ($embeddedMajorAndMinorKotlinVersion).")
+    logger.warn(
+        "Constant 'KOTLIN_VERSION' ($KOTLIN_VERSION) differs from embedded Kotlin version in Gradle (${project.getKotlinPluginVersion()})!\n" +
+            "Constant 'KOTLIN_VERSION' should be ($embeddedMajorAndMinorKotlinVersion)."
+    )
 }
 
 tasks.compileKotlin {
@@ -73,7 +75,7 @@ kotlin {
 detekt {
     ignoreFailures = false
     buildUponDefaultConfig = true
-    config = files("$rootDir/detekt.yml")
+    config.setFrom("$rootDir/detekt.yml")
     parallel = true
     autoCorrect = true
 }

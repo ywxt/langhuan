@@ -56,7 +56,7 @@ internal fun RequestMethod.transformHttpMethod() = when (this) {
     RequestMethod.DELETE -> HttpMethod.Delete
 }
 
-private suspend fun ContentType.transformContentType(): me.ywxt.langhuan.core.http.ContentType =
+private fun ContentType.transformContentType(): me.ywxt.langhuan.core.http.ContentType =
     when (this@transformContentType) {
         ContentType.JSON -> me.ywxt.langhuan.core.http.ContentType.JSON
         ContentType.FORM -> me.ywxt.langhuan.core.http.ContentType.FORM
