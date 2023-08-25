@@ -26,7 +26,7 @@ tasks.withType<Javadoc>().all {
 }
 
 tasks.dokkaJavadoc {
-    outputDirectory.set(buildDir.resolve("javadoc"))
+    outputDirectory.set(layout.buildDirectory.dir("javadoc"))
 }
 
 tasks.named("build") {

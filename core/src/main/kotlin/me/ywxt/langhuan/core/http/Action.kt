@@ -74,7 +74,7 @@ data class Action(val request: Request, val charset: Charset) {
         fun build(): Either<NetworkError.InvalidUrl, Action> {
             val encodedUrl = catchException {
                 Url(url)
-            }.mapLeft { NetworkError.InvalidUrl(url) }
+            }.mapLeft { NetworkError.InvalidUrl(url, it.stackTrace.toList()) }
             val contentType = this.contentType
             val body = this.body
             val content = if (contentType != null && body != null) {

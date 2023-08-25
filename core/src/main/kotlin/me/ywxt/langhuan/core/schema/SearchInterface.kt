@@ -20,7 +20,7 @@
 package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
-import arrow.core.continuations.either
+import arrow.core.raise.either
 import kotlinx.coroutines.flow.Flow
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.http.HttpClient

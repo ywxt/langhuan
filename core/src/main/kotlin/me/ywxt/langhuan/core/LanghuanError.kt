@@ -19,27 +19,35 @@
  */
 package me.ywxt.langhuan.core
 
-sealed class LanghuanError(val message: String) {
-    override fun toString(): String = message
+@Suppress("NOTHING_TO_INLINE")
+inline fun getStackTrace(): List<StackTraceElement> {
+    val stackTrace = Throwable("Ignored message").stackTrace
+    return stackTrace.toList()
 }
 
-sealed class NetworkError(message: String) : LanghuanError(message) {
-    class InvalidUrl(val url: String) : NetworkError("Invalid url: $url")
-
-    class KtorError(message: String) : NetworkError(message)
+sealed class LanghuanError(val message: String, val stackTrace: List<StackTraceElement>) {
+    override fun toString(): String = "$message\n at \n ${stackTrace.joinToString("\n")}"
 }
 
-sealed class SchemaError(message: String) : LanghuanError(message)
+sealed class NetworkError(message: String, stackTrace: List<StackTraceElement>) : LanghuanError(message, stackTrace) {
+    class InvalidUrl(val url: String, stackTrace: List<StackTraceElement>) :
+        NetworkError("Invalid url: $url", stackTrace)
 
-sealed class InterfaceError(message: String) : SchemaError(message) {
-    class InvalidVariable(message: String) : InterfaceError(message)
-    class ParsingError(message: String) : InterfaceError(message)
-
-    class NetworkError(causedBy: me.ywxt.langhuan.core.NetworkError) : InterfaceError(causedBy.message)
-
-    object NotSingleError : InterfaceError("Empty result.")
+    class KtorError(message: String, stackTrace: List<StackTraceElement>) : NetworkError(message, stackTrace)
 }
 
-class ConfigParsingError(message: String) : SchemaError(message)
+sealed class SchemaError(message: String, stackTrace: List<StackTraceElement>) : LanghuanError(message, stackTrace)
 
-class InvalidContentType(contentType: String) : SchemaError("Invalid content type: $contentType")
+sealed class InterfaceError(message: String, stackTrace: List<StackTraceElement>) : SchemaError(message, stackTrace) {
+    class ParsingError(message: String, stackTrace: List<StackTraceElement>) : InterfaceError(message, stackTrace)
+
+    class NetworkError(causedBy: me.ywxt.langhuan.core.NetworkError, stackTrace: List<StackTraceElement>) :
+        InterfaceError(causedBy.message, stackTrace)
+
+    class NotSingleError(stackTrace: List<StackTraceElement>) : InterfaceError("Empty result.", stackTrace)
+}
+
+class ConfigParsingError(message: String, stackTrace: List<StackTraceElement>) : SchemaError(message, stackTrace)
+
+class InvalidContentType(contentType: String, stackTrace: List<StackTraceElement>) :
+    SchemaError("Invalid content type: $contentType", stackTrace)

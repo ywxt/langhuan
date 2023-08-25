@@ -134,4 +134,4 @@ val templateConfig =
 @Suppress("FunctionName")
 suspend fun TemplateWithConfig(str: String): Either<ConfigParsingError, Template> =
     catchException { Template(str, templateConfig) }
-        .mapLeft { ConfigParsingError(it.stackTraceToString()) }
+        .mapLeft { ConfigParsingError(it.message ?: "Cannot parse the template. `$str`", it.stackTrace.toList()) }

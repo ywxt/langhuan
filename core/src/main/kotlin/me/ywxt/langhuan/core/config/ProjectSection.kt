@@ -36,10 +36,15 @@ data class ProjectSection(
     companion object {
         fun fromString(config: String): Either<ConfigParsingError, ProjectSection> = catchException {
             Yaml.default.decodeFromString(serializer(), config)
-        }.mapLeft { ConfigParsingError(it.stackTraceToString()) }
+        }.mapLeft {
+            ConfigParsingError(
+                it.message ?: "Cannot parse the config `$config` as a ProjectSection.",
+                it.stackTrace.toList()
+            )
+        }
     }
 
     fun encodeToString(): Either<ConfigParsingError, String> = catchException {
         Yaml.default.encodeToString(this)
-    }.mapLeft { ConfigParsingError(it.stackTraceToString()) }
+    }.mapLeft { ConfigParsingError(it.message ?: "Cannot encode the ProjectSection(`$name`).", it.stackTrace.toList()) }
 }

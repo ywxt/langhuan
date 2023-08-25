@@ -20,7 +20,7 @@
 package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
-import arrow.core.continuations.either
+import arrow.core.raise.either
 import me.ywxt.langhuan.core.ConfigParsingError
 import me.ywxt.langhuan.core.config.ChapterSection
 

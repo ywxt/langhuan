@@ -20,7 +20,7 @@
 package me.ywxt.langhuan.core.http
 
 import arrow.core.Either
-import arrow.core.continuations.either
+import arrow.core.raise.either
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
@@ -58,7 +58,7 @@ class HttpClient : AutoCloseable {
             }
         }
         response.bodyAsText(action.charset)
-    }.mapLeft { NetworkError.KtorError(it.stackTraceToString()) }
+    }.mapLeft { NetworkError.KtorError(it.message ?: "Unknown network error.", it.stackTrace.toList()) }
 }
 
 suspend fun HttpClient.requestSources(action: Action): Either<NetworkError.KtorError, ParsedSources> = either {

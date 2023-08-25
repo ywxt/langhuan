@@ -21,6 +21,7 @@ package me.ywxt.langhuan.core.http
 
 import arrow.core.Either
 import me.ywxt.langhuan.core.InvalidContentType
+import me.ywxt.langhuan.core.getStackTrace
 
 data class Content(val type: String, val body: ByteArray) {
     override fun equals(other: Any?): Boolean {
@@ -53,7 +54,7 @@ enum class ContentType {
             } else if (type.compareTo("form", true) == 0) {
                 Either.Right(FORM)
             } else {
-                Either.Left(InvalidContentType(type))
+                Either.Left(InvalidContentType(type, getStackTrace()))
             }
     }
 }

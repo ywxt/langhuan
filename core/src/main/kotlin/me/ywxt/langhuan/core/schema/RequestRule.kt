@@ -20,7 +20,7 @@
 package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
-import arrow.core.continuations.either
+import arrow.core.raise.either
 import io.ktor.http.*
 import korlibs.template.Template
 import me.ywxt.langhuan.core.ConfigParsingError
@@ -64,13 +64,27 @@ private fun ContentType.transformContentType(): me.ywxt.langhuan.core.http.Conte
 
 suspend fun RequestRule.buildAction(context: Context<*>): Either<InterfaceError, Action> = either {
     val url =
-        catchException { url.render(context) }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }.bind()
+        catchException {
+            url.render(
+                context
+            )
+        }.mapLeft {
+            InterfaceError.ParsingError(
+                "Cannot evaluate the url: ${url.template}",
+                it.stackTrace.toList()
+            )
+        }.bind()
     val charset = context.charset
     val builder = Action.Builder(url).charset(charset)
     val headers = context.headers
     builder.headers(headers).method(method)
     catchException {
         body?.apply { builder.contentType(first.transformContentType()).body(second.render(context)) }
-    }.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }.bind()
-    builder.build().mapLeft { InterfaceError.NetworkError(it) }.bind()
+    }.mapLeft {
+        InterfaceError.ParsingError(
+            "Cannot evaluate the body: ${body?.second?.template}",
+            it.stackTrace.toList()
+        )
+    }.bind()
+    builder.build().mapLeft { InterfaceError.NetworkError(it, it.stackTrace) }.bind()
 }

@@ -20,7 +20,7 @@
 package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
-import arrow.core.continuations.either
+import arrow.core.raise.either
 import io.ktor.http.*
 import me.ywxt.langhuan.core.ConfigParsingError
 import me.ywxt.langhuan.core.config.SchemaSection
@@ -42,11 +42,21 @@ data class Schema(
                     name = config.name,
                     charset = catchException { charset(config.charset) }.mapLeft {
                         ConfigParsingError(
-                            it.stackTraceToString()
+                            it.message ?: "Unknown charset: ${config.charset}",
+                            it.stackTrace.toList()
                         )
                     }
                         .bind(),
-                    site = catchException { Url(config.site) }.mapLeft { ConfigParsingError(it.stackTraceToString()) }
+                    site = catchException {
+                        Url(
+                            config.site
+                        )
+                    }.mapLeft {
+                        ConfigParsingError(
+                            it.message ?: "Cannot parse `${config.site}` as a a url.",
+                            it.stackTrace.toList()
+                        )
+                    }
                         .bind(),
                     defaultHeaders = config.headers,
                 ),

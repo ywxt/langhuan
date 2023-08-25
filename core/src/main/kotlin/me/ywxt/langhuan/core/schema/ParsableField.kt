@@ -20,12 +20,13 @@
 package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
-import arrow.core.continuations.either
 import arrow.core.flatMap
+import arrow.core.raise.either
 import korlibs.template.Template
 import me.ywxt.langhuan.core.ConfigParsingError
 import me.ywxt.langhuan.core.InterfaceError
 import me.ywxt.langhuan.core.config.ParsableSection
+import me.ywxt.langhuan.core.getStackTrace
 import me.ywxt.langhuan.core.utils.catchException
 
 data class ParsableField(val parser: Parser, val template: Template) {
@@ -51,7 +52,7 @@ internal suspend fun ParsableField.parseField(
         val templateContext = context.toResultContext(it)
         template.render(templateContext)
     }
-}.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }
+}.mapLeft { InterfaceError.ParsingError(it.message ?: "Parse fields failed.", it.stackTrace.toList()) }
 
 internal suspend fun ParsableField.parseList(
     context: Context<*>,
@@ -63,12 +64,13 @@ internal suspend fun ParsableField.parseList(
         val templateContext = context.toResultContext(it)
         template.render(templateContext)
     }
-}.mapLeft { InterfaceError.ParsingError(it.stackTraceToString()) }
+}.mapLeft { InterfaceError.ParsingError(it.message ?: "Parse lists failed.", it.stackTrace.toList()) }
 
 internal fun ParsableField.needNonNullableField(field: String?) = if (field == null) {
     Either.Left(
         InterfaceError.ParsingError(
-            "Cannot find field in the document by given rule(`$this`)."
+            "Cannot find field in the document by given rule(`$this`).",
+            getStackTrace()
         )
     )
 } else {

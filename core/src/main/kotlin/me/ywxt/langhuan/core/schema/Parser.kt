@@ -21,6 +21,7 @@ package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
 import me.ywxt.langhuan.core.ConfigParsingError
+import me.ywxt.langhuan.core.getStackTrace
 import me.ywxt.langhuan.core.utils.catchException
 import org.jsoup.select.QueryParser
 
@@ -36,7 +37,9 @@ sealed class Parser(val type: String, val path: String) {
             return when (sections[0]) {
                 "", "unit" -> Either.Right(UnitParser)
                 "css" -> parseSelectorParser(path, sections)
-                else -> Either.Left(ConfigParsingError("Unknown path type (`${sections[0]}`). \n path: `$path`"))
+                else -> Either.Left(
+                    ConfigParsingError("Unknown path type (`${sections[0]}`). \n path: `$path`", getStackTrace())
+                )
             }
         }
 
@@ -47,12 +50,13 @@ sealed class Parser(val type: String, val path: String) {
             if (sections.size < 2) {
                 return Either.Left(
                     ConfigParsingError(
-                        "The selector of css parser can not be empty. \n path: `$path`"
+                        "The selector of css parser can not be empty. \n path: `$path`",
+                        getStackTrace()
                     )
                 )
             }
             return catchException { SelectorParser(sections[1], sections.getOrElse(2) { "html" }) }
-                .mapLeft { ConfigParsingError(it.stackTraceToString()) }
+                .mapLeft { ConfigParsingError(it.message ?: "Cannot parse a path.", it.stackTrace.toList()) }
         }
     }
 }

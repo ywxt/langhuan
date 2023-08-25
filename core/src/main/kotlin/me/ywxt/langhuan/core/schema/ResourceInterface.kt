@@ -20,9 +20,10 @@
 package me.ywxt.langhuan.core.schema
 
 import arrow.core.Either
-import arrow.core.continuations.either
+import arrow.core.raise.either
 import kotlinx.coroutines.flow.*
 import me.ywxt.langhuan.core.InterfaceError
+import me.ywxt.langhuan.core.getStackTrace
 import me.ywxt.langhuan.core.http.HttpClient
 import me.ywxt.langhuan.core.http.requestSources
 
@@ -31,7 +32,7 @@ interface ResourceInterface<T, A> {
 }
 
 suspend fun <T, A> ResourceInterface<T, A>.processSingle(args: A): Either<InterfaceError, T> =
-    process(args).singleOrNull() ?: Either.Left(InterfaceError.NotSingleError)
+    process(args).singleOrNull() ?: Either.Left(InterfaceError.NotSingleError(getStackTrace()))
 
 suspend fun <T, A> ResourceInterface<T, A>.processAll(args: A): List<Either<InterfaceError, T>> = process(args).toList()
 
@@ -54,7 +55,7 @@ suspend fun <T, A> ResourceInterface<T, A>.processTotal(args: A): Either<Interfa
 }
 
 @Suppress("LongParameterList")
-internal suspend inline fun <T, A, CX> ResourceInterface<T, A>.processHttpList(
+internal suspend inline fun <T, CX> processHttpList(
     schema: SchemaConfig,
     localContext: CX,
     request: RequestRule,
@@ -69,7 +70,7 @@ internal suspend inline fun <T, A, CX> ResourceInterface<T, A>.processHttpList(
         val context = schema.toContext(localContext, request)
         val result = either {
             val action = request.buildAction(context).bind()
-            val sources = http.requestSources(action).mapLeft { InterfaceError.NetworkError(it) }.bind()
+            val sources = http.requestSources(action).mapLeft { InterfaceError.NetworkError(it, it.stackTrace) }.bind()
             val content = areaRule.parseList(context, sources).bind().map {
                 processOne(context, ParsedSources(it)).bind()
             }
@@ -89,7 +90,7 @@ internal suspend inline fun <T, A, CX> ResourceInterface<T, A>.processHttpList(
     }
 }
 
-internal suspend inline fun <T, A, CX> ResourceInterface<T, A>.processHttpOne(
+internal suspend inline fun <T, CX> processHttpOne(
     schema: SchemaConfig,
     localContext: CX,
     request: RequestRule,
@@ -99,7 +100,7 @@ internal suspend inline fun <T, A, CX> ResourceInterface<T, A>.processHttpOne(
     val result = either {
         val context = schema.toContext(localContext, request)
         val action = request.buildAction(context).bind()
-        val sources = http.requestSources(action).mapLeft { InterfaceError.NetworkError(it) }.bind()
+        val sources = http.requestSources(action).mapLeft { InterfaceError.NetworkError(it, it.stackTrace) }.bind()
         process(context, sources).bind()
     }
     return flowOf(result)
