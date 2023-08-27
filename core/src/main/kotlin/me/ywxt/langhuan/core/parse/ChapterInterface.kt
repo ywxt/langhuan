@@ -17,12 +17,11 @@
  * License along with this program.  If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package me.ywxt.langhuan.core.schema
+package me.ywxt.langhuan.core.parse
 
 import arrow.core.Either
 import kotlinx.coroutines.flow.Flow
 import me.ywxt.langhuan.core.InterfaceError
-import me.ywxt.langhuan.core.http.Action
 import me.ywxt.langhuan.core.http.HttpClient
 
 data class ChapterArgs(val url: String)
@@ -33,9 +32,6 @@ class ChapterInterface(
     private val http: HttpClient,
 ) : ResourceInterface<ParagraphInfo, ChapterArgs> {
     private data class LocalContext(var url: String?, var page: Int, var items: List<ParagraphInfo>? = null)
-
-    private suspend fun buildAction(context: Context<LocalContext>): Either<InterfaceError, Action> =
-        rule.request.buildAction(context)
 
     override suspend fun process(
         args: ChapterArgs,

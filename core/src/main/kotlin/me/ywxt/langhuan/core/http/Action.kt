@@ -24,7 +24,7 @@ import io.ktor.http.*
 import io.ktor.utils.io.charsets.*
 import me.ywxt.langhuan.core.NetworkError
 import me.ywxt.langhuan.core.config.RequestMethod
-import me.ywxt.langhuan.core.schema.transformHttpMethod
+import me.ywxt.langhuan.core.parse.transformHttpMethod
 import me.ywxt.langhuan.core.utils.catchException
 
 data class Action(val request: Request, val charset: Charset) {

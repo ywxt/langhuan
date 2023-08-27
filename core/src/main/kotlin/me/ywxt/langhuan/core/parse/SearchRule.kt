@@ -17,29 +17,34 @@
  * License along with this program.  If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package me.ywxt.langhuan.core.schema
+package me.ywxt.langhuan.core.parse
 
 import arrow.core.Either
 import arrow.core.raise.either
 import me.ywxt.langhuan.core.ConfigParsingError
-import me.ywxt.langhuan.core.config.BookInfoSection
+import me.ywxt.langhuan.core.config.SearchSection
 
-data class BookInfoRule(
+data class SearchRule(
     val request: RequestRule,
+    val area: ParsableField,
     val title: ParsableField,
-    val contentsUrl: ParsableField,
+    val infoUrl: ParsableField,
+    val nextPage: NextPageRule,
     val author: ParsableField? = null,
     val description: ParsableField? = null,
     val extraTags: ParsableField? = null,
 ) {
     companion object {
-        suspend fun fromConfig(bookInfo: BookInfoSection): Either<ConfigParsingError, BookInfoRule> = either {
-            BookInfoRule(
-                request = RequestRule.fromConfig(bookInfo.request).bind(),
-                title = ParsableField.fromConfig(bookInfo.title).bind(),
-                contentsUrl = ParsableField.fromConfig(bookInfo.contentsUrl).bind(),
-                author = bookInfo.author?.let { ParsableField.fromConfig(it).bind() },
-                description = bookInfo.description?.let { ParsableField.fromConfig(it).bind() },
+        suspend fun fromConfig(config: SearchSection): Either<ConfigParsingError, SearchRule> = either {
+            SearchRule(
+                request = RequestRule.fromConfig(config.request).bind(),
+                area = ParsableField.fromConfig(config.item.area).bind(),
+                title = ParsableField.fromConfig(config.item.title).bind(),
+                infoUrl = ParsableField.fromConfig(config.item.infoUrl).bind(),
+                nextPage = NextPageRule.fromConfig(config.nextPage).bind(),
+                author = config.item.author?.let { ParsableField.fromConfig(it).bind() },
+                description = config.item.description?.let { ParsableField.fromConfig(it).bind() },
+                extraTags = config.item.extraTags?.let { ParsableField.fromConfig(it).bind() },
             )
         }
     }

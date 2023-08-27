@@ -24,7 +24,7 @@ import io.kotest.matchers.shouldBe
 import io.ktor.http.*
 import korlibs.template.Template
 import me.ywxt.langhuan.core.http.HttpClient
-import me.ywxt.langhuan.core.schema.*
+import me.ywxt.langhuan.core.parse.*
 
 class ContentsInterfaceTest : FunSpec({
     test("Test ChapterInfoInterface parse") {

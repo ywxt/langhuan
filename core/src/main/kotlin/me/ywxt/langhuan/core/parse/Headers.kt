@@ -17,14 +17,12 @@
  * License along with this program.  If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package me.ywxt.langhuan.core.schema
+package me.ywxt.langhuan.core.parse
 
-class ParsedSources(val document: String) {
-    val selectorSource: ParsedSource<SelectorSource.SelectorPath> by lazy {
-        SelectorSource(document)
-    }
-    val jsonSource: ParsedSource<String> by lazy {
-        JSONSource(document)
-    }
-    val unitSource: ParsedSource<Unit> = UnitSource
+object Headers {
+    const val REFERER_NAME = "Referer"
+    const val USER_AGENT_NAME = "User-Agent"
+    const val DEFAULT_USER_AGENT =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36 Edg/110.0.1587.63"
 }

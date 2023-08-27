@@ -17,7 +17,7 @@
  * License along with this program.  If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package me.ywxt.langhuan.core.schema
+package me.ywxt.langhuan.core.parse
 
 import arrow.core.Either
 import arrow.core.raise.either

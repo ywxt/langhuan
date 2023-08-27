@@ -17,7 +17,7 @@
  * License along with this program.  If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package me.ywxt.langhuan.core.schema
+package me.ywxt.langhuan.core.parse
 
 import arrow.core.Either
 import me.ywxt.langhuan.core.ConfigParsingError
@@ -35,15 +35,24 @@ sealed class Parser(val type: String, val path: String) {
         operator fun invoke(path: String): Either<ConfigParsingError, Parser> {
             val sections = path.split("@@")
             return when (sections[0]) {
-                "", "unit" -> Either.Right(UnitParser)
-                "css" -> parseSelectorParser(path, sections)
+                "", "raw", "unit" -> Either.Right(UnitParser)
+                "css" -> SelectorParser(path, sections)
                 else -> Either.Left(
                     ConfigParsingError("Unknown path type (`${sections[0]}`). \n path: `$path`", getStackTrace())
                 )
             }
         }
+    }
+}
 
-        private fun parseSelectorParser(
+class SelectorParser(selector: String, attribute: String) : Parser("css", "$selector@@$attribute") {
+    private val selectorPath = ParsedSelectorSource.SelectorPath(QueryParser.parse(selector), attribute)
+    override fun parse(
+        sources: ParsedSources
+    ): Sequence<String> = sources.getSource(ParsedSourceType.SelectorSource).parse(selectorPath)
+
+    companion object {
+        operator fun invoke(
             path: String,
             sections: List<String>,
         ): Either<ConfigParsingError, Parser> {
@@ -56,14 +65,9 @@ sealed class Parser(val type: String, val path: String) {
                 )
             }
             return catchException { SelectorParser(sections[1], sections.getOrElse(2) { "html" }) }
-                .mapLeft { ConfigParsingError(it.message ?: "Cannot parse a path.", it.stackTrace.toList()) }
+                .mapLeft { ConfigParsingError(it.message ?: "Cannot parse the path.", it.stackTrace.toList()) }
         }
     }
-}
-
-class SelectorParser(selector: String, attribute: String) : Parser("css", "$selector@@$attribute") {
-    private val selectorPath = SelectorSource.SelectorPath(QueryParser.parse(selector), attribute)
-    override fun parse(sources: ParsedSources): Sequence<String> = sources.selectorSource.parse(selectorPath)
 }
 
 class JSONParser(path: String) : Parser("json", path) {
@@ -73,5 +77,7 @@ class JSONParser(path: String) : Parser("json", path) {
 }
 
 object UnitParser : Parser("raw", "") {
-    override fun parse(sources: ParsedSources): Sequence<String> = sources.unitSource.parse(Unit)
+    override fun parse(
+        sources: ParsedSources
+    ): Sequence<String> = sources.getSource(ParsedSourceType.UnitSource).parse(Unit)
 }

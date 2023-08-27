@@ -25,7 +25,7 @@ import io.kotest.matchers.string.shouldStartWith
 import io.ktor.http.*
 import korlibs.template.Template
 import me.ywxt.langhuan.core.http.HttpClient
-import me.ywxt.langhuan.core.schema.*
+import me.ywxt.langhuan.core.parse.*
 
 class ChapterInterfaceTest : FunSpec({
     test("Test ChapterInfoInterface parse") {

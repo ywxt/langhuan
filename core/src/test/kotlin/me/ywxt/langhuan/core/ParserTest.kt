@@ -22,8 +22,8 @@ package me.ywxt.langhuan.core
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
-import me.ywxt.langhuan.core.schema.ParsedSources
-import me.ywxt.langhuan.core.schema.Parser
+import me.ywxt.langhuan.core.parse.ParsedSources
+import me.ywxt.langhuan.core.parse.Parser
 
 class ParserTest : FunSpec({
     test("Test selectorParser parse") {

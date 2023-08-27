@@ -20,8 +20,8 @@
 package me.ywxt.langhuan.core.config
 
 import kotlinx.serialization.Serializable
-import me.ywxt.langhuan.core.schema.SCHEMA_DEFAULT_ENCODING_NAME
-import me.ywxt.langhuan.core.schema.schemaDefaultHeaders
+import me.ywxt.langhuan.core.parse.SCHEMA_DEFAULT_ENCODING_NAME
+import me.ywxt.langhuan.core.parse.schemaDefaultHeaders
 
 @Serializable
 data class SchemaSection(

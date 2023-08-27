@@ -27,7 +27,7 @@ import korlibs.template.Template
 import me.ywxt.langhuan.core.config.ContentType
 import me.ywxt.langhuan.core.config.RequestMethod
 import me.ywxt.langhuan.core.http.HttpClient
-import me.ywxt.langhuan.core.schema.*
+import me.ywxt.langhuan.core.parse.*
 
 class SearchInterfaceTest : FunSpec({
     test("Test SearchInterface parse") {

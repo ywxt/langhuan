@@ -33,7 +33,7 @@ open module langhuan.core {
 
 
     exports me.ywxt.langhuan.core.http;
-    exports me.ywxt.langhuan.core.schema;
+    exports me.ywxt.langhuan.core.parse;
     exports me.ywxt.langhuan.core.utils;
     exports me.ywxt.langhuan.core.config;
     exports me.ywxt.langhuan.core;

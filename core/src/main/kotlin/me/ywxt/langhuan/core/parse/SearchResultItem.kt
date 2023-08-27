@@ -17,8 +17,12 @@
  * License along with this program.  If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package me.ywxt.langhuan.core.schema
+package me.ywxt.langhuan.core.parse
 
-data class ParagraphInfo(
-    val content: String,
+data class SearchResultItem(
+    val title: String,
+    val infoUrl: String,
+    val author: String?,
+    val description: String?,
+    val extraTags: List<String>?
 )

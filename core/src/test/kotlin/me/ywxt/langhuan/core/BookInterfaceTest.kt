@@ -23,7 +23,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.ktor.http.*
 import me.ywxt.langhuan.core.http.HttpClient
-import me.ywxt.langhuan.core.schema.*
+import me.ywxt.langhuan.core.parse.*
 
 class BookInterfaceTest : FunSpec({
     test("Test BookInfoInterface parse") {

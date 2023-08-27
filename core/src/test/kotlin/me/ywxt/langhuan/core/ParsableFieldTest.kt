@@ -3,10 +3,10 @@ package me.ywxt.langhuan.core
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.ktor.http.*
-import me.ywxt.langhuan.core.schema.Context
-import me.ywxt.langhuan.core.schema.RequestRule
-import me.ywxt.langhuan.core.schema.TemplateWithConfig
-import me.ywxt.langhuan.core.schema.buildAction
+import me.ywxt.langhuan.core.parse.Context
+import me.ywxt.langhuan.core.parse.RequestRule
+import me.ywxt.langhuan.core.parse.TemplateWithConfig
+import me.ywxt.langhuan.core.parse.buildAction
 
 class ParsableFieldTest : FunSpec({
     test("Test buildAction") {

@@ -17,27 +17,9 @@
  * License along with this program.  If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package me.ywxt.langhuan.core.schema
+package me.ywxt.langhuan.core.parse
 
-import arrow.core.Either
-import arrow.core.raise.either
-import me.ywxt.langhuan.core.ConfigParsingError
-import me.ywxt.langhuan.core.config.ProjectSection
-
-data class Project(
-    val name: String,
-    val id: String,
-    val author: String,
-    val schemas: List<Schema>,
-) {
-    companion object {
-        suspend fun fromConfig(config: ProjectSection): Either<ConfigParsingError, Project> = either {
-            Project(
-                name = config.name,
-                id = config.id,
-                author = config.author,
-                schemas = config.schemas.map { Schema.fromConfig(it).bind() }
-            )
-        }
-    }
-}
+data class ContentsItem(
+    val title: String,
+    val chapterUrl: String,
+)

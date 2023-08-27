@@ -17,28 +17,29 @@
  * License along with this program.  If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package me.ywxt.langhuan.core.schema
+package me.ywxt.langhuan.core.parse
 
 import arrow.core.Either
 import arrow.core.raise.either
 import me.ywxt.langhuan.core.ConfigParsingError
-import me.ywxt.langhuan.core.config.ContentsSection
+import me.ywxt.langhuan.core.config.BookInfoSection
 
-data class ContentsRule(
+data class BookInfoRule(
     val request: RequestRule,
-    val area: ParsableField,
     val title: ParsableField,
-    val chapterUrl: ParsableField,
-    val nextPage: NextPageRule,
+    val contentsUrl: ParsableField,
+    val author: ParsableField? = null,
+    val description: ParsableField? = null,
+    val extraTags: ParsableField? = null,
 ) {
     companion object {
-        suspend fun fromConfig(contents: ContentsSection): Either<ConfigParsingError, ContentsRule> = either {
-            ContentsRule(
-                request = RequestRule.fromConfig(contents.request).bind(),
-                area = ParsableField.fromConfig(contents.item.area).bind(),
-                title = ParsableField.fromConfig(contents.item.title).bind(),
-                chapterUrl = ParsableField.fromConfig(contents.item.chapterUrl).bind(),
-                nextPage = NextPageRule.fromConfig(contents.nextPage).bind(),
+        suspend fun fromConfig(bookInfo: BookInfoSection): Either<ConfigParsingError, BookInfoRule> = either {
+            BookInfoRule(
+                request = RequestRule.fromConfig(bookInfo.request).bind(),
+                title = ParsableField.fromConfig(bookInfo.title).bind(),
+                contentsUrl = ParsableField.fromConfig(bookInfo.contentsUrl).bind(),
+                author = bookInfo.author?.let { ParsableField.fromConfig(it).bind() },
+                description = bookInfo.description?.let { ParsableField.fromConfig(it).bind() },
             )
         }
     }

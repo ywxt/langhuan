@@ -28,7 +28,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import me.ywxt.langhuan.core.NetworkError
-import me.ywxt.langhuan.core.schema.ParsedSources
+import me.ywxt.langhuan.core.parse.ParsedSources
 import me.ywxt.langhuan.core.utils.catchException
 
 private const val TIMEOUT_MILLIS = 5000L

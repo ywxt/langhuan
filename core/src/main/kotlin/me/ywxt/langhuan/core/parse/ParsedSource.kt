@@ -17,29 +17,37 @@
  * License along with this program.  If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package me.ywxt.langhuan.core.schema
+package me.ywxt.langhuan.core.parse
 
 import me.ywxt.langhuan.core.utils.paragraphs
 import org.jsoup.Jsoup
 import org.jsoup.parser.Parser
 import org.jsoup.select.Evaluator
 
+@Suppress("ConvertObjectToDataObject")
+sealed interface ParsedSourceType<T> {
+    object UnitSource : ParsedSourceType<Unit>
+    object JSONSource : ParsedSourceType<String>
+    object SelectorSource : ParsedSourceType<ParsedSelectorSource.SelectorPath>
+}
+
 sealed class ParsedSource<T>(val document: String) {
     abstract fun parse(path: T): Sequence<String>
 }
 
-class JSONSource(document: String) : ParsedSource<String>(document) {
+class ParsedJSONSource(document: String) : ParsedSource<String>(document) {
     override fun parse(path: String): Sequence<String> {
         TODO("Not yet implemented")
     }
 }
 
-object UnitSource : ParsedSource<Unit>("") {
-    private const val value = ""
-    override fun parse(path: Unit): Sequence<String> = sequenceOf(value)
+@Suppress("ConvertObjectToDataObject")
+object ParsedUnitSource : ParsedSource<Unit>("") {
+    private const val VALUE = ""
+    override fun parse(path: Unit): Sequence<String> = sequenceOf(VALUE)
 }
 
-class SelectorSource(document: String) : ParsedSource<SelectorSource.SelectorPath>(document) {
+class ParsedSelectorSource(document: String) : ParsedSource<ParsedSelectorSource.SelectorPath>(document) {
     data class SelectorPath(val evaluator: Evaluator, val attribute: String)
 
     private val doc = Jsoup.parse(document, Parser.xmlParser())
