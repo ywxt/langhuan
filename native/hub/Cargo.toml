@@ -21,6 +21,8 @@ langhuan = { path = "../langhuan" }
 rinf = "8.10.0"
 serde = { version = "1.0.219", features = ["derive"] }
 tokio = { version = "1.45.0", features = ["rt", "macros", "time"] }
+tokio-stream = "0.1"
+tokio-util = { version = "0.7", features = ["rt"] }
 async-trait = "0.1.87"
 messages = "0.3.1"
 

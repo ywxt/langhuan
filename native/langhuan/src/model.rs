@@ -3,21 +3,22 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
-// Paginated result
+// Paginated result (internal implementation detail)
 // ---------------------------------------------------------------------------
 
 /// A page of results with an opaque cursor for fetching the next page.
+///
+/// This type is used internally by [`LuaFeed`] to drive pagination.  Callers
+/// of the public [`Feed`] trait never see `Page` — they receive a stream of
+/// individual items instead.
 ///
 /// `next_cursor` is determined entirely by the Lua feed script:
 /// - `None` means this is the last page.
 /// - `Some(cursor)` is an opaque value passed back to the next `*_request`
 ///   call. It can be a page number, a URL, a token, a table — whatever the
 ///   script needs.
-///
-/// The cursor type `C` defaults to `String` for convenience, but
-/// implementations may use any serializable type (e.g. `serde_json::Value`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Page<T, C = String> {
+pub(crate) struct Page<T, C = String> {
     /// The items on this page.
     pub items: Vec<T>,
     /// An opaque cursor for the next page, or `None` if this is the last page.

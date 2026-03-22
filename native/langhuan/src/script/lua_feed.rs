@@ -1,16 +1,32 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
+use async_stream::stream;
 use mlua::{FromLua, Lua, LuaSerdeExt, Value};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
+use tokio::time::sleep;
 
 use crate::error::Result;
-use crate::feed::Feed;
+use crate::feed::{Feed, FeedStream};
 use crate::model::{
     BookInfo, ChapterContent, ChapterInfo, HttpRequest, HttpResponse, Page, SearchResult,
 };
 use crate::script::meta::FeedMeta;
+
+// ---------------------------------------------------------------------------
+// Retry configuration
+// ---------------------------------------------------------------------------
+
+/// Maximum number of retry attempts for a single page fetch.
+const MAX_RETRIES: u32 = 3;
+
+/// Base delay for exponential backoff.
+const BASE_DELAY_MS: u64 = 200;
+
+/// Multiplier applied to the delay on each successive retry.
+const BACKOFF_MULTIPLIER: u64 = 3;
 
 // ---------------------------------------------------------------------------
 // Handler types
@@ -121,17 +137,37 @@ impl LuaFeed {
         pair: &HandlerPair,
         args: impl mlua::IntoLuaMulti,
     ) -> Result<Page<T, Value>> {
-        // 1. Call request function → HttpRequest.
         let http_request: HttpRequest = self.call_function(&pair.request, args)?;
-
-        // 2. Execute HTTP.
         let http_response = self.execute_http(&http_request).await?;
-
-        // 3. Call parse function → Page<T, Value> via FromLua.
         let lua_response = self.lua.to_value(&http_response)?;
         let page: Page<T, Value> = pair.parse.call(lua_response)?;
-
         Ok(page)
+    }
+
+    /// Execute a full request/parse cycle for paginated results, with
+    /// exponential-backoff retry on transient errors.
+    ///
+    /// Retries up to [`MAX_RETRIES`] times.  Non-retryable errors are returned
+    /// immediately without retrying.
+    async fn execute_paged_cycle_with_retry<T: DeserializeOwned>(
+        &self,
+        pair: &HandlerPair,
+        keyword: &str,
+        cursor: &Value,
+    ) -> Result<Page<T, Value>> {
+        let mut attempt = 0u32;
+        loop {
+            let args = (keyword, cursor.clone());
+            match self.execute_paged_cycle(pair, args).await {
+                Ok(page) => return Ok(page),
+                Err(err) if attempt < MAX_RETRIES && err.is_retryable() => {
+                    let delay_ms = BASE_DELAY_MS * BACKOFF_MULTIPLIER.pow(attempt);
+                    sleep(Duration::from_millis(delay_ms)).await;
+                    attempt += 1;
+                }
+                Err(err) => return Err(err),
+            }
+        }
     }
 
     /// Execute a full request/parse cycle for non-paginated results.
@@ -157,6 +193,46 @@ impl LuaFeed {
         let value: Value = func.call(args)?;
         let result: T = self.lua.from_value(value)?;
         Ok(result)
+    }
+
+    // -----------------------------------------------------------------------
+    // Paginated stream helper
+    // -----------------------------------------------------------------------
+
+    /// Build a [`FeedStream`] that automatically follows pagination cursors,
+    /// yielding individual items one by one.
+    ///
+    /// `key` is the primary argument passed to the Lua `request` function
+    /// (e.g. a search keyword or a book ID).  The cursor starts as `Nil` and
+    /// is updated from each page's `next_cursor` field.
+    ///
+    /// Each page fetch is retried with exponential backoff on transient errors.
+    /// A permanent error terminates the stream immediately.
+    fn paged_stream<'a, T>(&'a self, pair: &'a HandlerPair, key: &'a str) -> FeedStream<'a, T>
+    where
+        T: DeserializeOwned + Send + 'a,
+    {
+        Box::pin(stream! {
+            let mut cursor = Value::Nil;
+            loop {
+                match self.execute_paged_cycle_with_retry(pair, key, &cursor).await {
+                    Ok(page) => {
+                        let next = page.next_cursor;
+                        for item in page.items {
+                            yield Ok(item);
+                        }
+                        match next {
+                            Some(c) => cursor = c,
+                            None => break,
+                        }
+                    }
+                    Err(err) => {
+                        yield Err(err);
+                        break;
+                    }
+                }
+            }
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -214,42 +290,20 @@ impl LuaFeed {
 // ---------------------------------------------------------------------------
 
 impl Feed for LuaFeed {
-    type Cursor = Value;
-
-    async fn search(
-        &self,
-        keyword: &str,
-        cursor: Option<&Self::Cursor>,
-    ) -> Result<Page<SearchResult, Value>> {
-        let lua_cursor = cursor.unwrap_or(&Value::Nil);
-        let args = (keyword, lua_cursor);
-        self.execute_paged_cycle(&self.handlers.search, args).await
+    fn search<'a>(&'a self, keyword: &'a str) -> FeedStream<'a, SearchResult> {
+        self.paged_stream(&self.handlers.search, keyword)
     }
 
     async fn book_info(&self, id: &str) -> Result<BookInfo> {
         self.execute_cycle(&self.handlers.book_info, id).await
     }
 
-    async fn chapters(
-        &self,
-        book_id: &str,
-        cursor: Option<&Self::Cursor>,
-    ) -> Result<Page<ChapterInfo, Value>> {
-        let lua_cursor = cursor.unwrap_or(&Value::Nil);
-        let args = (book_id, lua_cursor);
-        self.execute_paged_cycle(&self.handlers.chapters, args)
-            .await
+    fn chapters<'a>(&'a self, book_id: &'a str) -> FeedStream<'a, ChapterInfo> {
+        self.paged_stream(&self.handlers.chapters, book_id)
     }
 
-    async fn chapter_content(
-        &self,
-        chapter_id: &str,
-        cursor: Option<&Self::Cursor>,
-    ) -> Result<Page<ChapterContent, Value>> {
-        let lua_cursor = cursor.unwrap_or(&Value::Nil);
-        let args = (chapter_id, lua_cursor);
-        self.execute_paged_cycle(&self.handlers.chapter_content, args)
-            .await
+    fn chapter_content<'a>(&'a self, chapter_id: &'a str) -> FeedStream<'a, ChapterContent> {
+        self.paged_stream(&self.handlers.chapter_content, chapter_id)
     }
 
     fn meta(&self) -> &FeedMeta {

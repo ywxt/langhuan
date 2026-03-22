@@ -33,5 +33,32 @@ pub enum Error {
     },
 }
 
+impl Error {
+    /// Returns `true` if this error is transient and the operation may be
+    /// retried (e.g. network timeouts, connection resets, 5xx responses).
+    ///
+    /// Returns `false` for permanent failures such as Lua parse errors,
+    /// invalid feed metadata, or 4xx HTTP responses.
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Error::Http(e) => {
+                // Retry on connection errors, timeouts, and 5xx status codes.
+                if e.is_connect() || e.is_timeout() || e.is_request() {
+                    return true;
+                }
+                if let Some(status) = e.status() {
+                    return status.is_server_error();
+                }
+                false
+            }
+            // Lua errors, parse errors, and metadata errors are permanent.
+            Error::Lua(_)
+            | Error::MissingFunction { .. }
+            | Error::InvalidFeed { .. }
+            | Error::ScriptParse { .. } => false,
+        }
+    }
+}
+
 /// A specialized `Result` type for langhuan operations.
 pub type Result<T> = std::result::Result<T, Error>;
