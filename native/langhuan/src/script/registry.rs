@@ -111,9 +111,12 @@ impl ScriptRegistry {
     /// - [`Error::FeedNotFound`] — `feed_id` is not in the registry.
     /// - [`Error::RegistryNotFound`] — the script file cannot be read.
     pub async fn get_script(&self, feed_id: &str) -> Result<String> {
-        let entry = self.entries.get(feed_id).ok_or_else(|| Error::FeedNotFound {
-            id: feed_id.to_owned(),
-        })?;
+        let entry = self
+            .entries
+            .get(feed_id)
+            .ok_or_else(|| Error::FeedNotFound {
+                id: feed_id.to_owned(),
+            })?;
 
         let script_path = self.base_dir.join(&entry.file);
         let script = tokio::fs::read_to_string(&script_path)
@@ -146,7 +149,6 @@ impl ScriptRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use tempfile::TempDir;
     use tokio::fs;
 
@@ -261,7 +263,9 @@ version = "2.0.0"
 file    = "dup/2.0.0.lua"
 "#;
         let dir = setup_dir(toml, &[]).await;
-        let err = ScriptRegistry::load(dir.path()).await.expect_err("should fail");
+        let err = ScriptRegistry::load(dir.path())
+            .await
+            .expect_err("should fail");
         assert!(
             matches!(err, Error::DuplicateFeedId { ref id } if id == "dup"),
             "unexpected error: {err}"
@@ -275,7 +279,9 @@ file    = "dup/2.0.0.lua"
     #[tokio::test]
     async fn load_missing_registry_file() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let err = ScriptRegistry::load(dir.path()).await.expect_err("should fail");
+        let err = ScriptRegistry::load(dir.path())
+            .await
+            .expect_err("should fail");
         assert!(
             matches!(err, Error::RegistryNotFound(_)),
             "unexpected error: {err}"
@@ -289,7 +295,9 @@ file    = "dup/2.0.0.lua"
     #[tokio::test]
     async fn load_malformed_toml() {
         let dir = setup_dir("this is not valid toml ][", &[]).await;
-        let err = ScriptRegistry::load(dir.path()).await.expect_err("should fail");
+        let err = ScriptRegistry::load(dir.path())
+            .await
+            .expect_err("should fail");
         assert!(
             matches!(err, Error::RegistryParse { .. }),
             "unexpected error: {err}"
@@ -313,7 +321,10 @@ file    = "test-feed/1.0.0.lua"
         let registry = ScriptRegistry::load(dir.path()).await.expect("load");
 
         let script = registry.get_script("test-feed").await.expect("get_script");
-        assert!(script.contains("@id"), "script content should contain header");
+        assert!(
+            script.contains("@id"),
+            "script content should contain header"
+        );
     }
 
     // -----------------------------------------------------------------------

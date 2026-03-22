@@ -64,13 +64,13 @@ async fn run_feed_actor() {
     loop {
         tokio::select! {
             Some(pack) = search_rx.recv() => {
-                actor.handle_search(pack.message).await;
+                actor.handle_search(pack.message);
             }
             Some(pack) = chapters_rx.recv() => {
-                actor.handle_chapters(pack.message).await;
+                actor.handle_chapters(pack.message);
             }
             Some(pack) = chapter_content_rx.recv() => {
-                actor.handle_chapter_content(pack.message).await;
+                actor.handle_chapter_content(pack.message);
             }
             Some(pack) = cancel_rx.recv() => {
                 actor.handle_cancel(pack.message);

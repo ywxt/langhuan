@@ -60,7 +60,8 @@ impl ScriptEngine {
             lua,
             handlers,
             feed_meta,
-            Arc::clone(&self.client),
+            // Client is Arc-backed internally; clone is cheap.
+            (*self.client).clone(),
         ))
     }
 }

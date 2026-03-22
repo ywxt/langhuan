@@ -6,14 +6,15 @@
 //! - Support concurrent in-flight requests (multiple parallel streams).
 //! - Accept `FeedCancelRequest` from Dart and abort the matching task.
 //! - Emit per-item signals and a terminal `FeedStreamEnd` for every request.
-//! - Accept `SetScriptDirectory` from Dart to (re-)load the script registry.
+//! - Accept `SetScriptDirectory` from Dart to (re-)load the script registry and
+//!   pre-compile every feed listed in it.
 //! - Accept `ListFeedsRequest` from Dart to enumerate registered feeds.
 //!
 //! # Script loading
-//! The actor holds an optional [`ScriptRegistry`] loaded from a directory
-//! supplied by Flutter.  When a feed request arrives the actor reads the
-//! script from the registry asynchronously, then executes it with
-//! [`ScriptEngine::load_feed`] (which uses mlua's async eval internally).
+//! On `SetScriptDirectory` the actor reads `registry.toml`, then eagerly
+//! compiles every listed Lua script into a [`LuaFeed`] stored in `feeds`.
+//! Subsequent stream requests look up the pre-compiled feed by `feed_id` — no
+//! disk I/O or Lua compilation happens at request time.
 //!
 //! # Retry
 //! Retry with exponential back-off is handled inside `langhuan::LuaFeed`.
@@ -47,6 +48,9 @@ pub struct FeedActor {
     /// The currently loaded script registry.  `None` until
     /// [`handle_set_directory`] succeeds for the first time.
     registry: Option<Arc<ScriptRegistry>>,
+    /// Pre-compiled feeds keyed by `feed_id`.
+    /// Populated (and replaced) each time [`handle_set_directory`] succeeds.
+    feeds: HashMap<String, Arc<LuaFeed>>,
     /// Live tasks keyed by `request_id`.  Each entry holds a cancellation
     /// token (to request cooperative shutdown) and a join handle (for cleanup).
     tasks: HashMap<String, (CancellationToken, JoinHandle<()>)>,
@@ -57,6 +61,7 @@ impl FeedActor {
         Self {
             engine: Arc::new(engine),
             registry: None,
+            feeds: HashMap::new(),
             tasks: HashMap::new(),
         }
     }
@@ -65,23 +70,17 @@ impl FeedActor {
     // Registry management
     // -----------------------------------------------------------------------
 
-    /// Load (or reload) the script registry from `path`.
+    /// Load (or reload) the script registry from `path` and eagerly compile
+    /// every feed listed in it.
     ///
-    /// On success the old registry is replaced and a confirmation signal is
-    /// sent to Dart.  On failure the **old registry is kept** (degraded-mode
+    /// On success the old registry **and** feed map are replaced and a
+    /// confirmation signal is sent to Dart.  Feeds that fail to compile are
+    /// skipped; their errors are reported in the `error` field of the signal.
+    /// On registry-load failure the **old state is kept** (degraded-mode
     /// protection) and an error signal is sent.
     pub async fn handle_set_directory(&mut self, req: SetScriptDirectory) {
-        match ScriptRegistry::load(Path::new(&req.path)).await {
-            Ok(registry) => {
-                let feed_count = registry.len() as u32;
-                self.registry = Some(Arc::new(registry));
-                ScriptDirectorySet {
-                    success: true,
-                    feed_count,
-                    error: None,
-                }
-                .send_signal_to_dart();
-            }
+        let registry = match ScriptRegistry::load(Path::new(&req.path)).await {
+            Ok(r) => r,
             Err(e) => {
                 ScriptDirectorySet {
                     success: false,
@@ -89,8 +88,40 @@ impl FeedActor {
                     error: Some(e.to_string()),
                 }
                 .send_signal_to_dart();
+                return;
+            }
+        };
+
+        // Eagerly compile every feed listed in the registry.
+        let mut feeds = HashMap::new();
+        let mut load_errors: Vec<String> = Vec::new();
+
+        for entry in registry.list_entries() {
+            match registry.get_script(&entry.id).await {
+                Err(e) => load_errors.push(format!("{}: {}", entry.id, e)),
+                Ok(script) => match self.engine.load_feed(&script).await {
+                    Ok(feed) => {
+                        feeds.insert(entry.id.clone(), Arc::new(feed));
+                    }
+                    Err(e) => load_errors.push(format!("{}: {}", entry.id, e)),
+                },
             }
         }
+
+        let feed_count = feeds.len() as u32;
+        self.registry = Some(Arc::new(registry));
+        self.feeds = feeds;
+
+        ScriptDirectorySet {
+            success: true,
+            feed_count,
+            error: if load_errors.is_empty() {
+                None
+            } else {
+                Some(load_errors.join("; "))
+            },
+        }
+        .send_signal_to_dart();
     }
 
     /// Enumerate all feeds in the current registry and send the list to Dart.
@@ -119,13 +150,9 @@ impl FeedActor {
     // -----------------------------------------------------------------------
 
     /// Handle an incoming `SearchRequest` from Dart.
-    ///
-    /// The feed script is resolved (read from disk + compiled) here in the
-    /// actor's own async context before spawning the stream task, so the
-    /// spawned task only needs the ready-to-use [`LuaFeed`].
-    pub async fn handle_search(&mut self, req: SearchRequest) {
+    pub fn handle_search(&mut self, req: SearchRequest) {
         let request_id = req.request_id.clone();
-        let Some(feed) = self.resolve_feed(&req.feed_id, &request_id).await else {
+        let Some(feed) = self.resolve_feed(&req.feed_id, &request_id) else {
             return;
         };
         let token = CancellationToken::new();
@@ -139,9 +166,9 @@ impl FeedActor {
     }
 
     /// Handle an incoming `ChaptersRequest` from Dart.
-    pub async fn handle_chapters(&mut self, req: ChaptersRequest) {
+    pub fn handle_chapters(&mut self, req: ChaptersRequest) {
         let request_id = req.request_id.clone();
-        let Some(feed) = self.resolve_feed(&req.feed_id, &request_id).await else {
+        let Some(feed) = self.resolve_feed(&req.feed_id, &request_id) else {
             return;
         };
         let token = CancellationToken::new();
@@ -155,9 +182,9 @@ impl FeedActor {
     }
 
     /// Handle an incoming `ChapterContentRequest` from Dart.
-    pub async fn handle_chapter_content(&mut self, req: ChapterContentRequest) {
+    pub fn handle_chapter_content(&mut self, req: ChapterContentRequest) {
         let request_id = req.request_id.clone();
-        let Some(feed) = self.resolve_feed(&req.feed_id, &request_id).await else {
+        let Some(feed) = self.resolve_feed(&req.feed_id, &request_id) else {
             return;
         };
         let token = CancellationToken::new();
@@ -183,38 +210,20 @@ impl FeedActor {
     // Internal helpers
     // -----------------------------------------------------------------------
 
-    /// Resolve a [`LuaFeed`] for `feed_id` using the current registry and engine.
+    /// Look up a pre-compiled [`LuaFeed`] by `feed_id`.
     ///
-    /// Emits a `Failed` [`FeedStreamEnd`] signal and returns `None` if:
-    /// - the registry has not been set yet,
-    /// - `feed_id` is not found in the registry,
-    /// - the script file cannot be read, or
-    /// - the Lua script fails to compile/execute.
-    async fn resolve_feed(&self, feed_id: &str, request_id: &str) -> Option<LuaFeed> {
-        let registry = match &self.registry {
-            Some(r) => Arc::clone(r),
+    /// Emits a `Failed` [`FeedStreamEnd`] and returns `None` if the directory
+    /// has not been set yet or the feed ID is not in the compiled map.
+    fn resolve_feed(&self, feed_id: &str, request_id: &str) -> Option<Arc<LuaFeed>> {
+        match self.feeds.get(feed_id) {
+            Some(feed) => Some(Arc::clone(feed)),
             None => {
-                emit_end(
-                    request_id,
-                    FeedStreamStatus::Failed,
-                    Some("script directory not set".to_owned()),
-                );
-                return None;
-            }
-        };
-
-        let script = match registry.get_script(feed_id).await {
-            Ok(s) => s,
-            Err(e) => {
-                emit_end(request_id, FeedStreamStatus::Failed, Some(e.to_string()));
-                return None;
-            }
-        };
-
-        match self.engine.load_feed(&script).await {
-            Ok(feed) => Some(feed),
-            Err(e) => {
-                emit_end(request_id, FeedStreamStatus::Failed, Some(e.to_string()));
+                let msg = if self.registry.is_none() {
+                    "script directory not set".to_owned()
+                } else {
+                    format!("feed '{}' not found or failed to load", feed_id)
+                };
+                emit_end(request_id, FeedStreamStatus::Failed, Some(msg));
                 None
             }
         }
@@ -289,7 +298,7 @@ async fn run_stream<T, F>(
     emit_end(&request_id, FeedStreamStatus::Completed, None);
 }
 
-async fn run_search(feed: LuaFeed, req: SearchRequest, token: CancellationToken) {
+async fn run_search(feed: Arc<LuaFeed>, req: SearchRequest, token: CancellationToken) {
     let stream = feed.search(&req.keyword);
     run_stream(req.request_id.clone(), stream, token, |result| {
         SearchResultItem {
@@ -305,7 +314,7 @@ async fn run_search(feed: LuaFeed, req: SearchRequest, token: CancellationToken)
     .await;
 }
 
-async fn run_chapters(feed: LuaFeed, req: ChaptersRequest, token: CancellationToken) {
+async fn run_chapters(feed: Arc<LuaFeed>, req: ChaptersRequest, token: CancellationToken) {
     let stream = feed.chapters(&req.book_id);
     run_stream(req.request_id.clone(), stream, token, |chapter| {
         ChapterInfoItem {
@@ -320,7 +329,7 @@ async fn run_chapters(feed: LuaFeed, req: ChaptersRequest, token: CancellationTo
 }
 
 async fn run_chapter_content(
-    feed: LuaFeed,
+    feed: Arc<LuaFeed>,
     req: ChapterContentRequest,
     token: CancellationToken,
 ) {

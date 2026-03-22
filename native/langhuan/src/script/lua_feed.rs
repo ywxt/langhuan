@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
 
 use async_stream::stream;
@@ -100,11 +99,16 @@ impl<T: DeserializeOwned> FromLua for Page<T, Value> {
 /// A [`Feed`] implementation backed by a Lua script.
 ///
 /// Created by [`ScriptEngine::load_feed`](super::engine::ScriptEngine::load_feed).
+///
+/// Wrap in `Arc<LuaFeed>` to share a single compiled feed across concurrent
+/// requests without reloading the script on every call.
 pub struct LuaFeed {
     lua: Lua,
     handlers: FeedHandlers,
     meta: FeedMeta,
-    client: Arc<Client>,
+    /// `reqwest::Client` is already `Arc`-backed internally; storing it
+    /// directly avoids a redundant double-indirection.
+    client: Client,
 }
 
 impl LuaFeed {
@@ -113,7 +117,7 @@ impl LuaFeed {
         lua: Lua,
         handlers: FeedHandlers,
         meta: FeedMeta,
-        client: Arc<Client>,
+        client: Client,
     ) -> Self {
         Self {
             lua,
