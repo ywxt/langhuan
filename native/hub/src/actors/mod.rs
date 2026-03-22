@@ -15,7 +15,8 @@ use second::SecondActor;
 use tokio::spawn;
 
 use crate::signals::{
-    ChapterContentRequest, ChaptersRequest, FeedCancelRequest, SearchRequest,
+    ChapterContentRequest, ChaptersRequest, FeedCancelRequest, ListFeedsRequest, SearchRequest,
+    SetScriptDirectory,
 };
 
 // Uncomment below to target the web.
@@ -57,20 +58,28 @@ async fn run_feed_actor() {
     let chapters_rx = ChaptersRequest::get_dart_signal_receiver();
     let chapter_content_rx = ChapterContentRequest::get_dart_signal_receiver();
     let cancel_rx = FeedCancelRequest::get_dart_signal_receiver();
+    let set_dir_rx = SetScriptDirectory::get_dart_signal_receiver();
+    let list_feeds_rx = ListFeedsRequest::get_dart_signal_receiver();
 
     loop {
         tokio::select! {
             Some(pack) = search_rx.recv() => {
-                actor.handle_search(pack.message);
+                actor.handle_search(pack.message).await;
             }
             Some(pack) = chapters_rx.recv() => {
-                actor.handle_chapters(pack.message);
+                actor.handle_chapters(pack.message).await;
             }
             Some(pack) = chapter_content_rx.recv() => {
-                actor.handle_chapter_content(pack.message);
+                actor.handle_chapter_content(pack.message).await;
             }
             Some(pack) = cancel_rx.recv() => {
                 actor.handle_cancel(pack.message);
+            }
+            Some(pack) = set_dir_rx.recv() => {
+                actor.handle_set_directory(pack.message).await;
+            }
+            Some(pack) = list_feeds_rx.recv() => {
+                actor.handle_list_feeds(pack.message);
             }
         }
         actor.cleanup_finished();

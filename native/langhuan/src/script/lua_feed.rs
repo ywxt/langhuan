@@ -404,10 +404,11 @@ return {
 
     /// Load a `LuaFeed` from the given script body, injecting `base_url` into
     /// the `==Feed==` header so Lua can reference it via `meta.base_url`.
-    fn load_feed(base_url: &str, body: &str) -> LuaFeed {
+    async fn load_feed(base_url: &str, body: &str) -> LuaFeed {
         let script = format!("{}{}", make_header(base_url), body);
         ScriptEngine::new()
             .load_feed(&script)
+            .await
             .expect("script should load without error")
     }
 
@@ -450,6 +451,7 @@ return {{
 
         let feed = ScriptEngine::new()
             .load_feed(&script)
+            .await
             .expect("load");
 
         // Should yield exactly 1 item and then stop (next_cursor was null).
@@ -485,7 +487,7 @@ return {{
             .create_async()
             .await;
 
-        let feed = load_feed(&server.url(), SEARCH_BODY);
+        let feed = load_feed(&server.url(), SEARCH_BODY).await;
         let results: Vec<_> = feed
             .search("rust")
             .collect::<Vec<_>>()
@@ -533,7 +535,7 @@ return {{
             .create_async()
             .await;
 
-        let feed = load_feed(&server.url(), SEARCH_BODY);
+        let feed = load_feed(&server.url(), SEARCH_BODY).await;
         let results: Vec<_> = feed.search("book").collect::<Vec<_>>().await;
 
         assert_eq!(results.len(), 3, "expected 3 items across 2 pages");
@@ -558,7 +560,7 @@ return {{
             .create_async()
             .await;
 
-        let feed = load_feed(&server.url(), PARSE_ERROR_BODY);
+        let feed = load_feed(&server.url(), PARSE_ERROR_BODY).await;
         let results: Vec<_> = feed.search("anything").collect::<Vec<_>>().await;
 
         assert_eq!(results.len(), 1, "expected exactly one error item");

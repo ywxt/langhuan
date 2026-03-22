@@ -39,7 +39,10 @@ impl ScriptEngine {
     /// 2. Create a sandboxed Lua VM (only safe standard libraries).
     /// 3. Inject a `meta` table (all header fields) as a Lua global.
     /// 4. Execute the script body and capture the returned handler table.
-    pub fn load_feed(&self, script: &str) -> Result<LuaFeed> {
+    ///
+    /// The script body is executed with [`mlua`]'s async eval, allowing Lua
+    /// coroutines to yield during initialisation without blocking the runtime.
+    pub async fn load_feed(&self, script: &str) -> Result<LuaFeed> {
         // 1. Parse metadata header.
         let (feed_meta, body_offset) = meta::parse_meta(script)?;
         let script_body = &script[body_offset..];
@@ -51,7 +54,7 @@ impl ScriptEngine {
         inject_globals(&lua, &feed_meta)?;
 
         // 4. Execute the script body — must return a table.
-        let handlers: FeedHandlers = lua.load(script_body).eval()?;
+        let handlers: FeedHandlers = lua.load(script_body).eval_async().await?;
 
         Ok(LuaFeed::new(
             lua,

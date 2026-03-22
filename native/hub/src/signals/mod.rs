@@ -117,3 +117,54 @@ pub struct FeedStreamEnd {
     pub retried_count: u32,
 }
 
+// ---------------------------------------------------------------------------
+// Registry signals — Dart → Rust
+// ---------------------------------------------------------------------------
+
+/// Tell Rust which directory contains the scripts and `registry.toml`.
+/// Rust will respond with [`ScriptDirectorySet`].
+#[derive(Deserialize, DartSignal)]
+pub struct SetScriptDirectory {
+    /// Absolute path to the scripts directory.
+    pub path: String,
+}
+
+/// Request a listing of all feeds currently in the registry.
+/// Rust will respond with [`FeedListResult`].
+#[derive(Deserialize, DartSignal)]
+pub struct ListFeedsRequest {
+    /// Unique identifier for this request (UUID recommended).
+    pub request_id: String,
+}
+
+// ---------------------------------------------------------------------------
+// Registry signals — Rust → Dart
+// ---------------------------------------------------------------------------
+
+/// Confirmation that the script directory has been (re-)loaded.
+#[derive(Serialize, RustSignal)]
+pub struct ScriptDirectorySet {
+    /// `true` if the registry was loaded successfully.
+    pub success: bool,
+    /// Number of feeds found in the registry (0 on failure).
+    pub feed_count: u32,
+    /// Human-readable error message, present only when `success == false`.
+    pub error: Option<String>,
+}
+
+/// Metadata for a single feed entry, used inside [`FeedListResult`].
+#[derive(Serialize, SignalPiece)]
+pub struct FeedMetaItem {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub author: Option<String>,
+}
+
+/// Response to [`ListFeedsRequest`] — contains all registered feeds.
+#[derive(Serialize, RustSignal)]
+pub struct FeedListResult {
+    pub request_id: String,
+    pub items: Vec<FeedMetaItem>,
+}
+

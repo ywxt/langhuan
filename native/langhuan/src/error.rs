@@ -31,6 +31,31 @@ pub enum Error {
         /// A description of the parse error.
         message: String,
     },
+
+    /// The `registry.toml` file could not be found or read.
+    #[error("registry not found: {0}")]
+    RegistryNotFound(#[from] std::io::Error),
+
+    /// The `registry.toml` file could not be parsed.
+    #[error("registry parse error: {message}")]
+    RegistryParse {
+        /// A description of the parse error.
+        message: String,
+    },
+
+    /// The requested feed ID was not found in the registry.
+    #[error("feed not found: {id}")]
+    FeedNotFound {
+        /// The feed ID that was not found.
+        id: String,
+    },
+
+    /// The registry contains duplicate feed IDs.
+    #[error("duplicate feed id in registry: {id}")]
+    DuplicateFeedId {
+        /// The duplicated feed ID.
+        id: String,
+    },
 }
 
 impl Error {
@@ -51,11 +76,15 @@ impl Error {
                 }
                 false
             }
-            // Lua errors, parse errors, and metadata errors are permanent.
+            // Lua errors, parse errors, metadata errors, and registry errors are permanent.
             Error::Lua(_)
             | Error::MissingFunction { .. }
             | Error::InvalidFeed { .. }
-            | Error::ScriptParse { .. } => false,
+            | Error::ScriptParse { .. }
+            | Error::RegistryNotFound(_)
+            | Error::RegistryParse { .. }
+            | Error::FeedNotFound { .. }
+            | Error::DuplicateFeedId { .. } => false,
         }
     }
 }
