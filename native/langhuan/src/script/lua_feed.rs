@@ -342,33 +342,28 @@ mod tests {
 
     /// A Lua script body that:
     /// - `search.request(keyword, cursor)` → GET `meta.base_url/search?q=<keyword>&cursor=<cursor>`
-    /// - `search.parse(resp)` → evaluates the response body as a Lua table literal
+    /// - `search.parse(resp)` → decodes JSON body via `@langhuan/json`
     /// - All other handlers are stubs that return empty pages / empty objects.
     const SEARCH_BODY: &str = r#"
+local json = require("@langhuan/json")
 return {
     search = {
         request = function(keyword, cursor)
-            local url = meta.base_url .. "/search?q=" .. tostring(keyword)
-            if cursor ~= nil and cursor ~= "" then
-                url = url .. "&cursor=" .. tostring(cursor)
+            -- Use the `params` field so reqwest encodes the query string
+            -- correctly and mockito can match the path `/search` cleanly.
+            local params = { q = keyword }
+            if cursor ~= nil then
+                params.cursor = tostring(cursor)
             end
-            return { url = url, method = "GET" }
+            return { url = meta.base_url .. "/search", method = "GET", params = params }
         end,
         parse = function(resp)
-            -- The mock server returns a Lua-syntax table literal as the body.
-            -- We decode it by wrapping in a `return` and calling `load`.
-            local fn_src = "return " .. resp.body
-            local fn_body, err = load(fn_src)
-            if not fn_body then error("parse error: " .. tostring(err)) end
-            return fn_body()
+            return json.decode(resp.body)
         end,
     },
     book_info = {
         request = function(id) return { url = meta.base_url .. "/book/" .. id } end,
-        parse   = function(resp)
-            local fn_body = load("return " .. resp.body)
-            return fn_body()
-        end,
+        parse   = function(resp) return json.decode(resp.body) end,
     },
     chapters = {
         request = function(book_id, cursor) return { url = meta.base_url .. "/chapters/" .. book_id } end,
@@ -417,6 +412,59 @@ return {
     }
 
     // -----------------------------------------------------------------------
+    // Tests: json null → Lua nil (isolated, no HTTP)
+    // -----------------------------------------------------------------------
+
+    /// Verify that `json.decode` converts JSON `null` to Lua `nil`, so that
+    /// `FromLua for Page` terminates pagination correctly.
+    #[tokio::test]
+    async fn json_null_becomes_lua_nil_in_page() {
+        use crate::script::engine::ScriptEngine;
+        use tokio_stream::StreamExt as _;
+
+        // A feed whose parse function returns a hard-coded page with
+        // next_cursor = json null, decoded via @langhuan/json.
+        // The request function returns a URL that the mock server will serve.
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("GET", mockito::Matcher::Regex(r"^/".into()))
+            .with_status(200)
+            .with_body(r#"{"items":[{"id":"x","title":"T","author":"A"}],"next_cursor":null}"#)
+            .create_async()
+            .await;
+
+        let script = format!(
+            r#"{}local json = require("@langhuan/json")
+return {{
+    search = {{
+        request = function(k, c) return {{ url = meta.base_url .. "/" }} end,
+        parse   = function(r) return json.decode(r.body) end,
+    }},
+    book_info     = {{ request = function(id) return {{ url = meta.base_url }} end, parse = function(r) return {{}} end }},
+    chapters      = {{ request = function(id, c) return {{ url = meta.base_url }} end, parse = function(r) return {{ items = {{}}, next_cursor = nil }} end }},
+    chapter_content = {{ request = function(id, c) return {{ url = meta.base_url }} end, parse = function(r) return {{ items = {{}}, next_cursor = nil }} end }},
+}}
+"#,
+            make_header(&server.url())
+        );
+
+        let feed = ScriptEngine::new()
+            .load_feed(&script)
+            .expect("load");
+
+        // Should yield exactly 1 item and then stop (next_cursor was null).
+        let results: Vec<_> = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            feed.search("x").collect::<Vec<_>>(),
+        )
+        .await
+        .expect("stream must finish within 5 seconds");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].as_ref().unwrap().id, "x");
+    }
+
+    // -----------------------------------------------------------------------
     // Tests: single-page search
     // -----------------------------------------------------------------------
 
@@ -425,13 +473,14 @@ return {
     #[tokio::test]
     async fn single_page_search_yields_all_items() {
         let mut server = mockito::Server::new_async().await;
+        // mockito matches `path_and_query` (path + query string together),
+        // so we use a Regex that accepts `/search` with any query params.
         let _mock = server
-            .mock("GET", "/search")
-            .match_query(mockito::Matcher::UrlEncoded("q".into(), "rust".into()))
+            .mock("GET", mockito::Matcher::Regex(r"^/search(\?.*)?$".into()))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
-                r#"{items = {{id = "1", title = "Rust Book", author = "Steve"}, {id = "2", title = "Async Rust", author = "Alice"}}, next_cursor = nil}"#,
+                r#"{"items":[{"id":"1","title":"Rust Book","author":"Steve"},{"id":"2","title":"Async Rust","author":"Alice"}],"next_cursor":null}"#,
             )
             .create_async()
             .await;
@@ -461,27 +510,25 @@ return {
     async fn multi_page_search_follows_cursor() {
         let mut server = mockito::Server::new_async().await;
 
-        // First page — no cursor param
-        let _mock1 = server
-            .mock("GET", "/search")
-            .match_query(mockito::Matcher::UrlEncoded("q".into(), "book".into()))
+        // mockito matches `path_and_query` together, so we embed the query
+        // condition in the path Regex.  More-specific mock (with cursor) is
+        // registered first; mockito checks mocks in reverse registration
+        // order, so it takes priority over the fallback below.
+        let _mock2 = server
+            .mock("GET", mockito::Matcher::Regex(r"^/search\?.*cursor=page2".into()))
             .with_status(200)
             .with_body(
-                r#"{items = {{id = "1", title = "Book One", author = "A"}}, next_cursor = "page2"}"#,
+                r#"{"items":[{"id":"2","title":"Book Two","author":"B"},{"id":"3","title":"Book Three","author":"C"}],"next_cursor":null}"#,
             )
             .create_async()
             .await;
 
-        // Second page — cursor param present
-        let _mock2 = server
-            .mock("GET", "/search")
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("q".into(), "book".into()),
-                mockito::Matcher::UrlEncoded("cursor".into(), "page2".into()),
-            ]))
+        // Fallback: first page — matches any /search request (no cursor).
+        let _mock1 = server
+            .mock("GET", mockito::Matcher::Regex(r"^/search(\?.*)?$".into()))
             .with_status(200)
             .with_body(
-                r#"{items = {{id = "2", title = "Book Two", author = "B"}, {id = "3", title = "Book Three", author = "C"}}, next_cursor = nil}"#,
+                r#"{"items":[{"id":"1","title":"Book One","author":"A"}],"next_cursor":"page2"}"#,
             )
             .create_async()
             .await;

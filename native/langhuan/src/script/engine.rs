@@ -4,6 +4,7 @@ use mlua::{Lua, LuaSerdeExt, StdLib};
 use reqwest::Client;
 
 use crate::error::Result;
+use crate::script::modules;
 use crate::script::lua_feed::{FeedHandlers, LuaFeed};
 use crate::script::meta::{self, FeedMeta};
 
@@ -80,6 +81,7 @@ fn create_sandbox_lua() -> Result<Lua> {
         StdLib::STRING | StdLib::TABLE | StdLib::MATH | StdLib::UTF8 | StdLib::COROUTINE;
 
     let lua = Lua::new_with(safe_libs, mlua::LuaOptions::default())?;
+    modules::register_builtin_modules(&lua)?;
     Ok(lua)
 }
 
