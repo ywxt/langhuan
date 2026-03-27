@@ -89,12 +89,20 @@ pub struct ChapterInfoItem {
     pub index: u32,
 }
 
-/// A single chapter content segment emitted during a chapter-content stream.
+/// The content of a single paragraph in a chapter.
+#[derive(Serialize, SignalPiece)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ParagraphContent {
+    Title { text: String },
+    Text { content: String },
+    Image { url: String, alt: Option<String> },
+}
+
+/// A single paragraph emitted during a chapter-content stream.
 #[derive(Serialize, RustSignal)]
-pub struct ChapterContentItem {
+pub struct ChapterParagraphItem {
     pub request_id: String,
-    pub title: String,
-    pub paragraphs: Vec<String>,
+    pub paragraph: ParagraphContent,
 }
 
 /// The terminal status of a feed stream.

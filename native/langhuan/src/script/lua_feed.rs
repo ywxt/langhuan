@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use async_stream::stream;
-use mlua::{FromLua, Lua, LuaSerdeExt, Value};
+use mlua::{FromLua, IntoLua, Lua, LuaSerdeExt, Value};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use tokio::time::sleep;
@@ -10,7 +10,7 @@ use tokio::time::sleep;
 use crate::error::Result;
 use crate::feed::{Feed, FeedStream};
 use crate::model::{
-    BookInfo, ChapterContent, ChapterInfo, HttpRequest, HttpResponse, Page, SearchResult,
+    BookInfo, ChapterInfo, HttpBody, HttpRequest, HttpResponse, Page, Paragraph, SearchResult,
 };
 use crate::script::meta::FeedMeta;
 
@@ -48,7 +48,7 @@ pub(crate) struct FeedHandlers {
     pub search: HandlerPair,
     pub book_info: HandlerPair,
     pub chapters: HandlerPair,
-    pub chapter_content: HandlerPair,
+    pub paragraphs: HandlerPair,
 }
 
 /// Extract a [`HandlerPair`] (`request` + `parse`) from a Lua sub-table.
@@ -69,7 +69,7 @@ impl FromLua for FeedHandlers {
             search: extract_pair(&table, "search")?,
             book_info: extract_pair(&table, "book_info")?,
             chapters: extract_pair(&table, "chapters")?,
-            chapter_content: extract_pair(&table, "chapter_content")?,
+            paragraphs: extract_pair(&table, "paragraphs")?,
         })
     }
 }
@@ -113,12 +113,7 @@ pub struct LuaFeed {
 
 impl LuaFeed {
     /// Create a new `LuaFeed`. Called internally by `ScriptEngine`.
-    pub(crate) fn new(
-        lua: Lua,
-        handlers: FeedHandlers,
-        meta: FeedMeta,
-        client: Client,
-    ) -> Self {
+    pub(crate) fn new(lua: Lua, handlers: FeedHandlers, meta: FeedMeta, client: Client) -> Self {
         Self {
             lua,
             handlers,
@@ -143,7 +138,7 @@ impl LuaFeed {
     ) -> Result<Page<T, Value>> {
         let http_request: HttpRequest = self.call_function(&pair.request, args)?;
         let http_response = self.execute_http(&http_request).await?;
-        let lua_response = self.lua.to_value(&http_response)?;
+        let lua_response = http_response.into_lua(&self.lua)?;
         let page: Page<T, Value> = pair.parse.call(lua_response)?;
         Ok(page)
     }
@@ -182,7 +177,7 @@ impl LuaFeed {
     ) -> Result<T> {
         let http_request: HttpRequest = self.call_function(&pair.request, args)?;
         let http_response = self.execute_http(&http_request).await?;
-        let lua_response = self.lua.to_value(&http_response)?;
+        let lua_response = http_response.into_lua(&self.lua)?;
         let value: Value = pair.parse.call(lua_response)?;
         let result: T = self.lua.from_value(value)?;
         Ok(result)
@@ -270,7 +265,7 @@ impl LuaFeed {
         }
 
         if let Some(body) = &req.body {
-            builder = builder.body(body.clone());
+            builder = builder.body(body.0.clone());
         }
 
         let response = builder.send().await?;
@@ -288,7 +283,7 @@ impl LuaFeed {
             })
             .collect();
 
-        let body = response.text().await?;
+        let body = HttpBody(response.bytes().await?);
 
         Ok(HttpResponse {
             status,
@@ -305,11 +300,7 @@ impl LuaFeed {
 
 /// Check whether the host of `url` is permitted by `allowed_domains`.
 ///
-/// Matching rules:
-/// - Patterns starting with `*.` match any subdomain:
-///   `*.example.com` matches `cdn.example.com` and `a.b.example.com`.
-/// - All other patterns match the exact host (`example.com` == `example.com`).
-///
+/// Each entry in `allowed_domains` must be an exact hostname.
 /// Returns `true` if the host is allowed, `false` if the URL cannot be parsed
 /// or the host is not in the list.
 fn domain_allowed(url: &str, allowed_domains: &[String]) -> bool {
@@ -321,13 +312,30 @@ fn domain_allowed(url: &str, allowed_domains: &[String]) -> bool {
         Some(h) => h,
         None => return false,
     };
-    allowed_domains.iter().any(|pattern| {
-        if let Some(suffix) = pattern.strip_prefix("*.") {
-            host == suffix || host.ends_with(&format!(".{suffix}"))
-        } else {
-            host == pattern.as_str()
+    allowed_domains.iter().any(|domain| host == domain.as_str())
+}
+
+// ---------------------------------------------------------------------------
+// IntoLua for HttpResponse
+// ---------------------------------------------------------------------------
+
+impl IntoLua for HttpResponse {
+    fn into_lua(self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.set("status", self.status)?;
+        table.set("url", self.url)?;
+
+        let headers_table = lua.create_table()?;
+        for (k, v) in self.headers {
+            headers_table.set(k, v)?;
         }
-    })
+        table.set("headers", headers_table)?;
+
+        let lua_str = lua.create_string(&self.body.0)?;
+        table.set("body", lua_str)?;
+
+        Ok(Value::Table(table))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -347,8 +355,8 @@ impl Feed for LuaFeed {
         self.paged_stream(&self.handlers.chapters, book_id)
     }
 
-    fn chapter_content<'a>(&'a self, chapter_id: &'a str) -> FeedStream<'a, ChapterContent> {
-        self.paged_stream(&self.handlers.chapter_content, chapter_id)
+    fn paragraphs<'a>(&'a self, chapter_id: &'a str) -> FeedStream<'a, Paragraph> {
+        self.paged_stream(&self.handlers.paragraphs, chapter_id)
     }
 
     fn meta(&self) -> &FeedMeta {
@@ -414,7 +422,7 @@ return {
         request = function(book_id, cursor) return { url = meta.base_url .. "/chapters/" .. book_id } end,
         parse   = function(resp) return { items = {}, next_cursor = nil } end,
     },
-    chapter_content = {
+    paragraphs = {
         request = function(chapter_id, cursor) return { url = meta.base_url .. "/content/" .. chapter_id } end,
         parse   = function(resp) return { items = {}, next_cursor = nil } end,
     },
@@ -440,7 +448,7 @@ return {
         request = function(book_id, cursor) return { url = meta.base_url .. "/chapters/" .. book_id } end,
         parse   = function(resp) return { items = {}, next_cursor = nil } end,
     },
-    chapter_content = {
+    paragraphs = {
         request = function(chapter_id, cursor) return { url = meta.base_url .. "/content/" .. chapter_id } end,
         parse   = function(resp) return { items = {}, next_cursor = nil } end,
     },
@@ -488,16 +496,13 @@ return {{
     }},
     book_info     = {{ request = function(id) return {{ url = meta.base_url }} end, parse = function(r) return {{}} end }},
     chapters      = {{ request = function(id, c) return {{ url = meta.base_url }} end, parse = function(r) return {{ items = {{}}, next_cursor = nil }} end }},
-    chapter_content = {{ request = function(id, c) return {{ url = meta.base_url }} end, parse = function(r) return {{ items = {{}}, next_cursor = nil }} end }},
+    paragraphs = {{ request = function(id, c) return {{ url = meta.base_url }} end, parse = function(r) return {{ items = {{}}, next_cursor = nil }} end }},
 }}
 "#,
             make_header(&server.url())
         );
 
-        let feed = ScriptEngine::new()
-            .load_feed(&script)
-            .await
-            .expect("load");
+        let feed = ScriptEngine::new().load_feed(&script).await.expect("load");
 
         // Should yield exactly 1 item and then stop (next_cursor was null).
         let results: Vec<_> = tokio::time::timeout(
@@ -520,12 +525,11 @@ return {{
     #[tokio::test]
     async fn single_page_search_yields_all_items() {
         let mut server = mockito::Server::new_async().await;
-        // mockito matches `path_and_query` (path + query string together),
-        // so we use a Regex that accepts `/search` with any query params.
+        // No Content-Type header: body is returned as plain text, so
+        // `json.decode(resp.body)` in SEARCH_BODY works correctly.
         let _mock = server
             .mock("GET", mockito::Matcher::Regex(r"^/search(\?.*)?$".into()))
             .with_status(200)
-            .with_header("content-type", "application/json")
             .with_body(
                 r#"{"items":[{"id":"1","title":"Rust Book","author":"Steve"},{"id":"2","title":"Async Rust","author":"Alice"}],"next_cursor":null}"#,
             )
@@ -533,10 +537,7 @@ return {{
             .await;
 
         let feed = load_feed(&server.url(), SEARCH_BODY).await;
-        let results: Vec<_> = feed
-            .search("rust")
-            .collect::<Vec<_>>()
-            .await;
+        let results: Vec<_> = feed.search("rust").collect::<Vec<_>>().await;
 
         assert_eq!(results.len(), 2, "expected 2 items from single page");
         let first = results[0].as_ref().expect("first item should be Ok");

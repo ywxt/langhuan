@@ -19,7 +19,7 @@ use crate::error::{Error, Result};
 /// -- @base_url     https://example.com
 /// -- @charset      utf-8
 /// -- @content_type html
-/// -- @allowed_domains example.com, *.cdn.example.com
+/// -- @allowed_domains example.com, cdn.example.com
 /// -- ==/Feed==
 /// ```
 #[derive(Debug, Clone, Serialize)]
@@ -247,9 +247,28 @@ impl FeedMetaBuilder {
             base_url: require(self.base_url, "base_url")?,
             charset: self.charset.unwrap_or_else(|| "utf-8".to_owned()),
             content_type: self.content_type.unwrap_or_else(|| "html".to_owned()),
-            allowed_domains: self.allowed_domains,
+            allowed_domains: {
+                for entry in &self.allowed_domains {
+                    if !is_valid_hostname(entry) {
+                        return Err(Error::InvalidFeed {
+                            message: format!("invalid domain in allowed_domains: '{entry}'"),
+                        });
+                    }
+                }
+                self.allowed_domains
+            },
         })
     }
+}
+
+/// Return `true` if `s` is a valid hostname accepted by the URL parser.
+///
+/// Delegates to `reqwest::Url` so the same rules applied to actual HTTP
+/// requests are used here.
+fn is_valid_hostname(s: &str) -> bool {
+    reqwest::Url::parse(&format!("http://{s}/"))
+        .map(|u| u.host_str().is_some_and(|h| h.eq_ignore_ascii_case(s)))
+        .unwrap_or(false)
 }
 
 /// Build a [`FeedMeta`] from raw header entries.

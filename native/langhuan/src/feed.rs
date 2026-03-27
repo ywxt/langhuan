@@ -3,7 +3,7 @@ use std::pin::Pin;
 use tokio_stream::Stream;
 
 use crate::error::Result;
-use crate::model::{BookInfo, ChapterContent, ChapterInfo, SearchResult};
+use crate::model::{BookInfo, ChapterInfo, Paragraph, SearchResult};
 use crate::script::meta::FeedMeta;
 
 /// A pinned, boxed, `Send`-able stream of `Result<T>`.
@@ -35,11 +35,11 @@ pub trait Feed: Send + Sync {
     /// automatically following pagination.
     fn chapters<'a>(&'a self, book_id: &'a str) -> FeedStream<'a, ChapterInfo>;
 
-    /// Fetch the textual content of a chapter.
+    /// Fetch the content of a chapter as a stream of [`Paragraph`] segments.
     ///
-    /// Returns a stream that yields each [`ChapterContent`] segment as it is
-    /// received, automatically following pagination.
-    fn chapter_content<'a>(&'a self, chapter_id: &'a str) -> FeedStream<'a, ChapterContent>;
+    /// Returns a stream that yields each [`Paragraph`] as it is received,
+    /// automatically following pagination.
+    fn paragraphs<'a>(&'a self, chapter_id: &'a str) -> FeedStream<'a, Paragraph>;
 
     /// The metadata of this feed (id, name, version, etc.).
     fn meta(&self) -> &FeedMeta;

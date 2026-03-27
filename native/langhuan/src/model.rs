@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -74,13 +75,20 @@ pub struct ChapterInfo {
     pub index: u32,
 }
 
-/// The textual content of a single chapter.
+/// A single content unit in a chapter, emitted as part of a paragraphs stream.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChapterContent {
-    /// Title of the chapter.
-    pub title: String,
-    /// The chapter body split into paragraphs.
-    pub paragraphs: Vec<String>,
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Paragraph {
+    /// The chapter title (typically emitted first).
+    Title { text: String },
+    /// A text paragraph.
+    Text { content: String },
+    /// An image.
+    Image {
+        url: String,
+        #[serde(default)]
+        alt: Option<String>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -104,9 +112,59 @@ pub struct HttpRequest {
     /// Additional HTTP headers.
     #[serde(default)]
     pub headers: Option<HashMap<String, String>>,
-    /// An optional request body (for POST/PUT).
+    /// An optional request body (for POST/PUT), as raw bytes.
     #[serde(default)]
-    pub body: Option<String>,
+    pub body: Option<HttpBody>,
+}
+
+/// A body carried by either an HTTP request or an HTTP response.
+///
+/// Raw bytes only — all encoding and decoding is the Lua script's responsibility.
+/// On responses, Rust always delivers the raw bytes; Lua can call `json.decode`
+/// or handle the string as needed.
+#[derive(Debug, Clone)]
+pub struct HttpBody(pub Bytes);
+
+impl serde::Serialize for HttpBody {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_bytes(&self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for HttpBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct HttpBodyVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for HttpBodyVisitor {
+            type Value = HttpBody;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a byte array for HTTP body")
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(HttpBody(Bytes::copy_from_slice(v)))
+            }
+
+            fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(HttpBody(Bytes::from(v)))
+            }
+        }
+
+        deserializer.deserialize_bytes(HttpBodyVisitor)
+    }
 }
 
 fn default_method() -> String {
@@ -120,8 +178,8 @@ pub struct HttpResponse {
     pub status: u16,
     /// Response headers.
     pub headers: HashMap<String, String>,
-    /// The response body as a string.
-    pub body: String,
+    /// The response body as raw bytes.
+    pub body: HttpBody,
     /// The final URL after any redirects.
     pub url: String,
 }

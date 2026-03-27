@@ -34,10 +34,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::localize_error;
 use crate::signals::{
-    ChapterContentItem, ChapterContentRequest, ChapterInfoItem, ChaptersRequest, FeedCancelRequest,
-    FeedInstallResult, FeedListResult, FeedMetaItem, FeedPreviewResult, FeedStreamEnd,
-    FeedStreamStatus, InstallFeedRequest, ListFeedsRequest, PreviewFeedFromFile,
-    PreviewFeedFromUrl, ScriptDirectorySet, SearchRequest, SearchResultItem, SetScriptDirectory,
+    ChapterContentRequest, ChapterInfoItem, ChapterParagraphItem, ChaptersRequest,
+    FeedCancelRequest, FeedInstallResult, FeedListResult, FeedMetaItem, FeedPreviewResult,
+    FeedStreamEnd, FeedStreamStatus, InstallFeedRequest, ListFeedsRequest, ParagraphContent,
+    PreviewFeedFromFile, PreviewFeedFromUrl, ScriptDirectorySet, SearchRequest, SearchResultItem,
+    SetScriptDirectory,
 };
 
 // ---------------------------------------------------------------------------
@@ -523,12 +524,18 @@ async fn run_chapter_content(
     req: ChapterContentRequest,
     token: CancellationToken,
 ) {
-    let stream = feed.chapter_content(&req.chapter_id);
-    run_stream(req.request_id.clone(), stream, token, |content| {
-        ChapterContentItem {
+    use langhuan::model::Paragraph;
+
+    let stream = feed.paragraphs(&req.chapter_id);
+    run_stream(req.request_id.clone(), stream, token, |paragraph| {
+        let content = match paragraph {
+            Paragraph::Title { text } => ParagraphContent::Title { text },
+            Paragraph::Text { content } => ParagraphContent::Text { content },
+            Paragraph::Image { url, alt } => ParagraphContent::Image { url, alt },
+        };
+        ChapterParagraphItem {
             request_id: req.request_id.clone(),
-            title: content.title,
-            paragraphs: content.paragraphs,
+            paragraph: content,
         }
         .send_signal_to_dart();
     })

@@ -212,18 +212,20 @@ class ChapterContentState {
   });
 
   final String chapterId;
-  final List<ChapterContentModel> items;
+  final List<ParagraphContent> items;
   final bool isLoading;
   final Object? error;
   final String? requestId;
 
   bool get hasError => error != null;
-  List<String> get allParagraphs =>
-      items.expand((c) => c.paragraphs).toList(growable: false);
+  List<String> get allParagraphs => items
+      .whereType<ParagraphContentText>()
+      .map((p) => p.content)
+      .toList(growable: false);
 
   ChapterContentState copyWith({
     String? chapterId,
-    List<ChapterContentModel>? items,
+    List<ParagraphContent>? items,
     bool? isLoading,
     Object? Function()? error,
     String? Function()? requestId,
@@ -239,7 +241,7 @@ class ChapterContentState {
 }
 
 class ChapterContentNotifier extends Notifier<ChapterContentState> {
-  StreamSubscription<ChapterContentModel>? _subscription;
+  StreamSubscription<ParagraphContent>? _subscription;
 
   @override
   ChapterContentState build() => const ChapterContentState();

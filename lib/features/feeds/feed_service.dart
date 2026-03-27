@@ -40,14 +40,6 @@ class ChapterInfoModel {
 }
 
 @immutable
-class ChapterContentModel {
-  const ChapterContentModel({required this.title, required this.paragraphs});
-
-  final String title;
-  final List<String> paragraphs;
-}
-
-@immutable
 class FeedPreviewModel {
   const FeedPreviewModel({
     required this.requestId,
@@ -183,7 +175,7 @@ class FeedService {
   // -------------------------------------------------------------------------
 
   /// Start a chapter-content stream.
-  ({String requestId, Stream<ChapterContentModel> stream}) chapterContent({
+  ({String requestId, Stream<ParagraphContent> stream}) chapterContent({
     required String feedId,
     required String chapterId,
   }) {
@@ -195,16 +187,11 @@ class FeedService {
       chapterId: chapterId,
     ).sendSignalToRust();
 
-    final stream = _buildStream<ChapterContentModel>(
+    final stream = _buildStream<ParagraphContent>(
       requestId: requestId,
-      itemStream: ChapterContentItem.rustSignalStream
+      itemStream: ChapterParagraphItem.rustSignalStream
           .where((pack) => pack.message.requestId == requestId)
-          .map(
-            (pack) => ChapterContentModel(
-              title: pack.message.title,
-              paragraphs: List.unmodifiable(pack.message.paragraphs),
-            ),
-          ),
+          .map((pack) => pack.message.paragraph),
     );
 
     return (requestId: requestId, stream: stream);

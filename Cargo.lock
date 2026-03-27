@@ -798,6 +798,7 @@ name = "langhuan"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "bytes",
  "mlua",
  "mockito",
  "reqwest",
