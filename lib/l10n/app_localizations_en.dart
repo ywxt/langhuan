@@ -100,6 +100,39 @@ class AppLocalizationsEn extends AppLocalizations {
   String get feedItemLoadError => 'Load error';
 
   @override
+  String get feedDeleteConfirmTitle => 'Delete feed?';
+
+  @override
+  String feedDeleteConfirmMessage(String feedName) {
+    return 'Delete \"$feedName\" from your feeds?';
+  }
+
+  @override
+  String get feedDeleteCancel => 'Cancel';
+
+  @override
+  String get feedDeleteConfirm => 'Delete';
+
+  @override
+  String feedDeleteSuccess(String feedName) {
+    return '$feedName removed';
+  }
+
+  @override
+  String get feedDeleteError => 'Failed to delete feed';
+
+  @override
+  String get feedDeleteBusy => 'Another feed operation is in progress';
+
+  @override
+  String feedDeleteQueued(String feedName) {
+    return '\"$feedName\" will be deleted';
+  }
+
+  @override
+  String get feedDeleteUndo => 'Undo';
+
+  @override
   String get feedSelectorNoFeeds =>
       'No feeds available. Add scripts in the Feeds tab first.';
 

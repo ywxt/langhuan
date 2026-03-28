@@ -99,6 +99,39 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedItemLoadError => '加載失敗';
 
   @override
+  String get feedDeleteConfirmTitle => '刪除書源？';
+
+  @override
+  String feedDeleteConfirmMessage(String feedName) {
+    return '確定要刪除「$feedName」嗎？';
+  }
+
+  @override
+  String get feedDeleteCancel => '取消';
+
+  @override
+  String get feedDeleteConfirm => '刪除';
+
+  @override
+  String feedDeleteSuccess(String feedName) {
+    return '已刪除 $feedName';
+  }
+
+  @override
+  String get feedDeleteError => '刪除書源失敗';
+
+  @override
+  String get feedDeleteBusy => '目前有其他書源操作進行中';
+
+  @override
+  String feedDeleteQueued(String feedName) {
+    return '「$feedName」將被刪除';
+  }
+
+  @override
+  String get feedDeleteUndo => '撤銷';
+
+  @override
   String get feedSelectorNoFeeds => '暫無書源，請先在「書源」頁面添加腳本';
 
   @override

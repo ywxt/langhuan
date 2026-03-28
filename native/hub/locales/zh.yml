@@ -14,3 +14,4 @@ error:
   no_pending_preview: "找不到對應的預覽記錄"
   script_dir_not_set: "書源目錄尚未設置"
   feed_unavailable: "找不到書源「%{id}」或其加載失敗"
+  registry_reload_not_supported: "運行時不支持重新加載書源目錄"

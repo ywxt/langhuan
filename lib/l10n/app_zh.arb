@@ -36,6 +36,16 @@
 
   "feedItemLoadError": "加載失敗",
 
+  "feedDeleteConfirmTitle": "刪除書源？",
+  "feedDeleteConfirmMessage": "確定要刪除「{feedName}」嗎？",
+  "feedDeleteCancel": "取消",
+  "feedDeleteConfirm": "刪除",
+  "feedDeleteSuccess": "已刪除 {feedName}",
+  "feedDeleteError": "刪除書源失敗",
+  "feedDeleteBusy": "目前有其他書源操作進行中",
+  "feedDeleteQueued": "「{feedName}」將被刪除",
+  "feedDeleteUndo": "撤銷",
+
   "feedSelectorNoFeeds": "暫無書源，請先在「書源」頁面添加腳本",
 
   "profileTitle": "我的",

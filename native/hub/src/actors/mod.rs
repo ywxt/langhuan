@@ -3,21 +3,17 @@
 //! Focus on message passing instead.
 
 mod feed_actor;
-mod first;
-mod second;
 
 use feed_actor::FeedActor;
-use first::FirstActor;
 use langhuan::script::engine::ScriptEngine;
 use messages::prelude::Context;
 use rinf::DartSignal;
-use second::SecondActor;
 use tokio::spawn;
 
 use crate::signals::{
     ChapterContentRequest, ChaptersRequest, FeedCancelRequest, InstallFeedRequest,
-    ListFeedsRequest, PreviewFeedFromFile, PreviewFeedFromUrl, SearchRequest,
-    SetScriptDirectory,
+    ListFeedsRequest, PreviewFeedFromFile, PreviewFeedFromUrl, RemoveFeedRequest,
+    SearchRequest, SetScriptDirectory,
 };
 
 // Uncomment below to target the web.
@@ -31,17 +27,6 @@ pub async fn create_actors() {
     // Actors keep ownership of their state and run in their own loops,
     // handling messages from other actors or external sources,
     // such as websockets or timers.
-
-    // Create actor contexts.
-    let first_context = Context::new();
-    let first_addr = first_context.address();
-    let second_context = Context::new();
-
-    // Spawn the actors.
-    let first_actor = FirstActor::new(first_addr.clone());
-    spawn(first_context.run(first_actor));
-    let second_actor = SecondActor::new(first_addr);
-    spawn(second_context.run(second_actor));
 
     // Spawn the FeedActor event loop.
     spawn(run_feed_actor());
@@ -64,6 +49,7 @@ async fn run_feed_actor() {
     let preview_url_rx = PreviewFeedFromUrl::get_dart_signal_receiver();
     let preview_file_rx = PreviewFeedFromFile::get_dart_signal_receiver();
     let install_rx = InstallFeedRequest::get_dart_signal_receiver();
+    let remove_rx = RemoveFeedRequest::get_dart_signal_receiver();
 
     loop {
         tokio::select! {
@@ -93,6 +79,9 @@ async fn run_feed_actor() {
             }
             Some(pack) = install_rx.recv() => {
                 actor.handle_install(pack.message).await;
+            }
+            Some(pack) = remove_rx.recv() => {
+                actor.handle_remove(pack.message).await;
             }
         }
         actor.cleanup_finished();

@@ -1,28 +1,6 @@
 use rinf::{DartSignal, RustSignal, SignalPiece};
 use serde::{Deserialize, Serialize};
 
-/// To send data from Dart to Rust, use `DartSignal`.
-#[derive(Deserialize, DartSignal)]
-pub struct SmallText {
-    pub text: String,
-}
-
-/// To send data from Rust to Dart, use `RustSignal`.
-#[derive(Serialize, RustSignal)]
-pub struct SmallNumber {
-    pub number: i32,
-}
-
-/// A signal can be nested inside another signal.
-#[derive(Serialize, RustSignal)]
-pub struct BigBool {
-    pub member: bool,
-    pub nested: SmallBool,
-}
-
-/// To nest a signal inside other signal, use `SignalPiece`.
-#[derive(Serialize, SignalPiece)]
-pub struct SmallBool(pub bool);
 
 // ---------------------------------------------------------------------------
 // Feed signals — Dart → Rust (requests)
@@ -212,11 +190,19 @@ pub struct SetLocale {
 /// Confirm installation of a previously previewed feed.
 ///
 /// `request_id` must match the one from the preceding preview request.
-/// Rust will write the script to disk, update `registry.toml`, reload the
-/// registry, and respond with a [`FeedInstallResult`].
+/// Rust will write the script to disk, update `registry.toml`, apply the
+/// change to the current in-memory registry, and respond with a
+/// [`FeedInstallResult`].
 #[derive(Deserialize, DartSignal)]
 pub struct InstallFeedRequest {
     pub request_id: String,
+}
+
+/// Remove an installed feed by `feed_id`.
+#[derive(Deserialize, DartSignal)]
+pub struct RemoveFeedRequest {
+    pub request_id: String,
+    pub feed_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +236,14 @@ pub struct FeedPreviewResult {
 /// Result of a [`InstallFeedRequest`].
 #[derive(Serialize, RustSignal)]
 pub struct FeedInstallResult {
+    pub request_id: String,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+/// Result of a [`RemoveFeedRequest`].
+#[derive(Serialize, RustSignal)]
+pub struct FeedRemoveResult {
     pub request_id: String,
     pub success: bool,
     pub error: Option<String>,

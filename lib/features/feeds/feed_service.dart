@@ -267,10 +267,22 @@ class FeedService {
   ///
   /// [requestId] must match the one returned by the preceding preview call.
   /// Returns a [Future] that resolves to the [FeedInstallResult] once Rust
-  /// finishes writing the script to disk and reloading the registry.
+  /// finishes writing the script to disk and updating the current registry.
   Future<FeedInstallResult> installFeed(String requestId) {
     InstallFeedRequest(requestId: requestId).sendSignalToRust();
     return FeedInstallResult.rustSignalStream
+        .where((pack) => pack.message.requestId == requestId)
+        .first
+        .then((pack) => pack.message);
+  }
+
+  /// Remove an installed feed by [feedId].
+  ///
+  /// Returns a [Future] that resolves to [FeedRemoveResult] when Rust finishes.
+  Future<FeedRemoveResult> removeFeed(String feedId) {
+    final requestId = _nextId();
+    RemoveFeedRequest(requestId: requestId, feedId: feedId).sendSignalToRust();
+    return FeedRemoveResult.rustSignalStream
         .where((pack) => pack.message.requestId == requestId)
         .first
         .then((pack) => pack.message);

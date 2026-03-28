@@ -100,6 +100,48 @@
   "feedItemLoadError": "Load error",
   "@feedItemLoadError": { "description": "Label for per-feed compile error in detail sheet" },
 
+  "feedDeleteConfirmTitle": "Delete feed?",
+  "@feedDeleteConfirmTitle": { "description": "Dialog title when confirming feed deletion" },
+
+  "feedDeleteConfirmMessage": "Delete \"{feedName}\" from your feeds?",
+  "@feedDeleteConfirmMessage": {
+    "description": "Dialog body for feed deletion confirmation",
+    "placeholders": {
+      "feedName": { "type": "String" }
+    }
+  },
+
+  "feedDeleteCancel": "Cancel",
+  "@feedDeleteCancel": { "description": "Cancel button in feed delete confirmation dialog" },
+
+  "feedDeleteConfirm": "Delete",
+  "@feedDeleteConfirm": { "description": "Confirm button in feed delete confirmation dialog" },
+
+  "feedDeleteSuccess": "{feedName} removed",
+  "@feedDeleteSuccess": {
+    "description": "Snackbar shown when feed deletion succeeds",
+    "placeholders": {
+      "feedName": { "type": "String" }
+    }
+  },
+
+  "feedDeleteError": "Failed to delete feed",
+  "@feedDeleteError": { "description": "Snackbar prefix for feed deletion failure" },
+
+  "feedDeleteBusy": "Another feed operation is in progress",
+  "@feedDeleteBusy": { "description": "Snackbar when user tries delete while another delete is running" },
+
+  "feedDeleteQueued": "\"{feedName}\" will be deleted",
+  "@feedDeleteQueued": {
+    "description": "Snackbar shown right after swipe delete, before commit",
+    "placeholders": {
+      "feedName": { "type": "String" }
+    }
+  },
+
+  "feedDeleteUndo": "Undo",
+  "@feedDeleteUndo": { "description": "Snackbar action label to cancel pending feed deletion" },
+
   "feedSelectorNoFeeds": "No feeds available. Add scripts in the Feeds tab first.",
   "@feedSelectorNoFeeds": { "description": "Search page: no feeds available message" },
 

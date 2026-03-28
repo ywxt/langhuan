@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app.dart';
 import '../../l10n/app_localizations.dart';
 import '../../src/bindings/signals/signals.dart';
 import 'add_feed_sheet.dart';
@@ -20,6 +23,8 @@ class FeedsPage extends ConsumerStatefulWidget {
 class _FeedsPageState extends ConsumerState<FeedsPage> {
   final _filterController = TextEditingController();
   String _filterText = '';
+  final Set<String> _pendingDeleteIds = <String>{};
+  Completer<bool>? _undoCompleter;
 
   @override
   void initState() {
@@ -27,20 +32,23 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
     _filterController.addListener(() {
       setState(() => _filterText = _filterController.text.trim().toLowerCase());
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(feedListProvider.notifier).load();
-    });
   }
 
   @override
   void dispose() {
     _filterController.dispose();
+    if (_undoCompleter != null && !_undoCompleter!.isCompleted) {
+      _undoCompleter!.complete(false);
+    }
     super.dispose();
   }
 
   List<FeedMetaItem> _filtered(List<FeedMetaItem> items) {
-    if (_filterText.isEmpty) return items;
-    return items
+    final visible = items
+        .where((f) => !_pendingDeleteIds.contains(f.id))
+        .toList(growable: false);
+    if (_filterText.isEmpty) return visible;
+    return visible
         .where(
           (f) =>
               f.name.toLowerCase().contains(_filterText) ||
@@ -172,8 +180,142 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
       itemCount: filtered.length,
       separatorBuilder: (_, _) => const Divider(height: 1, indent: 72),
       itemBuilder: (context, index) {
-        return _FeedTile(feed: filtered[index]);
+        final feed = filtered[index];
+        final deletingId = feedState.removingFeedId;
+        final isDeleting =
+            deletingId == feed.id || _pendingDeleteIds.contains(feed.id);
+        final isBusy = deletingId != null || _pendingDeleteIds.isNotEmpty;
+
+        return Dismissible(
+          key: ValueKey('feed-${feed.id}'),
+          direction: isBusy
+              ? DismissDirection.none
+              : DismissDirection.endToStart,
+          background: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            color: colorScheme.errorContainer,
+            child: Icon(
+              Icons.delete_outline,
+              color: colorScheme.onErrorContainer,
+            ),
+          ),
+          confirmDismiss: (_) async {
+            final confirmed =
+                await _confirmDelete(context, feed, l10n) == true;
+            if (confirmed) {
+              // Capture the local Scaffold's messenger BEFORE any rebuild.
+              final messenger = ScaffoldMessenger.of(context);
+              _handleDeleteWithUndo(feed, l10n, messenger);
+            }
+            return false; // Always reset Dismissible position
+          },
+          child: _FeedTile(feed: feed, isDeleting: isDeleting),
+        );
       },
+    );
+  }
+
+  Future<void> _handleDeleteWithUndo(
+    FeedMetaItem feed,
+    AppLocalizations l10n,
+    ScaffoldMessengerState messenger,
+  ) async {
+    if (!mounted) return;
+
+    setState(() {
+      _pendingDeleteIds.add(feed.id);
+    });
+
+    // Use a Completer + Timer instead of awaiting SnackBarController.closed,
+    // because MaterialApp rebuilds can orphan the .closed future forever.
+    final completer = Completer<bool>();
+    _undoCompleter = completer;
+
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(l10n.feedDeleteQueued(feed.name)),
+        action: SnackBarAction(
+          label: l10n.feedDeleteUndo,
+          onPressed: () {
+            if (!completer.isCompleted) completer.complete(true);
+          },
+        ),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+
+    // Timer fires after 4 seconds — if user hasn't tapped Undo, proceed.
+    final timer = Timer(const Duration(seconds: 4), () {
+      if (!completer.isCompleted) completer.complete(false);
+    });
+
+    final undone = await completer.future;
+    timer.cancel();
+    _undoCompleter = null;
+
+    if (!mounted) return;
+
+    if (undone) {
+      // User tapped Undo — restore the item in the list.
+      setState(() {
+        _pendingDeleteIds.remove(feed.id);
+      });
+      messenger.clearSnackBars();
+      return;
+    }
+
+    // Proceed with actual deletion.
+    messenger.clearSnackBars();
+    final error = await ref
+        .read(feedListProvider.notifier)
+        .removeFeed(feedId: feed.id);
+
+    if (!mounted) return;
+
+    setState(() {
+      _pendingDeleteIds.remove(feed.id);
+    });
+
+    final cur = scaffoldMessengerKey.currentState;
+
+    if (error == null) {
+      cur?.clearSnackBars();
+      cur?.showSnackBar(
+        SnackBar(content: Text(l10n.feedDeleteSuccess(feed.name))),
+      );
+      return;
+    }
+
+    final message = error == 'busy'
+        ? l10n.feedDeleteBusy
+        : '${l10n.feedDeleteError}: $error';
+    cur?.clearSnackBars();
+    cur?.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<bool?> _confirmDelete(
+    BuildContext context,
+    FeedMetaItem feed,
+    AppLocalizations l10n,
+  ) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.feedDeleteConfirmTitle),
+        content: Text(l10n.feedDeleteConfirmMessage(feed.name)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.feedDeleteCancel),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.feedDeleteConfirm),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -183,9 +325,10 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
 // ---------------------------------------------------------------------------
 
 class _FeedTile extends StatelessWidget {
-  const _FeedTile({required this.feed});
+  const _FeedTile({required this.feed, this.isDeleting = false});
 
   final FeedMetaItem feed;
+  final bool isDeleting;
 
   @override
   Widget build(BuildContext context) {
@@ -217,12 +360,23 @@ class _FeedTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       trailing: IconButton(
-        icon: Icon(
-          hasError ? Icons.error_outline : Icons.info_outline,
-          color: hasError ? colorScheme.error : null,
-        ),
+        icon: isDeleting
+            ? SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: colorScheme.primary,
+                ),
+              )
+            : Icon(
+                hasError ? Icons.error_outline : Icons.info_outline,
+                color: hasError ? colorScheme.error : null,
+              ),
         tooltip: l10n.feedDetailTooltip,
-        onPressed: () => _showFeedDetailSheet(context, feed),
+        onPressed: isDeleting
+            ? null
+            : () => _showFeedDetailSheet(context, feed),
       ),
     );
   }

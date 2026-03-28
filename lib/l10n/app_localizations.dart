@@ -266,6 +266,60 @@ abstract class AppLocalizations {
   /// **'Load error'**
   String get feedItemLoadError;
 
+  /// Dialog title when confirming feed deletion
+  ///
+  /// In en, this message translates to:
+  /// **'Delete feed?'**
+  String get feedDeleteConfirmTitle;
+
+  /// Dialog body for feed deletion confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Delete \"{feedName}\" from your feeds?'**
+  String feedDeleteConfirmMessage(String feedName);
+
+  /// Cancel button in feed delete confirmation dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get feedDeleteCancel;
+
+  /// Confirm button in feed delete confirmation dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get feedDeleteConfirm;
+
+  /// Snackbar shown when feed deletion succeeds
+  ///
+  /// In en, this message translates to:
+  /// **'{feedName} removed'**
+  String feedDeleteSuccess(String feedName);
+
+  /// Snackbar prefix for feed deletion failure
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to delete feed'**
+  String get feedDeleteError;
+
+  /// Snackbar when user tries delete while another delete is running
+  ///
+  /// In en, this message translates to:
+  /// **'Another feed operation is in progress'**
+  String get feedDeleteBusy;
+
+  /// Snackbar shown right after swipe delete, before commit
+  ///
+  /// In en, this message translates to:
+  /// **'\"{feedName}\" will be deleted'**
+  String feedDeleteQueued(String feedName);
+
+  /// Snackbar action label to cancel pending feed deletion
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get feedDeleteUndo;
+
   /// Search page: no feeds available message
   ///
   /// In en, this message translates to:

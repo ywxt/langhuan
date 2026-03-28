@@ -14,3 +14,4 @@ error:
   no_pending_preview: "No pending preview for this request"
   script_dir_not_set: "Script directory not set"
   feed_unavailable: "Feed '%{id}' not found or failed to load"
+  registry_reload_not_supported: "Registry reload is not supported at runtime"

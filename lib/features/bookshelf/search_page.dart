@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:langhuan/rust_init.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../src/bindings/signals/signals.dart';
 import '../feeds/feed_providers.dart';
 import '../feeds/feed_service.dart';
 
@@ -20,6 +22,27 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
 
+  List<FeedMetaItem> _visibleFeeds(FeedListState feedState) {
+    return feedState.items
+        .where((feed) => feed.error == null)
+        .toList(growable: false);
+  }
+
+  FeedMetaItem? _effectiveSelectedFeed({
+    required List<FeedMetaItem> visibleFeeds,
+    required FeedMetaItem? selectedFeed,
+  }) {
+    if (visibleFeeds.isEmpty) return null;
+    if (selectedFeed == null) return visibleFeeds.first;
+
+    for (final feed in visibleFeeds) {
+      if (feed.id == selectedFeed.id) {
+        return feed;
+      }
+    }
+    return visibleFeeds.first;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -37,27 +60,61 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   }
 
   void _onSearch() {
-    final feedId = ref.read(selectedFeedProvider)?.id;
-    if (feedId == null) return;
+    final bootstrap = ref.read(scriptDirectorySetProvider);
+    final bootstrapReady = bootstrap.asData?.value.success ?? false;
+    if (!bootstrapReady) return;
+
+    final feedState = ref.read(feedListProvider);
+    final selectedFeed = ref.read(selectedFeedProvider);
+    final effectiveSelectedFeed = _effectiveSelectedFeed(
+      visibleFeeds: _visibleFeeds(feedState),
+      selectedFeed: selectedFeed,
+    );
+    if (effectiveSelectedFeed == null) return;
+
     final keyword = _searchController.text.trim();
     if (keyword.isEmpty) return;
-    ref.read(searchProvider.notifier).search(feedId: feedId, keyword: keyword);
+    ref
+        .read(searchProvider.notifier)
+        .search(feedId: effectiveSelectedFeed.id, keyword: keyword);
   }
 
   @override
   Widget build(BuildContext context) {
+    final bootstrap = ref.watch(scriptDirectorySetProvider);
+    final bootstrapReady = bootstrap.asData?.value.success ?? false;
     final feedState = ref.watch(feedListProvider);
     final selectedFeed = ref.watch(selectedFeedProvider);
+    final visibleFeeds = _visibleFeeds(feedState);
+    final effectiveSelectedFeed = _effectiveSelectedFeed(
+      visibleFeeds: visibleFeeds,
+      selectedFeed: selectedFeed,
+    );
     final searchState = ref.watch(searchProvider);
     final colorScheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context);
+
+    if (effectiveSelectedFeed?.id != selectedFeed?.id) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (effectiveSelectedFeed == null) {
+          ref.read(selectedFeedProvider.notifier).clear();
+        } else {
+          ref.read(selectedFeedProvider.notifier).select(effectiveSelectedFeed);
+        }
+      });
+    }
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.searchTitle), centerTitle: true),
       body: Column(
         children: [
           // ── Feed selector (horizontal chip row) ──────────────────────
-          _FeedSelector(feedState: feedState, selectedFeed: selectedFeed),
+          _FeedSelector(
+            feedState: feedState,
+            visibleFeeds: visibleFeeds,
+            selectedFeed: effectiveSelectedFeed,
+          ),
 
           const Divider(height: 1),
 
@@ -67,10 +124,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             child: SearchBar(
               controller: _searchController,
               focusNode: _searchFocusNode,
-              hintText: selectedFeed == null
+              hintText: effectiveSelectedFeed == null
                   ? l10n.searchHintNoFeed
-                  : l10n.searchHintWithFeed(selectedFeed.name),
-              enabled: selectedFeed != null,
+                  : l10n.searchHintWithFeed(effectiveSelectedFeed.name),
+              enabled: effectiveSelectedFeed != null && bootstrapReady,
               leading: const Icon(Icons.search),
               trailing: [
                 if (searchState.isLoading)
@@ -102,7 +159,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             child: _buildResults(
               context,
               searchState,
-              selectedFeed,
+              effectiveSelectedFeed,
               colorScheme,
               l10n,
             ),
@@ -194,10 +251,15 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 // ---------------------------------------------------------------------------
 
 class _FeedSelector extends ConsumerWidget {
-  const _FeedSelector({required this.feedState, required this.selectedFeed});
+  const _FeedSelector({
+    required this.feedState,
+    required this.visibleFeeds,
+    required this.selectedFeed,
+  });
 
   final FeedListState feedState;
-  final dynamic selectedFeed;
+  final List<FeedMetaItem> visibleFeeds;
+  final FeedMetaItem? selectedFeed;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -217,7 +279,7 @@ class _FeedSelector extends ConsumerWidget {
       );
     }
 
-    if (!feedState.hasItems) {
+    if (visibleFeeds.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Text(
@@ -232,9 +294,9 @@ class _FeedSelector extends ConsumerWidget {
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        itemCount: feedState.items.length,
+        itemCount: visibleFeeds.length,
         itemBuilder: (context, index) {
-          final feed = feedState.items[index];
+          final feed = visibleFeeds[index];
           final isSelected = selectedFeed?.id == feed.id;
           return Padding(
             padding: const EdgeInsets.only(right: 8),
