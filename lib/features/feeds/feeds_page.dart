@@ -201,8 +201,7 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
             ),
           ),
           confirmDismiss: (_) async {
-            final confirmed =
-                await _confirmDelete(context, feed, l10n) == true;
+            final confirmed = await _confirmDelete(context, feed, l10n) == true;
             if (confirmed) {
               // Capture the local Scaffold's messenger BEFORE any rebuild.
               final messenger = ScaffoldMessenger.of(context);
