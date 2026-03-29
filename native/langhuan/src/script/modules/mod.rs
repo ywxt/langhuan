@@ -18,6 +18,7 @@
 //! ```
 
 mod json;
+mod html;
 
 use mlua::{Lua, Result, Value};
 
@@ -28,7 +29,10 @@ type ModuleFactory = fn(&Lua) -> Result<Value>;
 ///
 /// Each entry is `(require_name, factory)`. The `require_name` must start
 /// with `@langhuan/` and is the exact string callers pass to `require(...)`.
-const BUILTIN_MODULES: &[(&str, ModuleFactory)] = &[("@langhuan/json", json::module)];
+const BUILTIN_MODULES: &[(&str, ModuleFactory)] = &[
+    ("@langhuan/json", json::module),
+    ("@langhuan/html", html::module),
+];
 
 /// Register all built-in modules and install the custom `require` function.
 ///

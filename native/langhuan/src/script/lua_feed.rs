@@ -455,6 +455,51 @@ return {
 }
 "#;
 
+    /// A Lua script body using `@langhuan/html` to parse search result HTML.
+    const HTML_SEARCH_BODY: &str = r#"
+local html = require("@langhuan/html")
+
+return {
+    search = {
+        request = function(keyword, cursor)
+            return { url = meta.base_url .. "/search" }
+        end,
+        parse = function(resp)
+            local doc = html.parse(resp.body)
+            local nodes = doc:select("ul.books li.item a.book")
+            local items = {}
+
+            for i = 1, #nodes do
+                local node = nodes[i]
+                local href = node:attr("href") or ""
+                local id = href:match("/book/(%d+)%.html")
+                if id then
+                    table.insert(items, {
+                        id = id,
+                        title = node:text(),
+                        author = "Unknown",
+                    })
+                end
+            end
+
+            return { items = items, next_cursor = nil }
+        end,
+    },
+    book_info = {
+        request = function(id) return { url = meta.base_url .. "/book/" .. id } end,
+        parse   = function(resp) return { id = "0", title = "", author = "" } end,
+    },
+    chapters = {
+        request = function(book_id, cursor) return { url = meta.base_url .. "/chapters/" .. book_id } end,
+        parse   = function(resp) return { items = {}, next_cursor = nil } end,
+    },
+    paragraphs = {
+        request = function(chapter_id, cursor) return { url = meta.base_url .. "/content/" .. chapter_id } end,
+        parse   = function(resp) return { items = {}, next_cursor = nil } end,
+    },
+}
+"#;
+
     /// Load a `LuaFeed` from the given script body, injecting `base_url` into
     /// the `==Feed==` header so Lua can reference it via `meta.base_url`.
     async fn load_feed(base_url: &str, body: &str) -> LuaFeed {
@@ -615,5 +660,34 @@ return {{
             "expected Lua error, got: {:?}",
             results[0]
         );
+    }
+
+    /// Verify `@langhuan/html` is available in the sandboxed VM and can parse
+    /// HTML in the normal feed execution path.
+    #[tokio::test]
+    async fn html_module_works_in_feed_search_parse() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("GET", "/search")
+            .with_status(200)
+            .with_body(
+                r#"
+                <ul class="books">
+                  <li class="item"><a class="book" href="/book/11.html"> Book One </a></li>
+                  <li class="item"><a class="book" href="/book/22.html">Book Two</a></li>
+                </ul>
+                "#,
+            )
+            .create_async()
+            .await;
+
+        let feed = load_feed(&server.url(), HTML_SEARCH_BODY).await;
+        let results: Vec<_> = feed.search("ignored").collect::<Vec<_>>().await;
+
+        assert_eq!(results.len(), 2, "expected 2 items from html parse");
+        assert_eq!(results[0].as_ref().unwrap().id, "11");
+        assert_eq!(results[0].as_ref().unwrap().title, "Book One");
+        assert_eq!(results[1].as_ref().unwrap().id, "22");
+        assert_eq!(results[1].as_ref().unwrap().title, "Book Two");
     }
 }

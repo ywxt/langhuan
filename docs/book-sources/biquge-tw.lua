@@ -1,7 +1,7 @@
 -- ==Feed==
 -- @id           biquge-tw
 -- @name         筆趣閣（biquge.tw）
--- @version      1.0.0
+-- @version      1.1.0
 -- @author       GitHub Copilot
 -- @description  適配 biquge.tw 的書源，支持搜尋、詳情、目錄、正文（含多頁章節）
 -- @base_url     https://www.biquge.tw
@@ -13,6 +13,8 @@
 -- The runtime injects `meta` as a global table from the feed header.
 -- luacheck: globals meta
 ---@diagnostic disable: undefined-global
+
+local html = require("@langhuan/html")
 
 local function trim(s)
     if s == nil then
@@ -105,87 +107,59 @@ local function clean_text(s)
     return trim(s)
 end
 
-local function safe_sub(s, from_pos, length)
-    if s == nil or from_pos == nil then
-        return ""
-    end
-    local finish = from_pos + length
-    if finish > #s then
-        finish = #s
-    end
-    return s:sub(from_pos, finish)
-end
-
-local function parse_next_search_cursor(body)
-    local href = body:match([[<a[^>]-href="([^"]-)"[^>]*>[^<]-下一[^<]-</a>]])
-    if not href then
-        href = body:match([[<a[^>]-href='([^']-)'[^>]*>[^<]-下一[^<]-</a>]])
-    end
-    if not href then
-        href = body:match([[href="([^"]-page=%d+[^"]-)"[^>]->[^<]-下一]])
-    end
-    if not href then
-        return nil
-    end
-    local page = href:match("[?&]page=(%d+)")
-    if page then
-        return tonumber(page)
+local function parse_doc(body)
+    local ok, doc = pcall(html.parse, body or "")
+    if ok then
+        return doc
     end
     return nil
 end
 
+local function parse_next_search_cursor(doc)
+    if not doc then
+        return nil
+    end
+
+    local links = doc:select("a")
+    for i = 1, #links do
+        local link = links[i]
+        local text = clean_text(link:text())
+        if text:find("下一", 1, true) ~= nil then
+            local href = link:attr("href") or ""
+            local page = href:match("[?&]page=(%d+)")
+            if page then
+                return tonumber(page)
+            end
+        end
+    end
+
+    return nil
+end
+
 local function parse_search_items(body)
+    local doc = parse_doc(body)
     local items = {}
     local seen = {}
 
-    for href, inner in body:gmatch([[<a[^>]-href="([^"]-/book/%d+%.html)"[^>]*>(.-)</a>]]) do
+    if not doc then
+        return items
+    end
+
+    local nodes = doc:select('a[href*="/book/"][href$=".html"]')
+    for i = 1, #nodes do
+        local node = nodes[i]
+        local href = node and node:attr("href") or ""
         local id = extract_book_id(href)
         if id and not seen[id] then
-            local title = clean_text(inner)
+            local title = clean_text(node:text())
             if title ~= "" then
-                local item = {
+                table.insert(items, {
                     id = id,
                     title = title,
                     author = "未知",
                     cover_url = nil,
                     description = nil,
-                }
-
-                -- Find a nearby snippet around this anchor to infer author/description.
-                local pos = body:find(href, 1, true)
-                if pos then
-                    local snippet = safe_sub(body, pos, 1400)
-
-                    local author = snippet:match("作者[:：]%s*</?[^>]*>([^<\n]-)</")
-                    if not author then
-                        author = snippet:match("作者[:：]%s*([^<\n|/ ]+)")
-                    end
-                    if not author then
-                        author = snippet:match([[<p[^>]-class="author"[^>]*>(.-)</p>]])
-                        author = clean_text(author)
-                    else
-                        author = clean_text(author)
-                    end
-                    if author ~= "" then
-                        item.author = author
-                    end
-
-                    local desc = snippet:match([[<p[^>]-class="desc"[^>]*>(.-)</p>]])
-                    if not desc then
-                        desc = snippet:match([[<div[^>]-class="intro"[^>]*>(.-)</div>]])
-                    end
-                    desc = clean_text(desc)
-                    if desc ~= "" then
-                        item.description = desc
-                    end
-                end
-
-                local cover = body:match("https?://img%.biquge%.tw/[^\"']+" .. id .. "[^\"']*%.jpg")
-                if cover and cover ~= "" then
-                    item.cover_url = cover
-                end
-
-                table.insert(items, item)
+                })
                 seen[id] = true
             end
         end
@@ -195,27 +169,51 @@ local function parse_search_items(body)
 end
 
 local function parse_book_info(resp)
-    local body = resp.body
+    local body = resp.body or ""
     local id = extract_book_id(resp.url) or ""
+    local doc = parse_doc(body)
 
-    local title = body:match([[<h1[^>]*>(.-)</h1>]])
-    title = clean_text(title)
+    local title = ""
+    local author = "未知"
+    local description = ""
+    local cover = nil
 
-    local author = body:match([[作者[:：]%s*<a[^>]*>(.-)</a>]])
-    if not author then
-        author = body:match([[作者[:：]%s*([^<\n]+)]])
-    end
-    author = clean_text(author)
+    if doc then
+        local title_node = doc:select("h1"):first()
+        if title_node then
+            title = clean_text(title_node:text())
+        end
 
-    local description = body:match([[小说简介[:：]%s*(.-)</p>]])
-    if not description then
-        description = body:match([[<div[^>]-id="intro"[^>]*>(.-)</div>]])
-    end
-    description = clean_text(description)
+        local info_ps = doc:select("#info p")
+        if #info_ps == 0 then
+            info_ps = doc:select("p")
+        end
+        for i = 1, #info_ps do
+            local text = clean_text(info_ps[i]:text())
+            if text:find("作者", 1, true) ~= nil then
+                local v = trim((text:gsub("^.-[:：]", "")))
+                if v ~= "" then
+                    author = v
+                    break
+                end
+            end
+        end
 
-    local cover = body:match([[<img[^>]-src="(https?://img%.biquge%.tw[^"]+)"[^>]*]])
-    if not cover then
-        cover = body:match([[<img[^>]-src='(https?://img%.biquge%.tw[^']+)'[^>]*]])
+        local intro = doc:select("#intro"):first()
+        if not intro then
+            intro = doc:select(".intro"):first()
+        end
+        if intro then
+            description = clean_text(intro:text())
+        end
+
+        local img = doc:select(".fmimg img"):first()
+        if not img then
+            img = doc:select("img"):first()
+        end
+        if img then
+            cover = img:attr("src")
+        end
     end
 
     if title == "" then
@@ -235,24 +233,32 @@ local function parse_book_info(resp)
 end
 
 local function parse_chapter_items(resp)
-    local body = resp.body
+    local body = resp.body or ""
     local book_id = resp.url:match("/book/(%d+)/") or resp.url:match("/book/(%d+)$") or ""
+    local doc = parse_doc(body)
 
     local items = {}
     local seen = {}
     local index = 0
 
-    for b_id, ch_id, title in body:gmatch([[<a[^>]-href="/book/(%d+)/(%d+)%.html"[^>]*>(.-)</a>]]) do
-        if b_id == book_id and not seen[ch_id] then
-            local clean_title = clean_text(title)
-            if clean_title ~= "" then
-                table.insert(items, {
-                    id = to_chapter_composite_id(b_id, ch_id),
-                    title = clean_title,
-                    index = index,
-                })
-                index = index + 1
-                seen[ch_id] = true
+    if doc and book_id ~= "" then
+        local selector = 'a[href*="/book/' .. book_id .. '/"][href$=".html"]'
+        local nodes = doc:select(selector)
+        for i = 1, #nodes do
+            local node = nodes[i]
+            local href = node and node:attr("href") or ""
+            local b_id, ch_id = href:match("/book/(%d+)/(%d+)%.html")
+            if b_id == book_id and ch_id and not seen[ch_id] then
+                local clean_title = clean_text(node:text())
+                if clean_title ~= "" then
+                    table.insert(items, {
+                        id = to_chapter_composite_id(b_id, ch_id),
+                        title = clean_title,
+                        index = index,
+                    })
+                    index = index + 1
+                    seen[ch_id] = true
+                end
             end
         end
     end
@@ -261,11 +267,17 @@ local function parse_chapter_items(resp)
 end
 
 local function parse_paragraph_items(resp)
-    local body = resp.body
+    local body = resp.body or ""
+    local doc = parse_doc(body)
     local items = {}
 
-    local title = body:match([[<h1[^>]*>(.-)</h1>]])
-    title = clean_text(title)
+    local title = ""
+    if doc then
+        local title_node = doc:select("h1"):first()
+        if title_node then
+            title = clean_text(title_node:text())
+        end
+    end
     if title ~= "" then
         table.insert(items, {
             type = "title",
@@ -273,47 +285,59 @@ local function parse_paragraph_items(resp)
         })
     end
 
-    local content = body:match([[<div[^>]-id="content"[^>]*>(.-)</div>]])
-    if not content then
-        content = body:match([[<article[^>]*>(.-)</article>]])
-    end
+    if doc then
+        local lines = doc:select("#content p")
+        if #lines == 0 then
+            lines = doc:select("article p")
+        end
 
-    if content then
-        content = content:gsub("<br%s*/?>", "\n")
-        content = content:gsub("</p>", "\n")
-        content = strip_tags(content)
-
-        for line in content:gmatch("[^\n]+") do
-            local text = trim(line)
-            if text ~= ""
-                and text ~= "上一章"
-                and text ~= "下一页"
-                and text ~= "目录"
-                and text ~= "返回目录"
-                and text ~= "本章未完"
-            then
-                table.insert(items, {
-                    type = "text",
-                    content = text,
-                })
+        if #lines > 0 then
+            for i = 1, #lines do
+                local text = clean_text(lines[i]:text())
+                if text ~= ""
+                    and text ~= "上一章"
+                    and text ~= "下一页"
+                    and text ~= "目录"
+                    and text ~= "返回目录"
+                    and text ~= "本章未完"
+                then
+                    table.insert(items, {
+                        type = "text",
+                        content = text,
+                    })
+                end
+            end
+        else
+            local content = doc:select("#content"):first()
+            if not content then
+                content = doc:select("article"):first()
+            end
+            if content then
+                local text = clean_text(content:text())
+                if text ~= "" then
+                    table.insert(items, {
+                        type = "text",
+                        content = text,
+                    })
+                end
             end
         end
     end
 
     local next_cursor = nil
-
-    local cur, total = body:match("%((%d+)%s*/%s*(%d+)%)")
-    cur = tonumber(cur)
-    total = tonumber(total)
-    if cur and total and cur < total then
-        next_cursor = cur + 1
-    else
-        local p = body:match([[<a[^>]-href="[^"]-_%s*(%d+)%.html"[^>]*>[^<]-下一页[^<]-</a>]])
-        if not p then
-            p = body:match([[href="[^"]-_(%d+)%.html"[^>]->[^<]-下一页]])
-        end
-        if p then
-            next_cursor = tonumber(p)
+    if doc then
+        local links = doc:select("a")
+        for i = 1, #links do
+            local a = links[i]
+            local t = clean_text(a:text())
+            if t:find("下一页", 1, true) ~= nil then
+                local href = a:attr("href") or ""
+                local p = href:match("_(%d+)%.html")
+                if p then
+                    next_cursor = tonumber(p)
+                    break
+                end
+            end
         end
     end
 
@@ -342,8 +366,9 @@ return {
             ensure_not_blocked(resp)
 
             local body = resp.body or ""
+            local doc = parse_doc(body)
             local items = parse_search_items(body)
-            local next_cursor = parse_next_search_cursor(body)
+            local next_cursor = parse_next_search_cursor(doc)
 
             return {
                 items = items,

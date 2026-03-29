@@ -27,6 +27,8 @@ toml = "1.1"
 thiserror = "2"
 tokio-stream = "0.1"
 async-stream = "0.3"
+scraper = { version = "0.26", features = ["atomic"] }
+ego-tree = "0.11"
 
 [dev-dependencies]
 tempfile = "3"
