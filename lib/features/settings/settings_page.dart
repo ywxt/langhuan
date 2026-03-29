@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../shared/constants.dart';
 import '../../shared/theme/app_theme.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -41,7 +42,7 @@ class SettingsPage extends StatelessWidget {
                   icon: Icons.info_outline,
                   label: l10n.settingsVersion,
                   trailing: Text(
-                    '1.0.0',
+                    AppConstants.appVersion,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -59,7 +60,7 @@ class SettingsPage extends StatelessWidget {
                   onTap: () => showLicensePage(
                     context: context,
                     applicationName: l10n.appName,
-                    applicationVersion: '1.0.0',
+                    applicationVersion: AppConstants.appVersion,
                   ),
                 ),
               ],
@@ -156,7 +157,10 @@ class _SettingsDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: LanghuanTheme.spaceMd),
-      child: Divider(height: 1, color: Theme.of(context).colorScheme.outline),
+      child: Divider(
+        height: 1,
+        color: Theme.of(context).colorScheme.outlineVariant,
+      ),
     );
   }
 }

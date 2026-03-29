@@ -5,10 +5,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app.dart';
 import '../../l10n/app_localizations.dart';
+import '../../shared/constants.dart';
 import '../../shared/theme/app_theme.dart';
+import '../../shared/utils/delete_with_undo.dart';
+import '../../shared/widgets/empty_state.dart';
+import '../../shared/widgets/error_state.dart';
 import '../../src/bindings/signals/signals.dart';
 import 'add_feed_sheet.dart';
 import 'feed_providers.dart';
+import 'widgets/feed_card.dart';
 
 // ---------------------------------------------------------------------------
 // FeedsPage — Wise-inspired feed (book source) management
@@ -25,7 +30,6 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
   final _filterController = TextEditingController();
   String _filterText = '';
   final Set<String> _pendingDeleteIds = <String>{};
-  Completer<bool>? _undoCompleter;
 
   @override
   void initState() {
@@ -38,9 +42,6 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
   @override
   void dispose() {
     _filterController.dispose();
-    if (_undoCompleter != null && !_undoCompleter!.isCompleted) {
-      _undoCompleter!.complete(false);
-    }
     super.dispose();
   }
 
@@ -149,40 +150,11 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
     if (feedState.hasError) {
       return SliverFillRemaining(
         hasScrollBody: false,
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(LanghuanTheme.spaceXl),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.error_outline,
-                  size: 48,
-                  color: theme.colorScheme.error.withAlpha(160),
-                ),
-                const SizedBox(height: LanghuanTheme.spaceMd),
-                Text(
-                  l10n.feedsLoadError,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.error,
-                  ),
-                ),
-                const SizedBox(height: LanghuanTheme.spaceSm),
-                Text(
-                  feedState.error.toString(),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: LanghuanTheme.spaceMd),
-                FilledButton.tonal(
-                  onPressed: () => ref.read(feedListProvider.notifier).load(),
-                  child: Text(l10n.feedsRetry),
-                ),
-              ],
-            ),
-          ),
+        child: ErrorState(
+          title: l10n.feedsLoadError,
+          message: feedState.error.toString(),
+          onRetry: () => ref.read(feedListProvider.notifier).load(),
+          retryLabel: l10n.feedsRetry,
         ),
       );
     }
@@ -191,28 +163,9 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
     if (!feedState.hasItems) {
       return SliverFillRemaining(
         hasScrollBody: false,
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(LanghuanTheme.spaceXl),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.extension_outlined,
-                  size: 56,
-                  color: theme.colorScheme.onSurfaceVariant.withAlpha(100),
-                ),
-                const SizedBox(height: LanghuanTheme.spaceMd),
-                Text(
-                  l10n.feedsEmpty,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
+        child: EmptyState(
+          icon: Icons.extension_outlined,
+          title: l10n.feedsEmpty,
         ),
       );
     }
@@ -221,13 +174,9 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
     if (filtered.isEmpty) {
       return SliverFillRemaining(
         hasScrollBody: false,
-        child: Center(
-          child: Text(
-            l10n.feedsNoMatch(_filterText),
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
+        child: EmptyState(
+          icon: Icons.search_off,
+          title: l10n.feedsNoMatch(_filterText),
         ),
       );
     }
@@ -274,7 +223,7 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
                 }
                 return false;
               },
-              child: _FeedCard(feed: feed, isDeleting: isDeleting),
+              child: FeedCard(feed: feed, isDeleting: isDeleting),
             ),
           );
         },
@@ -293,30 +242,12 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
       _pendingDeleteIds.add(feed.id);
     });
 
-    final completer = Completer<bool>();
-    _undoCompleter = completer;
-
-    messenger.clearSnackBars();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(l10n.feedDeleteQueued(feed.name)),
-        action: SnackBarAction(
-          label: l10n.feedDeleteUndo,
-          onPressed: () {
-            if (!completer.isCompleted) completer.complete(true);
-          },
-        ),
-        duration: const Duration(seconds: 4),
-      ),
+    final undone = await deleteWithUndo(
+      messenger: messenger,
+      message: l10n.feedDeleteQueued(feed.name),
+      undoLabel: l10n.feedDeleteUndo,
+      duration: AppConstants.undoDuration,
     );
-
-    final timer = Timer(const Duration(seconds: 4), () {
-      if (!completer.isCompleted) completer.complete(false);
-    });
-
-    final undone = await completer.future;
-    timer.cancel();
-    _undoCompleter = null;
 
     if (!mounted) return;
 
@@ -381,254 +312,6 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
           ),
         ],
       ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Feed card — Wise-style borderless card
-// ---------------------------------------------------------------------------
-
-class _FeedCard extends StatelessWidget {
-  const _FeedCard({required this.feed, this.isDeleting = false});
-
-  final FeedMetaItem feed;
-  final bool isDeleting;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final hasError = feed.error != null;
-
-    return Material(
-      color: theme.colorScheme.surfaceContainer,
-      borderRadius: LanghuanTheme.borderRadiusMd,
-      child: InkWell(
-        borderRadius: LanghuanTheme.borderRadiusMd,
-        onTap: isDeleting ? null : () => _showFeedDetailSheet(context, feed),
-        child: Padding(
-          padding: const EdgeInsets.all(LanghuanTheme.spaceMd),
-          child: Row(
-            children: [
-              // ── Avatar ─────────────────────────────────────────────
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: hasError
-                      ? theme.colorScheme.errorContainer
-                      : theme.colorScheme.primaryContainer,
-                  borderRadius: LanghuanTheme.borderRadiusSm,
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  feed.name.isNotEmpty ? feed.name[0].toUpperCase() : '?',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: hasError
-                        ? theme.colorScheme.onErrorContainer
-                        : theme.colorScheme.onPrimaryContainer,
-                  ),
-                ),
-              ),
-              const SizedBox(width: LanghuanTheme.spaceMd),
-
-              // ── Text ───────────────────────────────────────────────
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      feed.name,
-                      style: theme.textTheme.titleMedium,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      feed.author != null
-                          ? 'v${feed.version} · ${feed.author}'
-                          : 'v${feed.version}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-
-              // ── Trailing ───────────────────────────────────────────
-              if (isDeleting)
-                SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: theme.colorScheme.primary,
-                  ),
-                )
-              else if (hasError)
-                Icon(
-                  Icons.error_outline,
-                  size: 20,
-                  color: theme.colorScheme.error,
-                )
-              else
-                Icon(
-                  Icons.chevron_right,
-                  size: 20,
-                  color: theme.colorScheme.onSurfaceVariant.withAlpha(120),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Feed detail bottom sheet — Wise-style
-// ---------------------------------------------------------------------------
-
-void _showFeedDetailSheet(BuildContext context, FeedMetaItem feed) {
-  showModalBottomSheet<void>(
-    context: context,
-    builder: (context) => _FeedDetailSheet(feed: feed),
-  );
-}
-
-class _FeedDetailSheet extends StatelessWidget {
-  const _FeedDetailSheet({required this.feed});
-
-  final FeedMetaItem feed;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          LanghuanTheme.spaceLg,
-          0,
-          LanghuanTheme.spaceLg,
-          LanghuanTheme.spaceXl,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(feed.name, style: theme.textTheme.titleLarge),
-            const SizedBox(height: LanghuanTheme.spaceMd),
-
-            if (feed.error != null) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(LanghuanTheme.spaceMd),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.errorContainer,
-                  borderRadius: LanghuanTheme.borderRadiusMd,
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.error_outline,
-                      size: 18,
-                      color: theme.colorScheme.onErrorContainer,
-                    ),
-                    const SizedBox(width: LanghuanTheme.spaceSm),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            l10n.feedItemLoadError,
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: theme.colorScheme.onErrorContainer,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            feed.error!,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onErrorContainer,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: LanghuanTheme.spaceMd),
-            ],
-
-            _MetaRow(
-              icon: Icons.label_outline,
-              label: l10n.feedDetailId,
-              value: feed.id,
-            ),
-            const SizedBox(height: LanghuanTheme.spaceMd),
-            _MetaRow(
-              icon: Icons.tag,
-              label: l10n.feedDetailVersion,
-              value: feed.version,
-            ),
-            if (feed.author != null) ...[
-              const SizedBox(height: LanghuanTheme.spaceMd),
-              _MetaRow(
-                icon: Icons.person_outline,
-                label: l10n.feedDetailAuthor,
-                value: feed.author!,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MetaRow extends StatelessWidget {
-  const _MetaRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant),
-        const SizedBox(width: LanghuanTheme.spaceSm),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              Text(value, style: theme.textTheme.bodyMedium),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

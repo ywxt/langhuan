@@ -20,6 +20,6 @@ void main() {
     // Verify that the bottom navigation bar is present with 3 tabs
     expect(find.text('Bookshelf'), findsWidgets);
     expect(find.text('Feeds'), findsOneWidget);
-    expect(find.text('Profile'), findsOneWidget);
+    expect(find.text('Settings'), findsWidgets);
   });
 }

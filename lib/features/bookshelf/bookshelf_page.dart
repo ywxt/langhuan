@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../shared/theme/app_theme.dart';
+import '../../shared/utils/always_disabled_focus_node.dart';
+import '../../shared/widgets/empty_state.dart';
 
 class BookshelfPage extends StatelessWidget {
   const BookshelfPage({super.key});
@@ -58,60 +60,15 @@ class BookshelfPage extends StatelessWidget {
             // TODO: Replace with book grid when bookshelf has items
             SliverFillRemaining(
               hasScrollBody: false,
-              child: _EmptyState(theme: theme, l10n: l10n),
+              child: EmptyState(
+                icon: Icons.auto_stories_outlined,
+                title: l10n.bookshelfEmpty,
+                subtitle: l10n.bookshelfEmptyHint,
+              ),
             ),
           ],
         ),
       ),
     );
   }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.theme, required this.l10n});
-
-  final ThemeData theme;
-  final AppLocalizations l10n;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(LanghuanTheme.spaceXl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.auto_stories_outlined,
-              size: 56,
-              color: theme.colorScheme.onSurfaceVariant.withAlpha(100),
-            ),
-            const SizedBox(height: LanghuanTheme.spaceMd),
-            Text(
-              l10n.bookshelfEmpty,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: LanghuanTheme.spaceSm),
-            Text(
-              l10n.bookshelfEmptyHint,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant.withAlpha(160),
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// A [FocusNode] that is always unfocused so the [SearchBar] only responds
-/// to [onTap] without opening the keyboard.
-class AlwaysDisabledFocusNode extends FocusNode {
-  @override
-  bool get hasFocus => false;
 }

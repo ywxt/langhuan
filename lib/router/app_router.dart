@@ -48,8 +48,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: '/profile',
-                name: 'profile',
+                path: '/settings',
+                name: 'settings',
                 builder: (context, state) => const SettingsPage(),
               ),
             ],
