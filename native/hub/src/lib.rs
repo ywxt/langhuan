@@ -29,16 +29,13 @@ async fn main() {
 
     // Listen for locale changes from Dart (sent at startup and on system
     // language change) and update the global rust-i18n locale accordingly.
+    // rust-i18n has built-in RFC 4647 lookup fallback, so we pass the full
+    // BCP 47 tag directly: e.g. "zh-CN" → tries zh-CN → zh → fallback "en".
     spawn(async {
         use rinf::DartSignal;
         let rx = SetLocale::get_dart_signal_receiver();
         while let Some(pack) = rx.recv().await {
-            let locale = if pack.message.locale.starts_with("zh") {
-                "zh"
-            } else {
-                "en"
-            };
-            rust_i18n::set_locale(locale);
+            rust_i18n::set_locale(&pack.message.locale);
         }
     });
 

@@ -1,0 +1,49 @@
+_version: 2
+error.lua:
+  en: "Lua script error: %{error}"
+  zh: "Lua 腳本錯誤：%{error}"
+error.http:
+  en: "HTTP request failed: %{error}"
+  zh: "網絡請求失敗：%{error}"
+error.missing_function:
+  en: "Missing required function: %{name}"
+  zh: "缺少必要函數：%{name}"
+error.invalid_feed:
+  en: "Invalid feed metadata: %{message}"
+  zh: "書源元數據無效：%{message}"
+error.script_parse:
+  en: "Script parse error at line %{line}: %{message}"
+  zh: "腳本解析錯誤（第 %{line} 行）：%{message}"
+error.registry_not_found:
+  en: "Registry not found: %{error}"
+  zh: "找不到書源目錄：%{error}"
+error.registry_parse:
+  en: "Registry parse error: %{message}"
+  zh: "書源目錄格式錯誤：%{message}"
+error.feed_not_found:
+  en: "Feed not found: %{id}"
+  zh: "找不到書源：%{id}"
+error.duplicate_feed_id:
+  en: "Duplicate feed ID: %{id}"
+  zh: "重複的書源 ID：%{id}"
+error.domain_not_allowed:
+  en: "Domain not allowed: %{url} (allowed: %{allowed})"
+  zh: "域名未授權：%{url}（允許：%{allowed}）"
+error.registry_write:
+  en: "Failed to write registry: %{error}"
+  zh: "寫入書源目錄失敗：%{error}"
+error.file_read:
+  en: "Failed to read file: %{error}"
+  zh: "無法讀取文件：%{error}"
+error.no_pending_preview:
+  en: "No pending preview for this request"
+  zh: "找不到對應的預覽記錄"
+error.script_dir_not_set:
+  en: "Script directory not set"
+  zh: "書源目錄尚未設置"
+error.feed_unavailable:
+  en: "Feed '%{id}' not found or failed to load"
+  zh: "找不到書源「%{id}」或其加載失敗"
+error.registry_reload_not_supported:
+  en: "Registry reload is not supported at runtime"
+  zh: "運行時不支持重新加載書源目錄"
