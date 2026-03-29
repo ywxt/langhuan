@@ -728,10 +728,12 @@ name = "hub"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "jni",
  "langhuan",
  "messages",
  "rinf",
  "rust-i18n",
+ "rustls-platform-verifier",
  "serde",
  "tokio",
  "tokio-stream",
