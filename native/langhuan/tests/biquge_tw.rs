@@ -4,7 +4,7 @@
 /// `@base_url` / `@allowed_domain` header in the script so that all network
 /// requests hit the mock instead of the real site.
 use langhuan::feed::Feed;
-use langhuan::script::engine::ScriptEngine;
+use langhuan::script::runtime::ScriptEngine;
 use mockito::ServerGuard;
 use std::time::Duration;
 use tokio_stream::StreamExt;

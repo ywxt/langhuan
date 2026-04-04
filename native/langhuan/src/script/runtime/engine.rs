@@ -4,9 +4,10 @@ use mlua::{Lua, LuaSerdeExt, StdLib};
 use reqwest::Client;
 
 use crate::error::Result;
-use crate::script::modules;
-use crate::script::lua_feed::{FeedHandlers, LuaFeed};
-use crate::script::meta::{self, FeedMeta};
+use crate::feed::FeedMeta;
+use crate::script::lua::feed::{FeedHandlers, LuaFeed};
+use crate::script::meta;
+use crate::script::runtime::modules;
 
 /// The script engine manages Lua VM creation and HTTP client sharing.
 ///

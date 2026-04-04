@@ -81,6 +81,40 @@ class FeedPreviewModel {
   final String? currentVersion;
 }
 
+@immutable
+class BookshelfItemModel {
+  const BookshelfItemModel({
+    required this.feedId,
+    required this.sourceBookId,
+    required this.title,
+    required this.author,
+    required this.addedAtUnixMs,
+    this.coverUrl,
+    this.description,
+  });
+
+  final String feedId;
+  final String sourceBookId;
+  final String title;
+  final String author;
+  final int addedAtUnixMs;
+  final String? coverUrl;
+  final String? description;
+
+  String get stableId => '$feedId:$sourceBookId';
+}
+
+@immutable
+class BookshelfCapabilitiesModel {
+  const BookshelfCapabilitiesModel({
+    required this.feedId,
+    required this.supportsBookshelf,
+  });
+
+  final String feedId;
+  final bool supportsBookshelf;
+}
+
 // ---------------------------------------------------------------------------
 // FeedService
 // ---------------------------------------------------------------------------
@@ -240,6 +274,123 @@ class FeedService {
   }
 
   // -------------------------------------------------------------------------
+  // Bookshelf
+  // -------------------------------------------------------------------------
+
+  Future<BookshelfOperationOutcome> addToBookshelf({
+    required String feedId,
+    required String sourceBookId,
+    required String title,
+    required String author,
+    String? coverUrl,
+    String? descriptionSnapshot,
+  }) {
+    final requestId = _nextId();
+    return _subscribeAndSend(
+      responseStream: BookshelfAddResult.rustSignalStream,
+      matches: (message) => message.requestId == requestId,
+      send: () {
+        BookshelfAddRequest(
+          requestId: requestId,
+          feedId: feedId,
+          sourceBookId: sourceBookId,
+          title: title,
+          author: author,
+          coverUrl: coverUrl,
+          descriptionSnapshot: descriptionSnapshot,
+        ).sendSignalToRust();
+      },
+    ).then((message) => message.outcome);
+  }
+
+  Future<BookshelfOperationOutcome> removeFromBookshelf({
+    required String feedId,
+    required String sourceBookId,
+  }) {
+    final requestId = _nextId();
+    return _subscribeAndSend(
+      responseStream: BookshelfRemoveResult.rustSignalStream,
+      matches: (message) => message.requestId == requestId,
+      send: () {
+        BookshelfRemoveRequest(
+          requestId: requestId,
+          feedId: feedId,
+          sourceBookId: sourceBookId,
+        ).sendSignalToRust();
+      },
+    ).then((message) => message.outcome);
+  }
+
+  Future<List<BookshelfItemModel>> listBookshelf() {
+    final requestId = _nextId();
+    final completer = Completer<List<BookshelfItemModel>>();
+    final items = <BookshelfItemModel>[];
+
+    StreamSubscription<RustSignalPack<BookshelfListItem>>? itemSub;
+    StreamSubscription<RustSignalPack<BookshelfListEnd>>? endSub;
+
+    itemSub = BookshelfListItem.rustSignalStream
+        .where((pack) => pack.message.requestId == requestId)
+        .listen((pack) {
+          final it = pack.message;
+          items.add(
+            BookshelfItemModel(
+              feedId: it.feedId,
+              sourceBookId: it.sourceBookId,
+              title: it.title,
+              author: it.author,
+              coverUrl: it.coverUrl,
+              description: it.descriptionSnapshot,
+              addedAtUnixMs: it.addedAtUnixMs,
+            ),
+          );
+        });
+
+    endSub = BookshelfListEnd.rustSignalStream
+        .where((pack) => pack.message.requestId == requestId)
+        .listen((pack) async {
+          final outcome = pack.message.outcome;
+          await itemSub?.cancel();
+          await endSub?.cancel();
+
+          if (outcome is BookshelfListOutcomeFailed) {
+            completer.completeError(
+              BookshelfOperationException(message: outcome.message),
+            );
+            return;
+          }
+
+          items.sort((a, b) => b.addedAtUnixMs.compareTo(a.addedAtUnixMs));
+          completer.complete(items);
+        });
+
+    BookshelfListRequest(requestId: requestId).sendSignalToRust();
+    return completer.future;
+  }
+
+  Future<BookshelfCapabilitiesModel> bookshelfCapabilities({
+    required String feedId,
+  }) {
+    final requestId = _nextId();
+    return _subscribeAndSend(
+      responseStream: BookshelfCapabilitiesResult.rustSignalStream,
+      matches: (message) =>
+          message.requestId == requestId && message.feedId == feedId,
+      send: () {
+        BookshelfCapabilitiesRequest(
+          requestId: requestId,
+          feedId: feedId,
+        ).sendSignalToRust();
+      },
+    ).then(
+      (message) => BookshelfCapabilitiesModel(
+        feedId: message.feedId,
+        supportsBookshelf: message.supportsBookshelf,
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // Cancel
   // -------------------------------------------------------------------------
 
@@ -250,21 +401,22 @@ class FeedService {
   }
 
   // -------------------------------------------------------------------------
-  // Script directory
+  // App data directory
   // -------------------------------------------------------------------------
 
-  /// Tell Rust which directory contains `registry.toml` and the feed scripts.
+  /// Tell Rust which directory should be used as the app data root.
   ///
-  /// Rust will eagerly compile every feed listed in the registry, then
-  /// respond with a [ScriptDirectorySet] signal.  If the registry file does
+  /// Rust will keep feeds under `scripts/` and bookshelf data under
+  /// `bookshelf/`, then respond with an [AppDataDirectorySet] signal. If the
+  /// registry file does
   /// not exist yet, `success` will be `false` and an error message will be
   /// provided — no crash.
   ///
   /// Returns a [Future] that completes once Rust has finished loading.
-  Future<ScriptDirectorySet> setScriptDirectory(String path) {
+  Future<AppDataDirectorySet> setAppDataDirectory(String path) {
     return _subscribeAndSendNext(
-      responseStream: ScriptDirectorySet.rustSignalStream,
-      send: () => SetScriptDirectory(path: path).sendSignalToRust(),
+      responseStream: AppDataDirectorySet.rustSignalStream,
+      send: () => SetAppDataDirectory(path: path).sendSignalToRust(),
     );
   }
 
@@ -484,4 +636,13 @@ class BookInfoException implements Exception {
 
   @override
   String toString() => 'BookInfoException: $message';
+}
+
+class BookshelfOperationException implements Exception {
+  const BookshelfOperationException({required this.message});
+
+  final String message;
+
+  @override
+  String toString() => 'BookshelfOperationException: $message';
 }

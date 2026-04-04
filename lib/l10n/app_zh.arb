@@ -11,6 +11,10 @@
   "bookshelfEmpty": "書架是空的",
   "bookshelfEmptyHint": "搜索並收藏書籍後會顯示在這裡",
   "bookshelfSearchHint": "搜索書籍…",
+  "bookshelfLoadError": "加載書架失敗",
+  "bookshelfAdded": "已加入本地書架",
+  "bookshelfRemoved": "已從本地書架移除",
+  "bookshelfActionFailed": "書架操作失敗",
 
   "searchTitle": "搜索",
   "searchHintNoFeed": "請先選擇書源…",
@@ -32,6 +36,10 @@
   "bookDetailChaptersError": "加載章節失敗",
   "bookDetailMissingParams": "缺少書籍參數",
   "bookDetailEmpty": "暫無書籍信息",
+  "bookDetailAddBookshelf": "加入本地書架",
+  "bookDetailRemoveBookshelf": "從本地書架移除",
+  "bookDetailSourceSupportsBookshelf": "當前書源支持書架功能",
+  "bookDetailSourceNoBookshelf": "當前書源不支持書架功能",
 
   "readerTitle": "閱讀",
   "readerMissingParams": "缺少閱讀參數",

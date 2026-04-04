@@ -69,6 +69,10 @@ fn localize_error(e: &langhuan::error::Error) -> String {
         )
         .to_string(),
         Error::RegistryWrite(msg) => t!("error.registry_write", error = msg).to_string(),
+        Error::BookshelfStorage(msg) => t!("error.bookshelf_storage", error = msg).to_string(),
+        Error::BookshelfParse { message } => {
+            t!("error.bookshelf_parse", message = message).to_string()
+        }
     }
 }
 

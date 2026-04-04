@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../src/bindings/signals/signals.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/cover_placeholder.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
 import '../feeds/feed_providers.dart';
+import '../feeds/feed_service.dart';
 
 class BookDetailPage extends ConsumerStatefulWidget {
   const BookDetailPage({super.key, required this.feedId, required this.bookId});
@@ -57,6 +59,10 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     final theme = Theme.of(context);
     final bookInfoState = ref.watch(bookInfoProvider);
     final chaptersState = ref.watch(chaptersProvider);
+    final bookshelfState = ref.watch(bookshelfProvider);
+    final capabilityState = ref.watch(
+      bookshelfCapabilitiesProvider(widget.feedId),
+    );
 
     if (widget.feedId.isEmpty || widget.bookId.isEmpty) {
       return Scaffold(
@@ -151,6 +157,35 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
               ),
             ),
             const SizedBox(height: LanghuanTheme.spaceLg),
+            if (widget.feedId.isNotEmpty)
+              _SourceBookshelfCapabilityHint(state: capabilityState),
+            if (widget.feedId.isNotEmpty)
+              const SizedBox(height: LanghuanTheme.spaceMd),
+            SizedBox(
+              width: double.infinity,
+              child:
+                  bookshelfState.contains(
+                    feedId: widget.feedId,
+                    sourceBookId: widget.bookId,
+                  )
+                  ? OutlinedButton(
+                      onPressed:
+                          bookshelfState.activeItemId ==
+                              '${widget.feedId}:${widget.bookId}'
+                          ? null
+                          : () => _removeFromBookshelf(context),
+                      child: Text(l10n.bookDetailRemoveBookshelf),
+                    )
+                  : FilledButton.tonal(
+                      onPressed:
+                          bookshelfState.activeItemId ==
+                              '${widget.feedId}:${widget.bookId}'
+                          ? null
+                          : () => _addToBookshelf(context, book),
+                      child: Text(l10n.bookDetailAddBookshelf),
+                    ),
+            ),
+            const SizedBox(height: LanghuanTheme.spaceMd),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
@@ -208,6 +243,73 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addToBookshelf(BuildContext context, BookInfoModel book) async {
+    final l10n = AppLocalizations.of(context);
+    final outcome = await ref
+        .read(bookshelfProvider.notifier)
+        .add(feedId: widget.feedId, book: book);
+
+    if (!context.mounted) return;
+    final text = outcome is BookshelfOperationOutcomeError
+        ? l10n.bookshelfActionFailed
+        : l10n.bookshelfAdded;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  Future<void> _removeFromBookshelf(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
+    final outcome = await ref
+        .read(bookshelfProvider.notifier)
+        .remove(feedId: widget.feedId, sourceBookId: widget.bookId);
+
+    if (!context.mounted) return;
+    final text = outcome is BookshelfOperationOutcomeError
+        ? l10n.bookshelfActionFailed
+        : l10n.bookshelfRemoved;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
+  }
+}
+
+class _SourceBookshelfCapabilityHint extends StatelessWidget {
+  const _SourceBookshelfCapabilityHint({required this.state});
+
+  final AsyncValue<BookshelfCapabilitiesModel> state;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+
+    final text = state.when(
+      data: (value) => value.supportsBookshelf
+          ? l10n.bookDetailSourceSupportsBookshelf
+          : l10n.bookDetailSourceNoBookshelf,
+      error: (_, _) => l10n.bookDetailSourceNoBookshelf,
+      loading: () => l10n.bookDetailSourceNoBookshelf,
+    );
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: LanghuanTheme.spaceMd,
+        vertical: LanghuanTheme.spaceSm,
+      ),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainer,
+        borderRadius: LanghuanTheme.borderRadiusMd,
+      ),
+      child: Text(
+        text,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
     );

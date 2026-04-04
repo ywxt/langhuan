@@ -146,6 +146,30 @@ abstract class AppLocalizations {
   /// **'Search books…'**
   String get bookshelfSearchHint;
 
+  /// Bookshelf page load error title
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load bookshelf'**
+  String get bookshelfLoadError;
+
+  /// Snackbar shown after adding a book to local bookshelf
+  ///
+  /// In en, this message translates to:
+  /// **'Added to local bookshelf'**
+  String get bookshelfAdded;
+
+  /// Snackbar shown after removing a book from local bookshelf
+  ///
+  /// In en, this message translates to:
+  /// **'Removed from local bookshelf'**
+  String get bookshelfRemoved;
+
+  /// Snackbar shown when add/remove bookshelf action fails
+  ///
+  /// In en, this message translates to:
+  /// **'Bookshelf action failed'**
+  String get bookshelfActionFailed;
+
   /// Search page title
   ///
   /// In en, this message translates to:
@@ -259,6 +283,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No book information available'**
   String get bookDetailEmpty;
+
+  /// Button label to add current book to local bookshelf
+  ///
+  /// In en, this message translates to:
+  /// **'Add to Local Bookshelf'**
+  String get bookDetailAddBookshelf;
+
+  /// Button label to remove current book from local bookshelf
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from Local Bookshelf'**
+  String get bookDetailRemoveBookshelf;
+
+  /// Hint text when current feed supports bookshelf
+  ///
+  /// In en, this message translates to:
+  /// **'This feed supports bookshelf'**
+  String get bookDetailSourceSupportsBookshelf;
+
+  /// Hint text when current feed does not support bookshelf
+  ///
+  /// In en, this message translates to:
+  /// **'This feed does not support bookshelf'**
+  String get bookDetailSourceNoBookshelf;
 
   /// Reader page title fallback
   ///

@@ -2,9 +2,10 @@ use std::pin::Pin;
 
 use tokio_stream::Stream;
 
+use super::meta::FeedMeta;
+use crate::bookshelf::BookshelfCapabilities;
 use crate::error::Result;
 use crate::model::{BookInfo, ChapterInfo, Paragraph, SearchResult};
-use crate::script::meta::FeedMeta;
 
 /// A pinned, boxed, `Send`-able stream of `Result<T>`.
 pub type FeedStream<'a, T> = Pin<Box<dyn Stream<Item = Result<T>> + Send + 'a>>;
@@ -43,4 +44,16 @@ pub trait Feed: Send + Sync {
 
     /// The metadata of this feed (id, name, version, etc.).
     fn meta(&self) -> &FeedMeta;
+}
+
+/// Optional feed extension for bookshelf capability probing.
+///
+/// Keep this separate from [`Feed`] so content retrieval is decoupled from
+/// user bookshelf state management.
+pub trait FeedBookshelfSupport: Send + Sync {
+    fn bookshelf_capabilities(&self) -> BookshelfCapabilities {
+        BookshelfCapabilities {
+            supports_bookshelf: false,
+        }
+    }
 }

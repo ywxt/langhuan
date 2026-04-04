@@ -6,11 +6,8 @@ import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/src/bindings/signals/signals.dart';
 import 'package:path_provider/path_provider.dart';
 
-Future<Directory> _getScriptDirPath() async {
-  final docsDir = await getApplicationDocumentsDirectory();
-  final scriptsDir = Directory('${docsDir.path}/scripts');
-  await scriptsDir.create(recursive: true);
-  return scriptsDir;
+Future<Directory> _getAppDataDirectory() async {
+  return getApplicationDocumentsDirectory();
 }
 
 void _sendLocale() {
@@ -26,9 +23,9 @@ void setLocaleToRust() {
   SchedulerBinding.instance.platformDispatcher.onLocaleChanged = _sendLocale;
 }
 
-final scriptDirectorySetProvider = FutureProvider<ScriptDirectorySet>((
+final appDataDirectorySetProvider = FutureProvider<AppDataDirectorySet>((
   ref,
 ) async {
-  final path = (await _getScriptDirPath()).path;
-  return FeedService.instance.setScriptDirectory(path);
+  final path = (await _getAppDataDirectory()).path;
+  return FeedService.instance.setAppDataDirectory(path);
 });

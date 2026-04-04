@@ -32,15 +32,24 @@ error.domain_not_allowed:
 error.registry_write:
   en: "Failed to write registry: %{error}"
   zh: "寫入書源目錄失敗：%{error}"
+error.bookshelf_storage:
+  en: "Failed to access bookshelf storage: %{error}"
+  zh: "訪問書架存儲失敗：%{error}"
+error.bookshelf_parse:
+  en: "Bookshelf parse error: %{message}"
+  zh: "書架解析錯誤：%{message}"
 error.file_read:
   en: "Failed to read file: %{error}"
   zh: "無法讀取文件：%{error}"
 error.no_pending_preview:
   en: "No pending preview for this request"
   zh: "找不到對應的預覽記錄"
-error.script_dir_not_set:
-  en: "Script directory not set"
-  zh: "書源目錄尚未設置"
+error.app_data_dir_not_set:
+  en: "App data directory not set"
+  zh: "應用數據目錄尚未設置"
+error.bookshelf_unavailable:
+  en: "Bookshelf is unavailable"
+  zh: "書架當前不可用"
 error.feed_unavailable:
   en: "Feed '%{id}' not found or failed to load"
   zh: "找不到書源「%{id}」或其加載失敗"

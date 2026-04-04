@@ -137,11 +137,12 @@ pub struct FeedStreamEnd {
 // Registry signals — Dart → Rust
 // ---------------------------------------------------------------------------
 
-/// Tell Rust which directory contains the scripts and `registry.toml`.
-/// Rust will respond with [`ScriptDirectorySet`].
+/// Tell Rust which directory should be used as the app data root.
+/// Rust will store scripts and bookshelf data in dedicated subdirectories and
+/// respond with [`AppDataDirectorySet`].
 #[derive(Deserialize, DartSignal)]
-pub struct SetScriptDirectory {
-    /// Absolute path to the scripts directory.
+pub struct SetAppDataDirectory {
+    /// Absolute path to the app data root directory.
     pub path: String,
 }
 
@@ -157,9 +158,9 @@ pub struct ListFeedsRequest {
 // Registry signals — Rust → Dart
 // ---------------------------------------------------------------------------
 
-/// The outcome of setting the script directory.
+/// The outcome of setting the app data directory.
 #[derive(Serialize, SignalPiece)]
-pub enum ScriptDirectoryOutcome {
+pub enum AppDataDirectoryOutcome {
     Success {
         /// Number of feeds found in the registry.
         feed_count: u32,
@@ -170,10 +171,10 @@ pub enum ScriptDirectoryOutcome {
     },
 }
 
-/// Confirmation that the script directory has been (re-)loaded.
+/// Confirmation that the app data directory has been initialized.
 #[derive(Serialize, RustSignal)]
-pub struct ScriptDirectorySet {
-    pub outcome: ScriptDirectoryOutcome,
+pub struct AppDataDirectorySet {
+    pub outcome: AppDataDirectoryOutcome,
 }
 
 /// Metadata for a single feed entry, used inside [`FeedListResult`].
@@ -308,5 +309,93 @@ pub enum FeedRemoveOutcome {
 pub struct FeedRemoveResult {
     pub request_id: String,
     pub outcome: FeedRemoveOutcome,
+}
+
+// ---------------------------------------------------------------------------
+// Bookshelf signals — Dart -> Rust
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize, DartSignal)]
+pub struct BookshelfAddRequest {
+    pub request_id: String,
+    pub feed_id: String,
+    pub source_book_id: String,
+    pub title: String,
+    pub author: String,
+    pub cover_url: Option<String>,
+    pub description_snapshot: Option<String>,
+}
+
+#[derive(Deserialize, DartSignal)]
+pub struct BookshelfRemoveRequest {
+    pub request_id: String,
+    pub feed_id: String,
+    pub source_book_id: String,
+}
+
+#[derive(Deserialize, DartSignal)]
+pub struct BookshelfListRequest {
+    pub request_id: String,
+}
+
+#[derive(Deserialize, DartSignal)]
+pub struct BookshelfCapabilitiesRequest {
+    pub request_id: String,
+    pub feed_id: String,
+}
+
+// ---------------------------------------------------------------------------
+// Bookshelf signals — Rust -> Dart
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, SignalPiece)]
+pub enum BookshelfOperationOutcome {
+    Success,
+    AlreadyExists,
+    NotFound,
+    Error { message: String },
+}
+
+#[derive(Serialize, RustSignal)]
+pub struct BookshelfAddResult {
+    pub request_id: String,
+    pub outcome: BookshelfOperationOutcome,
+}
+
+#[derive(Serialize, RustSignal)]
+pub struct BookshelfRemoveResult {
+    pub request_id: String,
+    pub outcome: BookshelfOperationOutcome,
+}
+
+#[derive(Serialize, RustSignal)]
+pub struct BookshelfListItem {
+    pub request_id: String,
+    pub feed_id: String,
+    pub source_book_id: String,
+    pub title: String,
+    pub author: String,
+    pub cover_url: Option<String>,
+    pub description_snapshot: Option<String>,
+    pub added_at_unix_ms: i64,
+}
+
+#[derive(Serialize, SignalPiece)]
+pub enum BookshelfListOutcome {
+    Completed,
+    Failed { message: String },
+}
+
+#[derive(Serialize, RustSignal)]
+pub struct BookshelfListEnd {
+    pub request_id: String,
+    pub outcome: BookshelfListOutcome,
+}
+
+#[derive(Serialize, RustSignal)]
+pub struct BookshelfCapabilitiesResult {
+    pub request_id: String,
+    pub feed_id: String,
+    pub supports_bookshelf: bool,
 }
 

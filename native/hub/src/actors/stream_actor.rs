@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use langhuan::feed::Feed;
-use langhuan::script::lua_feed::LuaFeed;
+use langhuan::script::lua::LuaFeed;
 use messages::prelude::{Actor, Address, Context, Notifiable};
 use rinf::{DartSignal, RustSignal};
 use tokio::task::JoinSet;

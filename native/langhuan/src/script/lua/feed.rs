@@ -8,11 +8,10 @@ use serde::de::DeserializeOwned;
 use tokio::time::sleep;
 
 use crate::error::Result;
-use crate::feed::{Feed, FeedStream};
+use crate::feed::{Feed, FeedBookshelfSupport, FeedMeta, FeedStream};
 use crate::model::{
     BookInfo, ChapterInfo, HttpBody, HttpRequest, HttpResponse, Page, Paragraph, SearchResult,
 };
-use crate::script::meta::FeedMeta;
 
 // ---------------------------------------------------------------------------
 // Retry configuration
@@ -42,7 +41,7 @@ pub(crate) struct HandlerPair {
 
 /// All handler pairs extracted from a Lua feed script.
 ///
-/// Created by [`ScriptEngine::load_feed`](super::engine::ScriptEngine::load_feed)
+/// Created by [`ScriptEngine::load_feed`](crate::script::runtime::ScriptEngine::load_feed)
 /// and stored inside [`LuaFeed`].
 pub(crate) struct FeedHandlers {
     pub search: HandlerPair,
@@ -98,7 +97,7 @@ impl<T: DeserializeOwned> FromLua for Page<T, Value> {
 
 /// A [`Feed`] implementation backed by a Lua script.
 ///
-/// Created by [`ScriptEngine::load_feed`](super::engine::ScriptEngine::load_feed).
+/// Created by [`ScriptEngine::load_feed`](crate::script::runtime::ScriptEngine::load_feed).
 ///
 /// Wrap in `Arc<LuaFeed>` to share a single compiled feed across concurrent
 /// requests without reloading the script on every call.
@@ -405,6 +404,14 @@ impl Feed for LuaFeed {
     }
 }
 
+impl FeedBookshelfSupport for LuaFeed {
+    fn bookshelf_capabilities(&self) -> crate::bookshelf::BookshelfCapabilities {
+        crate::bookshelf::BookshelfCapabilities {
+            supports_bookshelf: self.meta.supports_bookshelf,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -415,7 +422,7 @@ mod tests {
 
     use super::*;
     use crate::error::Error;
-    use crate::script::engine::ScriptEngine;
+    use crate::script::runtime::ScriptEngine;
 
     // -----------------------------------------------------------------------
     // Helpers
@@ -429,6 +436,20 @@ mod tests {
 -- @name        Test Feed
 -- @version     1.0
 -- @base_url    {base_url}
+-- ==/Feed==
+"#
+        )
+    }
+
+    /// Build a minimal feed script header with optional bookshelf capability.
+    fn make_header_with_bookshelf(base_url: &str, supports_bookshelf: bool) -> String {
+        format!(
+            r#"-- ==Feed==
+-- @id          test-feed
+-- @name        Test Feed
+-- @version     1.0
+-- @base_url    {base_url}
+-- @bookshelf   {supports_bookshelf}
 -- ==/Feed==
 "#
         )
@@ -559,7 +580,7 @@ return {
     /// `FromLua for Page` terminates pagination correctly.
     #[tokio::test]
     async fn json_null_becomes_lua_nil_in_page() {
-        use crate::script::engine::ScriptEngine;
+        use crate::script::runtime::ScriptEngine;
         use tokio_stream::StreamExt as _;
 
         // A feed whose parse function returns a hard-coded page with
@@ -730,5 +751,19 @@ return {{
         assert_eq!(results[0].as_ref().unwrap().title, "Book One");
         assert_eq!(results[1].as_ref().unwrap().id, "22");
         assert_eq!(results[1].as_ref().unwrap().title, "Book Two");
+    }
+
+    #[tokio::test]
+    async fn bookshelf_capability_reads_from_header() {
+        use crate::feed::FeedBookshelfSupport as _;
+
+        let script = format!(
+            "{}{}",
+            make_header_with_bookshelf("https://example.com", true),
+            SEARCH_BODY
+        );
+
+        let feed = ScriptEngine::new().load_feed(&script).await.expect("load");
+        assert!(feed.bookshelf_capabilities().supports_bookshelf);
     }
 }

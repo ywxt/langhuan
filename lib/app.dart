@@ -46,13 +46,13 @@ class _LanghuanAppState extends ConsumerState<LanghuanApp> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(scriptDirectorySetProvider);
+    ref.watch(appDataDirectorySetProvider);
     ref.watch(feedListProvider);
 
-    ref.listen(scriptDirectorySetProvider, (previous, next) {
+    ref.listen(appDataDirectorySetProvider, (previous, next) {
       next.whenData((result) {
         final outcome = result.outcome;
-        if (outcome is! ScriptDirectoryOutcomeError) return;
+        if (outcome is! AppDataDirectoryOutcomeError) return;
         debugPrint('Feed load error: ${outcome.message}');
         final snackContext = scaffoldMessengerKey.currentContext;
         final fallback = snackContext == null

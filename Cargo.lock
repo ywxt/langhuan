@@ -827,6 +827,7 @@ dependencies = [
  "rust-i18n",
  "rustls-platform-verifier",
  "serde",
+ "tempfile",
  "tokio",
  "tokio-stream",
  "tokio-util",

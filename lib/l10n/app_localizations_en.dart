@@ -33,6 +33,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bookshelfSearchHint => 'Search books…';
 
   @override
+  String get bookshelfLoadError => 'Failed to load bookshelf';
+
+  @override
+  String get bookshelfAdded => 'Added to local bookshelf';
+
+  @override
+  String get bookshelfRemoved => 'Removed from local bookshelf';
+
+  @override
+  String get bookshelfActionFailed => 'Bookshelf action failed';
+
+  @override
   String get searchTitle => 'Search';
 
   @override
@@ -94,6 +106,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get bookDetailEmpty => 'No book information available';
+
+  @override
+  String get bookDetailAddBookshelf => 'Add to Local Bookshelf';
+
+  @override
+  String get bookDetailRemoveBookshelf => 'Remove from Local Bookshelf';
+
+  @override
+  String get bookDetailSourceSupportsBookshelf =>
+      'This feed supports bookshelf';
+
+  @override
+  String get bookDetailSourceNoBookshelf =>
+      'This feed does not support bookshelf';
 
   @override
   String get readerTitle => 'Reader';

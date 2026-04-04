@@ -33,6 +33,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bookshelfSearchHint => '搜索書籍…';
 
   @override
+  String get bookshelfLoadError => '加載書架失敗';
+
+  @override
+  String get bookshelfAdded => '已加入本地書架';
+
+  @override
+  String get bookshelfRemoved => '已從本地書架移除';
+
+  @override
+  String get bookshelfActionFailed => '書架操作失敗';
+
+  @override
   String get searchTitle => '搜索';
 
   @override
@@ -94,6 +106,18 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get bookDetailEmpty => '暫無書籍信息';
+
+  @override
+  String get bookDetailAddBookshelf => '加入本地書架';
+
+  @override
+  String get bookDetailRemoveBookshelf => '從本地書架移除';
+
+  @override
+  String get bookDetailSourceSupportsBookshelf => '當前書源支持書架功能';
+
+  @override
+  String get bookDetailSourceNoBookshelf => '當前書源不支持書架功能';
 
   @override
   String get readerTitle => '閱讀';

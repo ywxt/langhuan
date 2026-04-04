@@ -1,8 +1,9 @@
 //! [`RegistryActor`] — manages the script registry and feed installation.
 //!
 //! # Responsibilities
-//! - Accept `SetScriptDirectory` from Dart to (re-)load the script registry and
-//!   pre-compile every feed listed in it.
+//! - Accept internal app-data initialization requests to load the script
+//!   registry from the scripts subdirectory and pre-compile every feed listed
+//!   in it.
 //! - Accept `ListFeedsRequest` from Dart to enumerate registered feeds.
 //! - Accept `PreviewFeedFromUrl` / `PreviewFeedFromFile` from Dart to preview
 //!   a feed script before installation.
@@ -18,9 +19,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use langhuan::script::engine::ScriptEngine;
-use langhuan::script::lua_feed::LuaFeed;
+use langhuan::script::lua::LuaFeed;
 use langhuan::script::registry::ScriptRegistry;
+use langhuan::script::runtime::ScriptEngine;
 use messages::prelude::{Actor, Address, Context, Handler, Notifiable};
 use rinf::{DartSignal, RustSignal};
 use tokio::task::JoinSet;
@@ -29,9 +30,15 @@ use crate::localize_error;
 use crate::signals::{
     FeedInstallOutcome, FeedInstallResult, FeedListResult, FeedMetaItem, FeedPreviewOutcome,
     FeedPreviewResult, FeedRemoveOutcome, FeedRemoveResult, InstallFeedRequest, ListFeedsRequest,
-    PreviewFeedFromFile, PreviewFeedFromUrl, RemoveFeedRequest, ScriptDirectoryOutcome,
-    ScriptDirectorySet, SetScriptDirectory,
+    PreviewFeedFromFile, PreviewFeedFromUrl, RemoveFeedRequest,
 };
+
+use super::app_data_actor::InitializeAppDataDirectory;
+
+pub struct RegistryInitializationResult {
+    pub feed_count: u32,
+    pub warning_message: Option<String>,
+}
 
 // ---------------------------------------------------------------------------
 // ResolveError
@@ -40,7 +47,7 @@ use crate::signals::{
 /// Error returned by [`Handler<GetFeed>`] when a feed cannot be resolved.
 #[derive(Debug, Clone)]
 pub enum ResolveError {
-    /// Script directory has not been set yet.
+    /// App data directory has not been set yet.
     DirNotSet,
     /// Feed exists in registry but failed to compile.
     Unavailable { id: String },
@@ -51,7 +58,7 @@ pub enum ResolveError {
 impl fmt::Display for ResolveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ResolveError::DirNotSet => write!(f, "{}", t!("error.script_dir_not_set")),
+            ResolveError::DirNotSet => write!(f, "{}", t!("error.app_data_dir_not_set")),
             ResolveError::Unavailable { id } => {
                 write!(f, "{}", t!("error.feed_unavailable", id = id))
             }
@@ -98,7 +105,6 @@ impl RegistryActor {
     /// Dart signal types.
     pub fn new(self_addr: Address<Self>, engine: ScriptEngine) -> Self {
         let mut _owned_tasks = JoinSet::new();
-        _owned_tasks.spawn(Self::listen_to_set_directory(self_addr.clone()));
         _owned_tasks.spawn(Self::listen_to_list_feeds(self_addr.clone()));
         _owned_tasks.spawn(Self::listen_to_preview_from_url(self_addr.clone()));
         _owned_tasks.spawn(Self::listen_to_preview_from_file(self_addr.clone()));
@@ -117,50 +123,37 @@ impl RegistryActor {
     // Business logic
     // -----------------------------------------------------------------------
 
-    /// Load (or reload) the script registry from `path` and eagerly compile
-    /// every feed listed in it.
-    async fn do_set_directory(&mut self, req: SetScriptDirectory) -> ScriptDirectorySet {
+    /// Load (or reload) the script registry from the scripts subdirectory and
+    /// eagerly compile every feed listed in it.
+    async fn initialize_app_data_directory(
+        &mut self,
+        path: &str,
+    ) -> Result<RegistryInitializationResult, String> {
         if self.registry.is_some() {
-            return ScriptDirectorySet {
-                outcome: ScriptDirectoryOutcome::Error {
-                    message: t!("error.registry_reload_not_supported").to_string(),
-                },
-            };
+            return Err(t!("error.registry_reload_not_supported").to_string());
         }
-        // Create the directory (and any parents) if it does not exist yet.
-        if let Err(e) = tokio::fs::create_dir_all(&req.path).await {
-            return ScriptDirectorySet {
-                outcome: ScriptDirectoryOutcome::Error {
-                    message: e.to_string(),
-                },
-            };
+        let base_dir = Path::new(path);
+        let scripts_dir = scripts_dir(base_dir);
+
+        if let Err(e) = tokio::fs::create_dir_all(&scripts_dir).await {
+            return Err(e.to_string());
         }
 
         // Ensure registry.toml exists (creates an empty one on first run).
-        if let Err(e) = ScriptRegistry::ensure_registry(Path::new(&req.path)).await {
-            return ScriptDirectorySet {
-                outcome: ScriptDirectoryOutcome::Error {
-                    message: localize_error(&e),
-                },
-            };
+        if let Err(e) = ScriptRegistry::ensure_registry(&scripts_dir).await {
+            return Err(localize_error(&e));
         }
 
-        let entries = match ScriptRegistry::load_entries(Path::new(&req.path)).await {
+        let entries = match ScriptRegistry::load_entries(&scripts_dir).await {
             Ok(r) => r,
-            Err(e) => {
-                return ScriptDirectorySet {
-                    outcome: ScriptDirectoryOutcome::Error {
-                        message: localize_error(&e),
-                    },
-                };
-            }
+            Err(e) => return Err(localize_error(&e)),
         };
 
         let mut feeds = HashMap::new();
         let mut load_errors: HashMap<String, String> = HashMap::new();
 
         for entry in entries.values() {
-            match ScriptRegistry::load_feed(Path::new(&req.path), entry, &self.engine).await {
+            match ScriptRegistry::load_feed(&scripts_dir, entry, &self.engine).await {
                 Err(e) => {
                     load_errors.insert(entry.id.clone(), localize_error(&e));
                 }
@@ -184,18 +177,14 @@ impl RegistryActor {
         };
 
         self.registry = Some(
-            ScriptRegistry::new(Path::new(&req.path), entries, feeds).unwrap_or_else(|e| {
-                panic!("Failed to initialize script registry: {}", e);
-            }),
+            ScriptRegistry::new(&scripts_dir, entries, feeds).map_err(|e| localize_error(&e))?,
         );
         self.load_errors = load_errors;
 
-        ScriptDirectorySet {
-            outcome: match error_summary {
-                None => ScriptDirectoryOutcome::Success { feed_count },
-                Some(message) => ScriptDirectoryOutcome::Error { message },
-            },
-        }
+        Ok(RegistryInitializationResult {
+            feed_count,
+            warning_message: error_summary,
+        })
     }
 
     /// Enumerate all feeds in the current registry.
@@ -221,7 +210,7 @@ impl RegistryActor {
 
     /// Preview a feed script fetched from a remote URL.
     async fn do_preview_from_url(&mut self, req: PreviewFeedFromUrl) -> FeedPreviewResult {
-        let content = match langhuan::script::downloader::download_script(&req.url).await {
+        let content = match langhuan::script::source::download_script(&req.url).await {
             Ok(c) => c,
             Err(e) => {
                 return FeedPreviewResult {
@@ -270,7 +259,7 @@ impl RegistryActor {
                 return FeedInstallResult {
                     request_id: req.request_id,
                     outcome: FeedInstallOutcome::Error {
-                        message: t!("error.script_dir_not_set").to_string(),
+                        message: t!("error.app_data_dir_not_set").to_string(),
                     },
                 };
             }
@@ -304,7 +293,7 @@ impl RegistryActor {
                 return FeedRemoveResult {
                     request_id: req.request_id,
                     outcome: FeedRemoveOutcome::Error {
-                        message: t!("error.script_dir_not_set").to_string(),
+                        message: t!("error.app_data_dir_not_set").to_string(),
                     },
                 };
             }
@@ -392,9 +381,11 @@ impl Handler<GetFeed> for RegistryActor {
 // ---------------------------------------------------------------------------
 
 #[async_trait]
-impl Notifiable<SetScriptDirectory> for RegistryActor {
-    async fn notify(&mut self, msg: SetScriptDirectory, _: &Context<Self>) {
-        self.do_set_directory(msg).await.send_signal_to_dart();
+impl Handler<InitializeAppDataDirectory> for RegistryActor {
+    type Result = Result<RegistryInitializationResult, String>;
+
+    async fn handle(&mut self, msg: InitializeAppDataDirectory, _: &Context<Self>) -> Self::Result {
+        self.initialize_app_data_directory(&msg.path).await
     }
 }
 
@@ -438,13 +429,6 @@ impl Notifiable<RemoveFeedRequest> for RegistryActor {
 // ---------------------------------------------------------------------------
 
 impl RegistryActor {
-    async fn listen_to_set_directory(mut self_addr: Address<Self>) {
-        let receiver = SetScriptDirectory::get_dart_signal_receiver();
-        while let Some(signal_pack) = receiver.recv().await {
-            let _ = self_addr.notify(signal_pack.message).await;
-        }
-    }
-
     async fn listen_to_list_feeds(mut self_addr: Address<Self>) {
         let receiver = ListFeedsRequest::get_dart_signal_receiver();
         while let Some(signal_pack) = receiver.recv().await {
@@ -478,5 +462,41 @@ impl RegistryActor {
         while let Some(signal_pack) = receiver.recv().await {
             let _ = self_addr.notify(signal_pack.message).await;
         }
+    }
+}
+
+fn scripts_dir(base_dir: &Path) -> std::path::PathBuf {
+    base_dir.join("scripts")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use langhuan::script::runtime::ScriptEngine;
+    use messages::prelude::Context;
+
+    use super::*;
+
+    type TestResult = Result<(), Box<dyn Error>>;
+
+    #[tokio::test]
+    async fn initialize_app_data_directory_creates_registry_under_scripts_subdir() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let registry_context = Context::new();
+        let registry_address = registry_context.address();
+        let mut actor = RegistryActor::new(registry_address, ScriptEngine::new());
+
+        let result = actor
+            .initialize_app_data_directory(&dir.path().to_string_lossy())
+            .await;
+
+        let result = result.map_err(std::io::Error::other)?;
+        assert_eq!(result.feed_count, 0);
+        assert!(result.warning_message.is_none());
+        assert!(dir.path().join("scripts").is_dir());
+        assert!(dir.path().join("scripts/registry.toml").is_file());
+        assert!(!dir.path().join("registry.toml").exists());
+        Ok(())
     }
 }

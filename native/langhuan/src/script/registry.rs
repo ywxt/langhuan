@@ -28,9 +28,10 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use super::engine::ScriptEngine;
-use super::lua_feed::LuaFeed;
+use super::lua::LuaFeed;
+use super::runtime::ScriptEngine;
 use crate::error::{Error, Result};
+use crate::util::fs::write_atomic;
 
 // ---------------------------------------------------------------------------
 // TOML data structures
@@ -317,7 +318,9 @@ impl ScriptRegistry {
         if !registry_path.exists() {
             let empty = toml::to_string_pretty(&RegistryFile::default())
                 .map_err(|e| Error::RegistryWrite(e.to_string()))?;
-            write_atomic(&registry_path, &empty).await?;
+            write_atomic(&registry_path, &empty)
+                .await
+                .map_err(|e| Error::RegistryWrite(e.to_string()))?;
         }
         Ok(())
     }
@@ -387,7 +390,9 @@ impl ScriptRegistry {
         let toml_content = toml::to_string_pretty(&registry_file)
             .map_err(|e| Error::RegistryWrite(e.to_string()))?;
         let registry_path = registry_path(&self.base_dir);
-        write_atomic(&registry_path, &toml_content).await
+        write_atomic(&registry_path, &toml_content)
+            .await
+            .map_err(|e| Error::RegistryWrite(e.to_string()))
     }
 }
 
@@ -406,47 +411,13 @@ fn feed_path(feed_id: &str, version: &str) -> PathBuf {
     Path::new(feed_id).join(format!("{}.lua", version))
 }
 
-async fn write_atomic(path: &Path, content: &str) -> Result<()> {
-    let mut tmp_path = path.to_path_buf();
-    let ext = path
-        .extension()
-        .and_then(|s| s.to_str())
-        .map(|ext| format!("{ext}.tmp"))
-        .unwrap_or_else(|| "tmp".to_owned());
-    tmp_path.set_extension(ext);
-
-    tokio::fs::write(&tmp_path, content)
-        .await
-        .map_err(|e| Error::RegistryWrite(e.to_string()))?;
-
-    if let Err(rename_err) = tokio::fs::rename(&tmp_path, path).await {
-        #[cfg(windows)]
-        {
-            if path.exists() {
-                tokio::fs::remove_file(path)
-                    .await
-                    .map_err(|e| Error::RegistryWrite(e.to_string()))?;
-                tokio::fs::rename(&tmp_path, path)
-                    .await
-                    .map_err(|e| Error::RegistryWrite(e.to_string()))?;
-                return Ok(());
-            }
-        }
-
-        let _ = tokio::fs::remove_file(&tmp_path).await;
-        return Err(Error::RegistryWrite(rename_err.to_string()));
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
     use tokio::fs;
 
-    use crate::script::engine::ScriptEngine;
+    use crate::script::runtime::ScriptEngine;
 
     // -----------------------------------------------------------------------
     // Helpers

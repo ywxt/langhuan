@@ -64,9 +64,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   }
 
   void _onSearch() {
-    final bootstrap = ref.read(scriptDirectorySetProvider);
+    final bootstrap = ref.read(appDataDirectorySetProvider);
     final bootstrapReady =
-        bootstrap.asData?.value.outcome is ScriptDirectoryOutcomeSuccess;
+        bootstrap.asData?.value.outcome is AppDataDirectoryOutcomeSuccess;
     if (!bootstrapReady) return;
 
     final feedState = ref.read(feedListProvider);
@@ -86,9 +86,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bootstrap = ref.watch(scriptDirectorySetProvider);
+    final bootstrap = ref.watch(appDataDirectorySetProvider);
     final bootstrapReady =
-        bootstrap.asData?.value.outcome is ScriptDirectoryOutcomeSuccess;
+        bootstrap.asData?.value.outcome is AppDataDirectoryOutcomeSuccess;
     final feedState = ref.watch(feedListProvider);
     final selectedFeed = ref.watch(selectedFeedProvider);
     final visibleFeeds = _visibleFeeds(feedState);

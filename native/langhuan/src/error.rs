@@ -72,6 +72,17 @@ pub enum Error {
     /// A write to the registry directory or script file failed.
     #[error("registry write error: {0}")]
     RegistryWrite(String),
+
+    /// A read/write operation for local bookshelf storage failed.
+    #[error("bookshelf storage error: {0}")]
+    BookshelfStorage(String),
+
+    /// The local bookshelf TOML file could not be parsed.
+    #[error("bookshelf parse error: {message}")]
+    BookshelfParse {
+        /// A description of the parse error.
+        message: String,
+    },
 }
 
 impl Error {
@@ -102,7 +113,9 @@ impl Error {
             | Error::FeedNotFound { .. }
             | Error::DuplicateFeedId { .. }
             | Error::DomainNotAllowed { .. }
-            | Error::RegistryWrite(_) => false,
+            | Error::RegistryWrite(_)
+            | Error::BookshelfStorage(_)
+            | Error::BookshelfParse { .. } => false,
         }
     }
 }

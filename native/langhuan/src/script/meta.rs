@@ -1,46 +1,7 @@
 use std::collections::HashSet;
 
-use serde::Serialize;
-
 use crate::error::{Error, Result};
-
-/// Metadata extracted from the `==Feed==` header block of a Lua feed script.
-///
-/// # Header format
-///
-/// ```lua
-/// -- ==Feed==
-/// -- @id           example-feed
-/// -- @name         範例書源
-/// -- @version      1.0.0
-/// -- @author       someone
-/// -- @description  一個範例書源
-/// -- @base_url     https://example.com
-/// -- @allowed_domain example.com
-/// -- @allowed_domain cdn.example.com
-/// -- ==/Feed==
-/// ```
-#[derive(Debug, Clone, Serialize)]
-pub struct FeedMeta {
-    /// Unique identifier for this feed.
-    pub id: String,
-    /// Display name of the feed (default locale).
-    pub name: String,
-    /// Version string (e.g. `"1.0.0"`).
-    pub version: String,
-    /// Author of the feed script.
-    pub author: Option<String>,
-    /// Short description (default locale).
-    pub description: Option<String>,
-    /// Base URL used by the feed. Available in Lua as `meta.base_url`.
-    pub base_url: String,
-    /// Allowed domain patterns for HTTP requests made by this feed.
-    ///
-    /// An empty list means **no restriction** (all domains are allowed).
-    /// Each pattern is either an exact hostname (`example.com`) or a wildcard
-    /// subdomain pattern (`*.example.com`).
-    pub allowed_domains: HashSet<String>,
-}
+use crate::feed::FeedMeta;
 
 // ---------------------------------------------------------------------------
 // Parser
@@ -169,6 +130,7 @@ struct FeedMetaBuilder {
     description: Option<String>,
     base_url: Option<String>,
     allowed_domains: HashSet<String>,
+    supports_bookshelf: bool,
 }
 
 impl FeedMetaBuilder {
@@ -186,6 +148,9 @@ impl FeedMetaBuilder {
                 if !domain.is_empty() {
                     self.allowed_domains.insert(domain);
                 }
+            }
+            "bookshelf" => {
+                self.supports_bookshelf = parse_bool_like(&value).unwrap_or(false);
             }
             _ => {
                 // Unknown keys are silently ignored for forward compatibility.
@@ -222,7 +187,16 @@ impl FeedMetaBuilder {
                 }
                 self.allowed_domains
             },
+            supports_bookshelf: self.supports_bookshelf,
         })
+    }
+}
+
+fn parse_bool_like(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Some(true),
+        "false" | "0" | "no" | "off" => Some(false),
+        _ => None,
     }
 }
 
@@ -276,6 +250,7 @@ end
         assert_eq!(meta.author.as_deref(), Some("someone"));
         assert_eq!(meta.description.as_deref(), Some("一個範例書源"));
         assert_eq!(meta.base_url, "https://example.com");
+        assert!(!meta.supports_bookshelf);
         // Body should start after the header.
         assert!(offset > 0);
         assert!(SAMPLE_SCRIPT[offset..].contains("function search_request"));
@@ -359,5 +334,25 @@ end
         let script = "-- ==Feed==\n-- @id test\n-- @name Test\n-- @version 1.0\n-- @base_url https://example.com\n-- @allowed_domain\n-- ==/Feed==\n";
         let (meta, _) = parse_meta(script).unwrap();
         assert!(meta.allowed_domains.is_empty());
+    }
+
+    #[test]
+    fn bookshelf_capability_defaults_false() {
+        let (meta, _) = parse_meta(SAMPLE_SCRIPT).unwrap();
+        assert!(!meta.supports_bookshelf);
+    }
+
+    #[test]
+    fn bookshelf_capability_true_when_declared() {
+        let script = r#"-- ==Feed==
+-- @id      test
+-- @name    Test
+-- @version 1.0
+-- @base_url https://example.com
+-- @bookshelf true
+-- ==/Feed==
+"#;
+        let (meta, _) = parse_meta(script).unwrap();
+        assert!(meta.supports_bookshelf);
     }
 }

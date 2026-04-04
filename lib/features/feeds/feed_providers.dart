@@ -406,7 +406,7 @@ class FeedListNotifier extends Notifier<FeedListState> {
 
   @override
   FeedListState build() {
-    final bootstrap = ref.watch(scriptDirectorySetProvider);
+    final bootstrap = ref.watch(appDataDirectorySetProvider);
 
     if (bootstrap.isLoading) {
       return const FeedListState(isLoading: true);
@@ -422,7 +422,7 @@ class FeedListNotifier extends Notifier<FeedListState> {
     }
 
     final outcome = result.outcome;
-    if (outcome is ScriptDirectoryOutcomeError) {
+    if (outcome is AppDataDirectoryOutcomeError) {
       return FeedListState(error: outcome.message);
     }
 
@@ -435,7 +435,7 @@ class FeedListNotifier extends Notifier<FeedListState> {
   }
 
   Future<void> load() async {
-    final bootstrap = ref.read(scriptDirectorySetProvider);
+    final bootstrap = ref.read(appDataDirectorySetProvider);
     final result = bootstrap.asData?.value;
 
     if (bootstrap.isLoading) {
@@ -448,11 +448,11 @@ class FeedListNotifier extends Notifier<FeedListState> {
       return;
     }
 
-    if (result == null || result.outcome is ScriptDirectoryOutcomeError) {
+    if (result == null || result.outcome is AppDataDirectoryOutcomeError) {
       final outcome = result?.outcome;
-      final message = outcome is ScriptDirectoryOutcomeError
+      final message = outcome is AppDataDirectoryOutcomeError
           ? outcome.message
-          : 'script directory not ready';
+          : 'app data directory not ready';
       state = FeedListState(error: message);
       return;
     }
@@ -505,6 +505,115 @@ class FeedListNotifier extends Notifier<FeedListState> {
 }
 
 // ---------------------------------------------------------------------------
+// Bookshelf state
+// ---------------------------------------------------------------------------
+
+class BookshelfState {
+  const BookshelfState({
+    this.items = const [],
+    this.isLoading = false,
+    this.error,
+    this.activeItemId,
+  });
+
+  final List<BookshelfItemModel> items;
+  final bool isLoading;
+  final Object? error;
+  final String? activeItemId;
+
+  bool get hasError => error != null;
+
+  bool contains({required String feedId, required String sourceBookId}) {
+    return items.any(
+      (item) => item.feedId == feedId && item.sourceBookId == sourceBookId,
+    );
+  }
+
+  BookshelfState copyWith({
+    List<BookshelfItemModel>? items,
+    bool? isLoading,
+    Object? Function()? error,
+    String? Function()? activeItemId,
+  }) {
+    return BookshelfState(
+      items: items ?? this.items,
+      isLoading: isLoading ?? this.isLoading,
+      error: error != null ? error() : this.error,
+      activeItemId: activeItemId != null ? activeItemId() : this.activeItemId,
+    );
+  }
+}
+
+class BookshelfNotifier extends Notifier<BookshelfState> {
+  bool _initialized = false;
+
+  @override
+  BookshelfState build() {
+    if (!_initialized) {
+      _initialized = true;
+      Future.microtask(load);
+    }
+    return const BookshelfState(isLoading: true);
+  }
+
+  Future<void> load() async {
+    state = state.copyWith(isLoading: true, error: () => null);
+    try {
+      final items = await FeedService.instance.listBookshelf();
+      state = state.copyWith(items: items, isLoading: false, error: () => null);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: () => e);
+    }
+  }
+
+  Future<BookshelfOperationOutcome> add({
+    required String feedId,
+    required BookInfoModel book,
+  }) async {
+    final itemId = '$feedId:${book.id}';
+    state = state.copyWith(activeItemId: () => itemId, error: () => null);
+
+    try {
+      final outcome = await FeedService.instance.addToBookshelf(
+        feedId: feedId,
+        sourceBookId: book.id,
+        title: book.title,
+        author: book.author,
+        coverUrl: book.coverUrl,
+        descriptionSnapshot: book.description,
+      );
+      await load();
+      return outcome;
+    } finally {
+      if (state.activeItemId == itemId) {
+        state = state.copyWith(activeItemId: () => null);
+      }
+    }
+  }
+
+  Future<BookshelfOperationOutcome> remove({
+    required String feedId,
+    required String sourceBookId,
+  }) async {
+    final itemId = '$feedId:$sourceBookId';
+    state = state.copyWith(activeItemId: () => itemId, error: () => null);
+
+    try {
+      final outcome = await FeedService.instance.removeFromBookshelf(
+        feedId: feedId,
+        sourceBookId: sourceBookId,
+      );
+      await load();
+      return outcome;
+    } finally {
+      if (state.activeItemId == itemId) {
+        state = state.copyWith(activeItemId: () => null);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Providers
 // ---------------------------------------------------------------------------
 
@@ -528,6 +637,15 @@ final chapterContentProvider =
 final feedListProvider = NotifierProvider<FeedListNotifier, FeedListState>(
   FeedListNotifier.new,
 );
+
+final bookshelfProvider = NotifierProvider<BookshelfNotifier, BookshelfState>(
+  BookshelfNotifier.new,
+);
+
+final bookshelfCapabilitiesProvider =
+    FutureProvider.family<BookshelfCapabilitiesModel, String>((ref, feedId) {
+      return FeedService.instance.bookshelfCapabilities(feedId: feedId);
+    });
 
 /// The feed currently selected by the user (used as the source for searches).
 class SelectedFeedNotifier extends Notifier<FeedMetaItem?> {

@@ -1,0 +1,125 @@
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use crate::bookshelf::models::BookshelfEntry;
+use crate::error::{Error, Result};
+use crate::util::fs::write_atomic;
+
+pub const BOOKSHELF_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BookshelfFile {
+    pub schema_version: u32,
+    pub entries: Vec<BookshelfEntry>,
+}
+
+impl Default for BookshelfFile {
+    fn default() -> Self {
+        Self {
+            schema_version: BOOKSHELF_SCHEMA_VERSION,
+            entries: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TomlBookshelfStore {
+    path: PathBuf,
+}
+
+impl TomlBookshelfStore {
+    #[must_use]
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub async fn load(&self) -> Result<BookshelfFile> {
+        if !self.path.exists() {
+            return Ok(BookshelfFile::default());
+        }
+
+        let content = tokio::fs::read_to_string(&self.path)
+            .await
+            .map_err(|e| Error::BookshelfStorage(e.to_string()))?;
+
+        toml::from_str(&content).map_err(|e| Error::BookshelfParse {
+            message: e.to_string(),
+        })
+    }
+
+    pub async fn save(&self, file: &BookshelfFile) -> Result<()> {
+        if let Some(parent) = self.path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|e| Error::BookshelfStorage(e.to_string()))?;
+        }
+
+        let content = toml::to_string_pretty(file)
+            .map_err(|e| Error::BookshelfStorage(e.to_string()))?;
+        write_atomic(&self.path, &content)
+            .await
+            .map_err(|e| Error::BookshelfStorage(e.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bookshelf::models::BookIdentity;
+    use crate::error::Error;
+
+    #[tokio::test]
+    async fn load_missing_file_returns_default() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = TomlBookshelfStore::new(dir.path().join("bookshelf.toml"));
+
+        let file = store.load().await.expect("load default");
+        assert!(file.entries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn load_malformed_toml_returns_parse_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("bookshelf.toml");
+        tokio::fs::write(&path, "not = [valid toml")
+            .await
+            .expect("write malformed");
+
+        let store = TomlBookshelfStore::new(path);
+        let err = store.load().await.expect_err("expected parse error");
+        assert!(matches!(err, Error::BookshelfParse { .. }));
+    }
+
+    #[tokio::test]
+    async fn save_then_load_roundtrip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("bookshelf.toml");
+        let store = TomlBookshelfStore::new(&path);
+
+        let mut file = BookshelfFile::default();
+        file.entries.push(BookshelfEntry {
+            identity: BookIdentity {
+                feed_id: "feed-a".to_owned(),
+                source_book_id: "123".to_owned(),
+            },
+            title: "Title".to_owned(),
+            author: "Author".to_owned(),
+            cover_url: None,
+            description_snapshot: None,
+            source_name_snapshot: Some("source".to_owned()),
+            added_at_unix_ms: 1,
+        });
+
+        store.save(&file).await.expect("save");
+        let loaded = store.load().await.expect("load");
+        assert_eq!(loaded.entries.len(), 1);
+        assert_eq!(loaded.entries[0].identity.feed_id, "feed-a");
+        assert_eq!(loaded.entries[0].identity.source_book_id, "123");
+    }
+}
