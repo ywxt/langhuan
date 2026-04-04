@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../features/bookshelf/bookshelf_page.dart';
 import '../features/bookshelf/book_detail_page.dart';
+import '../features/bookshelf/reader_page.dart';
 import '../features/bookshelf/search_page.dart';
 import '../features/feeds/feeds_page.dart';
 import '../features/settings/settings_page.dart';
@@ -43,6 +44,25 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                               state.uri.queryParameters['bookId'] ?? '';
                           return BookDetailPage(feedId: feedId, bookId: bookId);
                         },
+                        routes: [
+                          GoRoute(
+                            path: 'read',
+                            name: 'bookshelf-reader',
+                            builder: (context, state) {
+                              final feedId =
+                                  state.uri.queryParameters['feedId'] ?? '';
+                              final bookId =
+                                  state.uri.queryParameters['bookId'] ?? '';
+                              final chapterId =
+                                  state.uri.queryParameters['chapterId'] ?? '';
+                              return ReaderPage(
+                                feedId: feedId,
+                                bookId: bookId,
+                                chapterId: chapterId,
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     ],
                   ),

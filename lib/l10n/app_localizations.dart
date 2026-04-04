@@ -260,6 +260,60 @@ abstract class AppLocalizations {
   /// **'No book information available'**
   String get bookDetailEmpty;
 
+  /// Reader page title fallback
+  ///
+  /// In en, this message translates to:
+  /// **'Reader'**
+  String get readerTitle;
+
+  /// Shown when reader route params are missing
+  ///
+  /// In en, this message translates to:
+  /// **'Missing reading parameters'**
+  String get readerMissingParams;
+
+  /// Reader page content load error title
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load chapter'**
+  String get readerLoadError;
+
+  /// Reader page empty content state
+  ///
+  /// In en, this message translates to:
+  /// **'No chapter content available'**
+  String get readerEmpty;
+
+  /// Snackbar shown when swiping before first chapter
+  ///
+  /// In en, this message translates to:
+  /// **'Already at the first chapter'**
+  String get readerAtFirstChapter;
+
+  /// Snackbar shown when swiping after last chapter
+  ///
+  /// In en, this message translates to:
+  /// **'Already at the last chapter'**
+  String get readerAtLastChapter;
+
+  /// Reader page previous chapter button label
+  ///
+  /// In en, this message translates to:
+  /// **'Previous'**
+  String get readerPrevChapter;
+
+  /// Reader page next chapter button label
+  ///
+  /// In en, this message translates to:
+  /// **'Next'**
+  String get readerNextChapter;
+
+  /// Reader page chapter progress indicator
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter {current} / {total}'**
+  String readerChapterProgress(int current, int total);
+
   /// Feeds page title
   ///
   /// In en, this message translates to:

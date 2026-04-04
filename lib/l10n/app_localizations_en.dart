@@ -96,6 +96,35 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bookDetailEmpty => 'No book information available';
 
   @override
+  String get readerTitle => 'Reader';
+
+  @override
+  String get readerMissingParams => 'Missing reading parameters';
+
+  @override
+  String get readerLoadError => 'Failed to load chapter';
+
+  @override
+  String get readerEmpty => 'No chapter content available';
+
+  @override
+  String get readerAtFirstChapter => 'Already at the first chapter';
+
+  @override
+  String get readerAtLastChapter => 'Already at the last chapter';
+
+  @override
+  String get readerPrevChapter => 'Previous';
+
+  @override
+  String get readerNextChapter => 'Next';
+
+  @override
+  String readerChapterProgress(int current, int total) {
+    return 'Chapter $current / $total';
+  }
+
+  @override
   String get feedsTitle => 'Feeds';
 
   @override

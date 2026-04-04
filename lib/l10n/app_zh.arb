@@ -33,6 +33,16 @@
   "bookDetailMissingParams": "缺少書籍參數",
   "bookDetailEmpty": "暫無書籍信息",
 
+  "readerTitle": "閱讀",
+  "readerMissingParams": "缺少閱讀參數",
+  "readerLoadError": "加載章節失敗",
+  "readerEmpty": "暫無章節正文",
+  "readerAtFirstChapter": "已是第一章",
+  "readerAtLastChapter": "已是最後一章",
+  "readerPrevChapter": "上一章",
+  "readerNextChapter": "下一章",
+  "readerChapterProgress": "第 {current} / {total} 章",
+
   "feedsTitle": "書源",
   "feedsSearchHint": "搜索書源…",
   "feedsEmpty": "暫無書源\n請將腳本文件放入 scripts 文件夾",

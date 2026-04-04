@@ -304,7 +304,13 @@ local function parse_paragraph_items(resp)
     if doc then
         local lines = doc:select("#content p")
         if #lines == 0 then
+            lines = doc:select("#chaptercontent p")
+        end
+        if #lines == 0 then
             lines = doc:select("article p")
+        end
+        if #lines == 0 then
+            lines = doc:select(".Readarea p")
         end
 
         if #lines > 0 then
@@ -326,7 +332,13 @@ local function parse_paragraph_items(resp)
         else
             local content = doc:select("#content"):first()
             if not content then
+                content = doc:select("#chaptercontent"):first()
+            end
+            if not content then
                 content = doc:select("article"):first()
+            end
+            if not content then
+                content = doc:select(".Readarea"):first()
             end
             if content then
                 local text = clean_text(content:text())
@@ -335,6 +347,22 @@ local function parse_paragraph_items(resp)
                         type = "text",
                         content = text,
                     })
+                end
+            end
+
+            if #items == 0 then
+                local raw = body:match('<div[^>]-id=["\']chaptercontent["\'][^>]*>(.-)</div>')
+                if not raw then
+                    raw = body:match('<div[^>]-id=["\']content["\'][^>]*>(.-)</div>')
+                end
+                if raw then
+                    local text = clean_text(raw)
+                    if text ~= "" then
+                        table.insert(items, {
+                            type = "text",
+                            content = text,
+                        })
+                    end
                 end
             end
         end

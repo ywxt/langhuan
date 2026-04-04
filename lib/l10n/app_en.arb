@@ -97,6 +97,39 @@
   "bookDetailEmpty": "No book information available",
   "@bookDetailEmpty": { "description": "Fallback when no book data is returned" },
 
+  "readerTitle": "Reader",
+  "@readerTitle": { "description": "Reader page title fallback" },
+
+  "readerMissingParams": "Missing reading parameters",
+  "@readerMissingParams": { "description": "Shown when reader route params are missing" },
+
+  "readerLoadError": "Failed to load chapter",
+  "@readerLoadError": { "description": "Reader page content load error title" },
+
+  "readerEmpty": "No chapter content available",
+  "@readerEmpty": { "description": "Reader page empty content state" },
+
+  "readerAtFirstChapter": "Already at the first chapter",
+  "@readerAtFirstChapter": { "description": "Snackbar shown when swiping before first chapter" },
+
+  "readerAtLastChapter": "Already at the last chapter",
+  "@readerAtLastChapter": { "description": "Snackbar shown when swiping after last chapter" },
+
+  "readerPrevChapter": "Previous",
+  "@readerPrevChapter": { "description": "Reader page previous chapter button label" },
+
+  "readerNextChapter": "Next",
+  "@readerNextChapter": { "description": "Reader page next chapter button label" },
+
+  "readerChapterProgress": "Chapter {current} / {total}",
+  "@readerChapterProgress": {
+    "description": "Reader page chapter progress indicator",
+    "placeholders": {
+      "current": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+
   "feedsTitle": "Feeds",
   "@feedsTitle": { "description": "Feeds page title" },
 

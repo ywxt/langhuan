@@ -96,6 +96,35 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bookDetailEmpty => '暫無書籍信息';
 
   @override
+  String get readerTitle => '閱讀';
+
+  @override
+  String get readerMissingParams => '缺少閱讀參數';
+
+  @override
+  String get readerLoadError => '加載章節失敗';
+
+  @override
+  String get readerEmpty => '暫無章節正文';
+
+  @override
+  String get readerAtFirstChapter => '已是第一章';
+
+  @override
+  String get readerAtLastChapter => '已是最後一章';
+
+  @override
+  String get readerPrevChapter => '上一章';
+
+  @override
+  String get readerNextChapter => '下一章';
+
+  @override
+  String readerChapterProgress(int current, int total) {
+    return '第 $current / $total 章';
+  }
+
+  @override
   String get feedsTitle => '書源';
 
   @override

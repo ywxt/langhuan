@@ -77,7 +77,6 @@ pub struct ChapterInfoItem {
 
 /// The content of a single paragraph in a chapter.
 #[derive(Serialize, SignalPiece)]
-#[serde(tag = "type", rename_all = "snake_case")]
 pub enum ParagraphContent {
     Title { text: String },
     Text { content: String },

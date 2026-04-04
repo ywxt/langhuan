@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../shared/theme/app_theme.dart';
@@ -19,6 +20,17 @@ class BookDetailPage extends ConsumerStatefulWidget {
 }
 
 class _BookDetailPageState extends ConsumerState<BookDetailPage> {
+  void _openReader(BuildContext context, String chapterId) {
+    context.pushNamed(
+      'bookshelf-reader',
+      queryParameters: {
+        'feedId': widget.feedId,
+        'bookId': widget.bookId,
+        'chapterId': chapterId,
+      },
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -142,7 +154,9 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: null,
+                onPressed: chaptersState.items.isEmpty
+                    ? null
+                    : () => _openReader(context, chaptersState.items.first.id),
                 child: Text(l10n.bookDetailStartReading),
               ),
             ),
@@ -171,6 +185,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                     color: theme.colorScheme.surfaceContainer,
                     borderRadius: LanghuanTheme.borderRadiusMd,
                     child: ListTile(
+                      onTap: () => _openReader(context, chapter.id),
                       dense: true,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: LanghuanTheme.spaceMd,
