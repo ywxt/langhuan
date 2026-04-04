@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../rust_init.dart';
 import '../../src/bindings/signals/signals.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/cover_placeholder.dart';
@@ -59,10 +60,13 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     final theme = Theme.of(context);
     final bookInfoState = ref.watch(bookInfoProvider);
     final chaptersState = ref.watch(chaptersProvider);
+    final bootstrap = ref.watch(appDataDirectorySetProvider);
     final bookshelfState = ref.watch(bookshelfProvider);
     final capabilityState = ref.watch(
       bookshelfCapabilitiesProvider(widget.feedId),
     );
+    final bookshelfReady =
+        bootstrap.asData?.value.outcome is AppDataDirectoryOutcomeSuccess;
 
     if (widget.feedId.isEmpty || widget.bookId.isEmpty) {
       return Scaffold(
@@ -170,16 +174,18 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                   )
                   ? OutlinedButton(
                       onPressed:
-                          bookshelfState.activeItemId ==
-                              '${widget.feedId}:${widget.bookId}'
+                          !bookshelfReady ||
+                              bookshelfState.activeItemId ==
+                                  '${widget.feedId}:${widget.bookId}'
                           ? null
                           : () => _removeFromBookshelf(context),
                       child: Text(l10n.bookDetailRemoveBookshelf),
                     )
                   : FilledButton.tonal(
                       onPressed:
-                          bookshelfState.activeItemId ==
-                              '${widget.feedId}:${widget.bookId}'
+                          !bookshelfReady ||
+                              bookshelfState.activeItemId ==
+                                  '${widget.feedId}:${widget.bookId}'
                           ? null
                           : () => _addToBookshelf(context, book),
                       child: Text(l10n.bookDetailAddBookshelf),
@@ -250,6 +256,15 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
 
   Future<void> _addToBookshelf(BuildContext context, BookInfoModel book) async {
     final l10n = AppLocalizations.of(context);
+    final bootstrap = ref.read(appDataDirectorySetProvider);
+    if (bootstrap.asData?.value.outcome is! AppDataDirectoryOutcomeSuccess) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(l10n.bookshelfActionFailed)));
+      return;
+    }
+
     final outcome = await ref
         .read(bookshelfProvider.notifier)
         .add(feedId: widget.feedId, book: book);
@@ -265,6 +280,15 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
 
   Future<void> _removeFromBookshelf(BuildContext context) async {
     final l10n = AppLocalizations.of(context);
+    final bootstrap = ref.read(appDataDirectorySetProvider);
+    if (bootstrap.asData?.value.outcome is! AppDataDirectoryOutcomeSuccess) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(l10n.bookshelfActionFailed)));
+      return;
+    }
+
     final outcome = await ref
         .read(bookshelfProvider.notifier)
         .remove(feedId: widget.feedId, sourceBookId: widget.bookId);

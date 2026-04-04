@@ -43,6 +43,7 @@ impl BookshelfActor {
 
     async fn set_data_directory(&mut self, path: &std::path::Path) -> Result<(), String> {
         let path = bookshelf_file(path);
+        tracing::info!(path = %path.display(), "initializing bookshelf actor storage");
         if let Some(parent) = path.parent()
             && let Err(e) = tokio::fs::create_dir_all(parent).await
         {
@@ -54,6 +55,7 @@ impl BookshelfActor {
         match LocalBookshelf::open(path).await {
             Ok(shelf) => {
                 self.shelf = Some(shelf);
+                tracing::info!("bookshelf actor storage initialized");
                 Ok(())
             }
             Err(e) => {
@@ -70,6 +72,12 @@ impl BookshelfActor {
     }
 
     async fn add(&mut self, req: BookshelfAddRequest) -> BookshelfAddResult {
+        tracing::debug!(
+            request_id = %req.request_id,
+            feed_id = %req.feed_id,
+            source_book_id = %req.source_book_id,
+            "received bookshelf add request"
+        );
         let identity = BookIdentity {
             feed_id: req.feed_id,
             source_book_id: req.source_book_id,
@@ -107,6 +115,12 @@ impl BookshelfActor {
     }
 
     async fn remove(&mut self, req: BookshelfRemoveRequest) -> BookshelfRemoveResult {
+        tracing::debug!(
+            request_id = %req.request_id,
+            feed_id = %req.feed_id,
+            source_book_id = %req.source_book_id,
+            "received bookshelf remove request"
+        );
         let identity = BookIdentity {
             feed_id: req.feed_id,
             source_book_id: req.source_book_id,
@@ -132,7 +146,9 @@ impl BookshelfActor {
     }
 
     fn list(&self, req: BookshelfListRequest) {
+        tracing::debug!(request_id = %req.request_id, "received bookshelf list request");
         if let Some(shelf) = &self.shelf {
+            tracing::debug!(request_id = %req.request_id, entries = shelf.entries().len(), "emitting bookshelf list items");
             for entry in shelf.entries() {
                 BookshelfListItem {
                     request_id: req.request_id.clone(),
@@ -167,6 +183,7 @@ impl BookshelfActor {
         &mut self,
         req: BookshelfCapabilitiesRequest,
     ) -> BookshelfCapabilitiesResult {
+        tracing::debug!(request_id = %req.request_id, feed_id = %req.feed_id, "received bookshelf capabilities request");
         let supports_bookshelf = match self
             .registry_addr
             .send(GetFeed {

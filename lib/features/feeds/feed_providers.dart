@@ -547,8 +547,39 @@ class BookshelfState {
 class BookshelfNotifier extends Notifier<BookshelfState> {
   bool _initialized = false;
 
+  bool _isBootstrapReady(AsyncValue<AppDataDirectorySet> bootstrap) {
+    if (bootstrap.isLoading || bootstrap.hasError) {
+      return false;
+    }
+    final result = bootstrap.asData?.value;
+    if (result == null) {
+      return false;
+    }
+    return result.outcome is AppDataDirectoryOutcomeSuccess;
+  }
+
   @override
   BookshelfState build() {
+    final bootstrap = ref.watch(appDataDirectorySetProvider);
+
+    if (bootstrap.isLoading) {
+      return const BookshelfState(isLoading: true);
+    }
+
+    if (bootstrap.hasError) {
+      return BookshelfState(error: bootstrap.error);
+    }
+
+    final result = bootstrap.asData?.value;
+    if (result == null) {
+      return const BookshelfState();
+    }
+
+    final outcome = result.outcome;
+    if (outcome is AppDataDirectoryOutcomeError) {
+      return BookshelfState(error: outcome.message);
+    }
+
     if (!_initialized) {
       _initialized = true;
       Future.microtask(load);
@@ -557,6 +588,11 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   }
 
   Future<void> load() async {
+    final bootstrap = ref.read(appDataDirectorySetProvider);
+    if (!_isBootstrapReady(bootstrap)) {
+      return;
+    }
+
     state = state.copyWith(isLoading: true, error: () => null);
     try {
       final items = await FeedService.instance.listBookshelf();
@@ -570,6 +606,13 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     required String feedId,
     required BookInfoModel book,
   }) async {
+    final bootstrap = ref.read(appDataDirectorySetProvider);
+    if (!_isBootstrapReady(bootstrap)) {
+      return const BookshelfOperationOutcomeError(
+        message: 'app data directory not ready',
+      );
+    }
+
     final itemId = '$feedId:${book.id}';
     state = state.copyWith(activeItemId: () => itemId, error: () => null);
 
@@ -595,6 +638,13 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     required String feedId,
     required String sourceBookId,
   }) async {
+    final bootstrap = ref.read(appDataDirectorySetProvider);
+    if (!_isBootstrapReady(bootstrap)) {
+      return const BookshelfOperationOutcomeError(
+        message: 'app data directory not ready',
+      );
+    }
+
     final itemId = '$feedId:$sourceBookId';
     state = state.copyWith(activeItemId: () => itemId, error: () => null);
 

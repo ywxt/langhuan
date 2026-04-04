@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app.dart';
 import '../../l10n/app_localizations.dart';
+import '../../rust_init.dart';
 import '../../shared/constants.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/delete_with_undo.dart';
@@ -61,6 +62,9 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final bootstrap = ref.watch(appDataDirectorySetProvider);
+    final bootstrapReady =
+        bootstrap.asData?.value.outcome is AppDataDirectoryOutcomeSuccess;
     final feedState = ref.watch(feedListProvider);
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
@@ -69,7 +73,7 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
 
     return Scaffold(
       floatingActionButton: FloatingActionButton(
-        onPressed: () => showAddFeedSheet(context),
+        onPressed: bootstrapReady ? () => showAddFeedSheet(context) : null,
         tooltip: l10n.addFeedTitle,
         child: const Icon(Icons.add),
       ),
@@ -99,6 +103,7 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
               ),
               sliver: SliverToBoxAdapter(
                 child: SearchBar(
+                  enabled: bootstrapReady,
                   controller: _filterController,
                   hintText: l10n.feedsSearchHint,
                   leading: Icon(
@@ -109,7 +114,9 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
                     if (_filterText.isNotEmpty)
                       IconButton(
                         icon: const Icon(Icons.close),
-                        onPressed: _filterController.clear,
+                        onPressed: bootstrapReady
+                            ? _filterController.clear
+                            : null,
                       ),
                   ],
                 ),
@@ -121,7 +128,14 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
             ),
 
             // ── Content ────────────────────────────────────────────────
-            _buildBody(context, feedState, filtered, theme, l10n),
+            _buildBody(
+              context,
+              feedState,
+              filtered,
+              theme,
+              l10n,
+              bootstrapReady,
+            ),
 
             // Bottom padding for FAB
             const SliverToBoxAdapter(child: SizedBox(height: 80)),
@@ -137,6 +151,7 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
     List<FeedMetaItem> filtered,
     ThemeData theme,
     AppLocalizations l10n,
+    bool bootstrapReady,
   ) {
     // ── Loading ──────────────────────────────────────────────────────────────
     if (feedState.isLoading) {
@@ -191,7 +206,10 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
           final deletingId = feedState.removingFeedId;
           final isDeleting =
               deletingId == feed.id || _pendingDeleteIds.contains(feed.id);
-          final isBusy = deletingId != null || _pendingDeleteIds.isNotEmpty;
+          final isBusy =
+              !bootstrapReady ||
+              deletingId != null ||
+              _pendingDeleteIds.isNotEmpty;
 
           return Padding(
             padding: const EdgeInsets.only(bottom: LanghuanTheme.spaceSm),

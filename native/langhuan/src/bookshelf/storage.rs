@@ -40,7 +40,9 @@ impl TomlBookshelfStore {
     }
 
     pub async fn load(&self) -> Result<BookshelfFile> {
+        tracing::debug!(path = %self.path.display(), "loading bookshelf file");
         if !self.path.exists() {
+            tracing::info!(path = %self.path.display(), "bookshelf file missing, using default");
             return Ok(BookshelfFile::default());
         }
 
@@ -48,12 +50,19 @@ impl TomlBookshelfStore {
             .await
             .map_err(|e| Error::BookshelfStorage(e.to_string()))?;
 
-        toml::from_str(&content).map_err(|e| Error::BookshelfParse {
+        let parsed = toml::from_str(&content).map_err(|e| Error::BookshelfParse {
             message: e.to_string(),
-        })
+        })?;
+        tracing::debug!(path = %self.path.display(), "bookshelf file loaded");
+        Ok(parsed)
     }
 
     pub async fn save(&self, file: &BookshelfFile) -> Result<()> {
+        tracing::debug!(
+            path = %self.path.display(),
+            entries = file.entries.len(),
+            "saving bookshelf file"
+        );
         if let Some(parent) = self.path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
@@ -64,7 +73,9 @@ impl TomlBookshelfStore {
             .map_err(|e| Error::BookshelfStorage(e.to_string()))?;
         write_atomic(&self.path, &content)
             .await
-            .map_err(|e| Error::BookshelfStorage(e.to_string()))
+            .map_err(|e| Error::BookshelfStorage(e.to_string()))?;
+        tracing::debug!(path = %self.path.display(), "bookshelf file saved");
+        Ok(())
     }
 }
 

@@ -23,8 +23,14 @@ pub struct LocalBookshelf {
 
 impl LocalBookshelf {
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
+        tracing::info!(path = %path.as_ref().display(), "opening local bookshelf");
         let store = TomlBookshelfStore::new(path.as_ref());
         let file = store.load().await?;
+        tracing::info!(
+            path = %store.path().display(),
+            entries = file.entries.len(),
+            "local bookshelf ready"
+        );
         Ok(Self { store, file })
     }
 
@@ -39,24 +45,46 @@ impl LocalBookshelf {
     }
 
     pub async fn add(&mut self, entry: BookshelfEntry) -> Result<LocalBookshelfAddOutcome> {
+        tracing::debug!(
+            feed_id = %entry.identity.feed_id,
+            source_book_id = %entry.identity.source_book_id,
+            "adding book to local bookshelf"
+        );
         if self.contains(&entry.identity) {
+            tracing::debug!(
+                feed_id = %entry.identity.feed_id,
+                source_book_id = %entry.identity.source_book_id,
+                "book already exists in local bookshelf"
+            );
             return Ok(LocalBookshelfAddOutcome::AlreadyExists);
         }
 
         self.file.entries.push(entry);
         self.persist().await?;
+        tracing::debug!(entries = self.file.entries.len(), "book added to local bookshelf");
         Ok(LocalBookshelfAddOutcome::Added)
     }
 
     pub async fn remove(&mut self, identity: &BookIdentity) -> Result<LocalBookshelfRemoveOutcome> {
+        tracing::debug!(
+            feed_id = %identity.feed_id,
+            source_book_id = %identity.source_book_id,
+            "removing book from local bookshelf"
+        );
         let before = self.file.entries.len();
         self.file.entries.retain(|entry| &entry.identity != identity);
 
         if self.file.entries.len() == before {
+            tracing::debug!(
+                feed_id = %identity.feed_id,
+                source_book_id = %identity.source_book_id,
+                "book not found in local bookshelf"
+            );
             return Ok(LocalBookshelfRemoveOutcome::NotFound);
         }
 
         self.persist().await?;
+        tracing::debug!(entries = self.file.entries.len(), "book removed from local bookshelf");
         Ok(LocalBookshelfRemoveOutcome::Removed)
     }
 
@@ -64,6 +92,7 @@ impl LocalBookshelf {
         self.file
             .entries
             .sort_by_key(|entry| std::cmp::Reverse(entry.added_at_unix_ms));
+        tracing::debug!(entries = self.file.entries.len(), "persisting local bookshelf");
         self.store.save(&self.file).await
     }
 }

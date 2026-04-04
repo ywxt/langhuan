@@ -26,12 +26,11 @@ fn load_script_for_server(server: &ServerGuard) -> String {
 
     // Remove all @allowed_domain entries so the domain allowlist is empty
     // (empty list = no restriction), allowing requests to the local mock server.
-    let script = script
-        .replace("-- @allowed_domain www.biquge.tw", "")
-        .replace("-- @allowed_domain m.biquge.tw", "")
-        .replace("-- @allowed_domain img.biquge.tw", "");
 
     script
+        .replace("-- @allowed_domain www.biquge.tw", "")
+        .replace("-- @allowed_domain m.biquge.tw", "")
+        .replace("-- @allowed_domain img.biquge.tw", "")
 }
 
 /// Build a minimal HTML search-results page that the biquge-tw parser can
@@ -56,10 +55,10 @@ fn search_results_html() -> String {
         .to_string()
 }
 
-    /// Build a minimal chapter-content page that the biquge-tw paragraph parser
-    /// can process.
-    fn chapter_content_html() -> String {
-        r#"<!DOCTYPE html>
+/// Build a minimal chapter-content page that the biquge-tw paragraph parser
+/// can process.
+fn chapter_content_html() -> String {
+    r#"<!DOCTYPE html>
     <html>
     <head><meta charset="UTF-8"><title>第一章 測試章節</title></head>
     <body>
@@ -71,12 +70,12 @@ fn search_results_html() -> String {
     </body>
     </html>"#
         .to_string()
-    }
+}
 
-    /// Build a chapter page where正文 is under #chaptercontent and split by <br>,
-    /// which is a common layout on live sites.
-    fn chapter_content_br_html() -> String {
-        r#"<!DOCTYPE html>
+/// Build a chapter page where正文 is under #chaptercontent and split by <br>,
+/// which is a common layout on live sites.
+fn chapter_content_br_html() -> String {
+    r#"<!DOCTYPE html>
     <html>
     <head><meta charset="UTF-8"><title>第二章 測試章節</title></head>
     <body>
@@ -87,7 +86,7 @@ fn search_results_html() -> String {
     </body>
     </html>"#
         .to_string()
-    }
+}
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
@@ -107,10 +106,7 @@ async fn search_returns_results() {
     let engine = ScriptEngine::new();
     let feed = engine.load_feed(&script).await.expect("load_feed failed");
 
-    let results: Vec<_> = feed
-        .search("剛好")
-        .collect::<Vec<_>>()
-        .await;
+    let results: Vec<_> = feed.search("剛好").collect::<Vec<_>>().await;
 
     assert!(!results.is_empty(), "expected at least one search result");
 
@@ -120,11 +116,24 @@ async fn search_returns_results() {
     }
 
     let items: Vec<_> = results.into_iter().filter_map(|r| r.ok()).collect();
-    assert_eq!(items.len(), 2, "expected exactly 2 results, got {}", items.len());
+    assert_eq!(
+        items.len(),
+        2,
+        "expected exactly 2 results, got {}",
+        items.len()
+    );
 
     let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
-    assert!(ids.contains(&"12345"), "expected book id 12345, got {:?}", ids);
-    assert!(ids.contains(&"67890"), "expected book id 67890, got {:?}", ids);
+    assert!(
+        ids.contains(&"12345"),
+        "expected book id 12345, got {:?}",
+        ids
+    );
+    assert!(
+        ids.contains(&"67890"),
+        "expected book id 67890, got {:?}",
+        ids
+    );
 
     let titles: Vec<&str> = items.iter().map(|i| i.title.as_str()).collect();
     assert!(
@@ -135,7 +144,10 @@ async fn search_returns_results() {
 
     // Verify search-result fields are complete under current parser behavior.
     for item in &items {
-        assert!(!item.id.trim().is_empty(), "id should not be empty: {item:?}");
+        assert!(
+            !item.id.trim().is_empty(),
+            "id should not be empty: {item:?}"
+        );
         assert!(
             !item.title.trim().is_empty(),
             "title should not be empty: {item:?}"
@@ -145,8 +157,14 @@ async fn search_returns_results() {
             "author should not be empty: {item:?}"
         );
         // Current parser may not provide these fields from search HTML.
-        assert!(item.cover_url.is_none() || item.cover_url.as_deref().unwrap().starts_with("http") || item.cover_url.as_deref().unwrap().starts_with('/'));
-        assert!(item.description.is_none() || !item.description.as_deref().unwrap().trim().is_empty());
+        assert!(
+            item.cover_url.is_none()
+                || item.cover_url.as_deref().unwrap().starts_with("http")
+                || item.cover_url.as_deref().unwrap().starts_with('/')
+        );
+        assert!(
+            item.description.is_none() || !item.description.as_deref().unwrap().trim().is_empty()
+        );
     }
 }
 
@@ -183,7 +201,10 @@ async fn paragraphs_returns_title_and_text_items() {
         .iter()
         .any(|p| matches!(p, langhuan::model::Paragraph::Text { .. }));
 
-    assert!(has_title || has_text, "expected title/text paragraph content");
+    assert!(
+        has_title || has_text,
+        "expected title/text paragraph content"
+    );
     assert!(has_text, "expected at least one text paragraph");
 }
 
@@ -234,9 +255,7 @@ async fn search_returns_empty_for_no_matches() {
         .mock("GET", mockito::Matcher::Regex(r"^/search/".to_string()))
         .with_status(200)
         .with_header("content-type", "text/html; charset=utf-8")
-        .with_body(
-            r#"<!DOCTYPE html><html><body><p>沒有找到結果</p></body></html>"#,
-        )
+        .with_body(r#"<!DOCTYPE html><html><body><p>沒有找到結果</p></body></html>"#)
         .create_async()
         .await;
 
@@ -323,7 +342,10 @@ async fn search_live_site_smoke() {
     assert!(!search_items.is_empty(), "live search returned no Ok items");
 
     for item in &search_items {
-        assert!(!item.id.trim().is_empty(), "live item id should not be empty");
+        assert!(
+            !item.id.trim().is_empty(),
+            "live item id should not be empty"
+        );
         assert!(
             !item.title.trim().is_empty(),
             "live item title should not be empty"
@@ -335,7 +357,9 @@ async fn search_live_site_smoke() {
     }
 
     // Paragraph-content live smoke: search -> first book -> first chapter -> paragraphs.
-    let first_book = search_items.first().expect("expected first live search item");
+    let first_book = search_items
+        .first()
+        .expect("expected first live search item");
     let chapters_future = feed.chapters(&first_book.id).take(30).collect::<Vec<_>>();
     let chapters = tokio::time::timeout(Duration::from_secs(30), chapters_future)
         .await
@@ -353,7 +377,10 @@ async fn search_live_site_smoke() {
     let chapters: Vec<_> = chapters.into_iter().filter_map(|c| c.ok()).collect();
     let first_chapter = chapters.first().expect("expected first chapter item");
 
-    let paragraphs_future = feed.paragraphs(&first_chapter.id).take(100).collect::<Vec<_>>();
+    let paragraphs_future = feed
+        .paragraphs(&first_chapter.id)
+        .take(100)
+        .collect::<Vec<_>>();
     let paragraphs = tokio::time::timeout(Duration::from_secs(30), paragraphs_future)
         .await
         .expect("live paragraphs timed out after 30s");
