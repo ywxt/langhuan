@@ -15,6 +15,10 @@
   "bookshelfAdded": "已加入本地書架",
   "bookshelfRemoved": "已從本地書架移除",
   "bookshelfActionFailed": "書架操作失敗",
+  "bookshelfErrorAppDataNotReady": "應用數據目錄未準備就緒",
+  "bookshelfErrorAddFailed": "添加書籍失敗",
+  "bookshelfErrorRemoveFailed": "移除書籍失敗",
+  "bookshelfErrorLoadFailed": "加載書架失敗",
 
   "searchTitle": "搜索",
   "searchHintNoFeed": "請先選擇書源…",

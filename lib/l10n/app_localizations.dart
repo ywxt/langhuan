@@ -170,6 +170,30 @@ abstract class AppLocalizations {
   /// **'Bookshelf action failed'**
   String get bookshelfActionFailed;
 
+  /// Bookshelf error: app data directory not ready
+  ///
+  /// In en, this message translates to:
+  /// **'App data directory not ready'**
+  String get bookshelfErrorAppDataNotReady;
+
+  /// Bookshelf error: add book failed
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to add book'**
+  String get bookshelfErrorAddFailed;
+
+  /// Bookshelf error: remove book failed
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to remove book'**
+  String get bookshelfErrorRemoveFailed;
+
+  /// Bookshelf error: load bookshelf failed
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load bookshelf'**
+  String get bookshelfErrorLoadFailed;
+
   /// Search page title
   ///
   /// In en, this message translates to:

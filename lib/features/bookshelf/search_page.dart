@@ -9,6 +9,7 @@ import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
 import '../../src/bindings/signals/signals.dart';
 import '../feeds/feed_providers.dart';
+import '../feeds/search_provider.dart';
 import 'widgets/feed_selector.dart';
 import 'widgets/search_result_card.dart';
 

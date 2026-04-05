@@ -9,8 +9,9 @@ import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/cover_placeholder.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
-import '../feeds/feed_providers.dart';
 import '../feeds/feed_service.dart';
+import 'book_providers.dart';
+import 'bookshelf_provider.dart';
 
 class BookDetailPage extends ConsumerStatefulWidget {
   const BookDetailPage({super.key, required this.feedId, required this.bookId});

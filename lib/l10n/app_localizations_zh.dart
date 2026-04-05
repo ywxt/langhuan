@@ -45,6 +45,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bookshelfActionFailed => '書架操作失敗';
 
   @override
+  String get bookshelfErrorAppDataNotReady => '應用數據目錄未準備就緒';
+
+  @override
+  String get bookshelfErrorAddFailed => '添加書籍失敗';
+
+  @override
+  String get bookshelfErrorRemoveFailed => '移除書籍失敗';
+
+  @override
+  String get bookshelfErrorLoadFailed => '加載書架失敗';
+
+  @override
   String get searchTitle => '搜索';
 
   @override

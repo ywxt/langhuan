@@ -45,6 +45,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bookshelfActionFailed => 'Bookshelf action failed';
 
   @override
+  String get bookshelfErrorAppDataNotReady => 'App data directory not ready';
+
+  @override
+  String get bookshelfErrorAddFailed => 'Failed to add book';
+
+  @override
+  String get bookshelfErrorRemoveFailed => 'Failed to remove book';
+
+  @override
+  String get bookshelfErrorLoadFailed => 'Failed to load bookshelf';
+
+  @override
   String get searchTitle => 'Search';
 
   @override

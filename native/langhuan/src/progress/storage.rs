@@ -78,14 +78,35 @@ impl ReadingProgressStore {
         feed_id: &str,
         book_id: &str,
     ) -> Result<Option<ReadingProgress>> {
+        tracing::debug!(feed_id = %feed_id, book_id = %book_id, "loading reading progress");
         let file = self.load_progress_file().await?;
-        Ok(file
+        let result = file
             .entries
             .into_iter()
-            .find(|entry| entry.feed_id == feed_id && entry.book_id == book_id))
+            .find(|entry| entry.feed_id == feed_id && entry.book_id == book_id);
+        match &result {
+            Some(p) => tracing::debug!(
+                feed_id = %feed_id,
+                book_id = %book_id,
+                chapter_id = %p.chapter_id,
+                paragraph_index = p.paragraph_index,
+                scroll_offset = p.scroll_offset,
+                "reading progress found"
+            ),
+            None => tracing::debug!(feed_id = %feed_id, book_id = %book_id, "no saved reading progress"),
+        }
+        Ok(result)
     }
 
     pub async fn set_reading_progress(&self, progress: ReadingProgress) -> Result<()> {
+        tracing::debug!(
+            feed_id = %progress.feed_id,
+            book_id = %progress.book_id,
+            chapter_id = %progress.chapter_id,
+            paragraph_index = progress.paragraph_index,
+            scroll_offset = progress.scroll_offset,
+            "saving reading progress"
+        );
         let mut file = self.load_progress_file().await?;
         if let Some(existing) = file
             .entries
@@ -97,7 +118,9 @@ impl ReadingProgressStore {
             file.entries.push(progress);
         }
 
-        self.save_progress_file(&file).await
+        self.save_progress_file(&file).await?;
+        tracing::debug!("reading progress saved");
+        Ok(())
     }
 }
 

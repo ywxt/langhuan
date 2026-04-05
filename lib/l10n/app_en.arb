@@ -37,6 +37,18 @@
   "bookshelfActionFailed": "Bookshelf action failed",
   "@bookshelfActionFailed": { "description": "Snackbar shown when add/remove bookshelf action fails" },
 
+  "bookshelfErrorAppDataNotReady": "App data directory not ready",
+  "@bookshelfErrorAppDataNotReady": { "description": "Bookshelf error: app data directory not ready" },
+
+  "bookshelfErrorAddFailed": "Failed to add book",
+  "@bookshelfErrorAddFailed": { "description": "Bookshelf error: add book failed" },
+
+  "bookshelfErrorRemoveFailed": "Failed to remove book",
+  "@bookshelfErrorRemoveFailed": { "description": "Bookshelf error: remove book failed" },
+
+  "bookshelfErrorLoadFailed": "Failed to load bookshelf",
+  "@bookshelfErrorLoadFailed": { "description": "Bookshelf error: load bookshelf failed" },
+
   "searchTitle": "Search",
   "@searchTitle": { "description": "Search page title" },
 

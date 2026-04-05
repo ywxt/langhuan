@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:langhuan/features/feeds/feed_providers.dart';
+import 'package:langhuan/features/bookshelf/bookshelf_provider.dart';
 import 'package:langhuan/rust_init.dart';
 import 'package:langhuan/src/bindings/signals/signals.dart';
 import 'dart:async';

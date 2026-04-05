@@ -7,7 +7,7 @@ import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/always_disabled_focus_node.dart';
 import '../../shared/widgets/cover_placeholder.dart';
 import '../../shared/widgets/empty_state.dart';
-import '../feeds/feed_providers.dart';
+import 'bookshelf_provider.dart';
 
 class BookshelfPage extends ConsumerWidget {
   const BookshelfPage({super.key});
