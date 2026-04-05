@@ -103,6 +103,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bookDetailStartReading => '開始閱讀';
 
   @override
+  String get bookDetailContinueReading => '繼續閱讀';
+
+  @override
+  String bookDetailLastReadChapter(String chapterTitle) {
+    return '上次讀到：$chapterTitle';
+  }
+
+  @override
   String get bookDetailNoDescription => '暫無簡介';
 
   @override
@@ -176,6 +184,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readerLoading => '加載中…';
+
+  @override
+  String get readerChapterLoadError => '章節加載失敗';
+
+  @override
+  String get readerRetry => '重試';
 
   @override
   String get feedsTitle => '書源';

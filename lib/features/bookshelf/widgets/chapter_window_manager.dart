@@ -62,6 +62,8 @@ mixin ChapterWindowManager<T extends StatefulWidget> on State<T> {
   late final List<ChapterInfoModel> _chapters;
   late final String _feedId;
   late final String _bookId;
+  late final int _minTocIndex;
+  late final int _maxTocIndex;
   final List<ChapterSlot> _loadedSlots = []; // ordered by chapterIndex
   String? _currentChapterId;
   final Map<String, StreamSubscription> _activeSubscriptions = {};
@@ -75,6 +77,18 @@ mixin ChapterWindowManager<T extends StatefulWidget> on State<T> {
     _chapters = chapters;
     _feedId = feedId;
     _bookId = bookId;
+
+    if (_chapters.isEmpty) {
+      _minTocIndex = 0;
+      _maxTocIndex = -1;
+    } else {
+      _minTocIndex = _chapters
+          .map((c) => c.index)
+          .reduce((a, b) => a < b ? a : b);
+      _maxTocIndex = _chapters
+          .map((c) => c.index)
+          .reduce((a, b) => a > b ? a : b);
+    }
   }
 
   void disposeChapterWindow() {
@@ -103,33 +117,51 @@ mixin ChapterWindowManager<T extends StatefulWidget> on State<T> {
 
   /// Get the global index of a chapter by ID.
   int chapterGlobalIndex(String chapterId) {
-    return _chapters.indexWhere((c) => c.id == chapterId);
+    for (final chapter in _chapters) {
+      if (chapter.id == chapterId) {
+        return chapter.index;
+      }
+    }
+    return -1;
+  }
+
+  int get minTocIndex => _minTocIndex;
+
+  int get maxTocIndex => _maxTocIndex;
+
+  ChapterInfoModel? chapterByTocIndex(int tocIndex) {
+    for (final chapter in _chapters) {
+      if (chapter.index == tocIndex) {
+        return chapter;
+      }
+    }
+    return null;
   }
 
   /// Check if there's an unloaded chapter before the first loaded slot.
   bool get hasOlderUnloaded {
     if (_loadedSlots.isEmpty) return false;
-    return _loadedSlots.first.chapterIndex > 0;
+    return _loadedSlots.first.chapterIndex > _minTocIndex;
   }
 
   /// Check if there's an unloaded chapter after the last loaded slot.
   bool get hasNewerUnloaded {
     if (_loadedSlots.isEmpty) return false;
-    return _loadedSlots.last.chapterIndex < _chapters.length - 1;
+    return _loadedSlots.last.chapterIndex < _maxTocIndex;
   }
 
   /// Get title of chapter before first loaded slot, if available.
   String? get olderChapterTitle {
     if (!hasOlderUnloaded) return null;
-    final idx = _loadedSlots.first.chapterIndex - 1;
-    return _chapters[idx].title;
+    final chapter = chapterByTocIndex(_loadedSlots.first.chapterIndex - 1);
+    return chapter?.title;
   }
 
   /// Get title of chapter after last loaded slot, if available.
   String? get newerChapterTitle {
     if (!hasNewerUnloaded) return null;
-    final idx = _loadedSlots.last.chapterIndex + 1;
-    return _chapters[idx].title;
+    final chapter = chapterByTocIndex(_loadedSlots.last.chapterIndex + 1);
+    return chapter?.title;
   }
 
   // ─ Chapter Loading ──────────────────────────────────────────────────────────
@@ -219,17 +251,13 @@ mixin ChapterWindowManager<T extends StatefulWidget> on State<T> {
   Future<void> loadInitial(String initialChapterId) async {
     _currentChapterId = initialChapterId;
 
-    try {
-      // Load current
-      await loadChapter(initialChapterId);
+    // Load current chapter. Errors are surfaced to caller for retry UI.
+    await loadChapter(initialChapterId);
 
-      // Preload adjacent in parallel
-      final prevFuture = _preloadPrev();
-      final nextFuture = _preloadNext();
-      await Future.wait([prevFuture, nextFuture], eagerError: false);
-    } catch (e) {
-      // Errors logged in loadChapter
-    }
+    // Preload adjacent in parallel. Individual preload failures are non-fatal.
+    final prevFuture = _preloadPrev();
+    final nextFuture = _preloadNext();
+    await Future.wait([prevFuture, nextFuture], eagerError: false);
   }
 
   /// Set current chapter and trigger preloading of new adjacent chapters.
@@ -251,30 +279,31 @@ mixin ChapterWindowManager<T extends StatefulWidget> on State<T> {
   void _preloadAdjacentIfNeeded() {
     if (_loadedSlots.isEmpty || _currentChapterId == null) return;
 
-    final currentIdx = chapterGlobalIndex(_currentChapterId!);
-    if (currentIdx < 0) return;
+    final currentTocIndex = chapterGlobalIndex(_currentChapterId!);
+    if (currentTocIndex < 0) return;
 
-    if (currentIdx > 0) {
-      final prevId = _chapters[currentIdx - 1].id;
-      if (getSlot(prevId) == null) {
-        loadChapter(prevId).catchError((_) {});
+    if (currentTocIndex > _minTocIndex) {
+      final prevChapter = chapterByTocIndex(currentTocIndex - 1);
+      if (prevChapter != null && getSlot(prevChapter.id) == null) {
+        loadChapter(prevChapter.id).catchError((_) {});
       }
     }
 
-    if (currentIdx < _chapters.length - 1) {
-      final nextId = _chapters[currentIdx + 1].id;
-      if (getSlot(nextId) == null) {
-        loadChapter(nextId).catchError((_) {});
+    if (currentTocIndex < _maxTocIndex) {
+      final nextChapter = chapterByTocIndex(currentTocIndex + 1);
+      if (nextChapter != null && getSlot(nextChapter.id) == null) {
+        loadChapter(nextChapter.id).catchError((_) {});
       }
     }
   }
 
   Future<void> _preloadPrev() async {
     if (_loadedSlots.isEmpty) return;
-    final idx = _loadedSlots.first.chapterIndex - 1;
-    if (idx < 0) return;
+    final tocIndex = _loadedSlots.first.chapterIndex - 1;
+    final chapter = chapterByTocIndex(tocIndex);
+    if (chapter == null) return;
     try {
-      await loadChapter(_chapters[idx].id);
+      await loadChapter(chapter.id);
     } catch (e) {
       // Preload failure is non-fatal
     }
@@ -282,13 +311,26 @@ mixin ChapterWindowManager<T extends StatefulWidget> on State<T> {
 
   Future<void> _preloadNext() async {
     if (_loadedSlots.isEmpty) return;
-    final idx = _loadedSlots.last.chapterIndex + 1;
-    if (idx >= _chapters.length) return;
+    final tocIndex = _loadedSlots.last.chapterIndex + 1;
+    final chapter = chapterByTocIndex(tocIndex);
+    if (chapter == null) return;
     try {
-      await loadChapter(_chapters[idx].id);
+      await loadChapter(chapter.id);
     } catch (e) {
       // Preload failure is non-fatal
     }
+  }
+
+  Future<void> retryChapter(String chapterId) async {
+    final slot = getSlot(chapterId);
+    if (slot != null) {
+      _cancelSlot(slot);
+      _loadedSlots.remove(slot);
+      if (mounted) {
+        setState(() {});
+      }
+    }
+    await loadChapter(chapterId);
   }
 
   // ─ Eviction ──────────────────────────────────────────────────────────────

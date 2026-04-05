@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/cover_image.dart';
 import '../../../shared/widgets/cover_placeholder.dart';
 import '../../feeds/feed_service.dart';
 
@@ -33,39 +34,7 @@ class SearchResultCard extends StatelessWidget {
                   width: 48,
                   height: 64,
                   child: item.coverUrl != null
-                      ? Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            const CoverPlaceholder(),
-                            Image.network(
-                              item.coverUrl!,
-                              width: 48,
-                              height: 64,
-                              fit: BoxFit.cover,
-                              frameBuilder:
-                                  (
-                                    context,
-                                    child,
-                                    frame,
-                                    wasSynchronouslyLoaded,
-                                  ) {
-                                    if (wasSynchronouslyLoaded) {
-                                      return child;
-                                    }
-                                    return AnimatedOpacity(
-                                      opacity: frame == null ? 0.0 : 1.0,
-                                      duration: const Duration(
-                                        milliseconds: 220,
-                                      ),
-                                      curve: Curves.easeOut,
-                                      child: child,
-                                    );
-                                  },
-                              errorBuilder: (_, _, _) =>
-                                  const CoverPlaceholder(),
-                            ),
-                          ],
-                        )
+                      ? CoverImage(url: item.coverUrl!, width: 48, height: 64)
                       : const CoverPlaceholder(),
                 ),
               ),

@@ -16,14 +16,6 @@ impl BookIdentity {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookshelfEntry {
     pub identity: BookIdentity,
-    pub title: String,
-    pub author: String,
-    #[serde(default)]
-    pub cover_url: Option<String>,
-    #[serde(default)]
-    pub description_snapshot: Option<String>,
-    #[serde(default)]
-    pub source_name_snapshot: Option<String>,
     pub added_at_unix_ms: i64,
 }
 

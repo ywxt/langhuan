@@ -129,7 +129,7 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
 
   Future<BookshelfOperationOutcome> add({
     required String feedId,
-    required BookInfoModel book,
+    required String sourceBookId,
   }) async {
     final bootstrap = ref.read(appDataDirectorySetProvider);
     if (!_isBootstrapReady(bootstrap)) {
@@ -140,17 +140,13 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
       );
     }
 
-    final itemId = '$feedId:${book.id}';
+    final itemId = '$feedId:$sourceBookId';
     state = state.copyWith(activeItemId: () => itemId, error: () => null);
 
     try {
       final outcome = await FeedService.instance.addToBookshelf(
         feedId: feedId,
-        sourceBookId: book.id,
-        title: book.title,
-        author: book.author,
-        coverUrl: book.coverUrl,
-        descriptionSnapshot: book.description,
+        sourceBookId: sourceBookId,
       );
       await load();
       return outcome;

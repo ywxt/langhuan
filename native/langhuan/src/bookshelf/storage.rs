@@ -137,11 +137,6 @@ mod tests {
                 feed_id: "feed-a".to_owned(),
                 source_book_id: "123".to_owned(),
             },
-            title: "Title".to_owned(),
-            author: "Author".to_owned(),
-            cover_url: None,
-            description_snapshot: None,
-            source_name_snapshot: Some("source".to_owned()),
             added_at_unix_ms: 1,
         });
 

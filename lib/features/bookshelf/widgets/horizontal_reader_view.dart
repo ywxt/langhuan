@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/cover_image.dart';
 import 'base_reader_view.dart';
 import 'chapter_window_manager.dart';
 import 'page_breaker.dart';
@@ -249,6 +250,21 @@ class _HorizontalReaderViewState
 
   @override
   Widget build(BuildContext context) {
+    if (isInitialLoading && _allPages.isEmpty) {
+      return Center(child: _buildLoadingPage(context));
+    }
+
+    if (initialLoadError != null && _allPages.isEmpty) {
+      return Center(
+        child: _buildErrorPage(
+          context,
+          onRetry: () {
+            retryInitialLoad();
+          },
+        ),
+      );
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         // Update page size if changed
@@ -295,11 +311,35 @@ class _HorizontalReaderViewState
     );
   }
 
-  Widget _buildStartBoundaryPage(BuildContext context) =>
-      isAtBookStart ? _buildBookInfoPage(context) : _buildLoadingPage(context);
+  Widget _buildStartBoundaryPage(BuildContext context) {
+    if (isAtBookStart) {
+      return _buildBookInfoPage(context);
+    }
+    if (hasTopBoundaryError) {
+      return _buildErrorPage(
+        context,
+        onRetry: () {
+          retryTopBoundary();
+        },
+      );
+    }
+    return _buildLoadingPage(context);
+  }
 
-  Widget _buildEndBoundaryPage(BuildContext context) =>
-      isAtBookEnd ? _buildEndOfBookPage(context) : _buildLoadingPage(context);
+  Widget _buildEndBoundaryPage(BuildContext context) {
+    if (isAtBookEnd) {
+      return _buildEndOfBookPage(context);
+    }
+    if (hasBottomBoundaryError) {
+      return _buildErrorPage(
+        context,
+        onRetry: () {
+          retryBottomBoundary();
+        },
+      );
+    }
+    return _buildLoadingPage(context);
+  }
 
   Widget _buildBookInfoPage(BuildContext context) {
     final theme = Theme.of(context);
@@ -314,35 +354,11 @@ class _HorizontalReaderViewState
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: widget.bookCoverUrl != null
-                    ? Stack(
-                        children: [
-                          _buildCoverPlaceholder(context),
-                          Image.network(
-                            widget.bookCoverUrl!,
-                            width: 160,
-                            height: 210,
-                            fit: BoxFit.cover,
-                            frameBuilder:
-                                (
-                                  context,
-                                  child,
-                                  frame,
-                                  wasSynchronouslyLoaded,
-                                ) {
-                                  if (wasSynchronouslyLoaded) {
-                                    return child;
-                                  }
-                                  return AnimatedOpacity(
-                                    opacity: frame == null ? 0.0 : 1.0,
-                                    duration: const Duration(milliseconds: 220),
-                                    curve: Curves.easeOut,
-                                    child: child,
-                                  );
-                                },
-                            errorBuilder: (_, __, ___) =>
-                                _buildCoverPlaceholder(context),
-                          ),
-                        ],
+                    ? CoverImage(
+                        url: widget.bookCoverUrl!,
+                        width: 160,
+                        height: 210,
+                        placeholder: _buildCoverPlaceholder(context),
                       )
                     : _buildCoverPlaceholder(context),
               ),
@@ -429,6 +445,35 @@ class _HorizontalReaderViewState
             l10n.readerLoading,
             style: Theme.of(context).textTheme.bodyLarge,
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorPage(
+    BuildContext context, {
+    required VoidCallback onRetry,
+  }) {
+    final l10n = AppLocalizations.of(context);
+    return Container(
+      padding: widget.contentPadding,
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 64,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            l10n.readerChapterLoadError,
+            style: Theme.of(context).textTheme.bodyLarge,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          FilledButton.tonal(onPressed: onRetry, child: Text(l10n.readerRetry)),
         ],
       ),
     );

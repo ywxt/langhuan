@@ -35,6 +35,8 @@
   "bookDetailError": "加載書籍信息失敗",
   "bookDetailRetry": "重試",
   "bookDetailStartReading": "開始閱讀",
+  "bookDetailContinueReading": "繼續閱讀",
+  "bookDetailLastReadChapter": "上次讀到：{chapterTitle}",
   "bookDetailNoDescription": "暫無簡介",
   "bookDetailChapters": "章節（{count}）",
   "bookDetailChaptersError": "加載章節失敗",
@@ -60,6 +62,8 @@
 
   "readerEndOfBook": "已讀完全書",
   "readerLoading": "加載中\u2026",
+  "readerChapterLoadError": "章節加載失敗",
+  "readerRetry": "重試",
 
   "feedsTitle": "書源",
   "feedsSearchHint": "搜索書源…",

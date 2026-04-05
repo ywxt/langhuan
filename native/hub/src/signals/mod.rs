@@ -379,10 +379,6 @@ pub struct BookshelfAddRequest {
     pub request_id: String,
     pub feed_id: String,
     pub source_book_id: String,
-    pub title: String,
-    pub author: String,
-    pub cover_url: Option<String>,
-    pub description_snapshot: Option<String>,
 }
 
 #[derive(Deserialize, DartSignal)]

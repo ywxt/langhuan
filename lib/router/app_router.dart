@@ -39,12 +39,45 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                         path: 'book',
                         name: 'bookshelf-book-detail',
                         parentNavigatorKey: _rootNavigatorKey,
-                        builder: (context, state) {
+                        pageBuilder: (context, state) {
                           final feedId =
                               state.uri.queryParameters['feedId'] ?? '';
                           final bookId =
                               state.uri.queryParameters['bookId'] ?? '';
-                          return BookDetailPage(feedId: feedId, bookId: bookId);
+                          return CustomTransitionPage(
+                            key: state.pageKey,
+                            child: BookDetailPage(
+                              feedId: feedId,
+                              bookId: bookId,
+                            ),
+                            transitionsBuilder:
+                                (
+                                  context,
+                                  animation,
+                                  secondaryAnimation,
+                                  child,
+                                ) {
+                                  return FadeTransition(
+                                    opacity: CurveTween(
+                                      curve: Curves.easeOut,
+                                    ).animate(animation),
+                                    child: SlideTransition(
+                                      position:
+                                          Tween<Offset>(
+                                                begin: const Offset(0, 0.05),
+                                                end: Offset.zero,
+                                              )
+                                              .chain(
+                                                CurveTween(
+                                                  curve: Curves.easeOut,
+                                                ),
+                                              )
+                                              .animate(animation),
+                                      child: child,
+                                    ),
+                                  );
+                                },
+                          );
                         },
                         routes: [
                           GoRoute(

@@ -278,6 +278,18 @@ abstract class AppLocalizations {
   /// **'Start Reading'**
   String get bookDetailStartReading;
 
+  /// Primary action button when reading progress exists
+  ///
+  /// In en, this message translates to:
+  /// **'Continue Reading'**
+  String get bookDetailContinueReading;
+
+  /// Subtitle under the continue button showing last-read chapter
+  ///
+  /// In en, this message translates to:
+  /// **'Last read: {chapterTitle}'**
+  String bookDetailLastReadChapter(String chapterTitle);
+
   /// Fallback text when description is empty
   ///
   /// In en, this message translates to:
@@ -415,6 +427,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Loading…'**
   String get readerLoading;
+
+  /// Error shown when chapter content failed to load
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load chapter'**
+  String get readerChapterLoadError;
+
+  /// Retry action label for chapter loading failures
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get readerRetry;
 
   /// Feeds page title
   ///

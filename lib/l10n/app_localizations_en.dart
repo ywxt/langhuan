@@ -103,6 +103,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bookDetailStartReading => 'Start Reading';
 
   @override
+  String get bookDetailContinueReading => 'Continue Reading';
+
+  @override
+  String bookDetailLastReadChapter(String chapterTitle) {
+    return 'Last read: $chapterTitle';
+  }
+
+  @override
   String get bookDetailNoDescription => 'No description available';
 
   @override
@@ -178,6 +186,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get readerLoading => 'Loading…';
+
+  @override
+  String get readerChapterLoadError => 'Failed to load chapter';
+
+  @override
+  String get readerRetry => 'Retry';
 
   @override
   String get feedsTitle => 'Feeds';

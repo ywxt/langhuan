@@ -5,13 +5,187 @@ use tokio_stream::StreamExt;
 
 use crate::error::Result;
 use crate::feed::{Feed, FeedBookshelfSupport, FeedMeta, FeedStream};
-use crate::model::{ChapterInfo, Paragraph};
+use crate::model::{BookInfo, ChapterInfo, Paragraph};
 
 pub mod models;
 pub mod storage;
 
-pub use models::{CACHE_SCHEMA_VERSION, ChapterCacheEntry, ChapterListCacheEntry};
+pub use models::{
+    BookInfoCacheEntry, CACHE_SCHEMA_VERSION, ChapterCacheEntry, ChapterListCacheEntry,
+};
 pub use storage::CacheStore;
+
+// ---------------------------------------------------------------------------
+// cache_first_stream! macro — eliminates duplicated cache-first-stream pattern
+// ---------------------------------------------------------------------------
+
+/// A macro that generates a cache-first stream with the standard pattern:
+///
+/// 1. Try `cache_get` → on hit yield items and return.
+/// 2. On error clear via `cache_clear` and fall through.
+/// 3. Stream from `inner_stream`, collecting items.
+/// 4. Persist via `cache_set`; on failure clear.
+///
+/// All expressions are evaluated inside a single `stream!` block so they can
+/// borrow from the surrounding scope without ownership issues.
+macro_rules! cache_first_stream {
+    (
+        $feed_id:expr,
+        $label:expr,
+        cache_get: $cache_get:expr,
+        cache_clear: $cache_clear:expr,
+        inner_stream: $inner_stream:expr,
+        cache_set($collected:ident): $cache_set:expr
+    ) => {{
+        Box::pin(stream! {
+            let feed_id = &$feed_id;
+            let label = $label;
+
+            // 1. Try cache
+            match $cache_get {
+                Ok(Some(items)) => {
+                    tracing::info!(feed_id = %feed_id, items = items.len(), label, "cache hit");
+                    for item in items {
+                        yield Ok(item);
+                    }
+                    return;
+                }
+                Ok(None) => {
+                    tracing::debug!(feed_id = %feed_id, label, "cache miss, fetching from inner feed");
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        feed_id = %feed_id, label, error = %e,
+                        "failed to read cache, clearing broken entry and falling back"
+                    );
+                    if let Err(ce) = $cache_clear {
+                        tracing::warn!(feed_id = %feed_id, label, error = %ce, "failed to clear broken cache");
+                    }
+                }
+            }
+
+            // 2. Fetch from inner feed
+            let mut $collected = Vec::new();
+            let mut stream = $inner_stream;
+
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(item) => {
+                        $collected.push(item.clone());
+                        yield Ok(item);
+                    }
+                    Err(e) => {
+                        tracing::warn!(feed_id = %feed_id, label, error = %e, "error from inner feed, not caching");
+                        yield Err(e);
+                        return;
+                    }
+                }
+            }
+
+            // 3. Persist to cache
+            match $cache_set {
+                Ok(_) => {
+                    tracing::debug!(feed_id = %feed_id, label, "successfully cached");
+                }
+                Err(e) => {
+                    tracing::warn!(feed_id = %feed_id, label, error = %e, "failed to cache, clearing entry");
+                    if let Err(ce) = $cache_clear {
+                        tracing::warn!(feed_id = %feed_id, label, error = %ce, "failed to clear cache after write failure");
+                    }
+                }
+            }
+        })
+    }};
+}
+
+// ---------------------------------------------------------------------------
+// cache_first_value! macro — cache-first for a single async value
+// ---------------------------------------------------------------------------
+
+/// Like [`cache_first_stream!`] but for a single value (e.g. `BookInfo`).
+///
+/// * `cache_get`   – expression evaluating to `Result<Option<T>>`
+/// * `cache_clear` – expression evaluating to `Result<()>`
+/// * `inner_fetch` – expression evaluating to `Result<T>`
+/// * `cache_set`   – expression (with `$value` in scope) evaluating to `Result<()>`
+///
+/// An optional `is_valid($v)` guard can reject a cache hit (treat as miss).
+/// An optional `post_fetch($v)` block runs after a successful inner fetch
+/// (e.g. to spawn background work). It must **not** be awaited on the hot path.
+macro_rules! cache_first_value {
+    (
+        $feed_id:expr,
+        $label:expr,
+        cache_get: $cache_get:expr,
+        cache_clear: $cache_clear:expr,
+        $(is_valid($cv:ident): $is_valid:expr,)?
+        $(on_hit($hv:ident): $on_hit:expr,)?
+        inner_fetch: $inner_fetch:expr,
+        cache_set($sv:ident): $cache_set:expr
+        $(, post_fetch($pv:ident): $post_fetch:expr)?
+    ) => {{
+        let feed_id = &$feed_id;
+        let label = $label;
+
+        let mut _miss = false;
+
+        // 1. Try cache
+        match $cache_get {
+            Ok(Some(value)) => {
+                // Optional validity check
+                let valid = true $(&& { let $cv = &value; $is_valid })?;
+                if valid {
+                    tracing::info!(feed_id = %feed_id, label, "cache hit");
+                    #[allow(unused_mut)]
+                    let mut value = value;
+                    $( { let $hv = &mut value; $on_hit; } )?
+                    return Ok(value);
+                } else {
+                    tracing::debug!(feed_id = %feed_id, label, "cache hit but validity check failed, treating as miss");
+                    _miss = true;
+                }
+            }
+            Ok(None) => {
+                tracing::debug!(feed_id = %feed_id, label, "cache miss, fetching from inner feed");
+                _miss = true;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    feed_id = %feed_id, label, error = %e,
+                    "failed to read cache, clearing broken entry and falling back"
+                );
+                if let Err(ce) = $cache_clear {
+                    tracing::warn!(feed_id = %feed_id, label, error = %ce, "failed to clear broken cache");
+                }
+                _miss = true;
+            }
+        }
+
+        // 2. Fetch from inner feed
+        let value = $inner_fetch?;
+
+        // 3. Persist to cache
+        {
+            let $sv = &value;
+            match $cache_set {
+                Ok(_) => {
+                    tracing::debug!(feed_id = %feed_id, label, "successfully cached");
+                }
+                Err(e) => {
+                    tracing::warn!(feed_id = %feed_id, label, error = %e, "failed to cache, clearing entry");
+                    if let Err(ce) = $cache_clear {
+                        tracing::warn!(feed_id = %feed_id, label, error = %ce, "failed to clear cache after write failure");
+                    }
+                }
+            }
+        }
+
+        // 4. Optional post-fetch hook
+        $( { let $pv = &value; $post_fetch; } )?
+
+        Ok(value)
+    }};
+}
 
 /// A proxy feed that wraps any [`Feed`] and adds caching for chapter content.
 ///
@@ -20,7 +194,9 @@ pub use storage::CacheStore;
 /// - If cache hit: returns cached paragraphs as a stream (no network call)
 /// - If cache miss: calls inner feed, streams paragraphs, then persists to cache on completion
 ///
-/// **Other methods** (search, book_info) are passed through without caching.
+/// **Other methods**:
+/// - `search()` is passed through without caching.
+/// - `book_info()` is cache-first.
 ///
 /// # Example
 ///
@@ -78,217 +254,176 @@ impl<F: Feed> CachedFeed<F> {
         chapter_id: &'a str,
     ) -> FeedStream<'a, Paragraph> {
         let feed_id = self.inner.meta().id.clone();
-        let book_id_owned = book_id.to_string();
-        let chapter_id_owned = chapter_id.to_string();
-        let cache_store = self.cache_store.clone();
+        let bid = book_id.to_string();
+        let cid = chapter_id.to_string();
+        let cs = self.cache_store.clone();
         let inner = self.inner.clone();
 
-        Box::pin(stream! {
-            match cache_store
-                .get_chapter(&feed_id, &book_id_owned, &chapter_id_owned)
-                .await
-            {
-                Ok(Some(entry)) => {
-                    tracing::info!(
-                        feed_id = %feed_id,
-                        book_id = %book_id_owned,
-                        chapter_id = %chapter_id_owned,
-                        paragraphs = entry.paragraphs.len(),
-                        "cache hit for chapter paragraphs"
-                    );
-                    for para in entry.paragraphs {
-                        yield Ok(para);
-                    }
-                    return;
-                }
-                Ok(None) => {
-                    tracing::debug!(
-                        feed_id = %feed_id,
-                        book_id = %book_id_owned,
-                        chapter_id = %chapter_id_owned,
-                        "cache miss, fetching from inner feed"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        feed_id = %feed_id,
-                        book_id = %book_id_owned,
-                        chapter_id = %chapter_id_owned,
-                        error = %e,
-                        "failed to read cache, clearing broken entry and falling back to inner feed"
-                    );
-                    if let Err(clear_error) = cache_store
-                        .clear_chapter(&feed_id, &book_id_owned, &chapter_id_owned)
-                        .await
-                    {
-                        tracing::warn!(
-                            feed_id = %feed_id,
-                            book_id = %book_id_owned,
-                            chapter_id = %chapter_id_owned,
-                            error = %clear_error,
-                            "failed to clear broken chapter cache"
-                        );
-                    }
-                }
+        cache_first_stream!(
+            feed_id,
+            "chapter paragraphs",
+            cache_get: {
+                cs.get_chapter(&feed_id, &bid, &cid)
+                    .await
+                    .map(|opt| opt.map(|e| e.paragraphs))
+            },
+            cache_clear: {
+                cs.clear_chapter(&feed_id, &bid, &cid).await
+            },
+            inner_stream: {
+                inner.paragraphs(&bid, &cid)
+            },
+            cache_set(collected): {
+                let entry = ChapterCacheEntry::new(
+                    feed_id.clone(), bid.clone(), cid.clone(), collected,
+                );
+                cs.set_chapter(&entry).await
             }
-
-            let mut paragraphs = Vec::new();
-            let mut stream = Box::pin(inner.paragraphs(&book_id_owned, &chapter_id_owned));
-
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(para) => {
-                        paragraphs.push(para.clone());
-                        yield Ok(para);
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            feed_id = %feed_id,
-                            book_id = %book_id_owned,
-                            chapter_id = %chapter_id_owned,
-                            error = %e,
-                            "error fetching paragraphs, not caching"
-                        );
-                        yield Err(e);
-                        return;
-                    }
-                }
-            }
-
-            let entry = ChapterCacheEntry::new(
-                feed_id.clone(),
-                book_id_owned.clone(),
-                chapter_id_owned.clone(),
-                paragraphs,
-            );
-            match cache_store.set_chapter(&entry).await {
-                Ok(_) => {
-                    tracing::debug!(
-                        feed_id = %feed_id,
-                        book_id = %book_id_owned,
-                        chapter_id = %chapter_id_owned,
-                        "successfully cached chapter paragraphs"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        feed_id = %feed_id,
-                        book_id = %book_id_owned,
-                        chapter_id = %chapter_id_owned,
-                        error = %e,
-                        "failed to cache chapter paragraphs, clearing chapter cache entry"
-                    );
-                    if let Err(clear_error) = cache_store
-                        .clear_chapter(&feed_id, &book_id_owned, &chapter_id_owned)
-                        .await
-                    {
-                        tracing::warn!(
-                            feed_id = %feed_id,
-                            book_id = %book_id_owned,
-                            chapter_id = %chapter_id_owned,
-                            error = %clear_error,
-                            "failed to clear chapter cache after write failure"
-                        );
-                    }
-                }
-            }
-        })
+        )
     }
 
     fn cached_chapters<'a>(&'a self, book_id: &'a str) -> FeedStream<'a, ChapterInfo> {
         let feed_id = self.inner.meta().id.clone();
-        let book_id_owned = book_id.to_string();
-        let cache_store = self.cache_store.clone();
+        let bid = book_id.to_string();
+        let cs = self.cache_store.clone();
         let inner = self.inner.clone();
 
-        Box::pin(stream! {
-            match cache_store.get_chapters(&feed_id, &book_id_owned).await {
-                Ok(Some(entry)) => {
-                    tracing::info!(
-                        feed_id = %feed_id,
-                        book_id = %book_id_owned,
-                        chapters = entry.chapters.len(),
-                        "cache hit for chapter list"
-                    );
-                    for chapter in entry.chapters {
-                        yield Ok(chapter);
-                    }
-                    return;
+        cache_first_stream!(
+            feed_id,
+            "chapter list",
+            cache_get: {
+                cs.get_chapters(&feed_id, &bid)
+                    .await
+                    .map(|opt| opt.map(|e| e.chapters))
+            },
+            cache_clear: {
+                cs.clear_chapters(&feed_id, &bid).await
+            },
+            inner_stream: {
+                inner.chapters(&bid)
+            },
+            cache_set(collected): {
+                let entry = ChapterListCacheEntry::new(
+                    feed_id.clone(), bid.clone(), collected,
+                );
+                cs.set_chapters(&entry).await
+            }
+        )
+    }
+
+    /// Cache-first book info.
+    ///
+    /// - **Cache hit**: return cached `BookInfo`. If the cover file is missing
+    ///   on disk, treat as a cache miss so the cover gets re-downloaded.
+    /// - **Cache miss**: fetch from inner feed, return the original `BookInfo`
+    ///   immediately (no blocking on cover download), then spawn a background
+    ///   task to download the cover image and save it locally.
+    ///
+    /// On subsequent cache hits the `cover_url` is rewritten to the local path.
+    async fn cached_book_info(&self, book_id: &str) -> Result<BookInfo> {
+        let feed_id = self.inner.meta().id.clone();
+        let bid = book_id.to_string();
+        let cs = self.cache_store.clone();
+
+        cache_first_value!(
+            feed_id,
+            "book info",
+            cache_get: {
+                cs.get_book_info(&feed_id, &bid)
+                    .await
+                    .map(|opt| opt.map(|e| e.book_info))
+            },
+            cache_clear: {
+                cs.clear_book_info(&feed_id, &bid).await
+            },
+            // Reject cache hit when cover_url is set but the local file is missing.
+            is_valid(v): {
+                v.cover_url.is_none()
+                    || cs.cover_local_path(&feed_id, &bid).is_some()
+            },
+            // On valid cache hit, rewrite cover_url to local path.
+            on_hit(v): {
+                if let Some(local) = cs.cover_local_path(&feed_id, &bid) {
+                    v.cover_url = Some(local.to_string_lossy().into_owned());
                 }
-                Ok(None) => {
-                    tracing::debug!(
-                        feed_id = %feed_id,
-                        book_id = %book_id_owned,
-                        "chapter list cache miss, fetching from inner feed"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        feed_id = %feed_id,
-                        book_id = %book_id_owned,
-                        error = %e,
-                        "failed to read chapter list cache, clearing broken cache and falling back to inner feed"
-                    );
-                    if let Err(clear_error) = cache_store.clear_chapters(&feed_id, &book_id_owned).await {
-                        tracing::warn!(
-                            feed_id = %feed_id,
-                            book_id = %book_id_owned,
-                            error = %clear_error,
-                            "failed to clear broken chapter list cache"
-                        );
-                    }
+            },
+            inner_fetch: {
+                self.inner.book_info(&bid).await
+            },
+            cache_set(v): {
+                let entry = BookInfoCacheEntry::new(
+                    feed_id.clone(), bid.clone(), v.clone(),
+                );
+                cs.set_book_info(&entry).await
+            },
+            // Spawn background cover download after returning.
+            post_fetch(v): {
+                if let Some(url) = &v.cover_url {
+                    let cs = cs.clone();
+                    let fid = feed_id.clone();
+                    let bid = bid.clone();
+                    let url = url.clone();
+                    tokio::spawn(async move {
+                        download_cover_to_cache(&cs, &fid, &bid, &url).await;
+                    });
                 }
             }
+        )
+    }
+}
 
-            let mut chapters = Vec::new();
-            let mut stream = Box::pin(inner.chapters(&book_id_owned));
+/// Download a cover image from `url` and save it to the cache store.
+async fn download_cover_to_cache(
+    cache_store: &CacheStore,
+    feed_id: &str,
+    book_id: &str,
+    url: &str,
+) {
+    let resp = match reqwest::get(url).await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::debug!(
+                feed_id = %feed_id,
+                book_id = %book_id,
+                cover_url = %url,
+                error = %e,
+                "failed to fetch cover image"
+            );
+            return;
+        }
+    };
 
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(chapter) => {
-                        chapters.push(chapter.clone());
-                        yield Ok(chapter);
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            feed_id = %feed_id,
-                            book_id = %book_id_owned,
-                            error = %e,
-                            "error fetching chapter list, not caching"
-                        );
-                        yield Err(e);
-                        return;
-                    }
-                }
-            }
+    let bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::debug!(
+                feed_id = %feed_id,
+                book_id = %book_id,
+                cover_url = %url,
+                error = %e,
+                "failed to read cover bytes"
+            );
+            return;
+        }
+    };
 
-            let entry = ChapterListCacheEntry::new(feed_id.clone(), book_id_owned.clone(), chapters);
-            match cache_store.set_chapters(&entry).await {
-                Ok(_) => {
-                    tracing::debug!(
-                        feed_id = %feed_id,
-                        book_id = %book_id_owned,
-                        "successfully cached chapter list"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        feed_id = %feed_id,
-                        book_id = %book_id_owned,
-                        error = %e,
-                        "failed to cache chapter list, clearing chapter list cache entry"
-                    );
-                    if let Err(clear_error) = cache_store.clear_chapters(&feed_id, &book_id_owned).await {
-                        tracing::warn!(
-                            feed_id = %feed_id,
-                            book_id = %book_id_owned,
-                            error = %clear_error,
-                            "failed to clear chapter list cache after write failure"
-                        );
-                    }
-                }
-            }
-        })
+    match cache_store.save_cover(feed_id, book_id, &bytes).await {
+        Ok(path) => {
+            tracing::debug!(
+                feed_id = %feed_id,
+                book_id = %book_id,
+                path = %path.display(),
+                "cover image cached in background"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                feed_id = %feed_id,
+                book_id = %book_id,
+                error = %e,
+                "failed to save cover to cache"
+            );
+        }
     }
 }
 
@@ -299,8 +434,7 @@ impl<F: Feed> Feed for CachedFeed<F> {
     }
 
     async fn book_info(&self, id: &str) -> Result<crate::model::BookInfo> {
-        // Book info is not cached (assume it's cheap to fetch or relatively static)
-        self.inner.book_info(id).await
+        self.cached_book_info(id).await
     }
 
     fn chapters<'a>(&'a self, book_id: &'a str) -> FeedStream<'a, crate::model::ChapterInfo> {

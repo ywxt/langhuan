@@ -109,11 +109,6 @@ mod tests {
                 feed_id: feed_id.to_owned(),
                 source_book_id: source_book_id.to_owned(),
             },
-            title: format!("Book {source_book_id}"),
-            author: "Author".to_owned(),
-            cover_url: None,
-            description_snapshot: None,
-            source_name_snapshot: Some("source".to_owned()),
             added_at_unix_ms: at,
         }
     }

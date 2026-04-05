@@ -57,27 +57,99 @@ abstract class BaseReaderViewState<T extends BaseReaderView> extends State<T>
     with ChapterWindowManager<T> {
   // ─ Shared tracking state (library-private; mutate via helpers below)
   String? _currentVisibleChapterId;
+  bool _isInitialLoading = true;
+  Object? _initialLoadError;
 
   // ─ Shared boundary helpers ────────────────────────────────────────────────
 
   /// True when the first loaded chapter is chapter index 0 (book start).
-  bool get isAtBookStart =>
-      loadedSlots.isNotEmpty && loadedSlots.first.chapterIndex == 0;
+  bool get isAtBookStart {
+    final firstReady = _firstReadySlot;
+    return firstReady != null && firstReady.chapterIndex == minTocIndex;
+  }
 
   /// True when the last loaded chapter is the final chapter.
-  bool get isAtBookEnd =>
-      loadedSlots.isNotEmpty &&
-      loadedSlots.last.chapterIndex == widget.chapters.length - 1;
+  bool get isAtBookEnd {
+    final lastReady = _lastReadySlot;
+    return lastReady != null && lastReady.chapterIndex == maxTocIndex;
+  }
 
   /// Whether a top boundary should currently be shown.
   /// True whenever any chapters are loaded — either book info (at ch 0)
   /// or a loading spinner (older chapter not yet loaded).
-  bool get hasTopBoundary => loadedSlots.isNotEmpty;
+  bool get hasTopBoundary => loadedSlots.isNotEmpty || _isInitialLoading;
 
   /// Whether a bottom boundary should currently be shown.
   /// True whenever any chapters are loaded — either end-of-book (at last ch)
   /// or a loading spinner (newer chapter not yet loaded).
-  bool get hasBottomBoundary => loadedSlots.isNotEmpty;
+  bool get hasBottomBoundary => loadedSlots.isNotEmpty || _isInitialLoading;
+
+  bool get isInitialLoading => _isInitialLoading;
+
+  Object? get initialLoadError => _initialLoadError;
+
+  ChapterSlot? get _firstReadySlot {
+    for (final slot in loadedSlots) {
+      if (slot.content != null) return slot;
+    }
+    return null;
+  }
+
+  ChapterSlot? get _lastReadySlot {
+    for (int i = loadedSlots.length - 1; i >= 0; i--) {
+      final slot = loadedSlots[i];
+      if (slot.content != null) return slot;
+    }
+    return null;
+  }
+
+  ChapterSlot? get topBoundaryErrorSlot {
+    final firstReady = _firstReadySlot;
+    for (int i = loadedSlots.length - 1; i >= 0; i--) {
+      final slot = loadedSlots[i];
+      if (slot.error == null || slot.isLoading) continue;
+      if (firstReady == null || slot.chapterIndex < firstReady.chapterIndex) {
+        return slot;
+      }
+    }
+    return null;
+  }
+
+  ChapterSlot? get bottomBoundaryErrorSlot {
+    final lastReady = _lastReadySlot;
+    for (final slot in loadedSlots) {
+      if (slot.error == null || slot.isLoading) continue;
+      if (lastReady == null || slot.chapterIndex > lastReady.chapterIndex) {
+        return slot;
+      }
+    }
+    return null;
+  }
+
+  bool get hasTopBoundaryError => topBoundaryErrorSlot != null;
+
+  bool get hasBottomBoundaryError => bottomBoundaryErrorSlot != null;
+
+  Future<void> retryTopBoundary() async {
+    final slot = topBoundaryErrorSlot;
+    if (slot == null) return;
+    await retryChapter(slot.chapterId);
+  }
+
+  Future<void> retryBottomBoundary() async {
+    final slot = bottomBoundaryErrorSlot;
+    if (slot == null) return;
+    await retryChapter(slot.chapterId);
+  }
+
+  Future<void> retryInitialLoad() async {
+    if (_isInitialLoading) return;
+    setState(() {
+      _initialLoadError = null;
+      _isInitialLoading = true;
+    });
+    await _initialize();
+  }
 
   // ─ Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -106,10 +178,23 @@ abstract class BaseReaderViewState<T extends BaseReaderView> extends State<T>
   // ─ Template methods ───────────────────────────────────────────────────────
 
   Future<void> _initialize() async {
-    await loadInitial(widget.initialChapterId);
-    if (mounted) {
-      onInitialLoadComplete();
-      restoreInitialPosition();
+    try {
+      await loadInitial(widget.initialChapterId);
+      if (mounted) {
+        _initialLoadError = null;
+        onInitialLoadComplete();
+        restoreInitialPosition();
+      }
+    } catch (e) {
+      if (mounted) {
+        _initialLoadError = e;
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isInitialLoading = false;
+        });
+      }
     }
   }
 

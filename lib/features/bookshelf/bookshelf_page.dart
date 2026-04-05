@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/always_disabled_focus_node.dart';
+import '../../shared/widgets/cover_image.dart';
 import '../../shared/widgets/cover_placeholder.dart';
 import '../../shared/widgets/empty_state.dart';
 import 'bookshelf_provider.dart';
@@ -113,46 +114,22 @@ class BookshelfPage extends ConsumerWidget {
                             horizontal: LanghuanTheme.spaceMd,
                             vertical: LanghuanTheme.spaceXs,
                           ),
-                          leading: ClipRRect(
-                            borderRadius: LanghuanTheme.borderRadiusSm,
-                            child: SizedBox(
-                              width: 44,
-                              height: 60,
-                              child: item.coverUrl == null
-                                  ? const _SmallCoverPlaceholder()
-                                  : Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        const _SmallCoverPlaceholder(),
-                                        Image.network(
-                                          item.coverUrl!,
-                                          fit: BoxFit.cover,
-                                          frameBuilder:
-                                              (
-                                                context,
-                                                child,
-                                                frame,
-                                                wasSynchronouslyLoaded,
-                                              ) {
-                                                if (wasSynchronouslyLoaded) {
-                                                  return child;
-                                                }
-                                                return AnimatedOpacity(
-                                                  opacity: frame == null
-                                                      ? 0.0
-                                                      : 1.0,
-                                                  duration: const Duration(
-                                                    milliseconds: 220,
-                                                  ),
-                                                  curve: Curves.easeOut,
-                                                  child: child,
-                                                );
-                                              },
-                                          errorBuilder: (_, _, _) =>
-                                              const _SmallCoverPlaceholder(),
-                                        ),
-                                      ],
-                                    ),
+                          leading: Hero(
+                            tag:
+                                'book-cover-${item.feedId}-${item.sourceBookId}',
+                            child: ClipRRect(
+                              borderRadius: LanghuanTheme.borderRadiusSm,
+                              child: SizedBox(
+                                width: 44,
+                                height: 60,
+                                child: item.coverUrl == null
+                                    ? const _SmallCoverPlaceholder()
+                                    : CoverImage(
+                                        url: item.coverUrl!,
+                                        placeholder:
+                                            const _SmallCoverPlaceholder(),
+                                      ),
+                              ),
                             ),
                           ),
                           title: Text(

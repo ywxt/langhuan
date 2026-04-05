@@ -299,10 +299,6 @@ class FeedService {
   Future<BookshelfOperationOutcome> addToBookshelf({
     required String feedId,
     required String sourceBookId,
-    required String title,
-    required String author,
-    String? coverUrl,
-    String? descriptionSnapshot,
   }) {
     final requestId = _nextId();
     return _subscribeAndSend(
@@ -313,10 +309,6 @@ class FeedService {
           requestId: requestId,
           feedId: feedId,
           sourceBookId: sourceBookId,
-          title: title,
-          author: author,
-          coverUrl: coverUrl,
-          descriptionSnapshot: descriptionSnapshot,
         ).sendSignalToRust();
       },
     ).then((message) => message.outcome);

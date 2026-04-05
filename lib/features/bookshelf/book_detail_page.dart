@@ -6,12 +6,14 @@ import '../../l10n/app_localizations.dart';
 import '../../rust_init.dart';
 import '../../src/bindings/signals/signals.dart';
 import '../../shared/theme/app_theme.dart';
+import '../../shared/widgets/cover_image.dart';
 import '../../shared/widgets/cover_placeholder.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
 import '../feeds/feed_service.dart';
 import 'book_providers.dart';
 import 'bookshelf_provider.dart';
+import 'reading_progress_provider.dart';
 
 class BookDetailPage extends ConsumerStatefulWidget {
   const BookDetailPage({super.key, required this.feedId, required this.bookId});
@@ -26,6 +28,7 @@ class BookDetailPage extends ConsumerStatefulWidget {
 class _BookDetailPageState extends ConsumerState<BookDetailPage> {
   late final BookInfoNotifier _bookInfoNotifier;
   late final ChaptersNotifier _chaptersNotifier;
+  late final ReadingProgressNotifier _progressNotifier;
 
   void _openReader(BuildContext context, String chapterId) {
     context.pushNamed(
@@ -45,6 +48,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     // This prevents "Using ref when widget is unmounted" errors.
     _bookInfoNotifier = ref.read(bookInfoProvider.notifier);
     _chaptersNotifier = ref.read(chaptersProvider.notifier);
+    _progressNotifier = ref.read(readingProgressProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _load();
@@ -57,6 +61,8 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     await _bookInfoNotifier.load(feedId: widget.feedId, bookId: widget.bookId);
     if (!mounted) return;
     await _chaptersNotifier.load(feedId: widget.feedId, bookId: widget.bookId);
+    if (!mounted) return;
+    await _progressNotifier.load(feedId: widget.feedId, bookId: widget.bookId);
   }
 
   @override
@@ -65,6 +71,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     final theme = Theme.of(context);
     final bookInfoState = ref.watch(bookInfoProvider);
     final chaptersState = ref.watch(chaptersProvider);
+    final progressState = ref.watch(readingProgressProvider);
     final bootstrap = ref.watch(appDataDirectorySetProvider);
     final bookshelfState = ref.watch(bookshelfProvider);
     final capabilityState = ref.watch(
@@ -131,44 +138,20 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Center(
-              child: ClipRRect(
-                borderRadius: LanghuanTheme.borderRadiusMd,
-                child: SizedBox(
-                  width: 120,
-                  height: 160,
-                  child: book.coverUrl == null
-                      ? const _LargeCoverPlaceholder()
-                      : Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            const _LargeCoverPlaceholder(),
-                            Image.network(
-                              book.coverUrl!,
-                              fit: BoxFit.cover,
-                              frameBuilder:
-                                  (
-                                    context,
-                                    child,
-                                    frame,
-                                    wasSynchronouslyLoaded,
-                                  ) {
-                                    if (wasSynchronouslyLoaded) {
-                                      return child;
-                                    }
-                                    return AnimatedOpacity(
-                                      opacity: frame == null ? 0.0 : 1.0,
-                                      duration: const Duration(
-                                        milliseconds: 220,
-                                      ),
-                                      curve: Curves.easeOut,
-                                      child: child,
-                                    );
-                                  },
-                              errorBuilder: (_, _, _) =>
-                                  const _LargeCoverPlaceholder(),
-                            ),
-                          ],
-                        ),
+              child: Hero(
+                tag: 'book-cover-${widget.feedId}-${widget.bookId}',
+                child: ClipRRect(
+                  borderRadius: LanghuanTheme.borderRadiusMd,
+                  child: SizedBox(
+                    width: 120,
+                    height: 160,
+                    child: book.coverUrl == null
+                        ? const _LargeCoverPlaceholder()
+                        : CoverImage(
+                            url: book.coverUrl!,
+                            placeholder: const _LargeCoverPlaceholder(),
+                          ),
+                  ),
                 ),
               ),
             ),
@@ -217,7 +200,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                               bookshelfState.activeItemId ==
                                   '${widget.feedId}:${widget.bookId}'
                           ? null
-                          : () => _addToBookshelf(context, book),
+                          : () => _addToBookshelf(context),
                       child: Text(l10n.bookDetailAddBookshelf),
                     ),
             ),
@@ -227,10 +210,34 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
               child: FilledButton(
                 onPressed: chaptersState.items.isEmpty
                     ? null
-                    : () => _openReader(context, chaptersState.items.first.id),
-                child: Text(l10n.bookDetailStartReading),
+                    : () => _openReader(context, ''),
+                child: Text(
+                  progressState.progress != null
+                      ? l10n.bookDetailContinueReading
+                      : l10n.bookDetailStartReading,
+                ),
               ),
             ),
+            if (progressState.progress != null &&
+                chaptersState.items.any(
+                  (c) => c.id == progressState.progress!.chapterId,
+                ))
+              Padding(
+                padding: const EdgeInsets.only(top: LanghuanTheme.spaceXs),
+                child: Text(
+                  l10n.bookDetailLastReadChapter(
+                    chaptersState.items
+                        .firstWhere(
+                          (c) => c.id == progressState.progress!.chapterId,
+                        )
+                        .title,
+                  ),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
             const SizedBox(height: LanghuanTheme.spaceXl),
             Text(
               l10n.bookDetailChapters(chaptersState.items.length),
@@ -249,11 +256,16 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                 retryLabel: l10n.bookDetailRetry,
               )
             else
-              ...chaptersState.items.map(
-                (chapter) => Padding(
+              ...chaptersState.items.map((chapter) {
+                final isLastRead =
+                    progressState.progress != null &&
+                    progressState.progress!.chapterId == chapter.id;
+                return Padding(
                   padding: const EdgeInsets.only(bottom: LanghuanTheme.spaceSm),
                   child: Material(
-                    color: theme.colorScheme.surfaceContainer,
+                    color: isLastRead
+                        ? theme.colorScheme.primaryContainer
+                        : theme.colorScheme.surfaceContainer,
                     borderRadius: LanghuanTheme.borderRadiusMd,
                     child: ListTile(
                       onTap: () => _openReader(context, chapter.id),
@@ -264,27 +276,40 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                       ),
                       title: Text(
                         chapter.title,
-                        style: theme.textTheme.bodyLarge,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: isLastRead
+                              ? theme.colorScheme.onPrimaryContainer
+                              : null,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       leading: Text(
                         '${chapter.index + 1}',
                         style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                          color: isLastRead
+                              ? theme.colorScheme.onPrimaryContainer
+                              : theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
+                      trailing: isLastRead
+                          ? Icon(
+                              Icons.bookmark,
+                              size: 18,
+                              color: theme.colorScheme.onPrimaryContainer,
+                            )
+                          : null,
                     ),
                   ),
-                ),
-              ),
+                );
+              }),
           ],
         ),
       ),
     );
   }
 
-  Future<void> _addToBookshelf(BuildContext context, BookInfoModel book) async {
+  Future<void> _addToBookshelf(BuildContext context) async {
     final l10n = AppLocalizations.of(context);
     final bootstrap = ref.read(appDataDirectorySetProvider);
     if (bootstrap.asData?.value.outcome is! AppDataDirectoryOutcomeSuccess) {
@@ -297,7 +322,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
 
     final outcome = await ref
         .read(bookshelfProvider.notifier)
-        .add(feedId: widget.feedId, book: book);
+        .add(feedId: widget.feedId, sourceBookId: widget.bookId);
 
     if (!context.mounted) return;
     final text = outcome is BookshelfOperationOutcomeError

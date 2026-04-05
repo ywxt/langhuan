@@ -3,7 +3,7 @@ use langhuan::bookshelf::{
     BookIdentity, BookshelfEntry, LocalBookshelf, LocalBookshelfAddOutcome,
     LocalBookshelfRemoveOutcome,
 };
-use langhuan::feed::FeedBookshelfSupport;
+use langhuan::feed::{Feed, FeedBookshelfSupport};
 use messages::prelude::{Actor, Address, Context, Handler, Notifiable};
 use rinf::{DartSignal, RustSignal};
 use tokio::task::JoinSet;
@@ -85,11 +85,6 @@ impl BookshelfActor {
 
         let entry = BookshelfEntry {
             identity,
-            title: req.title,
-            author: req.author,
-            cover_url: req.cover_url,
-            description_snapshot: req.description_snapshot,
-            source_name_snapshot: None,
             added_at_unix_ms: now_unix_ms(),
         };
 
@@ -145,19 +140,63 @@ impl BookshelfActor {
         }
     }
 
-    fn list(&self, req: BookshelfListRequest) {
+    async fn list(&mut self, req: BookshelfListRequest) {
         tracing::debug!(request_id = %req.request_id, "received bookshelf list request");
         if let Some(shelf) = &self.shelf {
-            tracing::debug!(request_id = %req.request_id, entries = shelf.entries().len(), "emitting bookshelf list items");
-            for entry in shelf.entries() {
+            let entries = shelf.entries().to_vec();
+            tracing::debug!(request_id = %req.request_id, entries = entries.len(), "emitting bookshelf list items");
+            for entry in entries {
+                let identity = entry.identity;
+                let (title, author, cover_url, description_snapshot) = match self
+                    .registry_addr
+                    .send(GetFeed {
+                        feed_id: identity.feed_id.clone(),
+                    })
+                    .await
+                {
+                    Ok(Ok(feed)) => match feed.book_info(&identity.source_book_id).await {
+                        Ok(book) => (book.title, book.author, book.cover_url, book.description),
+                        Err(e) => {
+                            tracing::warn!(
+                                request_id = %req.request_id,
+                                feed_id = %identity.feed_id,
+                                source_book_id = %identity.source_book_id,
+                                error = %e,
+                                "failed to resolve book_info while listing bookshelf"
+                            );
+                            (identity.source_book_id.clone(), String::new(), None, None)
+                        }
+                    },
+                    Ok(Err(e)) => {
+                        tracing::warn!(
+                            request_id = %req.request_id,
+                            feed_id = %identity.feed_id,
+                            source_book_id = %identity.source_book_id,
+                            error = %e,
+                            "failed to resolve feed while listing bookshelf"
+                        );
+                        (identity.source_book_id.clone(), String::new(), None, None)
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            request_id = %req.request_id,
+                            feed_id = %identity.feed_id,
+                            source_book_id = %identity.source_book_id,
+                            error = %e,
+                            "failed to request feed actor while listing bookshelf"
+                        );
+                        (identity.source_book_id.clone(), String::new(), None, None)
+                    }
+                };
+
                 BookshelfListItem {
                     request_id: req.request_id.clone(),
-                    feed_id: entry.identity.feed_id.clone(),
-                    source_book_id: entry.identity.source_book_id.clone(),
-                    title: entry.title.clone(),
-                    author: entry.author.clone(),
-                    cover_url: entry.cover_url.clone(),
-                    description_snapshot: entry.description_snapshot.clone(),
+                    feed_id: identity.feed_id,
+                    source_book_id: identity.source_book_id,
+                    title,
+                    author,
+                    cover_url,
+                    description_snapshot,
                     added_at_unix_ms: entry.added_at_unix_ms,
                 }
                 .send_signal_to_dart();
@@ -262,7 +301,7 @@ impl Notifiable<BookshelfRemoveRequest> for BookshelfActor {
 #[async_trait]
 impl Notifiable<BookshelfListRequest> for BookshelfActor {
     async fn notify(&mut self, message: BookshelfListRequest, _: &Context<Self>) {
-        self.list(message);
+        self.list(message).await;
     }
 }
 
@@ -318,10 +357,6 @@ mod tests {
                 request_id: "req-1".to_owned(),
                 feed_id: "feed-a".to_owned(),
                 source_book_id: "book-1".to_owned(),
-                title: "Book One".to_owned(),
-                author: "Author".to_owned(),
-                cover_url: None,
-                description_snapshot: None,
             })
             .await;
 
@@ -354,10 +389,6 @@ mod tests {
                 request_id: "req-2".to_owned(),
                 feed_id: "feed-a".to_owned(),
                 source_book_id: "book-2".to_owned(),
-                title: "Book Two".to_owned(),
-                author: "Author".to_owned(),
-                cover_url: None,
-                description_snapshot: None,
             })
             .await;
 

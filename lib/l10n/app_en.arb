@@ -101,6 +101,17 @@
   "bookDetailStartReading": "Start Reading",
   "@bookDetailStartReading": { "description": "Primary action button on book detail page" },
 
+  "bookDetailContinueReading": "Continue Reading",
+  "@bookDetailContinueReading": { "description": "Primary action button when reading progress exists" },
+
+  "bookDetailLastReadChapter": "Last read: {chapterTitle}",
+  "@bookDetailLastReadChapter": {
+    "description": "Subtitle under the continue button showing last-read chapter",
+    "placeholders": {
+      "chapterTitle": { "type": "String" }
+    }
+  },
+
   "bookDetailNoDescription": "No description available",
   "@bookDetailNoDescription": { "description": "Fallback text when description is empty" },
 
@@ -185,6 +196,12 @@
 
   "readerLoading": "Loading\u2026",
   "@readerLoading": { "description": "Loading indicator text shown while a chapter is being fetched" },
+
+  "readerChapterLoadError": "Failed to load chapter",
+  "@readerChapterLoadError": { "description": "Error shown when chapter content failed to load" },
+
+  "readerRetry": "Retry",
+  "@readerRetry": { "description": "Retry action label for chapter loading failures" },
 
   "feedsTitle": "Feeds",
   "@feedsTitle": { "description": "Feeds page title" },

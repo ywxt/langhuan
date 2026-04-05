@@ -20,19 +20,22 @@ class PageContentView extends StatelessWidget {
     final theme = Theme.of(context);
     final items = page.items;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (int i = 0; i < items.length; i++) ...[
-          if (i > 0)
-            SizedBox(
-              height: items[i].source is ParagraphContentImage
-                  ? LanghuanTheme.spaceLg
-                  : LanghuanTheme.spaceMd,
-            ),
-          _buildItem(context, theme, items[i]),
+    // ClipRect absorbs sub-pixel overflow from page-breaking rounding.
+    return ClipRect(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (int i = 0; i < items.length; i++) ...[
+            if (i > 0)
+              SizedBox(
+                height: items[i].source is ParagraphContentImage
+                    ? LanghuanTheme.spaceLg
+                    : LanghuanTheme.spaceMd,
+              ),
+            _buildItem(context, theme, items[i]),
+          ],
         ],
-      ],
+      ),
     );
   }
 
