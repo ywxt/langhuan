@@ -67,7 +67,6 @@ impl ReadingProgressActor {
                     book_id: item.book_id,
                     chapter_id: item.chapter_id,
                     paragraph_index: item.paragraph_index as u32,
-                    scroll_offset: item.scroll_offset,
                     updated_at_ms: item.updated_at_ms,
                 }),
             },
@@ -100,7 +99,6 @@ impl ReadingProgressActor {
             book_id: req.book_id,
             chapter_id: req.chapter_id,
             paragraph_index: req.paragraph_index as usize,
-            scroll_offset: req.scroll_offset,
             updated_at_ms: req.updated_at_ms,
         };
 

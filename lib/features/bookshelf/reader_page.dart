@@ -51,9 +51,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   bool _restoredPosition = false;
 
   // ─ Position tracking (cached for safe dispose access)
-  double _lastKnownScrollOffset = 0.0;
-  int _lastKnownParagraphIndex = 0;
-  int _horizontalParagraphIndex = 0;
+  int _currentParagraphIndex = 0;
 
   // ─ UI state
   bool _showBottomBar = false;
@@ -103,8 +101,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   void _onScroll() {
     if (_readerMode != _ReaderMode.verticalScroll) return;
     if (!_scrollController.hasClients) return;
-    _lastKnownScrollOffset = _scrollController.offset;
-    _lastKnownParagraphIndex = _estimateParagraphIndex(
+    _currentParagraphIndex = _estimateParagraphIndex(
       _latestContentItems.length,
     );
     _scheduleSaveProgress();
@@ -112,9 +109,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
   void _onPageChanged(int index) {
     if (_readerMode != _ReaderMode.horizontalPaging) return;
-    _horizontalParagraphIndex = index;
-    _lastKnownParagraphIndex = index;
-    _lastKnownScrollOffset = index.toDouble();
+    _currentParagraphIndex = index;
     _scheduleSaveProgress();
   }
 
@@ -148,7 +143,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     }
 
     if (_readerMode == _ReaderMode.horizontalPaging) {
-      return _horizontalParagraphIndex.clamp(0, totalItems - 1);
+      return _currentParagraphIndex.clamp(0, totalItems - 1);
     }
 
     if (!_scrollController.hasClients) {
@@ -170,10 +165,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       return;
     }
 
-    // Use cached values so this is safe even when called from dispose(),
+    // Use cached value so this is safe even when called from dispose(),
     // when the ScrollController may already be detached.
-    final paragraphIndex = _lastKnownParagraphIndex;
-    final scrollOffset = _lastKnownScrollOffset;
+    final paragraphIndex = _currentParagraphIndex;
 
     if (updateProviderState) {
       await _readingProgressNotifier.save(
@@ -181,7 +175,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
         bookId: widget.bookId,
         chapterId: chapterId,
         paragraphIndex: paragraphIndex,
-        scrollOffset: scrollOffset,
       );
       return;
     }
@@ -191,7 +184,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       bookId: widget.bookId,
       chapterId: chapterId,
       paragraphIndex: paragraphIndex,
-      scrollOffset: scrollOffset,
       updatedAtMs: DateTime.now().millisecondsSinceEpoch,
     );
   }
@@ -230,14 +222,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
         _chapters = chapters;
         _currentChapterId = resolvedChapterId;
         _latestContentItems = contentItems;
-        _horizontalParagraphIndex =
+        _currentParagraphIndex =
             initialProgress?.paragraphIndex.clamp(
               0,
               contentItems.isEmpty ? 0 : contentItems.length - 1,
             ) ??
             0;
-        _lastKnownParagraphIndex = _horizontalParagraphIndex;
-        _lastKnownScrollOffset = initialProgress?.scrollOffset ?? 0.0;
         _restoredPosition = false;
         _loadingState = _LoadingState.ready;
         _loadError = null;
@@ -366,28 +356,21 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (_readerMode == _ReaderMode.horizontalPaging) {
-        _horizontalParagraphIndex = targetParagraph;
+        _currentParagraphIndex = targetParagraph;
         if (_pageController.hasClients) {
           _pageController.jumpToPage(targetParagraph);
-          _lastKnownParagraphIndex = targetParagraph;
-          _lastKnownScrollOffset = targetParagraph.toDouble();
           _restoredPosition = true;
           return;
         }
       } else if (_scrollController.hasClients) {
         final maxExtent = _scrollController.position.maxScrollExtent;
-        if (maxExtent > 0 || progress.scrollOffset <= 0) {
+        if (maxExtent > 0) {
           final paragraphOffset = totalItems <= 1
               ? 0.0
               : maxExtent * (targetParagraph / (totalItems - 1));
-          final target =
-              (progress.scrollOffset > 0
-                      ? progress.scrollOffset
-                      : paragraphOffset)
-                  .clamp(0.0, maxExtent);
+          final target = paragraphOffset.clamp(0.0, maxExtent);
           _scrollController.jumpTo(target);
-          _lastKnownScrollOffset = target;
-          _lastKnownParagraphIndex = targetParagraph;
+          _currentParagraphIndex = targetParagraph;
           _restoredPosition = true;
           return;
         }
@@ -405,10 +388,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   Future<void> _switchReaderMode(_ReaderMode nextMode, int totalItems) async {
     if (nextMode == _readerMode) return;
 
-    if (_readerMode == _ReaderMode.verticalScroll) {
-      _horizontalParagraphIndex = _estimateParagraphIndex(totalItems);
-    }
-
     setState(() {
       _readerMode = nextMode;
     });
@@ -417,17 +396,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       if (!mounted) return;
 
       if (_readerMode == _ReaderMode.horizontalPaging) {
-        final target = _horizontalParagraphIndex.clamp(
+        final target = _currentParagraphIndex.clamp(
           0,
           totalItems <= 0 ? 0 : totalItems - 1,
         );
-        _horizontalParagraphIndex = target;
         if (_pageController.hasClients) {
           _pageController.jumpToPage(target);
         }
       } else {
         if (!_scrollController.hasClients || totalItems <= 1) return;
-        final ratio = _horizontalParagraphIndex / (totalItems - 1);
+        final ratio = _currentParagraphIndex / (totalItems - 1);
         final target = _scrollController.position.maxScrollExtent * ratio;
         _scrollController.jumpTo(
           target.clamp(0.0, _scrollController.position.maxScrollExtent),
@@ -472,7 +450,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     setState(() {
       _currentChapterId = target.id;
       _restoredPosition = false;
-      _horizontalParagraphIndex = 0;
+      _currentParagraphIndex = 0;
       _loadingState = _LoadingState.contentLoading;
       _loadError = null;
       _latestContentItems = const [];

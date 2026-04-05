@@ -90,7 +90,6 @@ impl ReadingProgressStore {
                 book_id = %book_id,
                 chapter_id = %p.chapter_id,
                 paragraph_index = p.paragraph_index,
-                scroll_offset = p.scroll_offset,
                 "reading progress found"
             ),
             None => tracing::debug!(feed_id = %feed_id, book_id = %book_id, "no saved reading progress"),
@@ -104,7 +103,6 @@ impl ReadingProgressStore {
             book_id = %progress.book_id,
             chapter_id = %progress.chapter_id,
             paragraph_index = progress.paragraph_index,
-            scroll_offset = progress.scroll_offset,
             "saving reading progress"
         );
         let mut file = self.load_progress_file().await?;
@@ -140,7 +138,6 @@ mod tests {
             book_id: "book-1".to_string(),
             chapter_id: "chapter-10".to_string(),
             paragraph_index: 12,
-            scroll_offset: 328.5,
             updated_at_ms: 1_712_345_678_000,
         };
 

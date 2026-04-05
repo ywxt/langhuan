@@ -74,7 +74,6 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
     required String bookId,
     required String chapterId,
     required int paragraphIndex,
-    required double scrollOffset,
     int? updatedAtMs,
   }) async {
     final timestamp = updatedAtMs ?? DateTime.now().millisecondsSinceEpoch;
@@ -92,7 +91,6 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
         bookId: bookId,
         chapterId: chapterId,
         paragraphIndex: paragraphIndex,
-        scrollOffset: scrollOffset,
         updatedAtMs: timestamp,
       );
 
@@ -102,7 +100,6 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
           bookId: bookId,
           chapterId: chapterId,
           paragraphIndex: paragraphIndex,
-          scrollOffset: scrollOffset,
           updatedAtMs: timestamp,
         ),
         isSaving: false,

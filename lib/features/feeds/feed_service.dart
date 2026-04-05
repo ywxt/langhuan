@@ -122,7 +122,6 @@ class ReadingProgressModel {
     required this.bookId,
     required this.chapterId,
     required this.paragraphIndex,
-    required this.scrollOffset,
     required this.updatedAtMs,
   });
 
@@ -130,7 +129,6 @@ class ReadingProgressModel {
   final String bookId;
   final String chapterId;
   final int paragraphIndex;
-  final double scrollOffset;
   final int updatedAtMs;
 }
 
@@ -443,7 +441,6 @@ class FeedService {
         bookId: item.bookId,
         chapterId: item.chapterId,
         paragraphIndex: item.paragraphIndex,
-        scrollOffset: item.scrollOffset,
         updatedAtMs: item.updatedAtMs,
       );
     });
@@ -454,7 +451,6 @@ class FeedService {
     required String bookId,
     required String chapterId,
     required int paragraphIndex,
-    required double scrollOffset,
     required int updatedAtMs,
   }) {
     final requestId = _nextId();
@@ -468,7 +464,6 @@ class FeedService {
           bookId: bookId,
           chapterId: chapterId,
           paragraphIndex: paragraphIndex,
-          scrollOffset: scrollOffset,
           updatedAtMs: updatedAtMs,
         ).sendSignalToRust();
       },

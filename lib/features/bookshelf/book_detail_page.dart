@@ -24,6 +24,9 @@ class BookDetailPage extends ConsumerStatefulWidget {
 }
 
 class _BookDetailPageState extends ConsumerState<BookDetailPage> {
+  late final BookInfoNotifier _bookInfoNotifier;
+  late final ChaptersNotifier _chaptersNotifier;
+
   void _openReader(BuildContext context, String chapterId) {
     context.pushNamed(
       'bookshelf-reader',
@@ -38,6 +41,10 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
   @override
   void initState() {
     super.initState();
+    // Cache notifiers while widget is mounted to safely use them in async operations.
+    // This prevents "Using ref when widget is unmounted" errors.
+    _bookInfoNotifier = ref.read(bookInfoProvider.notifier);
+    _chaptersNotifier = ref.read(chaptersProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _load();
@@ -47,12 +54,9 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
   Future<void> _load() async {
     if (widget.feedId.isEmpty || widget.bookId.isEmpty) return;
 
-    await ref
-        .read(bookInfoProvider.notifier)
-        .load(feedId: widget.feedId, bookId: widget.bookId);
-    await ref
-        .read(chaptersProvider.notifier)
-        .load(feedId: widget.feedId, bookId: widget.bookId);
+    await _bookInfoNotifier.load(feedId: widget.feedId, bookId: widget.bookId);
+    if (!mounted) return;
+    await _chaptersNotifier.load(feedId: widget.feedId, bookId: widget.bookId);
   }
 
   @override

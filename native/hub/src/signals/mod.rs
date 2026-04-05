@@ -68,7 +68,6 @@ pub struct ReadingProgressSetRequest {
     pub book_id: String,
     pub chapter_id: String,
     pub paragraph_index: u32,
-    pub scroll_offset: f64,
     pub updated_at_ms: i64,
 }
 
@@ -160,7 +159,6 @@ pub struct ReadingProgressItem {
     pub book_id: String,
     pub chapter_id: String,
     pub paragraph_index: u32,
-    pub scroll_offset: f64,
     pub updated_at_ms: i64,
 }
 

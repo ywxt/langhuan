@@ -9,7 +9,6 @@ pub struct ReadingProgress {
     pub book_id: String,
     pub chapter_id: String,
     pub paragraph_index: usize,
-    pub scroll_offset: f64,
     pub updated_at_ms: i64,
 }
 
