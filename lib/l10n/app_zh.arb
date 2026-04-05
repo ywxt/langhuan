@@ -54,6 +54,9 @@
   "readerPrevChapter": "上一章",
   "readerNextChapter": "下一章",
   "readerChapterProgress": "第 {current} / {total} 章",
+  "readerModeVertical": "上下滑動",
+  "readerModeHorizontal": "左右翻頁",
+  "readerChapterFallbackTitle": "第 {index} 章",
 
   "feedsTitle": "書源",
   "feedsSearchHint": "搜索書源…",

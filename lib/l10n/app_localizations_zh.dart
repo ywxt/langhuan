@@ -161,6 +161,17 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get readerModeVertical => '上下滑動';
+
+  @override
+  String get readerModeHorizontal => '左右翻頁';
+
+  @override
+  String readerChapterFallbackTitle(int index) {
+    return '第 $index 章';
+  }
+
+  @override
   String get feedsTitle => '書源';
 
   @override

@@ -386,6 +386,24 @@ abstract class AppLocalizations {
   /// **'Chapter {current} / {total}'**
   String readerChapterProgress(int current, int total);
 
+  /// Reader mode toggle label: vertical scroll
+  ///
+  /// In en, this message translates to:
+  /// **'Vertical Scroll'**
+  String get readerModeVertical;
+
+  /// Reader mode toggle label: horizontal paging
+  ///
+  /// In en, this message translates to:
+  /// **'Horizontal Paging'**
+  String get readerModeHorizontal;
+
+  /// Fallback chapter title when source does not provide one
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter {index}'**
+  String readerChapterFallbackTitle(int index);
+
   /// Feeds page title
   ///
   /// In en, this message translates to:

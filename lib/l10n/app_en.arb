@@ -166,6 +166,20 @@
     }
   },
 
+  "readerModeVertical": "Vertical Scroll",
+  "@readerModeVertical": { "description": "Reader mode toggle label: vertical scroll" },
+
+  "readerModeHorizontal": "Horizontal Paging",
+  "@readerModeHorizontal": { "description": "Reader mode toggle label: horizontal paging" },
+
+  "readerChapterFallbackTitle": "Chapter {index}",
+  "@readerChapterFallbackTitle": {
+    "description": "Fallback chapter title when source does not provide one",
+    "placeholders": {
+      "index": { "type": "int" }
+    }
+  },
+
   "feedsTitle": "Feeds",
   "@feedsTitle": { "description": "Feeds page title" },
 

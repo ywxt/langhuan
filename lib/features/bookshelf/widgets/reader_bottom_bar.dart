@@ -35,61 +35,60 @@ class ReaderBottomBar extends StatelessWidget {
             1.0,
           );
 
-    return SafeArea(
-      top: false,
-      child: Container(
-        color: Theme.of(context).colorScheme.surfaceContainer,
-        padding: const EdgeInsets.fromLTRB(
-          LanghuanTheme.spaceMd,
-          LanghuanTheme.spaceSm,
-          LanghuanTheme.spaceMd,
-          LanghuanTheme.spaceMd,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (chapters.isNotEmpty) ...[
-              Text(
-                l10n.readerChapterProgress(
-                  currentIndex < 0 ? 0 : currentIndex + 1,
-                  chapters.length,
-                ),
-                style: Theme.of(context).textTheme.labelMedium,
-                textAlign: TextAlign.center,
+    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+
+    return Container(
+      color: Theme.of(context).colorScheme.surfaceContainer,
+      padding: EdgeInsets.fromLTRB(
+        LanghuanTheme.spaceMd,
+        LanghuanTheme.spaceSm,
+        LanghuanTheme.spaceMd,
+        LanghuanTheme.spaceMd + bottomInset,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (chapters.isNotEmpty) ...[
+            Text(
+              l10n.readerChapterProgress(
+                currentIndex < 0 ? 0 : currentIndex + 1,
+                chapters.length,
               ),
-              const SizedBox(height: LanghuanTheme.spaceXs),
-              LinearProgressIndicator(value: chapterProgress),
-              const SizedBox(height: LanghuanTheme.spaceSm),
-            ],
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed:
-                        (chapters.isEmpty || !canGoPrev || isSwitchingChapter)
-                        ? null
-                        : onPrevious,
-                    icon: const Icon(Icons.chevron_left),
-                    label: Text(l10n.readerPrevChapter),
-                  ),
-                ),
-                const SizedBox(width: LanghuanTheme.spaceSm),
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed:
-                        (chapters.isEmpty || !canGoNext || isSwitchingChapter)
-                        ? null
-                        : onNext,
-                    iconAlignment: IconAlignment.end,
-                    icon: const Icon(Icons.chevron_right),
-                    label: Text(l10n.readerNextChapter),
-                  ),
-                ),
-              ],
+              style: Theme.of(context).textTheme.labelMedium,
+              textAlign: TextAlign.center,
             ),
+            const SizedBox(height: LanghuanTheme.spaceXs),
+            LinearProgressIndicator(value: chapterProgress),
+            const SizedBox(height: LanghuanTheme.spaceSm),
           ],
-        ),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton.icon(
+                  onPressed:
+                      (chapters.isEmpty || !canGoPrev || isSwitchingChapter)
+                      ? null
+                      : onPrevious,
+                  icon: const Icon(Icons.chevron_left),
+                  label: Text(l10n.readerPrevChapter),
+                ),
+              ),
+              const SizedBox(width: LanghuanTheme.spaceSm),
+              Expanded(
+                child: TextButton.icon(
+                  onPressed:
+                      (chapters.isEmpty || !canGoNext || isSwitchingChapter)
+                      ? null
+                      : onNext,
+                  iconAlignment: IconAlignment.end,
+                  icon: const Icon(Icons.chevron_right),
+                  label: Text(l10n.readerNextChapter),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
