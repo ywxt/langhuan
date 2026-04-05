@@ -29,15 +29,45 @@ class SearchResultCard extends StatelessWidget {
               // ── Book cover ─────────────────────────────────────────
               ClipRRect(
                 borderRadius: LanghuanTheme.borderRadiusSm,
-                child: item.coverUrl != null
-                    ? Image.network(
-                        item.coverUrl!,
-                        width: 48,
-                        height: 64,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const CoverPlaceholder(),
-                      )
-                    : const CoverPlaceholder(),
+                child: SizedBox(
+                  width: 48,
+                  height: 64,
+                  child: item.coverUrl != null
+                      ? Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            const CoverPlaceholder(),
+                            Image.network(
+                              item.coverUrl!,
+                              width: 48,
+                              height: 64,
+                              fit: BoxFit.cover,
+                              frameBuilder:
+                                  (
+                                    context,
+                                    child,
+                                    frame,
+                                    wasSynchronouslyLoaded,
+                                  ) {
+                                    if (wasSynchronouslyLoaded) {
+                                      return child;
+                                    }
+                                    return AnimatedOpacity(
+                                      opacity: frame == null ? 0.0 : 1.0,
+                                      duration: const Duration(
+                                        milliseconds: 220,
+                                      ),
+                                      curve: Curves.easeOut,
+                                      child: child,
+                                    );
+                                  },
+                              errorBuilder: (_, _, _) =>
+                                  const CoverPlaceholder(),
+                            ),
+                          ],
+                        )
+                      : const CoverPlaceholder(),
+                ),
               ),
               const SizedBox(width: LanghuanTheme.spaceMd),
 

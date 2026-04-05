@@ -187,15 +187,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     List<ChapterInfoModel> chapters,
     ReadingProgressModel? progress,
   ) {
+    if (widget.chapterId.isNotEmpty &&
+        chapters.any((chapter) => chapter.id == widget.chapterId)) {
+      return widget.chapterId;
+    }
+
     if (progress != null &&
         progress.chapterId.isNotEmpty &&
         chapters.any((chapter) => chapter.id == progress.chapterId)) {
       return progress.chapterId;
-    }
-
-    if (widget.chapterId.isNotEmpty &&
-        chapters.any((chapter) => chapter.id == widget.chapterId)) {
-      return widget.chapterId;
     }
 
     if (chapters.isNotEmpty) {

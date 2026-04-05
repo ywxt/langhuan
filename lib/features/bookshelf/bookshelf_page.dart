@@ -120,11 +120,38 @@ class BookshelfPage extends ConsumerWidget {
                               height: 60,
                               child: item.coverUrl == null
                                   ? const _SmallCoverPlaceholder()
-                                  : Image.network(
-                                      item.coverUrl!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, _, _) =>
-                                          const _SmallCoverPlaceholder(),
+                                  : Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        const _SmallCoverPlaceholder(),
+                                        Image.network(
+                                          item.coverUrl!,
+                                          fit: BoxFit.cover,
+                                          frameBuilder:
+                                              (
+                                                context,
+                                                child,
+                                                frame,
+                                                wasSynchronouslyLoaded,
+                                              ) {
+                                                if (wasSynchronouslyLoaded) {
+                                                  return child;
+                                                }
+                                                return AnimatedOpacity(
+                                                  opacity: frame == null
+                                                      ? 0.0
+                                                      : 1.0,
+                                                  duration: const Duration(
+                                                    milliseconds: 220,
+                                                  ),
+                                                  curve: Curves.easeOut,
+                                                  child: child,
+                                                );
+                                              },
+                                          errorBuilder: (_, _, _) =>
+                                              const _SmallCoverPlaceholder(),
+                                        ),
+                                      ],
                                     ),
                             ),
                           ),

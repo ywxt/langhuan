@@ -138,11 +138,36 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                   height: 160,
                   child: book.coverUrl == null
                       ? const _LargeCoverPlaceholder()
-                      : Image.network(
-                          book.coverUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) =>
-                              const _LargeCoverPlaceholder(),
+                      : Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            const _LargeCoverPlaceholder(),
+                            Image.network(
+                              book.coverUrl!,
+                              fit: BoxFit.cover,
+                              frameBuilder:
+                                  (
+                                    context,
+                                    child,
+                                    frame,
+                                    wasSynchronouslyLoaded,
+                                  ) {
+                                    if (wasSynchronouslyLoaded) {
+                                      return child;
+                                    }
+                                    return AnimatedOpacity(
+                                      opacity: frame == null ? 0.0 : 1.0,
+                                      duration: const Duration(
+                                        milliseconds: 220,
+                                      ),
+                                      curve: Curves.easeOut,
+                                      child: child,
+                                    );
+                                  },
+                              errorBuilder: (_, _, _) =>
+                                  const _LargeCoverPlaceholder(),
+                            ),
+                          ],
                         ),
                 ),
               ),

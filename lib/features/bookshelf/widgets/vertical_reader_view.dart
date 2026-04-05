@@ -310,13 +310,30 @@ class _VerticalReaderViewState extends BaseReaderViewState<VerticalReaderView> {
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: widget.bookCoverUrl != null
-                ? Image.network(
-                    widget.bookCoverUrl!,
-                    width: 120,
-                    height: 160,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        _buildCoverPlaceholder(context),
+                ? Stack(
+                    children: [
+                      _buildCoverPlaceholder(context),
+                      Image.network(
+                        widget.bookCoverUrl!,
+                        width: 120,
+                        height: 160,
+                        fit: BoxFit.cover,
+                        frameBuilder:
+                            (context, child, frame, wasSynchronouslyLoaded) {
+                              if (wasSynchronouslyLoaded) {
+                                return child;
+                              }
+                              return AnimatedOpacity(
+                                opacity: frame == null ? 0.0 : 1.0,
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeOut,
+                                child: child,
+                              );
+                            },
+                        errorBuilder: (_, __, ___) =>
+                            _buildCoverPlaceholder(context),
+                      ),
+                    ],
                   )
                 : _buildCoverPlaceholder(context),
           ),
