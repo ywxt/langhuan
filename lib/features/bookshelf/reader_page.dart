@@ -34,7 +34,6 @@ class ReaderPage extends ConsumerStatefulWidget {
 }
 
 class _ReaderPageState extends ConsumerState<ReaderPage> {
-  static const Duration _progressSaveDebounce = Duration(seconds: 1);
   static const Duration _controlsAutoHideDelay = Duration(seconds: 3);
 
   // ─ Loading and error state
@@ -45,6 +44,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   String? _currentChapterId;
   List<ChapterInfoModel> _chapters = const [];
   int _currentParagraphIndex = 0;
+  double _currentParagraphOffset = 0;
 
   // ─ UI state
   bool _showControls = false;
@@ -52,7 +52,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
   // ─ Controllers and notifiers
   late final ReadingProgressNotifier _readingProgressNotifier;
-  Timer? _saveTimer;
   Timer? _controlsTimer;
 
   @override
@@ -68,9 +67,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
   @override
   void dispose() {
-    _saveTimer?.cancel();
     _controlsTimer?.cancel();
-    unawaited(_saveReadingProgress(updateProviderState: false));
     super.dispose();
   }
 
@@ -91,43 +88,50 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   }
 
   void _onChapterChanged(String chapterId) {
-    _currentChapterId = chapterId;
-    _scheduleSaveProgress();
+    if (_currentChapterId != chapterId) {
+      setState(() {
+        _currentChapterId = chapterId;
+      });
+    }
+    _saveReadingProgressNow();
+  }
+
+  void _jumpToChapter(String chapterId) {
+    if (_currentChapterId == chapterId && _currentParagraphIndex == 0) {
+      return;
+    }
+    setState(() {
+      _currentChapterId = chapterId;
+      _currentParagraphIndex = 0;
+      _currentParagraphOffset = 0;
+    });
+    _saveReadingProgressNow();
   }
 
   void _onParagraphChanged(int paragraphIndex) {
     _currentParagraphIndex = paragraphIndex;
-    _scheduleSaveProgress();
+    _saveReadingProgressNow();
   }
 
-  void _scheduleSaveProgress() {
-    _saveTimer?.cancel();
-    _saveTimer = Timer(_progressSaveDebounce, () {
-      if (!mounted) return;
-      unawaited(_saveReadingProgress(updateProviderState: true));
-    });
+  void _onParagraphOffsetChanged(double offset) {
+    _currentParagraphOffset = offset;
+    _saveReadingProgressNow();
   }
 
-  Future<void> _saveReadingProgress({required bool updateProviderState}) async {
+  void _saveReadingProgressNow() {
+    if (!mounted) return;
+    unawaited(_saveReadingProgress());
+  }
+
+  Future<void> _saveReadingProgress() async {
     final chapterId = _currentChapterId;
     if (chapterId == null || chapterId.isEmpty) return;
 
-    if (updateProviderState) {
-      await _readingProgressNotifier.save(
-        feedId: widget.feedId,
-        bookId: widget.bookId,
-        chapterId: chapterId,
-        paragraphIndex: _currentParagraphIndex,
-      );
-      return;
-    }
-
-    await FeedService.instance.setReadingProgress(
+    await _readingProgressNotifier.save(
       feedId: widget.feedId,
       bookId: widget.bookId,
       chapterId: chapterId,
       paragraphIndex: _currentParagraphIndex,
-      updatedAtMs: DateTime.now().millisecondsSinceEpoch,
     );
   }
 
@@ -171,6 +175,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
         _chapters = chapters;
         _currentChapterId = resolvedChapterId;
         _currentParagraphIndex = initialParagraphIndex;
+        _currentParagraphOffset = 0;
         _isLoadingInitial = false;
         _loadError = null;
       });
@@ -185,7 +190,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
   Future<List<ChapterInfoModel>> _loadChaptersSnapshot() async {
     final cached = ref.read(chaptersProvider);
-    if (cached.bookId == widget.bookId && cached.items.isNotEmpty) {
+    if (cached.feedId == widget.feedId &&
+        cached.bookId == widget.bookId &&
+        cached.items.isNotEmpty) {
       return cached.items;
     }
     return FeedService.instance
@@ -296,6 +303,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                   chapters: _chapters,
                   initialChapterId: _currentChapterId ?? _chapters.first.id,
                   initialParagraphIndex: _currentParagraphIndex,
+                  initialParagraphOffset: _currentParagraphOffset,
                   readerMode: _readerMode,
                   contentPadding: EdgeInsets.fromLTRB(
                     LanghuanTheme.spaceLg,
@@ -305,6 +313,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                   ),
                   onChapterChanged: _onChapterChanged,
                   onParagraphChanged: _onParagraphChanged,
+                  onParagraphOffsetChanged: _onParagraphOffsetChanged,
                 ),
               ),
 
@@ -381,12 +390,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                         isSwitchingChapter: false,
                         onPrevious: () {
                           if (currentIdx > 0) {
-                            _onChapterChanged(_chapters[currentIdx - 1].id);
+                            _jumpToChapter(_chapters[currentIdx - 1].id);
                           }
                         },
                         onNext: () {
                           if (currentIdx < _chapters.length - 1) {
-                            _onChapterChanged(_chapters[currentIdx + 1].id);
+                            _jumpToChapter(_chapters[currentIdx + 1].id);
                           }
                         },
                       ),

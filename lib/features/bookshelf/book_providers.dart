@@ -11,6 +11,7 @@ import '../feeds/feed_service.dart';
 
 class ChaptersState {
   const ChaptersState({
+    this.feedId = '',
     this.bookId = '',
     this.items = const [],
     this.isLoading = false,
@@ -18,6 +19,7 @@ class ChaptersState {
     this.requestId,
   });
 
+  final String feedId;
   final String bookId;
   final List<ChapterInfoModel> items;
   final bool isLoading;
@@ -27,6 +29,7 @@ class ChaptersState {
   bool get hasError => error != null;
 
   ChaptersState copyWith({
+    String? feedId,
     String? bookId,
     List<ChapterInfoModel>? items,
     bool? isLoading,
@@ -34,6 +37,7 @@ class ChaptersState {
     String? Function()? requestId,
   }) {
     return ChaptersState(
+      feedId: feedId ?? this.feedId,
       bookId: bookId ?? this.bookId,
       items: items ?? this.items,
       isLoading: isLoading ?? this.isLoading,
@@ -52,7 +56,7 @@ class ChaptersNotifier extends Notifier<ChaptersState> {
   Future<void> load({required String feedId, required String bookId}) async {
     await _cancelCurrent();
 
-    state = ChaptersState(bookId: bookId, isLoading: true);
+    state = ChaptersState(feedId: feedId, bookId: bookId, isLoading: true);
 
     final (:requestId, :stream) = FeedService.instance.chapters(
       feedId: feedId,

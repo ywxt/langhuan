@@ -68,6 +68,7 @@ Widget buildTestWidget({
   int initialParagraphIndex = 0,
   ValueChanged<String>? onChapterChanged,
   ValueChanged<int>? onParagraphChanged,
+  ValueChanged<double>? onParagraphOffsetChanged,
 }) {
   return MaterialApp(
     localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -85,6 +86,7 @@ Widget buildTestWidget({
             contentPadding: const EdgeInsets.all(16),
             onChapterChanged: onChapterChanged ?? (_) {},
             onParagraphChanged: onParagraphChanged ?? (_) {},
+            onParagraphOffsetChanged: onParagraphOffsetChanged ?? (_) {},
           ),
         ),
       ),
@@ -170,8 +172,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Should have a ListView.
-      expect(find.byType(ListView), findsOneWidget);
+      // Should have a CustomScrollView.
+      expect(find.byType(CustomScrollView), findsOneWidget);
 
       // Should have ParagraphView widgets.
       expect(find.byType(ParagraphView), findsWidgets);
@@ -202,7 +204,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Scroll down to see chapter markers.
-      await tester.drag(find.byType(ListView), const Offset(0, -300));
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -300));
       await tester.pumpAndSettle();
 
       // Should have Divider widgets (from chapter markers).
@@ -234,7 +236,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Scroll down to see the error marker.
-      await tester.drag(find.byType(ListView), const Offset(0, -500));
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
       await tester.pumpAndSettle();
 
       // Should show a ChapterStatusBlock for the error.
@@ -274,13 +276,50 @@ void main() {
 
       // Scroll down significantly.
       for (int i = 0; i < 5; i++) {
-        await tester.drag(find.byType(ListView), const Offset(0, -300));
+        await tester.drag(find.byType(CustomScrollView), const Offset(0, -300));
         await tester.pumpAndSettle();
       }
 
       // Should have detected chapter changes.
       // (May or may not have changed depending on content length.)
-      expect(find.byType(ListView), findsOneWidget);
+      expect(find.byType(CustomScrollView), findsOneWidget);
+
+      loader.dispose();
+    });
+
+    testWidgets('reports paragraph progress while scrolling', (tester) async {
+      final chapters = makeChapters(2);
+      provider.immediateContent['ch-0'] = [
+        const ParagraphContentTitle(text: 'Title of ch-0'),
+        for (int i = 0; i < 20; i++)
+          ParagraphContentText(content: 'Paragraph $i of ch-0'),
+      ];
+      provider.immediateContent['ch-1'] = makeContent('ch-1');
+
+      final loader = ChapterLoader(
+        feedId: 'f1',
+        bookId: 'b1',
+        chapters: chapters,
+        contentProvider: provider,
+      );
+
+      await loader.loadInitial('ch-0');
+
+      final reportedParagraphs = <int>[];
+      await tester.pumpWidget(
+        buildTestWidget(
+          loader: loader,
+          initialChapterId: 'ch-0',
+          onParagraphChanged: (idx) => reportedParagraphs.add(idx),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
+      await tester.pumpAndSettle();
+
+      // Should report at least one non-zero paragraph index as user scrolls.
+      expect(reportedParagraphs.any((idx) => idx > 0), isTrue);
 
       loader.dispose();
     });
@@ -310,45 +349,18 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Find the ListView.
-      final listViewFinder = find.byType(ListView);
-      expect(listViewFinder, findsOneWidget);
+      // Find the CustomScrollView.
+      final scrollViewFinder = find.byType(CustomScrollView);
+      expect(scrollViewFinder, findsOneWidget);
 
       // Trigger a loader change.
       loader.setCurrentChapter('ch-2');
       await tester.pumpAndSettle();
 
-      // ListView should still exist.
-      expect(listViewFinder, findsOneWidget);
+      // CustomScrollView should still exist.
+      expect(scrollViewFinder, findsOneWidget);
 
       loader.dispose();
-    });
-  });
-
-  group('VerticalItem model', () {
-    test('stableKey for content items', () {
-      const item = VerticalItem(
-        type: VerticalItemType.content,
-        chapterId: 'ch-1',
-        paragraphIndexInChapter: 3,
-      );
-      expect(item.stableKey, 'ch-1:3');
-    });
-
-    test('stableKey for boundary items', () {
-      const top = VerticalItem(type: VerticalItemType.topBoundary);
-      expect(top.stableKey, '__top_boundary__');
-
-      const bottom = VerticalItem(type: VerticalItemType.bottomBoundary);
-      expect(bottom.stableKey, '__bottom_boundary__');
-    });
-
-    test('stableKey for chapter markers', () {
-      const marker = VerticalItem(
-        type: VerticalItemType.chapterMarker,
-        chapterId: 'ch-2',
-      );
-      expect(marker.stableKey, '__marker_ch-2__');
     });
   });
 }

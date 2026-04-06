@@ -111,6 +111,7 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
   bool _suppressPageChanged = false;
   bool _isScrolling = false;
   bool _deferAnchorCorrection = false;
+  bool _pendingExternalJump = false;
 
   @override
   void initState() {
@@ -136,6 +137,20 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
       widget.loader.addListener(_onLoaderChanged);
       _pagesCache.clear();
     }
+
+    final positionChanged =
+        oldWidget.initialChapterId != widget.initialChapterId ||
+        oldWidget.initialParagraphIndex != widget.initialParagraphIndex;
+    if (positionChanged && widget.initialChapterId.isNotEmpty) {
+      _currentChapterId = widget.initialChapterId;
+      _windowChapterId = widget.initialChapterId;
+      _currentPageInChapter = _computeInitialPageOffset();
+      _currentPageKey =
+          'content:${widget.initialChapterId}:$_currentPageInChapter';
+      _isOnEndOfBook = false;
+      _pendingExternalJump = true;
+      if (mounted) setState(() {});
+    }
   }
 
   void _onLoaderChanged() {
@@ -159,7 +174,8 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
     _pagesCache.clear();
 
     final theme = Theme.of(context);
-    final bodyLarge = theme.textTheme.bodyLarge?.copyWith(height: 1.8) ??
+    final bodyLarge =
+        theme.textTheme.bodyLarge?.copyWith(height: 1.8) ??
         const TextStyle(fontSize: 16, height: 1.8);
     final headlineSmall =
         theme.textTheme.headlineSmall ?? const TextStyle(fontSize: 24);
@@ -209,24 +225,21 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
     }
 
     _prevChapterId = currentIdx > 0 ? chapters[currentIdx - 1].id : null;
-    _nextChapterId =
-        currentIdx < chapters.length - 1 ? chapters[currentIdx + 1].id : null;
+    _nextChapterId = currentIdx < chapters.length - 1
+        ? chapters[currentIdx + 1].id
+        : null;
   }
 
   List<_FlatPage> _buildPagesForChapter(String chapterId) {
     final slot = widget.loader.getSlot(chapterId);
     if (slot == null) {
-      return [
-        _FlatPage(kind: _FlatPageKind.loading, chapterId: chapterId),
-      ];
+      return [_FlatPage(kind: _FlatPageKind.loading, chapterId: chapterId)];
     }
 
     if (slot.isReady) {
       final chapterPages = _getPages(chapterId);
       if (chapterPages.isEmpty) {
-        return [
-          _FlatPage(kind: _FlatPageKind.loading, chapterId: chapterId),
-        ];
+        return [_FlatPage(kind: _FlatPageKind.loading, chapterId: chapterId)];
       }
       return [
         for (int i = 0; i < chapterPages.length; i++)
@@ -249,9 +262,7 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
       ];
     }
 
-    return [
-      _FlatPage(kind: _FlatPageKind.loading, chapterId: chapterId),
-    ];
+    return [_FlatPage(kind: _FlatPageKind.loading, chapterId: chapterId)];
   }
 
   // ── Build flat page list ──────────────────────────────────────────────
@@ -265,7 +276,9 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
     _appendChapterPages(pages, _nextChapterId);
 
     // End of book indicator.
-    if (widget.loader.isAtBookEnd && _nextChapterId == null && pages.isNotEmpty) {
+    if (widget.loader.isAtBookEnd &&
+        _nextChapterId == null &&
+        pages.isNotEmpty) {
       pages.add(const _FlatPage(kind: _FlatPageKind.endOfBook));
     }
 
@@ -296,8 +309,8 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
       ..clear()
       ..addEntries(
         pages.asMap().entries.map(
-              (entry) => MapEntry(_flatPageKey(entry.value), entry.key),
-            ),
+          (entry) => MapEntry(_flatPageKey(entry.value), entry.key),
+        ),
       );
   }
 
@@ -315,7 +328,9 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
   }
 
   String? _stableVisibleKeyFromController(List<_FlatPage> oldPages) {
-    if (_pageController == null || !_pageController!.hasClients || oldPages.isEmpty) {
+    if (_pageController == null ||
+        !_pageController!.hasClients ||
+        oldPages.isEmpty) {
       return _currentPageKey;
     }
 
@@ -378,7 +393,9 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
     _currentPageKey = _flatPageKey(page);
 
     _handleVisiblePageChange(page);
-    _reportParagraphFromPage(page);
+    if (!_isControllerScrolling()) {
+      _reportParagraphFromPage(page);
+    }
 
     _triggerPreload(_currentFlatIndex);
   }
@@ -450,8 +467,7 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
   /// the deferred window shift + position correction.
   void _onScrollingChanged() {
     if (_pageController == null || !_pageController!.hasClients) return;
-    final nowScrolling =
-        _pageController!.position.isScrollingNotifier.value;
+    final nowScrolling = _pageController!.position.isScrollingNotifier.value;
     final wasScrolling = _isScrolling;
     _isScrolling = nowScrolling;
 
@@ -514,19 +530,22 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
       chapterId: chapterId,
       pageInChapter: settledPage.pageIndexInChapter,
     );
+    _reportParagraphFromPage(settledPage);
   }
 
   void _attachScrollingListener() {
     if (_pageController == null || !_pageController!.hasClients) return;
     _isScrolling = _pageController!.position.isScrollingNotifier.value;
-    _pageController!.position.isScrollingNotifier
-        .addListener(_onScrollingChanged);
+    _pageController!.position.isScrollingNotifier.addListener(
+      _onScrollingChanged,
+    );
   }
 
   void _detachScrollingListener() {
     if (_pageController != null && _pageController!.hasClients) {
-      _pageController!.position.isScrollingNotifier
-          .removeListener(_onScrollingChanged);
+      _pageController!.position.isScrollingNotifier.removeListener(
+        _onScrollingChanged,
+      );
     }
   }
 
@@ -550,8 +569,7 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
   }
 
   void _triggerPreload(int flatIndex) {
-    final approachingEnd =
-        flatIndex >= _flatPages.length - 3; // near the end
+    final approachingEnd = flatIndex >= _flatPages.length - 3; // near the end
     final approachingStart = flatIndex <= 2; // near the start
 
     widget.loader.preloadIfNeeded(
@@ -600,10 +618,17 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
         _setFlatPages(newPages);
 
         if (!_initialJumpDone && _pageBreaker != null) {
-          // First build: compute initial position.
-          _initialJumpDone = true;
+          // First build with a page breaker: compute initial position.
+          // Only mark the jump as done when the target chapter's pages are
+          // available — otherwise _computeInitialPageOffset returns 0 and
+          // we'd lose the real paragraph position.
+          final initPages = _getPages(widget.initialChapterId);
+          if (initPages.isNotEmpty || widget.initialParagraphIndex <= 0) {
+            _initialJumpDone = true;
+          }
           _currentPageInChapter = _computeInitialPageOffset();
-          _currentPageKey = 'content:${widget.initialChapterId}:$_currentPageInChapter';
+          _currentPageKey =
+              'content:${widget.initialChapterId}:$_currentPageInChapter';
           _currentFlatIndex = _findCurrentFlatIndex(_flatPages);
           _replacePageController(_currentFlatIndex);
         } else {
@@ -611,6 +636,32 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
           // findChildIndexCallback for child remapping.
           _currentFlatIndex = _findCurrentFlatIndex(_flatPages);
           _ensurePageController(_currentFlatIndex);
+
+          if (_pendingExternalJump &&
+              _pageController != null &&
+              _pageController!.hasClients) {
+            _pendingExternalJump = false;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted ||
+                  _pageController == null ||
+                  !_pageController!.hasClients) {
+                return;
+              }
+              if (_isControllerScrolling()) {
+                _pendingExternalJump = true;
+                return;
+              }
+              _suppressPageChanged = true;
+              _pageController!.jumpToPage(_currentFlatIndex);
+              _suppressPageChanged = false;
+              if (_currentFlatIndex >= 0 &&
+                  _currentFlatIndex < _flatPages.length) {
+                final page = _flatPages[_currentFlatIndex];
+                _handleVisiblePageChange(page);
+                _reportParagraphFromPage(page);
+              }
+            });
+          }
 
           // Keep viewport anchored to the same logical page when list shape
           // changes (e.g. loading page replaced by N content pages).
@@ -622,7 +673,9 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
             final newIdx = _flatIndexByKey[anchorKey]!;
             if (oldIdx != newIdx) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted || _pageController == null || !_pageController!.hasClients) {
+                if (!mounted ||
+                    _pageController == null ||
+                    !_pageController!.hasClients) {
                   return;
                 }
                 if (_isControllerScrolling()) {
@@ -673,10 +726,7 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
           child: PageContentView(page: page.page!),
         );
       case _FlatPageKind.loading:
-        return _buildLoadingPage(
-          context,
-          title: _chapterTitle(page.chapterId),
-        );
+        return _buildLoadingPage(context, title: _chapterTitle(page.chapterId));
       case _FlatPageKind.error:
         return _buildErrorPage(
           context,
@@ -787,26 +837,20 @@ class ResolvedPage {
   const ResolvedPage.content({
     required String chapterId,
     required PageContent page,
-  }) : this._(
-          kind: ResolvedPageKind.content,
-          chapterId: chapterId,
-          page: page,
-        );
+  }) : this._(kind: ResolvedPageKind.content, chapterId: chapterId, page: page);
 
   const ResolvedPage.loading({required String chapterId})
-      : this._(kind: ResolvedPageKind.loading, chapterId: chapterId);
+    : this._(kind: ResolvedPageKind.loading, chapterId: chapterId);
 
-  const ResolvedPage.error({
-    required String chapterId,
-    String? errorMessage,
-  }) : this._(
-          kind: ResolvedPageKind.error,
-          chapterId: chapterId,
-          errorMessage: errorMessage,
-        );
+  const ResolvedPage.error({required String chapterId, String? errorMessage})
+    : this._(
+        kind: ResolvedPageKind.error,
+        chapterId: chapterId,
+        errorMessage: errorMessage,
+      );
 
   const ResolvedPage.bookInfo() : this._(kind: ResolvedPageKind.bookInfo);
   const ResolvedPage.endOfBook() : this._(kind: ResolvedPageKind.endOfBook);
   const ResolvedPage.loadingBoundary()
-      : this._(kind: ResolvedPageKind.loadingBoundary);
+    : this._(kind: ResolvedPageKind.loadingBoundary);
 }

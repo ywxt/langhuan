@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../feeds/feed_service.dart';
@@ -23,10 +25,12 @@ class ChapterContentManager extends StatefulWidget {
     required this.chapters,
     required this.initialChapterId,
     required this.initialParagraphIndex,
+    this.initialParagraphOffset = 0,
     required this.readerMode,
     required this.contentPadding,
     required this.onChapterChanged,
     required this.onParagraphChanged,
+    required this.onParagraphOffsetChanged,
   });
 
   final String feedId;
@@ -34,10 +38,12 @@ class ChapterContentManager extends StatefulWidget {
   final List<ChapterInfoModel> chapters;
   final String initialChapterId;
   final int initialParagraphIndex;
+  final double initialParagraphOffset;
   final ReaderMode readerMode;
   final EdgeInsets contentPadding;
   final ValueChanged<String> onChapterChanged;
   final ValueChanged<int> onParagraphChanged;
+  final ValueChanged<double> onParagraphOffsetChanged;
 
   @override
   State<ChapterContentManager> createState() => _ChapterContentManagerState();
@@ -51,16 +57,30 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   // Track current position for mode switching.
   late String _currentChapterId;
   int _currentParagraphIndex = 0;
+  double _currentParagraphOffset = 0;
+
+  /// Vertical mode keeps a sliding window of 5 chapters: the current chapter
+  /// plus two on each side.  CustomScrollView with center key ensures
+  /// evicting far-away chapters does not shift the viewport.
+  /// Horizontal mode uses a 3-chapter sliding window.
+  int get _maxLoaded {
+    if (widget.readerMode == ReaderMode.verticalScroll) {
+      return 5;
+    }
+    return 3;
+  }
 
   @override
   void initState() {
     super.initState();
     _currentChapterId = widget.initialChapterId;
     _currentParagraphIndex = widget.initialParagraphIndex;
+    _currentParagraphOffset = widget.initialParagraphOffset;
     _loader = ChapterLoader(
       feedId: widget.feedId,
       bookId: widget.bookId,
       chapters: widget.chapters,
+      maxLoaded: _maxLoaded,
     );
     _initialize();
   }
@@ -69,6 +89,30 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   void dispose() {
     _loader.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant ChapterContentManager oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.initialChapterId == widget.initialChapterId &&
+        oldWidget.initialParagraphIndex == widget.initialParagraphIndex &&
+        oldWidget.initialParagraphOffset == widget.initialParagraphOffset) {
+      return;
+    }
+
+    if (widget.initialChapterId.isEmpty) return;
+
+    _currentChapterId = widget.initialChapterId;
+    _currentParagraphIndex = widget.initialParagraphIndex;
+    _currentParagraphOffset = widget.initialParagraphOffset;
+    _loader.setCurrentChapter(widget.initialChapterId);
+    if (_loader.getSlot(widget.initialChapterId) == null) {
+      // Best-effort preload so target chapter is available quickly.
+      unawaited(_loader.preloadChapter(widget.initialChapterId));
+    }
+
+    if (mounted) setState(() {});
   }
 
   Future<void> _initialize() async {
@@ -101,6 +145,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       feedId: widget.feedId,
       bookId: widget.bookId,
       chapters: widget.chapters,
+      maxLoaded: _maxLoaded,
     );
     await _initialize();
   }
@@ -113,6 +158,11 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   void _onParagraphChanged(int paragraphIndex) {
     _currentParagraphIndex = paragraphIndex;
     widget.onParagraphChanged(paragraphIndex);
+  }
+
+  void _onParagraphOffsetChanged(double offset) {
+    _currentParagraphOffset = offset;
+    widget.onParagraphOffsetChanged(offset);
   }
 
   @override
@@ -153,9 +203,11 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
         loader: _loader,
         initialChapterId: _currentChapterId,
         initialParagraphIndex: _currentParagraphIndex,
+        initialParagraphOffset: _currentParagraphOffset,
         contentPadding: widget.contentPadding,
         onChapterChanged: _onChapterChanged,
         onParagraphChanged: _onParagraphChanged,
+        onParagraphOffsetChanged: _onParagraphOffsetChanged,
       );
     }
 

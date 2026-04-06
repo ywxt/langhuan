@@ -37,6 +37,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
         'feedId': widget.feedId,
         'bookId': widget.bookId,
         'chapterId': chapterId,
+        'paragraphIndex': '0',
       },
     );
   }
