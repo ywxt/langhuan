@@ -13,6 +13,7 @@ import 'book_providers.dart';
 import 'reading_progress_provider.dart';
 import 'widgets/chapter_content_manager.dart';
 import 'widgets/reader_bottom_bar.dart';
+import 'widgets/reader_types.dart';
 
 class ReaderPage extends ConsumerStatefulWidget {
   const ReaderPage({
@@ -20,11 +21,13 @@ class ReaderPage extends ConsumerStatefulWidget {
     required this.feedId,
     required this.bookId,
     required this.chapterId,
+    this.paragraphIndex = 0,
   });
 
   final String feedId;
   final String bookId;
   final String chapterId;
+  final int paragraphIndex;
 
   @override
   ConsumerState<ReaderPage> createState() => _ReaderPageState();
@@ -149,10 +152,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
             .load(feedId: widget.feedId, bookId: widget.bookId),
       );
       final resolvedChapterId = _resolveInitialChapterId(chapters, progress);
-      final initialParagraphIndex =
-          progress != null && progress.chapterId == resolvedChapterId
-          ? progress.paragraphIndex
-          : 0;
+      // Use router paragraph if the router specified a chapter and it matches,
+      // otherwise fall back to saved reading progress.
+      int initialParagraphIndex;
+      if (widget.chapterId.isNotEmpty &&
+          widget.chapterId == resolvedChapterId &&
+          widget.paragraphIndex > 0) {
+        initialParagraphIndex = widget.paragraphIndex;
+      } else if (progress != null && progress.chapterId == resolvedChapterId) {
+        initialParagraphIndex = progress.paragraphIndex;
+      } else {
+        initialParagraphIndex = 0;
+      }
 
       if (!mounted) return;
 
@@ -213,7 +224,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final bookInfo = ref.watch(bookInfoProvider);
 
     if (widget.feedId.isEmpty || widget.bookId.isEmpty) {
       return Scaffold(
@@ -295,10 +305,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                   ),
                   onChapterChanged: _onChapterChanged,
                   onParagraphChanged: _onParagraphChanged,
-                  bookTitle: bookInfo.book?.title,
-                  bookAuthor: bookInfo.book?.author,
-                  bookCoverUrl: bookInfo.book?.coverUrl,
-                  bookDescription: bookInfo.book?.description,
                 ),
               ),
 

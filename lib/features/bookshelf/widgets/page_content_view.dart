@@ -20,21 +20,30 @@ class PageContentView extends StatelessWidget {
     final theme = Theme.of(context);
     final items = page.items;
 
-    // ClipRect absorbs sub-pixel overflow from page-breaking rounding.
+    // The page-breaker may produce sub-pixel rounding that makes the
+    // content fractionally taller than the available space.  Wrap in an
+    // UnconstrainedBox (vertical only) so the Column can lay out at its
+    // natural height, then ClipRect trims the excess without triggering
+    // a RenderFlex overflow warning.
     return ClipRect(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (int i = 0; i < items.length; i++) ...[
-            if (i > 0)
-              SizedBox(
-                height: items[i].source is ParagraphContentImage
-                    ? LanghuanTheme.spaceLg
-                    : LanghuanTheme.spaceMd,
-              ),
-            _buildItem(context, theme, items[i]),
+      child: OverflowBox(
+        alignment: Alignment.topCenter,
+        maxHeight: double.infinity,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (int i = 0; i < items.length; i++) ...[
+              if (i > 0)
+                SizedBox(
+                  height: items[i].source is ParagraphContentImage
+                      ? LanghuanTheme.spaceLg
+                      : LanghuanTheme.spaceMd,
+                ),
+              _buildItem(context, theme, items[i]),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
