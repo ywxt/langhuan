@@ -92,17 +92,13 @@ fn extract_header_lines(script: &str) -> Result<(Vec<HeaderEntry>, usize)> {
     }
 
     if !in_header {
-        return Err(Error::ScriptParse {
-            line: 1,
-            message: "missing ==Feed== header".to_owned(),
-        });
+        return Err(Error::script_parse(1, "missing ==Feed== header".to_owned(),
+        ));
     }
 
     if body_offset.is_none() {
-        return Err(Error::ScriptParse {
-            line: 1,
-            message: "missing ==/Feed== closing tag".to_owned(),
-        });
+        return Err(Error::script_parse(1, "missing ==/Feed== closing tag".to_owned(),
+        ));
     }
 
     Ok((entries, body_offset.unwrap_or(0)))
@@ -129,8 +125,8 @@ struct FeedMetaBuilder {
     author: Option<String>,
     description: Option<String>,
     base_url: Option<String>,
-    allowed_domains: HashSet<String>,
-    supports_bookshelf: bool,
+    access_domains: HashSet<String>,
+    schema_version: Option<u32>,
 }
 
 impl FeedMetaBuilder {
@@ -143,14 +139,14 @@ impl FeedMetaBuilder {
             "author" => self.author = Some(value),
             "description" => self.description = Some(value),
             "base_url" => self.base_url = Some(value),
-            "allowed_domain" => {
+            "access_domain" => {
                 let domain = value.trim().to_owned();
                 if !domain.is_empty() {
-                    self.allowed_domains.insert(domain);
+                    self.access_domains.insert(domain);
                 }
             }
-            "bookshelf" => {
-                self.supports_bookshelf = parse_bool_like(&value).unwrap_or(false);
+            "schema_version" => {
+                self.schema_version = value.trim().parse::<u32>().ok();
             }
             _ => {
                 // Unknown keys are silently ignored for forward compatibility.
@@ -164,11 +160,13 @@ impl FeedMetaBuilder {
         fn require(field: Option<String>, name: &str) -> Result<String> {
             match field {
                 Some(v) if !v.is_empty() => Ok(v),
-                _ => Err(Error::InvalidFeed {
-                    message: format!("missing required field: @{name}"),
-                }),
+                _ => Err(Error::invalid_feed(format!("missing required field: @{name}"))),
             }
         }
+
+        let schema_version = self.schema_version.ok_or_else(|| {
+            Error::invalid_feed("missing required field: @schema_version")
+        })?;
 
         Ok(FeedMeta {
             id: require(self.id, "id")?,
@@ -177,26 +175,16 @@ impl FeedMetaBuilder {
             author: self.author,
             description: self.description,
             base_url: require(self.base_url, "base_url")?,
-            allowed_domains: {
-                for entry in &self.allowed_domains {
+            access_domains: {
+                for entry in &self.access_domains {
                     if !is_valid_hostname(entry) {
-                        return Err(Error::InvalidFeed {
-                            message: format!("invalid domain in allowed_domains: '{entry}'"),
-                        });
+                        return Err(Error::invalid_feed(format!("invalid domain in access_domains: '{entry}'")));
                     }
                 }
-                self.allowed_domains
+                self.access_domains
             },
-            supports_bookshelf: self.supports_bookshelf,
+            schema_version,
         })
-    }
-}
-
-fn parse_bool_like(value: &str) -> Option<bool> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "true" | "1" | "yes" | "on" => Some(true),
-        "false" | "0" | "no" | "off" => Some(false),
-        _ => None,
     }
 }
 
@@ -226,6 +214,7 @@ fn build_meta(entries: &[HeaderEntry]) -> Result<FeedMeta> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::ScriptError;
 
     const SAMPLE_SCRIPT: &str = r#"-- ==Feed==
 -- @id           example-feed
@@ -234,6 +223,7 @@ mod tests {
 -- @author       someone
 -- @description  一個範例書源
 -- @base_url     https://example.com
+-- @schema_version 1
 -- ==/Feed==
 
 function search_request(keyword, cursor)
@@ -250,7 +240,7 @@ end
         assert_eq!(meta.author.as_deref(), Some("someone"));
         assert_eq!(meta.description.as_deref(), Some("一個範例書源"));
         assert_eq!(meta.base_url, "https://example.com");
-        assert!(!meta.supports_bookshelf);
+        assert_eq!(meta.schema_version, 1);
         // Body should start after the header.
         assert!(offset > 0);
         assert!(SAMPLE_SCRIPT[offset..].contains("function search_request"));
@@ -260,21 +250,21 @@ end
     fn missing_header_start() {
         let script = "-- just a comment\nfunction foo() end";
         let err = parse_meta(script).unwrap_err();
-        assert!(matches!(err, Error::ScriptParse { .. }));
+        assert!(matches!(err, Error::Script(ScriptError::Parse { .. })));
     }
 
     #[test]
     fn missing_header_end() {
         let script = "-- ==Feed==\n-- @id test\n-- @name test\n";
         let err = parse_meta(script).unwrap_err();
-        assert!(matches!(err, Error::ScriptParse { .. }));
+        assert!(matches!(err, Error::Script(ScriptError::Parse { .. })));
     }
 
     #[test]
     fn missing_required_field() {
         let script = "-- ==Feed==\n-- @id test\n-- ==/Feed==\n";
         let err = parse_meta(script).unwrap_err();
-        assert!(matches!(err, Error::InvalidFeed { .. }));
+        assert!(matches!(err, Error::Script(ScriptError::InvalidFeed { .. })));
     }
 
     #[test]
@@ -284,6 +274,7 @@ end
 -- @name    Test
 -- @version 1.0
 -- @base_url https://example.com
+-- @schema_version 1
 -- ==/Feed==
 "#;
         let (meta, _) = parse_meta(script).unwrap();
@@ -292,67 +283,90 @@ end
     }
 
     #[test]
-    fn allowed_domains_one_per_line() {
+    fn access_domains_one_per_line() {
         let script = r#"-- ==Feed==
 -- @id      test
 -- @name    Test
 -- @version 1.0
 -- @base_url https://example.com
--- @allowed_domain example.com
--- @allowed_domain cdn.example.com
+-- @schema_version 1
+-- @access_domain example.com
+-- @access_domain cdn.example.com
 -- ==/Feed==
 "#;
         let (meta, _) = parse_meta(script).unwrap();
         assert_eq!(
-            meta.allowed_domains,
+            meta.access_domains,
             HashSet::from(["example.com".to_string(), "cdn.example.com".to_string()])
         );
     }
 
     #[test]
-    fn allowed_domains_empty_when_omitted() {
+    fn access_domains_empty_when_omitted() {
         let (meta, _) = parse_meta(SAMPLE_SCRIPT).unwrap();
-        assert!(meta.allowed_domains.is_empty());
+        assert!(meta.access_domains.is_empty());
     }
 
     #[test]
-    fn allowed_domains_invalid_hostname() {
+    fn access_domains_invalid_hostname() {
         let script = r#"-- ==Feed==
 -- @id      test
 -- @name    Test
 -- @version 1.0
 -- @base_url https://example.com
--- @allowed_domain not a valid host
+-- @schema_version 1
+-- @access_domain not a valid host
 -- ==/Feed==
 "#;
         let err = parse_meta(script).unwrap_err();
-        assert!(matches!(err, Error::InvalidFeed { .. }));
+        assert!(matches!(err, Error::Script(ScriptError::InvalidFeed { .. })));
     }
 
     #[test]
-    fn allowed_domains_blank_value_ignored() {
-        let script = "-- ==Feed==\n-- @id test\n-- @name Test\n-- @version 1.0\n-- @base_url https://example.com\n-- @allowed_domain\n-- ==/Feed==\n";
+    fn access_domains_blank_value_ignored() {
+        let script = "-- ==Feed==\n-- @id test\n-- @name Test\n-- @version 1.0\n-- @base_url https://example.com\n-- @schema_version 1\n-- @access_domain\n-- ==/Feed==\n";
         let (meta, _) = parse_meta(script).unwrap();
-        assert!(meta.allowed_domains.is_empty());
+        assert!(meta.access_domains.is_empty());
     }
 
     #[test]
-    fn bookshelf_capability_defaults_false() {
-        let (meta, _) = parse_meta(SAMPLE_SCRIPT).unwrap();
-        assert!(!meta.supports_bookshelf);
-    }
-
-    #[test]
-    fn bookshelf_capability_true_when_declared() {
+    fn schema_version_missing_returns_error() {
         let script = r#"-- ==Feed==
 -- @id      test
 -- @name    Test
 -- @version 1.0
 -- @base_url https://example.com
--- @bookshelf true
+-- ==/Feed==
+"#;
+        let err = parse_meta(script).unwrap_err();
+        assert!(matches!(err, Error::Script(ScriptError::InvalidFeed { .. })));
+    }
+
+    #[test]
+    fn schema_version_invalid_value_returns_error() {
+        let script = r#"-- ==Feed==
+-- @id      test
+-- @name    Test
+-- @version 1.0
+-- @base_url https://example.com
+-- @schema_version abc
+-- ==/Feed==
+"#;
+        let err = parse_meta(script).unwrap_err();
+        assert!(matches!(err, Error::Script(ScriptError::InvalidFeed { .. })));
+    }
+
+    #[test]
+    fn schema_version_high_value_parses() {
+        let script = r#"-- ==Feed==
+-- @id      test
+-- @name    Test
+-- @version 1.0
+-- @base_url https://example.com
+-- @schema_version 999
 -- ==/Feed==
 "#;
         let (meta, _) = parse_meta(script).unwrap();
-        assert!(meta.supports_bookshelf);
+        assert_eq!(meta.schema_version, 999);
     }
 }

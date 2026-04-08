@@ -44,6 +44,12 @@ error.cache_schema_mismatch:
 error.cache_key_mismatch:
   en: "Chapter cache key mismatch for %{expected_feed_id}/%{expected_book_id}/%{expected_chapter_id}: found %{actual_feed_id}/%{actual_book_id}/%{actual_chapter_id}"
   zh: "章節緩存鍵不匹配：期望 %{expected_feed_id}/%{expected_book_id}/%{expected_chapter_id}，實際為 %{actual_feed_id}/%{actual_book_id}/%{actual_chapter_id}"
+error.registry_schema_too_new:
+  en: "Registry schema version %{file_version} is newer than supported version %{supported_version}. Please update the app."
+  zh: "書源目錄架構版本 %{file_version} 高於支持的版本 %{supported_version}，請更新應用。"
+error.feed_schema_too_new:
+  en: "Feed '%{feed_id}' requires schema version %{file_version}, but only version %{supported_version} is supported. Please update the app."
+  zh: "書源「%{feed_id}」需要架構版本 %{file_version}，但僅支持版本 %{supported_version}，請更新應用。"
 error_target.bookshelf:
   en: "bookshelf storage"
   zh: "書架存儲"

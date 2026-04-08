@@ -10,7 +10,12 @@ import 'reader_display_mapper.dart';
 import 'reader_types.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// VerticalReaderView
+// VerticalReaderView — per-chapter sliver architecture
+//
+// Each chapter is rendered as one SliverToBoxAdapter containing a Column of
+// all its paragraphs (or a loading/error placeholder).  The CustomScrollView
+// stitches them together with a `center` key on the current chapter's sliver
+// so that additions above/below never shift the viewport.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class VerticalReaderView extends StatefulWidget {
@@ -45,9 +50,7 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
   /// The chapter that sits at scroll offset 0 (the center key target).
   late String _centerChapterId;
 
-  /// Key for the center (forward) sliver — placed on the center chapter's
-  /// own content sliver so that additions above/below don't shift the
-  /// viewport.
+  /// Key for the center sliver.
   final _centerSliverKey = GlobalKey();
 
   /// GlobalKeys for content paragraphs — used for scroll-to and detection.
@@ -59,11 +62,10 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
   _VisiblePosition? _pendingPosition;
 
   /// The last position we reported upward via _commitPosition.
-  /// When the parent rebuilds us with these exact values, didUpdateWidget
-  /// knows it is just an echo and must NOT treat it as an external jump.
-  /// A genuinely different position (e.g. button press) will not match.
   ({String chapterId, int paragraphIndex, double paragraphOffset})?
-  _lastReportedPosition;
+      _lastReportedPosition;
+
+  // ─ Lifecycle ─────────────────────────────────────────────────────────────
 
   @override
   void initState() {
@@ -92,15 +94,12 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
 
     final positionChanged =
         oldWidget.initialChapterId != widget.initialChapterId ||
-        oldWidget.initialParagraphIndex != widget.initialParagraphIndex ||
-        oldWidget.initialParagraphOffset != widget.initialParagraphOffset;
+            oldWidget.initialParagraphIndex != widget.initialParagraphIndex ||
+            oldWidget.initialParagraphOffset != widget.initialParagraphOffset;
 
     if (!positionChanged) return;
 
-    // Ignore position changes that we ourselves reported upward via
-    // _commitPosition.  The parent just echoed our values back.
-    // A genuinely different position (e.g. prev/next chapter button)
-    // will NOT match and will proceed to _jumpToChapter.
+    // Ignore position changes that we ourselves reported upward.
     final lrp = _lastReportedPosition;
     if (lrp != null) {
       _lastReportedPosition = null;
@@ -124,29 +123,64 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
     if (mounted) setState(() {});
   }
 
-  // ─ Chapter jump (from TOC / bottom bar) ────────────────────────────────
+  // ─ Chapter jump (from TOC / bottom bar) ──────────────────────────────────
 
   void _jumpToChapter(String chapterId, int paragraph, double offset) {
     _pendingPosition = null;
     _centerChapterId = chapterId;
+    _lastReportedPosition = null;
+    _visibleChapterId = chapterId;
+    _paragraphKeys.clear();
 
-    // Replace scroll controller so the new center chapter starts at offset 0.
+    // Replace scroll controller so the center chapter starts at offset 0.
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _scrollController = ScrollController()..addListener(_onScroll);
 
+    _suppressDetection = true;
+
     if (paragraph > 0 || offset > 0) {
       _scrollToChapterParagraph(chapterId, paragraph, offset);
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _suppressDetection = false;
+        _onScrollEnd();
+      });
     }
     if (mounted) setState(() {});
   }
 
-  // ─ Scroll detection ────────────────────────────────────────────────────
+  // ─ Scroll detection ──────────────────────────────────────────────────────
 
   void _onScroll() {
     if (!_scrollController.hasClients || _suppressDetection) return;
     final pos = _detectVisiblePosition();
     if (pos != null) _pendingPosition = pos;
+
+    // Trigger preloading when approaching the edges of loaded content.
+    _triggerEdgePreload();
+  }
+
+  /// Ask the loader to preload the next/previous chapter when the scroll
+  /// position is within a threshold of the content boundary.  This makes
+  /// new chapters appear seamlessly as the user scrolls.
+  void _triggerEdgePreload() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    const threshold = 300.0; // px before reaching the edge
+
+    final approachingEnd =
+        pos.maxScrollExtent - pos.pixels < threshold;
+    final approachingStart =
+        pos.pixels - pos.minScrollExtent < threshold;
+
+    if (approachingEnd || approachingStart) {
+      widget.loader.preloadIfNeeded(
+        approachingEnd: approachingEnd,
+        approachingStart: approachingStart,
+      );
+    }
   }
 
   void _onScrollEnd() {
@@ -191,8 +225,6 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
       final revealed = vp.getOffsetToReveal(ro, 0.0);
       final rel = revealed.offset - _scrollController.offset;
 
-      // Item is at least partially visible (top above viewport bottom,
-      // bottom below viewport top).
       if (rel > -ro.size.height && rel <= 0) {
         final dist = rel.abs();
         if (dist < bestDist) {
@@ -212,11 +244,7 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
     return best;
   }
 
-  // ─ Scroll to a specific paragraph ──────────────────────────────────────
-
-  /// Maximum number of frames to retry when the target paragraph widget
-  /// has not been laid out yet (lazy SliverList).
-  static const _kMaxScrollRetries = 10;
+  // ─ Scroll to a specific paragraph ────────────────────────────────────────
 
   void _scrollToChapterParagraph(
     String chapterId,
@@ -224,8 +252,6 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
     double paragraphOffset, {
     int attempt = 0,
   }) {
-    // Suppress scroll detection for the entire jump sequence (including
-    // retries) so intermediate positions are not committed.
     _suppressDetection = true;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -238,21 +264,10 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
       final key = _paragraphKeys[keyStr];
 
       if (key == null || key.currentContext == null) {
-        if (attempt < _kMaxScrollRetries) {
-          // The target paragraph hasn't been built yet by the lazy
-          // SliverList.  Scroll toward the end of the currently-built
-          // content so that the framework lays out more children, then
-          // retry next frame.
-          if (_scrollController.hasClients) {
-            final pos = _scrollController.position;
-            final jump = (pos.maxScrollExtent).clamp(
-              pos.minScrollExtent,
-              pos.maxScrollExtent,
-            );
-            if (jump > _scrollController.offset) {
-              _scrollController.jumpTo(jump);
-            }
-          }
+        // Each chapter is a single Column so all paragraphs are laid out
+        // at once.  If the key doesn't exist the chapter hasn't loaded yet;
+        // retry next frame.
+        if (attempt < 10) {
           _scrollToChapterParagraph(
             chapterId,
             paragraphIndex,
@@ -260,7 +275,6 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
             attempt: attempt + 1,
           );
         } else {
-          // After max retries, give up — re-enable detection.
           _suppressDetection = false;
         }
         return;
@@ -287,7 +301,7 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
     });
   }
 
-  // ─ Key management ──────────────────────────────────────────────────────
+  // ─ Key helpers ───────────────────────────────────────────────────────────
 
   GlobalKey _getOrCreateKey(String chapterId, int paragraphIndex) {
     final keyStr = '$chapterId:$paragraphIndex';
@@ -301,7 +315,7 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
     });
   }
 
-  // ─ Build ───────────────────────────────────────────────────────────────
+  // ─ Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -321,22 +335,6 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
     int centerIdx = slots.indexWhere((s) => s.chapterId == _centerChapterId);
     if (centerIdx < 0) centerIdx = 0;
 
-    // Slots before center (reversed for upward growth).
-    final beforeSlots = slots.sublist(0, centerIdx).reversed.toList();
-    // Slots from center onward.
-    final forwardSlots = slots.sublist(centerIdx);
-
-    // Flatten each group into a list of _FlatItem descriptors.
-    final beforeItems = _flattenSlots(
-      beforeSlots,
-      firstIsTop: true,
-      isBeforeList: true,
-    );
-    final forwardItems = _flattenSlots(
-      forwardSlots,
-      firstIsTop: beforeSlots.isEmpty,
-    );
-
     // Prune paragraph keys for chapters no longer in slots.
     final validIds = slots.map((s) => s.chapterId).toSet();
     _pruneKeys(validIds);
@@ -354,8 +352,59 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
       }
     }
 
-    final hPadding = EdgeInsets.symmetric(
-      horizontal: widget.contentPadding.left,
+    final hPad = widget.contentPadding.left;
+
+    // ── Before-center slivers (reversed for upward growth) ─────────────
+    final beforeSlivers = <Widget>[];
+    for (int i = centerIdx - 1; i >= 0; i--) {
+      final isTopmost = i == 0;
+      beforeSlivers.add(
+        SliverToBoxAdapter(
+          key: ValueKey('ch-${slots[i].chapterId}'),
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: hPad,
+              right: hPad,
+              top: isTopmost ? widget.contentPadding.top : 0,
+            ),
+            child: _buildChapterColumn(
+              context,
+              slots[i],
+              showSeparator: !isTopmost,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // ── Center + forward slivers ───────────────────────────────────────
+    final forwardSlivers = <Widget>[];
+    for (int i = centerIdx; i < slots.length; i++) {
+      final isCenter = i == centerIdx;
+      final isTopmost = centerIdx == 0 && i == 0;
+      forwardSlivers.add(
+        SliverToBoxAdapter(
+          key: isCenter
+              ? _centerSliverKey
+              : ValueKey('ch-${slots[i].chapterId}'),
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: hPad),
+            child: _buildChapterColumn(
+              context,
+              slots[i],
+              showSeparator: !isTopmost,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Bottom boundary.
+    forwardSlivers.add(
+      SliverPadding(
+        padding: EdgeInsets.only(bottom: widget.contentPadding.bottom),
+        sliver: SliverToBoxAdapter(child: _buildBottomBoundary(context)),
+      ),
     );
 
     return NotificationListener<ScrollEndNotification>(
@@ -367,183 +416,80 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
         controller: _scrollController,
         center: _centerSliverKey,
         slivers: [
-          // ── Before-center: single stable SliverList (grows upward) ─
-          SliverPadding(
-            padding: EdgeInsets.only(
-              top: widget.contentPadding.top,
-              left: hPadding.left,
-              right: hPadding.right,
-            ),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) => _buildFlatItem(context, beforeItems, index),
-                childCount: beforeItems.length,
-                findChildIndexCallback: (Key key) =>
-                    _findFlatChildIndex(key, beforeItems),
-              ),
-            ),
-          ),
-
-          // ── Forward: single stable SliverList (grows downward) ─────
-          SliverPadding(
-            key: _centerSliverKey,
-            padding: EdgeInsets.only(
-              left: hPadding.left,
-              right: hPadding.right,
-            ),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) =>
-                    _buildFlatItem(context, forwardItems, index),
-                childCount: forwardItems.length,
-                findChildIndexCallback: (Key key) =>
-                    _findFlatChildIndex(key, forwardItems),
-              ),
-            ),
-          ),
-
-          // ── Bottom boundary ────────────────────────────────────────
-          SliverPadding(
-            padding: EdgeInsets.only(bottom: widget.contentPadding.bottom),
-            sliver: SliverToBoxAdapter(child: _buildBottomBoundary(context)),
-          ),
+          ...beforeSlivers,
+          ...forwardSlivers,
         ],
       ),
     );
   }
 
-  // ─ Flat item model ─────────────────────────────────────────────────────
+  // ─ Per-chapter widget builder ────────────────────────────────────────────
 
-  /// Flatten a list of [ChapterSlot]s into a flat list of items suitable
-  /// for a single [SliverList].  Each chapter contributes:
-  ///   - a chapter marker (separator / loading / error)
-  ///   - if ready: one item per paragraph
-  ///
-  /// [firstIsTop] indicates whether the first slot in visual order (the
-  /// topmost chapter) is in this group.
-  /// For the before-list (reversed), the topmost chapter is the last element.
-  /// For the forward-list, the topmost chapter is the first element.
-  /// [isBeforeList] distinguishes the two cases.
-  List<_FlatItem> _flattenSlots(
-    List<ChapterSlot> slots, {
-    required bool firstIsTop,
-    bool isBeforeList = false,
-  }) {
-    final items = <_FlatItem>[];
-    for (int si = 0; si < slots.length; si++) {
-      final slot = slots[si];
-      // The topmost chapter in the entire scroll view needs no separator.
-      final bool isFirst;
-      if (isBeforeList) {
-        // Before-list is reversed: last element is the topmost.
-        isFirst = firstIsTop && si == slots.length - 1;
-      } else {
-        // Forward-list: first element is the topmost.
-        isFirst = firstIsTop && si == 0;
-      }
-
-      if (slot.isLoading) {
-        items.add(
-          _FlatItem.marker(
-            slot: slot,
-            kind: ChapterDisplayKind.loading,
-            showSeparator: !isFirst,
-          ),
-        );
-        continue;
-      }
-
-      if (slot.isError) {
-        items.add(
-          _FlatItem.marker(
-            slot: slot,
-            kind: ChapterDisplayKind.error,
-            showSeparator: !isFirst,
-          ),
-        );
-        continue;
-      }
-
-      // Ready chapter.
-      if (!isFirst) {
-        items.add(
-          _FlatItem.marker(
-            slot: slot,
-            kind: ChapterDisplayKind.success,
-            showSeparator: true,
-          ),
-        );
-      }
-      final paragraphs = slot.paragraphs ?? const <ParagraphContent>[];
-      for (int pi = 0; pi < paragraphs.length; pi++) {
-        items.add(
-          _FlatItem.paragraph(
-            slot: slot,
-            paragraphIndex: pi,
-            content: paragraphs[pi],
-          ),
-        );
-      }
-    }
-    return items;
-  }
-
-  Widget _buildFlatItem(
+  /// Builds one chapter as a Column: optional separator, then either
+  /// loading/error placeholder or the full list of paragraphs.
+  Widget _buildChapterColumn(
     BuildContext context,
-    List<_FlatItem> items,
-    int index,
-  ) {
-    if (index < 0 || index >= items.length) return const SizedBox.shrink();
-    final item = items[index];
-
-    if (item.isMarker) {
-      String title;
-      if (item.kind == ChapterDisplayKind.success) {
-        final paragraphs = item.slot.paragraphs ?? const <ParagraphContent>[];
-        title = _resolveTitle(paragraphs, item.slot);
-      } else {
-        title = _slotTitle(item.slot);
-      }
+    ChapterSlot slot, {
+    required bool showSeparator,
+  }) {
+    if (slot.isLoading) {
       return _buildChapterMarker(
         context,
-        title: title,
-        kind: item.kind!,
-        chapterId: item.slot.chapterId,
-        errorMessage: item.slot.errorMessage,
-        showSeparator: item.showSeparator,
+        title: _slotTitle(slot),
+        kind: ChapterDisplayKind.loading,
+        chapterId: slot.chapterId,
+        showSeparator: showSeparator,
       );
     }
 
-    // Paragraph item.
-    final gk = _getOrCreateKey(item.slot.chapterId, item.paragraphIndex!);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: ParagraphView(key: gk, item: item.content!),
+    if (slot.isError) {
+      return _buildChapterMarker(
+        context,
+        title: _slotTitle(slot),
+        kind: ChapterDisplayKind.error,
+        chapterId: slot.chapterId,
+        errorMessage: slot.errorMessage,
+        showSeparator: showSeparator,
+      );
+    }
+
+    // Ready — build all paragraphs in a single Column.
+    final paragraphs = slot.paragraphs ?? const <ParagraphContent>[];
+    final title = _resolveTitle(paragraphs, slot);
+
+    // Skip the first paragraph if it is the title (already shown as header).
+    final hasInlineTitle =
+        paragraphs.isNotEmpty && paragraphs.first is ParagraphContentTitle;
+    final startIndex = hasInlineTitle ? 1 : 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (showSeparator) ...[
+          const Divider(),
+          const SizedBox(height: 8),
+        ],
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.labelMedium,
+            textAlign: TextAlign.center,
+          ),
+        ),
+        for (int pi = startIndex; pi < paragraphs.length; pi++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: ParagraphView(
+              key: _getOrCreateKey(slot.chapterId, pi),
+              item: paragraphs[pi],
+            ),
+          ),
+      ],
     );
   }
 
-  int? _findFlatChildIndex(Key key, List<_FlatItem> items) {
-    if (key is! GlobalKey) return null;
-    for (final entry in _paragraphKeys.entries) {
-      if (entry.value != key) continue;
-      final parts = entry.key.split(':');
-      if (parts.length != 2) continue;
-      final chId = parts[0];
-      final pIdx = int.tryParse(parts[1]);
-      if (pIdx == null) continue;
-      for (int i = 0; i < items.length; i++) {
-        final item = items[i];
-        if (!item.isMarker &&
-            item.slot.chapterId == chId &&
-            item.paragraphIndex == pIdx) {
-          return i;
-        }
-      }
-    }
-    return null;
-  }
-
-  // ─ Helpers ─────────────────────────────────────────────────────────────
+  // ─ Helpers ───────────────────────────────────────────────────────────────
 
   String _slotTitle(ChapterSlot slot) {
     final ch = widget.loader.chapterByTocIndex(slot.chapterIndex);
@@ -557,31 +503,17 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
     return _slotTitle(slot);
   }
 
-  // ─ Boundary widgets ───────────────────────────────────────────────────
+  // ─ Boundary widgets ──────────────────────────────────────────────────────
 
   Widget _buildBottomBoundary(BuildContext context) {
     final isTrueBookEnd =
         widget.loader.isAtBookEnd && !widget.loader.hasNewerUnloaded;
     if (isTrueBookEnd) return _buildEndOfBookBlock(context);
 
-    final slots = widget.loader.slots;
-    for (int i = slots.length - 1; i >= 0; i--) {
-      if (slots[i].isError) {
-        return ChapterStatusBlock(
-          kind: ChapterStatusBlockKind.error,
-          compact: false,
-          padding: const EdgeInsets.all(32),
-          message: slots[i].errorMessage,
-          onRetry: () => widget.loader.retryChapter(slots[i].chapterId),
-        );
-      }
-      if (slots[i].isReady) break;
-    }
-    return const ChapterStatusBlock(
-      kind: ChapterStatusBlockKind.loading,
-      compact: false,
-      padding: EdgeInsets.all(32),
-    );
+    // Not at the end of the book — the preloading mechanism will add new
+    // chapter slivers (with their own loading/error states) seamlessly.
+    // Show nothing here so there is no redundant loading indicator.
+    return const SizedBox.shrink();
   }
 
   Widget _buildEndOfBookBlock(BuildContext context) {
@@ -666,56 +598,4 @@ class _VisiblePosition {
     required this.paragraphIndex,
     required this.paragraphOffset,
   });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Scroll anchor — snapshot of a paragraph's viewport-relative position
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Flat item — descriptor for a single row in the flattened SliverList
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _FlatItem {
-  final ChapterSlot slot;
-
-  // Marker fields
-  final bool isMarker;
-  final ChapterDisplayKind? kind;
-  final bool showSeparator;
-
-  // Paragraph fields
-  final int? paragraphIndex;
-  final ParagraphContent? content;
-
-  const _FlatItem._({
-    required this.slot,
-    required this.isMarker,
-    this.kind,
-    this.showSeparator = false,
-    this.paragraphIndex,
-    this.content,
-  });
-
-  factory _FlatItem.marker({
-    required ChapterSlot slot,
-    required ChapterDisplayKind kind,
-    required bool showSeparator,
-  }) => _FlatItem._(
-    slot: slot,
-    isMarker: true,
-    kind: kind,
-    showSeparator: showSeparator,
-  );
-
-  factory _FlatItem.paragraph({
-    required ChapterSlot slot,
-    required int paragraphIndex,
-    required ParagraphContent content,
-  }) => _FlatItem._(
-    slot: slot,
-    isMarker: false,
-    paragraphIndex: paragraphIndex,
-    content: content,
-  );
 }

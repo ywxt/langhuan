@@ -138,12 +138,6 @@
   "bookDetailRemoveBookshelf": "Remove from Local Bookshelf",
   "@bookDetailRemoveBookshelf": { "description": "Button label to remove current book from local bookshelf" },
 
-  "bookDetailSourceSupportsBookshelf": "This feed supports bookshelf",
-  "@bookDetailSourceSupportsBookshelf": { "description": "Hint text when current feed supports bookshelf" },
-
-  "bookDetailSourceNoBookshelf": "This feed does not support bookshelf",
-  "@bookDetailSourceNoBookshelf": { "description": "Hint text when current feed does not support bookshelf" },
-
   "readerTitle": "Reader",
   "@readerTitle": { "description": "Reader page title fallback" },
 
@@ -338,10 +332,10 @@
   "@addFeedPreviewTitle": { "description": "Section heading for the feed preview card" },
 
   "addFeedAllowedDomains": "Accesses domains",
-  "@addFeedAllowedDomains": { "description": "Label for the allowed domains list in the feed preview" },
+  "@addFeedAllowedDomains": { "description": "Label for the access domains list in the feed preview" },
 
   "addFeedNoDomainRestriction": "No domain restrictions",
-  "@addFeedNoDomainRestriction": { "description": "Shown when allowed_domains is empty" },
+  "@addFeedNoDomainRestriction": { "description": "Shown when access_domains is empty" },
 
   "addFeedIsUpgrade": "Upgrading {from} \u2192 {to}",
   "@addFeedIsUpgrade": {

@@ -332,18 +332,6 @@ abstract class AppLocalizations {
   /// **'Remove from Local Bookshelf'**
   String get bookDetailRemoveBookshelf;
 
-  /// Hint text when current feed supports bookshelf
-  ///
-  /// In en, this message translates to:
-  /// **'This feed supports bookshelf'**
-  String get bookDetailSourceSupportsBookshelf;
-
-  /// Hint text when current feed does not support bookshelf
-  ///
-  /// In en, this message translates to:
-  /// **'This feed does not support bookshelf'**
-  String get bookDetailSourceNoBookshelf;
-
   /// Reader page title fallback
   ///
   /// In en, this message translates to:

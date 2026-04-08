@@ -4,7 +4,7 @@ use async_stream::stream;
 use tokio_stream::StreamExt;
 
 use crate::error::Result;
-use crate::feed::{Feed, FeedBookshelfSupport, FeedMeta, FeedStream};
+use crate::feed::{Feed, FeedMeta, FeedStream};
 use crate::model::{BookInfo, ChapterInfo, Paragraph};
 
 pub mod models;
@@ -447,15 +447,6 @@ impl<F: Feed> Feed for CachedFeed<F> {
 
     fn meta(&self) -> &FeedMeta {
         self.inner.meta()
-    }
-}
-
-impl<F> FeedBookshelfSupport for CachedFeed<F>
-where
-    F: Feed + FeedBookshelfSupport,
-{
-    fn bookshelf_capabilities(&self) -> crate::bookshelf::BookshelfCapabilities {
-        self.inner.bookshelf_capabilities()
     }
 }
 

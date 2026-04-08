@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use tokio::time::sleep;
 
 use crate::error::Result;
-use crate::feed::{Feed, FeedBookshelfSupport, FeedMeta, FeedStream};
+use crate::feed::{Feed, FeedMeta, FeedStream};
 use crate::model::{
     BookInfo, ChapterInfo, HttpBody, HttpRequest, HttpResponse, Page, Paragraph, SearchResult,
 };
@@ -269,19 +269,17 @@ impl LuaFeed {
     /// Execute an HTTP request described by an [`HttpRequest`] and return an
     /// [`HttpResponse`].
     async fn execute_http(&self, req: &HttpRequest) -> Result<HttpResponse> {
-        // Enforce allowed_domains before making any network call.
-        if !self.meta.allowed_domains.is_empty()
-            && !domain_allowed(&req.url, &self.meta.allowed_domains)
+        // Enforce access_domains before making any network call.
+        if !self.meta.access_domains.is_empty()
+            && !domain_allowed(&req.url, &self.meta.access_domains)
         {
             tracing::warn!(
                 feed_id = %self.meta.id,
                 url = %req.url,
-                "blocked request by allowed_domains"
+                "blocked request by access_domains"
             );
-            return Err(crate::error::Error::DomainNotAllowed {
-                url: req.url.clone(),
-                allowed: self.meta.allowed_domains.clone(),
-            });
+            return Err(crate::error::Error::domain_not_allowed(req.url.clone(), self.meta.access_domains.clone(),
+            ));
         }
 
         let method = req.method.parse().unwrap_or(reqwest::Method::GET);
@@ -343,12 +341,12 @@ impl LuaFeed {
 // Domain allowlist helper
 // ---------------------------------------------------------------------------
 
-/// Check whether the host of `url` is permitted by `allowed_domains`.
+/// Check whether the host of `url` is permitted by `access_domains`.
 ///
-/// Each entry in `allowed_domains` must be an exact hostname.
+/// Each entry in `access_domains` must be an exact hostname.
 /// Returns `true` if the host is allowed, `false` if the URL cannot be parsed
 /// or the host is not in the list.
-fn domain_allowed(url: &str, allowed_domains: &HashSet<String>) -> bool {
+fn domain_allowed(url: &str, access_domains: &HashSet<String>) -> bool {
     let parsed = match reqwest::Url::parse(url) {
         Ok(u) => u,
         Err(_) => return false,
@@ -357,7 +355,7 @@ fn domain_allowed(url: &str, allowed_domains: &HashSet<String>) -> bool {
         Some(h) => h,
         None => return false,
     };
-    allowed_domains.contains(host)
+    access_domains.contains(host)
 }
 
 // ---------------------------------------------------------------------------
@@ -419,14 +417,6 @@ impl Feed for LuaFeed {
     }
 }
 
-impl FeedBookshelfSupport for LuaFeed {
-    fn bookshelf_capabilities(&self) -> crate::bookshelf::BookshelfCapabilities {
-        crate::bookshelf::BookshelfCapabilities {
-            supports_bookshelf: self.meta.supports_bookshelf,
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -436,7 +426,7 @@ mod tests {
     use tokio_stream::StreamExt as _;
 
     use super::*;
-    use crate::error::Error;
+    use crate::error::{Error, ScriptError};
     use crate::script::runtime::ScriptEngine;
 
     // -----------------------------------------------------------------------
@@ -451,24 +441,12 @@ mod tests {
 -- @name        Test Feed
 -- @version     1.0
 -- @base_url    {base_url}
+-- @schema_version 1
 -- ==/Feed==
 "#
         )
     }
 
-    /// Build a minimal feed script header with optional bookshelf capability.
-    fn make_header_with_bookshelf(base_url: &str, supports_bookshelf: bool) -> String {
-        format!(
-            r#"-- ==Feed==
--- @id          test-feed
--- @name        Test Feed
--- @version     1.0
--- @base_url    {base_url}
--- @bookshelf   {supports_bookshelf}
--- ==/Feed==
-"#
-        )
-    }
 
     /// A Lua script body that:
     /// - `search.request(keyword, cursor)` → GET `meta.base_url/search?q=<keyword>&cursor=<cursor>`
@@ -733,7 +711,7 @@ return {{
 
         assert_eq!(results.len(), 1, "expected exactly one error item");
         assert!(
-            matches!(results[0], Err(Error::Lua(_))),
+            matches!(results[0], Err(Error::Script(ScriptError::Lua(_)))),
             "expected Lua error, got: {:?}",
             results[0]
         );
@@ -766,19 +744,5 @@ return {{
         assert_eq!(results[0].as_ref().unwrap().title, "Book One");
         assert_eq!(results[1].as_ref().unwrap().id, "22");
         assert_eq!(results[1].as_ref().unwrap().title, "Book Two");
-    }
-
-    #[tokio::test]
-    async fn bookshelf_capability_reads_from_header() {
-        use crate::feed::FeedBookshelfSupport as _;
-
-        let script = format!(
-            "{}{}",
-            make_header_with_bookshelf("https://example.com", true),
-            SEARCH_BODY
-        );
-
-        let feed = ScriptEngine::new().load_feed(&script).await.expect("load");
-        assert!(feed.bookshelf_capabilities().supports_bookshelf);
     }
 }

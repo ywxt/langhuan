@@ -3,14 +3,13 @@ use langhuan::bookshelf::{
     BookIdentity, BookshelfEntry, LocalBookshelf, LocalBookshelfAddOutcome,
     LocalBookshelfRemoveOutcome,
 };
-use langhuan::feed::{Feed, FeedBookshelfSupport};
+use langhuan::feed::Feed;
 use messages::prelude::{Actor, Address, Context, Handler, Notifiable};
 use rinf::{DartSignal, RustSignal};
 use tokio::task::JoinSet;
 
 use crate::signals::{
-    BookshelfAddRequest, BookshelfAddResult, BookshelfCapabilitiesRequest,
-    BookshelfCapabilitiesResult, BookshelfListEnd, BookshelfListItem, BookshelfListOutcome,
+    BookshelfAddRequest, BookshelfAddResult, BookshelfListEnd, BookshelfListItem, BookshelfListOutcome,
     BookshelfListRequest, BookshelfOperationOutcome, BookshelfRemoveRequest, BookshelfRemoveResult,
 };
 
@@ -31,8 +30,7 @@ impl BookshelfActor {
         let mut _owned_tasks = JoinSet::new();
         _owned_tasks.spawn(Self::listen_to_add(self_addr.clone()));
         _owned_tasks.spawn(Self::listen_to_remove(self_addr.clone()));
-        _owned_tasks.spawn(Self::listen_to_list(self_addr.clone()));
-        _owned_tasks.spawn(Self::listen_to_capabilities(self_addr));
+        _owned_tasks.spawn(Self::listen_to_list(self_addr));
 
         Self {
             registry_addr,
@@ -218,29 +216,6 @@ impl BookshelfActor {
         .send_signal_to_dart();
     }
 
-    async fn capabilities(
-        &mut self,
-        req: BookshelfCapabilitiesRequest,
-    ) -> BookshelfCapabilitiesResult {
-        tracing::debug!(request_id = %req.request_id, feed_id = %req.feed_id, "received bookshelf capabilities request");
-        let supports_bookshelf = match self
-            .registry_addr
-            .send(GetFeed {
-                feed_id: req.feed_id.clone(),
-            })
-            .await
-        {
-            Ok(Ok(feed)) => feed.bookshelf_capabilities().supports_bookshelf,
-            _ => false,
-        };
-
-        BookshelfCapabilitiesResult {
-            request_id: req.request_id,
-            feed_id: req.feed_id,
-            supports_bookshelf,
-        }
-    }
-
     async fn listen_to_add(mut self_addr: Address<Self>) {
         let receiver = BookshelfAddRequest::get_dart_signal_receiver();
         while let Some(signal_pack) = receiver.recv().await {
@@ -257,13 +232,6 @@ impl BookshelfActor {
 
     async fn listen_to_list(mut self_addr: Address<Self>) {
         let receiver = BookshelfListRequest::get_dart_signal_receiver();
-        while let Some(signal_pack) = receiver.recv().await {
-            let _ = self_addr.notify(signal_pack.message).await;
-        }
-    }
-
-    async fn listen_to_capabilities(mut self_addr: Address<Self>) {
-        let receiver = BookshelfCapabilitiesRequest::get_dart_signal_receiver();
         while let Some(signal_pack) = receiver.recv().await {
             let _ = self_addr.notify(signal_pack.message).await;
         }
@@ -302,13 +270,6 @@ impl Notifiable<BookshelfRemoveRequest> for BookshelfActor {
 impl Notifiable<BookshelfListRequest> for BookshelfActor {
     async fn notify(&mut self, message: BookshelfListRequest, _: &Context<Self>) {
         self.list(message).await;
-    }
-}
-
-#[async_trait]
-impl Notifiable<BookshelfCapabilitiesRequest> for BookshelfActor {
-    async fn notify(&mut self, message: BookshelfCapabilitiesRequest, _: &Context<Self>) {
-        self.capabilities(message).await.send_signal_to_dart();
     }
 }
 

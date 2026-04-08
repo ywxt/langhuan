@@ -2,6 +2,9 @@ use std::collections::HashSet;
 
 use serde::Serialize;
 
+/// The current feed script schema version supported by this application.
+pub const FEED_SCHEMA_VERSION: u32 = 1;
+
 /// Metadata extracted from the `==Feed==` header block of a feed script.
 #[derive(Debug, Clone, Serialize)]
 pub struct FeedMeta {
@@ -17,8 +20,8 @@ pub struct FeedMeta {
     pub description: Option<String>,
     /// Base URL used by the feed. Available in Lua as `meta.base_url`.
     pub base_url: String,
-    /// Allowed domain patterns for HTTP requests made by this feed.
-    pub allowed_domains: HashSet<String>,
-    /// Whether this feed claims to support remote bookshelf operations.
-    pub supports_bookshelf: bool,
+    /// Access domain patterns for HTTP requests made by this feed.
+    pub access_domains: HashSet<String>,
+    /// Schema version declared by the feed script (`@schema_version`).
+    pub schema_version: u32,
 }

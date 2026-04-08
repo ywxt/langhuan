@@ -165,7 +165,7 @@ class FeedPreviewContent extends StatelessWidget {
             ),
           ),
           const SizedBox(height: LanghuanTheme.spaceSm),
-          if (preview.allowedDomains.isEmpty)
+          if (preview.accessDomains.isEmpty)
             Text(
               l10n.addFeedNoDomainRestriction,
               style: theme.textTheme.bodyMedium?.copyWith(
@@ -177,7 +177,7 @@ class FeedPreviewContent extends StatelessWidget {
             Wrap(
               spacing: LanghuanTheme.spaceSm,
               runSpacing: LanghuanTheme.spaceXs,
-              children: preview.allowedDomains
+              children: preview.accessDomains
                   .map(
                     (d) => Container(
                       padding: const EdgeInsets.symmetric(

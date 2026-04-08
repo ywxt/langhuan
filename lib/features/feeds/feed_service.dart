@@ -64,7 +64,7 @@ class FeedPreviewModel {
     required this.name,
     required this.version,
     required this.baseUrl,
-    required this.allowedDomains,
+    required this.accessDomains,
     this.author,
     this.description,
     this.currentVersion,
@@ -77,7 +77,7 @@ class FeedPreviewModel {
   final String? author;
   final String? description;
   final String baseUrl;
-  final List<String> allowedDomains;
+  final List<String> accessDomains;
   final String? currentVersion;
 }
 
@@ -102,17 +102,6 @@ class BookshelfItemModel {
   final String? description;
 
   String get stableId => '$feedId:$sourceBookId';
-}
-
-@immutable
-class BookshelfCapabilitiesModel {
-  const BookshelfCapabilitiesModel({
-    required this.feedId,
-    required this.supportsBookshelf,
-  });
-
-  final String feedId;
-  final bool supportsBookshelf;
 }
 
 @immutable
@@ -379,28 +368,6 @@ class FeedService {
     return completer.future;
   }
 
-  Future<BookshelfCapabilitiesModel> bookshelfCapabilities({
-    required String feedId,
-  }) {
-    final requestId = _nextId();
-    return _subscribeAndSend(
-      responseStream: BookshelfCapabilitiesResult.rustSignalStream,
-      matches: (message) =>
-          message.requestId == requestId && message.feedId == feedId,
-      send: () {
-        BookshelfCapabilitiesRequest(
-          requestId: requestId,
-          feedId: feedId,
-        ).sendSignalToRust();
-      },
-    ).then(
-      (message) => BookshelfCapabilitiesModel(
-        feedId: message.feedId,
-        supportsBookshelf: message.supportsBookshelf,
-      ),
-    );
-  }
-
   Future<ReadingProgressModel?> getReadingProgress({
     required String feedId,
     required String bookId,
@@ -592,7 +559,7 @@ class FeedService {
         author: success.author,
         description: success.description,
         baseUrl: success.baseUrl,
-        allowedDomains: List.unmodifiable(success.allowedDomains),
+        accessDomains: List.unmodifiable(success.accessDomains),
         currentVersion: success.currentVersion,
       );
     });

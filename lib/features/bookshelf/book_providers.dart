@@ -303,8 +303,3 @@ final chapterContentProvider =
     NotifierProvider<ChapterContentNotifier, ChapterContentState>(
       ChapterContentNotifier.new,
     );
-
-final bookshelfCapabilitiesProvider =
-    FutureProvider.family<BookshelfCapabilitiesModel, String>((ref, feedId) {
-      return FeedService.instance.bookshelfCapabilities(feedId: feedId);
-    });

@@ -47,69 +47,110 @@ async fn main() {
 /// Produce a locale-aware error string for a [`langhuan::error::Error`] using
 /// the global rust-i18n locale set by the `SetLocale` signal handler.
 fn localize_error(e: &langhuan::error::Error) -> String {
-    use langhuan::error::Error;
+    use langhuan::error::{Error, PersistenceError, RegistryError, ScriptError};
     match e {
-        Error::Lua(inner) => t!("error.lua", error = inner).to_string(),
+        Error::Script(inner) => match inner {
+            ScriptError::Lua(e) => t!("error.lua", error = e).to_string(),
+            ScriptError::MissingFunction { name } => {
+                t!("error.missing_function", name = name).to_string()
+            }
+            ScriptError::InvalidFeed { message } => {
+                t!("error.invalid_feed", message = message).to_string()
+            }
+            ScriptError::Parse { line, message } => {
+                t!("error.script_parse", line = line, message = message).to_string()
+            }
+            ScriptError::DomainNotAllowed {
+                url,
+                access_domains,
+            } => t!(
+                "error.domain_not_allowed",
+                url = url,
+                allowed = join(access_domains.iter().map(|s| s.as_str()), ", ")
+            )
+            .to_string(),
+            ScriptError::SchemaTooNew {
+                feed_id,
+                file_version,
+                supported_version,
+            } => t!(
+                "error.feed_schema_too_new",
+                feed_id = feed_id,
+                file_version = file_version,
+                supported_version = supported_version
+            )
+            .to_string(),
+        },
+        Error::Registry(inner) => match inner {
+            RegistryError::NotFound(e) => {
+                t!("error.registry_not_found", error = e).to_string()
+            }
+            RegistryError::Parse { message } => {
+                t!("error.registry_parse", message = message).to_string()
+            }
+            RegistryError::Write(msg) => {
+                t!("error.registry_write", error = msg).to_string()
+            }
+            RegistryError::FeedNotFound { id } => {
+                t!("error.feed_not_found", id = id).to_string()
+            }
+            RegistryError::DuplicateFeedId { id } => {
+                t!("error.duplicate_feed_id", id = id).to_string()
+            }
+            RegistryError::SchemaTooNew {
+                file_version,
+                supported_version,
+            } => t!(
+                "error.registry_schema_too_new",
+                file_version = file_version,
+                supported_version = supported_version
+            )
+            .to_string(),
+        },
+        Error::Persistence(inner) => match inner {
+            PersistenceError::Storage {
+                kind,
+                operation,
+                message,
+            } => t!(
+                "error.storage",
+                target = localize_storage_kind(*kind),
+                operation = localize_storage_operation(*operation),
+                message = message
+            )
+            .to_string(),
+            PersistenceError::Format {
+                kind,
+                operation,
+                message,
+            } => t!(
+                "error.format",
+                target = localize_format_kind(*kind),
+                operation = localize_format_operation(*operation),
+                message = message
+            )
+            .to_string(),
+            PersistenceError::CacheSchemaMismatch { details } => t!(
+                "error.cache_schema_mismatch",
+                feed_id = details.feed_id,
+                book_id = details.book_id,
+                chapter_id = details.chapter_id,
+                cached_version = details.cached_version,
+                expected_version = details.expected_version
+            )
+            .to_string(),
+            PersistenceError::CacheKeyMismatch { details } => t!(
+                "error.cache_key_mismatch",
+                expected_feed_id = details.expected_feed_id,
+                expected_book_id = details.expected_book_id,
+                expected_chapter_id = details.expected_chapter_id,
+                actual_feed_id = details.actual_feed_id,
+                actual_book_id = details.actual_book_id,
+                actual_chapter_id = details.actual_chapter_id,
+            )
+            .to_string(),
+        },
         Error::Http(inner) => t!("error.http", error = inner).to_string(),
-        Error::MissingFunction { name } => t!("error.missing_function", name = name).to_string(),
-        Error::InvalidFeed { message } => t!("error.invalid_feed", message = message).to_string(),
-        Error::ScriptParse { line, message } => {
-            t!("error.script_parse", line = line, message = message).to_string()
-        }
-        Error::RegistryNotFound(inner) => t!("error.registry_not_found", error = inner).to_string(),
-        Error::RegistryParse { message } => {
-            t!("error.registry_parse", message = message).to_string()
-        }
-        Error::FeedNotFound { id } => t!("error.feed_not_found", id = id).to_string(),
-        Error::DuplicateFeedId { id } => t!("error.duplicate_feed_id", id = id).to_string(),
-        Error::DomainNotAllowed { url, allowed } => t!(
-            "error.domain_not_allowed",
-            url = url,
-            allowed = join(allowed.iter().map(|s| s.as_str()), ", ")
-        )
-        .to_string(),
-        Error::RegistryWrite(msg) => t!("error.registry_write", error = msg).to_string(),
-        Error::Storage {
-            kind,
-            operation,
-            message,
-        } => t!(
-            "error.storage",
-            target = localize_storage_kind(*kind),
-            operation = localize_storage_operation(*operation),
-            message = message
-        )
-        .to_string(),
-        Error::Format {
-            kind,
-            operation,
-            message,
-        } => t!(
-            "error.format",
-            target = localize_format_kind(*kind),
-            operation = localize_format_operation(*operation),
-            message = message
-        )
-        .to_string(),
-        Error::CacheSchemaMismatch { details } => t!(
-            "error.cache_schema_mismatch",
-            feed_id = details.feed_id,
-            book_id = details.book_id,
-            chapter_id = details.chapter_id,
-            cached_version = details.cached_version,
-            expected_version = details.expected_version
-        )
-        .to_string(),
-        Error::CacheKeyMismatch { details } => t!(
-            "error.cache_key_mismatch",
-            expected_feed_id = details.expected_feed_id,
-            expected_book_id = details.expected_book_id,
-            expected_chapter_id = details.expected_chapter_id,
-            actual_feed_id = details.actual_feed_id,
-            actual_book_id = details.actual_book_id,
-            actual_chapter_id = details.actual_chapter_id,
-        )
-        .to_string(),
     }
 }
 

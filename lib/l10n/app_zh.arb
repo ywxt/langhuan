@@ -44,8 +44,6 @@
   "bookDetailEmpty": "暫無書籍信息",
   "bookDetailAddBookshelf": "加入本地書架",
   "bookDetailRemoveBookshelf": "從本地書架移除",
-  "bookDetailSourceSupportsBookshelf": "當前書源支持書架功能",
-  "bookDetailSourceNoBookshelf": "當前書源不支持書架功能",
 
   "readerTitle": "閱讀",
   "readerMissingParams": "缺少閱讀參數",

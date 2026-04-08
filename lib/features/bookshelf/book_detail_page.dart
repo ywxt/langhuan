@@ -10,7 +10,6 @@ import '../../shared/widgets/cover_image.dart';
 import '../../shared/widgets/cover_placeholder.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
-import '../feeds/feed_service.dart';
 import 'book_providers.dart';
 import 'bookshelf_provider.dart';
 import 'reading_progress_provider.dart';
@@ -75,9 +74,6 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     final progressState = ref.watch(readingProgressProvider);
     final bootstrap = ref.watch(appDataDirectorySetProvider);
     final bookshelfState = ref.watch(bookshelfProvider);
-    final capabilityState = ref.watch(
-      bookshelfCapabilitiesProvider(widget.feedId),
-    );
     final bookshelfReady =
         bootstrap.asData?.value.outcome is AppDataDirectoryOutcomeSuccess;
 
@@ -175,10 +171,6 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
               ),
             ),
             const SizedBox(height: LanghuanTheme.spaceLg),
-            if (widget.feedId.isNotEmpty)
-              _SourceBookshelfCapabilityHint(state: capabilityState),
-            if (widget.feedId.isNotEmpty)
-              const SizedBox(height: LanghuanTheme.spaceMd),
             SizedBox(
               width: double.infinity,
               child:
@@ -356,43 +348,6 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(text)));
-  }
-}
-
-class _SourceBookshelfCapabilityHint extends StatelessWidget {
-  const _SourceBookshelfCapabilityHint({required this.state});
-
-  final AsyncValue<BookshelfCapabilitiesModel> state;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final theme = Theme.of(context);
-
-    final text = state.when(
-      data: (value) => value.supportsBookshelf
-          ? l10n.bookDetailSourceSupportsBookshelf
-          : l10n.bookDetailSourceNoBookshelf,
-      error: (_, _) => l10n.bookDetailSourceNoBookshelf,
-      loading: () => l10n.bookDetailSourceNoBookshelf,
-    );
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: LanghuanTheme.spaceMd,
-        vertical: LanghuanTheme.spaceSm,
-      ),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainer,
-        borderRadius: LanghuanTheme.borderRadiusMd,
-      ),
-      child: Text(
-        text,
-        style: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
   }
 }
 

@@ -1,7 +1,7 @@
 /// Integration tests for the biquge-tw feed script.
 ///
 /// These tests use mockito to serve a local HTTP server and replace the
-/// `@base_url` / `@allowed_domain` header in the script so that all network
+/// `@base_url` / `@access_domain` header in the script so that all network
 /// requests hit the mock instead of the real site.
 use langhuan::feed::Feed;
 use langhuan::script::runtime::ScriptEngine;
@@ -11,7 +11,7 @@ use tokio_stream::StreamExt;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Load the biquge-tw source script and replace its base_url / allowed_domain
+/// Load the biquge-tw source script and replace its base_url / access_domain
 /// so that all URLs point to the given mockito server.
 fn load_script_for_server(server: &ServerGuard) -> String {
     let base = server.url(); // e.g. "http://127.0.0.1:PORT"
@@ -24,13 +24,13 @@ fn load_script_for_server(server: &ServerGuard) -> String {
         &format!("-- @base_url     {base}"),
     );
 
-    // Remove all @allowed_domain entries so the domain allowlist is empty
+    // Remove all @access_domain entries so the domain allowlist is empty
     // (empty list = no restriction), allowing requests to the local mock server.
 
     script
-        .replace("-- @allowed_domain www.biquge.tw", "")
-        .replace("-- @allowed_domain m.biquge.tw", "")
-        .replace("-- @allowed_domain img.biquge.tw", "")
+        .replace("-- @access_domain www.biquge.tw", "")
+        .replace("-- @access_domain m.biquge.tw", "")
+        .replace("-- @access_domain img.biquge.tw", "")
 }
 
 /// Build a minimal HTML search-results page that the biquge-tw parser can

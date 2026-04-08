@@ -5,9 +5,10 @@
 -- @author       GitHub Copilot
 -- @description  適配 biquge.tw 的書源，支持搜尋、詳情、目錄、正文（含多頁章節）
 -- @base_url     https://www.biquge.tw
--- @allowed_domain www.biquge.tw
--- @allowed_domain m.biquge.tw
--- @allowed_domain img.biquge.tw
+-- @access_domain www.biquge.tw
+-- @access_domain m.biquge.tw
+-- @access_domain img.biquge.tw
+-- @schema_version 1
 -- ==/Feed==
 
 -- The runtime injects `meta` as a global table from the feed header.

@@ -355,8 +355,9 @@ impl RegistryActor {
                 author: meta.author.clone(),
                 description: meta.description.clone(),
                 base_url: meta.base_url.clone(),
-                allowed_domains: meta.allowed_domains.clone(),
+                access_domains: meta.access_domains.clone(),
                 current_version,
+                schema_version: meta.schema_version,
             },
         }
     }

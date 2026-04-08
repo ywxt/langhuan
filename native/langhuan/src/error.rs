@@ -1,5 +1,9 @@
 use std::collections::HashSet;
 
+// ---------------------------------------------------------------------------
+// Auxiliary types (unchanged)
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageKind {
     Bookshelf,
@@ -77,80 +81,91 @@ impl std::fmt::Display for CacheKeyMismatchError {
     }
 }
 
-/// Errors that can occur in the langhuan feed engine.
+// ---------------------------------------------------------------------------
+// Sub-error: ScriptError — feed script loading / validation
+// ---------------------------------------------------------------------------
+
+/// Errors related to feed script loading, parsing, and runtime validation.
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum ScriptError {
     /// An error originating from the Lua runtime.
     #[error("lua error: {0}")]
     Lua(#[from] mlua::Error),
 
-    /// An error originating from an HTTP request.
-    #[error("http error: {0}")]
-    Http(#[from] reqwest::Error),
-
     /// The feed script is missing a required function.
     #[error("missing required function: {name}")]
-    MissingFunction {
-        /// The name of the missing function.
-        name: String,
-    },
+    MissingFunction { name: String },
 
     /// The feed script metadata is invalid or incomplete.
     #[error("invalid feed metadata: {message}")]
-    InvalidFeed {
-        /// A description of what is wrong with the metadata.
-        message: String,
-    },
+    InvalidFeed { message: String },
 
     /// An error occurred while parsing the feed script header.
     #[error("script parse error at line {line}: {message}")]
-    ScriptParse {
-        /// The line number where the error occurred (1-based).
-        line: usize,
-        /// A description of the parse error.
-        message: String,
+    Parse { line: usize, message: String },
+
+    /// An HTTP request was blocked because the target domain is not in the
+    /// feed's `access_domains` list.
+    #[error("domain not allowed: {url} (access_domains: {access_domains:?})")]
+    DomainNotAllowed {
+        url: String,
+        access_domains: HashSet<String>,
     },
 
+    /// The feed script declares a schema version newer than this application
+    /// supports.
+    #[error("feed {feed_id}: schema version {file_version} is newer than supported version {supported_version}")]
+    SchemaTooNew {
+        feed_id: String,
+        file_version: u32,
+        supported_version: u32,
+    },
+}
+
+// ---------------------------------------------------------------------------
+// Sub-error: RegistryError — registry management
+// ---------------------------------------------------------------------------
+
+/// Errors related to the script registry (`registry.toml`).
+#[derive(Debug, thiserror::Error)]
+pub enum RegistryError {
     /// The `registry.toml` file could not be found or read.
     #[error("registry not found: {0}")]
-    RegistryNotFound(#[from] std::io::Error),
+    NotFound(std::io::Error),
 
     /// The `registry.toml` file could not be parsed.
     #[error("registry parse error: {message}")]
-    RegistryParse {
-        /// A description of the parse error.
-        message: String,
-    },
-
-    /// The requested feed ID was not found in the registry.
-    #[error("feed not found: {id}")]
-    FeedNotFound {
-        /// The feed ID that was not found.
-        id: String,
-    },
-
-    /// The registry contains duplicate feed IDs.
-    #[error("duplicate feed id in registry: {id}")]
-    DuplicateFeedId {
-        /// The duplicated feed ID.
-        id: String,
-    },
-
-    /// An HTTP request was blocked because the target domain is not in the
-    /// feed's `allowed_domains` list.
-    #[error("domain not allowed: {url} (allowed: {allowed:?})")]
-    DomainNotAllowed {
-        /// The blocked URL.
-        url: String,
-        /// The list of allowed domain patterns from the feed metadata.
-        allowed: HashSet<String>,
-    },
+    Parse { message: String },
 
     /// A write to the registry directory or script file failed.
     #[error("registry write error: {0}")]
-    RegistryWrite(String),
+    Write(String),
 
-    /// A local storage operation failed.
+    /// The requested feed ID was not found in the registry.
+    #[error("feed not found: {id}")]
+    FeedNotFound { id: String },
+
+    /// The registry contains duplicate feed IDs.
+    #[error("duplicate feed id in registry: {id}")]
+    DuplicateFeedId { id: String },
+
+    /// The `registry.toml` schema version is newer than this application
+    /// supports.
+    #[error("registry schema version {file_version} is newer than supported version {supported_version}")]
+    SchemaTooNew {
+        file_version: u32,
+        supported_version: u32,
+    },
+}
+
+// ---------------------------------------------------------------------------
+// Sub-error: PersistenceError — local storage / serialization / cache
+// ---------------------------------------------------------------------------
+
+/// Errors related to local file persistence (bookshelf, progress, cache).
+#[derive(Debug, thiserror::Error)]
+pub enum PersistenceError {
+    /// A local storage I/O operation failed.
     #[error("storage error in {kind:?} during {operation:?}: {message}")]
     Storage {
         kind: StorageKind,
@@ -179,6 +194,30 @@ pub enum Error {
     },
 }
 
+// ---------------------------------------------------------------------------
+// Top-level Error
+// ---------------------------------------------------------------------------
+
+/// Errors that can occur in the langhuan feed engine.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// Feed script loading, parsing, or runtime error.
+    #[error(transparent)]
+    Script(#[from] ScriptError),
+
+    /// Registry management error.
+    #[error(transparent)]
+    Registry(#[from] RegistryError),
+
+    /// Local persistence (storage / format / cache) error.
+    #[error(transparent)]
+    Persistence(#[from] PersistenceError),
+
+    /// An error originating from an HTTP request.
+    #[error("http error: {0}")]
+    Http(#[from] reqwest::Error),
+}
+
 impl Error {
     /// Returns `true` if this error is transient and the operation may be
     /// retried (e.g. network timeouts, connection resets, 5xx responses).
@@ -188,7 +227,6 @@ impl Error {
     pub fn is_retryable(&self) -> bool {
         match self {
             Error::Http(e) => {
-                // Retry on connection errors, timeouts, and 5xx status codes.
                 if e.is_connect() || e.is_timeout() || e.is_request() {
                     return true;
                 }
@@ -197,21 +235,7 @@ impl Error {
                 }
                 false
             }
-            // Lua errors, parse errors, metadata errors, and registry errors are permanent.
-            Error::Lua(_)
-            | Error::MissingFunction { .. }
-            | Error::InvalidFeed { .. }
-            | Error::ScriptParse { .. }
-            | Error::RegistryNotFound(_)
-            | Error::RegistryParse { .. }
-            | Error::FeedNotFound { .. }
-            | Error::DuplicateFeedId { .. }
-            | Error::DomainNotAllowed { .. }
-            | Error::RegistryWrite(_)
-            | Error::Storage { .. }
-            | Error::Format { .. }
-            | Error::CacheSchemaMismatch { .. }
-            | Error::CacheKeyMismatch { .. } => false,
+            Error::Script(_) | Error::Registry(_) | Error::Persistence(_) => false,
         }
     }
 }
@@ -219,38 +243,174 @@ impl Error {
 /// A specialized `Result` type for langhuan operations.
 pub type Result<T> = std::result::Result<T, Error>;
 
+// Transitive From: mlua::Error → ScriptError::Lua → Error::Script
+// Needed because `?` on mlua::Result in functions returning `error::Result`
+// cannot chain two #[from] conversions automatically.
+impl From<mlua::Error> for Error {
+    fn from(e: mlua::Error) -> Self {
+        Error::Script(ScriptError::Lua(e))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Convenience constructors — keep call-site churn minimal
+// ---------------------------------------------------------------------------
+
+/// Shorthand constructors so that existing code can write e.g.
+/// `Error::invalid_feed("message")` instead of
+/// `Error::Script(ScriptError::InvalidFeed { message: … })`.
+impl Error {
+    #[inline]
+    pub fn lua(e: mlua::Error) -> Self {
+        ScriptError::Lua(e).into()
+    }
+
+    #[inline]
+    pub fn invalid_feed(message: impl Into<String>) -> Self {
+        ScriptError::InvalidFeed {
+            message: message.into(),
+        }
+        .into()
+    }
+
+    #[inline]
+    pub fn script_parse(line: usize, message: impl Into<String>) -> Self {
+        ScriptError::Parse {
+            line,
+            message: message.into(),
+        }
+        .into()
+    }
+
+    #[inline]
+    pub fn domain_not_allowed(url: impl Into<String>, access_domains: HashSet<String>) -> Self {
+        ScriptError::DomainNotAllowed {
+            url: url.into(),
+            access_domains,
+        }
+        .into()
+    }
+
+    #[inline]
+    pub fn feed_schema_too_new(
+        feed_id: impl Into<String>,
+        file_version: u32,
+        supported_version: u32,
+    ) -> Self {
+        ScriptError::SchemaTooNew {
+            feed_id: feed_id.into(),
+            file_version,
+            supported_version,
+        }
+        .into()
+    }
+
+    #[inline]
+    pub fn registry_not_found(e: std::io::Error) -> Self {
+        RegistryError::NotFound(e).into()
+    }
+
+    #[inline]
+    pub fn registry_parse(message: impl Into<String>) -> Self {
+        RegistryError::Parse {
+            message: message.into(),
+        }
+        .into()
+    }
+
+    #[inline]
+    pub fn registry_write(message: impl Into<String>) -> Self {
+        RegistryError::Write(message.into()).into()
+    }
+
+    #[inline]
+    pub fn feed_not_found(id: impl Into<String>) -> Self {
+        RegistryError::FeedNotFound { id: id.into() }.into()
+    }
+
+    #[inline]
+    pub fn duplicate_feed_id(id: impl Into<String>) -> Self {
+        RegistryError::DuplicateFeedId { id: id.into() }.into()
+    }
+
+    #[inline]
+    pub fn registry_schema_too_new(file_version: u32, supported_version: u32) -> Self {
+        RegistryError::SchemaTooNew {
+            file_version,
+            supported_version,
+        }
+        .into()
+    }
+
+    #[inline]
+    pub fn storage(kind: StorageKind, operation: StorageOperation, message: impl Into<String>) -> Self {
+        PersistenceError::Storage {
+            kind,
+            operation,
+            message: message.into(),
+        }
+        .into()
+    }
+
+    #[inline]
+    pub fn format(kind: FormatKind, operation: FormatOperation, message: impl Into<String>) -> Self {
+        PersistenceError::Format {
+            kind,
+            operation,
+            message: message.into(),
+        }
+        .into()
+    }
+
+    #[inline]
+    pub fn cache_schema_mismatch(details: CacheSchemaMismatchError) -> Self {
+        PersistenceError::CacheSchemaMismatch {
+            details: Box::new(details),
+        }
+        .into()
+    }
+
+    #[inline]
+    pub fn cache_key_mismatch(details: CacheKeyMismatchError) -> Self {
+        PersistenceError::CacheKeyMismatch {
+            details: Box::new(details),
+        }
+        .into()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn lua_error_not_retryable() {
-        let err = Error::Lua(mlua::Error::RuntimeError("test".into()));
+        let err = Error::lua(mlua::Error::RuntimeError("test".into()));
         assert!(!err.is_retryable());
     }
 
     #[test]
     fn missing_function_not_retryable() {
-        let err = Error::MissingFunction {
+        let err: Error = ScriptError::MissingFunction {
             name: "search".into(),
-        };
+        }
+        .into();
         assert!(!err.is_retryable());
     }
 
     #[test]
     fn invalid_feed_not_retryable() {
-        let err = Error::InvalidFeed {
-            message: "bad metadata".into(),
-        };
+        let err = Error::invalid_feed("bad metadata");
         assert!(!err.is_retryable());
     }
 
     #[test]
     fn script_parse_not_retryable() {
-        let err = Error::ScriptParse {
-            line: 1,
-            message: "unexpected token".into(),
-        };
+        let err = Error::script_parse(1, "unexpected token");
         assert!(!err.is_retryable());
     }
 

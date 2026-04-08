@@ -70,17 +70,9 @@ impl CacheStore {
         match tokio::fs::read_to_string(path).await {
             Ok(content) => toml::from_str::<T>(&content)
                 .map(Some)
-                .map_err(|e| Error::Format {
-                    kind: FormatKind::ChapterCache,
-                    operation: FormatOperation::Deserialize,
-                    message: e.to_string(),
-                }),
+                .map_err(|e| Error::format(FormatKind::ChapterCache, FormatOperation::Deserialize, e.to_string())),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(Error::Storage {
-                kind: StorageKind::ChapterCache,
-                operation: StorageOperation::Read,
-                message: e.to_string(),
-            }),
+            Err(e) => Err(Error::storage(StorageKind::ChapterCache, StorageOperation::Read, e.to_string())),
         }
     }
 
@@ -92,19 +84,11 @@ impl CacheStore {
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(|e| Error::Storage {
-                    kind: StorageKind::ChapterCache,
-                    operation: StorageOperation::CreateDir,
-                    message: e.to_string(),
-                })?;
+                .map_err(|e| Error::storage(StorageKind::ChapterCache, StorageOperation::CreateDir, e.to_string()))?;
         }
 
         let content = toml::to_string(entry)
-            .map_err(|e| Error::Format {
-                kind: FormatKind::ChapterCache,
-                operation: FormatOperation::Serialize,
-                message: e.to_string(),
-            })?;
+            .map_err(|e| Error::format(FormatKind::ChapterCache, FormatOperation::Serialize, e.to_string()))?;
 
         tracing::debug!(path = %path.display(), bytes = content.len(), "writing toml cache entry");
 
@@ -112,11 +96,7 @@ impl CacheStore {
             .await
             .map_err(|e| {
                 tracing::warn!(path = %path.display(), error = %e, "failed to write toml cache entry");
-                Error::Storage {
-                    kind: StorageKind::ChapterCache,
-                    operation: StorageOperation::Write,
-                    message: e.to_string(),
-                }
+                Error::storage(StorageKind::ChapterCache, StorageOperation::Write, e.to_string())
             })
     }
 
@@ -124,11 +104,7 @@ impl CacheStore {
         if path.exists() {
             tokio::fs::remove_file(path)
                 .await
-                .map_err(|e| Error::Storage {
-                    kind: StorageKind::ChapterCache,
-                    operation: StorageOperation::RemoveFile,
-                    message: e.to_string(),
-                })?;
+                .map_err(|e| Error::storage(StorageKind::ChapterCache, StorageOperation::RemoveFile, e.to_string()))?;
         }
         Ok(())
     }
@@ -151,27 +127,23 @@ impl CacheStore {
         };
 
         if entry.schema_version != CACHE_SCHEMA_VERSION {
-            return Err(Error::CacheSchemaMismatch {
-                details: Box::new(CacheSchemaMismatchError {
+            return Err(Error::cache_schema_mismatch(CacheSchemaMismatchError {
                     feed_id: feed_id.to_string(),
                     book_id: book_id.to_string(),
                     chapter_id: "_book_info".to_string(),
                     cached_version: entry.schema_version,
                     expected_version: CACHE_SCHEMA_VERSION,
-                }),
-            });
+                }));
         }
         if entry.feed_id != feed_id || entry.book_id != book_id {
-            return Err(Error::CacheKeyMismatch {
-                details: Box::new(CacheKeyMismatchError {
+            return Err(Error::cache_key_mismatch(CacheKeyMismatchError {
                     expected_feed_id: feed_id.to_string(),
                     expected_book_id: book_id.to_string(),
                     expected_chapter_id: "_book_info".to_string(),
                     actual_feed_id: entry.feed_id,
                     actual_book_id: entry.book_id,
                     actual_chapter_id: "_book_info".to_string(),
-                }),
-            });
+                }));
         }
 
         tracing::debug!(
@@ -217,11 +189,7 @@ impl CacheStore {
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(|e| Error::Storage {
-                    kind: StorageKind::ChapterCache,
-                    operation: StorageOperation::CreateDir,
-                    message: e.to_string(),
-                })?;
+                .map_err(|e| Error::storage(StorageKind::ChapterCache, StorageOperation::CreateDir, e.to_string()))?;
         }
 
         tokio::fs::write(&path, bytes).await.map_err(|e| {
@@ -232,11 +200,7 @@ impl CacheStore {
                 error = %e,
                 "failed to write cover file"
             );
-            Error::Storage {
-                kind: StorageKind::ChapterCache,
-                operation: StorageOperation::Write,
-                message: e.to_string(),
-            }
+            Error::storage(StorageKind::ChapterCache, StorageOperation::Write, e.to_string())
         })?;
 
         tracing::debug!(
@@ -286,27 +250,23 @@ impl CacheStore {
         };
 
         if entry.schema_version != CACHE_SCHEMA_VERSION {
-            return Err(Error::CacheSchemaMismatch {
-                details: Box::new(CacheSchemaMismatchError {
+            return Err(Error::cache_schema_mismatch(CacheSchemaMismatchError {
                     feed_id: feed_id.to_string(),
                     book_id: book_id.to_string(),
                     chapter_id: "_chapters".to_string(),
                     cached_version: entry.schema_version,
                     expected_version: CACHE_SCHEMA_VERSION,
-                }),
-            });
+                }));
         }
         if entry.feed_id != feed_id || entry.book_id != book_id {
-            return Err(Error::CacheKeyMismatch {
-                details: Box::new(CacheKeyMismatchError {
+            return Err(Error::cache_key_mismatch(CacheKeyMismatchError {
                     expected_feed_id: feed_id.to_string(),
                     expected_book_id: book_id.to_string(),
                     expected_chapter_id: "_chapters".to_string(),
                     actual_feed_id: entry.feed_id,
                     actual_book_id: entry.book_id,
                     actual_chapter_id: "_chapters".to_string(),
-                }),
-            });
+                }));
         }
 
         tracing::debug!(
@@ -367,30 +327,26 @@ impl CacheStore {
         };
 
         if entry.schema_version != CACHE_SCHEMA_VERSION {
-            return Err(Error::CacheSchemaMismatch {
-                details: Box::new(CacheSchemaMismatchError {
+            return Err(Error::cache_schema_mismatch(CacheSchemaMismatchError {
                     feed_id: feed_id.to_string(),
                     book_id: book_id.to_string(),
                     chapter_id: chapter_id.to_string(),
                     cached_version: entry.schema_version,
                     expected_version: CACHE_SCHEMA_VERSION,
-                }),
-            });
+                }));
         }
         if entry.feed_id != feed_id
             || entry.book_id != book_id
             || entry.chapter_id != chapter_id
         {
-            return Err(Error::CacheKeyMismatch {
-                details: Box::new(CacheKeyMismatchError {
+            return Err(Error::cache_key_mismatch(CacheKeyMismatchError {
                     expected_feed_id: feed_id.to_string(),
                     expected_book_id: book_id.to_string(),
                     expected_chapter_id: chapter_id.to_string(),
                     actual_feed_id: entry.feed_id,
                     actual_book_id: entry.book_id,
                     actual_chapter_id: entry.chapter_id,
-                }),
-            });
+                }));
         }
         tracing::debug!(
             feed_id = %feed_id,
@@ -438,11 +394,7 @@ impl CacheStore {
         if book_dir.exists() {
             tokio::fs::remove_dir_all(&book_dir)
                 .await
-                .map_err(|e| Error::Storage {
-                    kind: StorageKind::ChapterCache,
-                    operation: StorageOperation::RemoveDir,
-                    message: e.to_string(),
-                })?;
+                .map_err(|e| Error::storage(StorageKind::ChapterCache, StorageOperation::RemoveDir, e.to_string()))?;
         }
 
         tracing::debug!(
@@ -459,11 +411,7 @@ impl CacheStore {
         if feed_dir.exists() {
             tokio::fs::remove_dir_all(&feed_dir)
                 .await
-                .map_err(|e| Error::Storage {
-                    kind: StorageKind::ChapterCache,
-                    operation: StorageOperation::RemoveDir,
-                    message: e.to_string(),
-                })?;
+                .map_err(|e| Error::storage(StorageKind::ChapterCache, StorageOperation::RemoveDir, e.to_string()))?;
         }
 
         tracing::debug!(feed_id = %feed_id, "cleared feed cache");
@@ -479,6 +427,7 @@ impl CacheStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::PersistenceError;
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -623,11 +572,11 @@ mod tests {
 
         assert!(matches!(
             error,
-            Error::Format {
+            Error::Persistence(PersistenceError::Format {
                 kind: FormatKind::ChapterCache,
                 operation: FormatOperation::Deserialize,
                 ..
-            }
+            })
         ));
     }
 }

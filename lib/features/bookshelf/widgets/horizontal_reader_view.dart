@@ -635,25 +635,21 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
           // On subsequent updates, rely on stable keys +
           // findChildIndexCallback for child remapping.
           _currentFlatIndex = _findCurrentFlatIndex(_flatPages);
-          _ensurePageController(_currentFlatIndex);
 
-          if (_pendingExternalJump &&
-              _pageController != null &&
-              _pageController!.hasClients) {
+          if (_pendingExternalJump) {
+            // External jump (prev/next chapter button, TOC selection).
+            // Replace the page controller so it starts at the correct page
+            // without interference from anchor correction.
             _pendingExternalJump = false;
+            _replacePageController(_currentFlatIndex);
+
+            // Report the visible page after the jump settles.
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted ||
                   _pageController == null ||
                   !_pageController!.hasClients) {
                 return;
               }
-              if (_isControllerScrolling()) {
-                _pendingExternalJump = true;
-                return;
-              }
-              _suppressPageChanged = true;
-              _pageController!.jumpToPage(_currentFlatIndex);
-              _suppressPageChanged = false;
               if (_currentFlatIndex >= 0 &&
                   _currentFlatIndex < _flatPages.length) {
                 final page = _flatPages[_currentFlatIndex];
@@ -661,37 +657,39 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
                 _reportParagraphFromPage(page);
               }
             });
-          }
+          } else {
+            _ensurePageController(_currentFlatIndex);
 
-          // Keep viewport anchored to the same logical page when list shape
-          // changes (e.g. loading page replaced by N content pages).
-          if (anchorKey != null &&
-              _pageController!.hasClients &&
-              oldIndexByKey.containsKey(anchorKey) &&
-              _flatIndexByKey.containsKey(anchorKey)) {
-            final oldIdx = oldIndexByKey[anchorKey]!;
-            final newIdx = _flatIndexByKey[anchorKey]!;
-            if (oldIdx != newIdx) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted ||
-                    _pageController == null ||
-                    !_pageController!.hasClients) {
-                  return;
-                }
-                if (_isControllerScrolling()) {
-                  _deferAnchorCorrection = true;
-                  return;
-                }
-                final pos = _pageController!.position;
-                final viewportWidth = pos.viewportDimension;
-                if (viewportWidth <= 0) return;
+            // Keep viewport anchored to the same logical page when list shape
+            // changes (e.g. loading page replaced by N content pages).
+            if (anchorKey != null &&
+                _pageController!.hasClients &&
+                oldIndexByKey.containsKey(anchorKey) &&
+                _flatIndexByKey.containsKey(anchorKey)) {
+              final oldIdx = oldIndexByKey[anchorKey]!;
+              final newIdx = _flatIndexByKey[anchorKey]!;
+              if (oldIdx != newIdx) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted ||
+                      _pageController == null ||
+                      !_pageController!.hasClients) {
+                    return;
+                  }
+                  if (_isControllerScrolling()) {
+                    _deferAnchorCorrection = true;
+                    return;
+                  }
+                  final pos = _pageController!.position;
+                  final viewportWidth = pos.viewportDimension;
+                  if (viewportWidth <= 0) return;
 
-                final delta = (newIdx - oldIdx) * viewportWidth;
-                _suppressPageChanged = true;
-                _pageController!.jumpTo(pos.pixels + delta);
-                _suppressPageChanged = false;
-                _currentFlatIndex = newIdx;
-              });
+                  final delta = (newIdx - oldIdx) * viewportWidth;
+                  _suppressPageChanged = true;
+                  _pageController!.jumpTo(pos.pixels + delta);
+                  _suppressPageChanged = false;
+                  _currentFlatIndex = newIdx;
+                });
+              }
             }
           }
         }

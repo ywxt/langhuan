@@ -134,12 +134,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bookDetailRemoveBookshelf => '從本地書架移除';
 
   @override
-  String get bookDetailSourceSupportsBookshelf => '當前書源支持書架功能';
-
-  @override
-  String get bookDetailSourceNoBookshelf => '當前書源不支持書架功能';
-
-  @override
   String get readerTitle => '閱讀';
 
   @override

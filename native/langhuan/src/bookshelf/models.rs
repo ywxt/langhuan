@@ -18,8 +18,3 @@ pub struct BookshelfEntry {
     pub identity: BookIdentity,
     pub added_at_unix_ms: i64,
 }
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct BookshelfCapabilities {
-    pub supports_bookshelf: bool,
-}

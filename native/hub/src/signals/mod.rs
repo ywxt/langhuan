@@ -317,11 +317,13 @@ pub enum FeedPreviewOutcome {
         author: Option<String>,
         description: Option<String>,
         base_url: String,
-        /// Allowed domain patterns declared by the feed (`@allowed_domains`).
+        /// Access domain patterns declared by the feed (`@access_domain`).
         /// Empty means no restriction.
-        allowed_domains: HashSet<String>,
+        access_domains: HashSet<String>,
         /// The currently installed version, populated only when upgrading.
         current_version: Option<String>,
+        /// Schema version declared by the feed script.
+        schema_version: u32,
     },
     Error {
         /// Human-readable error message.
@@ -393,12 +395,6 @@ pub struct BookshelfListRequest {
     pub request_id: String,
 }
 
-#[derive(Deserialize, DartSignal)]
-pub struct BookshelfCapabilitiesRequest {
-    pub request_id: String,
-    pub feed_id: String,
-}
-
 // ---------------------------------------------------------------------------
 // Bookshelf signals — Rust -> Dart
 // ---------------------------------------------------------------------------
@@ -447,10 +443,4 @@ pub struct BookshelfListEnd {
     pub outcome: BookshelfListOutcome,
 }
 
-#[derive(Serialize, RustSignal)]
-pub struct BookshelfCapabilitiesResult {
-    pub request_id: String,
-    pub feed_id: String,
-    pub supports_bookshelf: bool,
-}
 

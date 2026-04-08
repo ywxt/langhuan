@@ -34,6 +34,13 @@ use crate::error::{Error, Result};
 use crate::util::fs::write_atomic;
 use crate::util::path_key::encode_path_component;
 
+/// Current schema version for `registry.toml`.
+pub const REGISTRY_SCHEMA_VERSION: u32 = 1;
+
+fn default_schema_version() -> u32 {
+    REGISTRY_SCHEMA_VERSION
+}
+
 // ---------------------------------------------------------------------------
 // TOML data structures
 // ---------------------------------------------------------------------------
@@ -55,10 +62,21 @@ pub struct RegistryEntry {
 }
 
 /// Root structure of `registry.toml`.
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct RegistryFile {
+    #[serde(default = "default_schema_version")]
+    schema_version: u32,
     #[serde(default)]
     feeds: Vec<RegistryEntry>,
+}
+
+impl Default for RegistryFile {
+    fn default() -> Self {
+        Self {
+            schema_version: REGISTRY_SCHEMA_VERSION,
+            feeds: Vec::new(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -75,15 +93,32 @@ pub struct ScriptRegistry {
 }
 
 /// Runtime availability state for a registry entry.
-pub enum FeedSlot {
-    Ready(Arc<LuaFeed>),
-    Failed,
+pub enum RegistryItem {
+    Ready(RegistryEntry, Arc<LuaFeed>),
+    Failed(RegistryEntry),
 }
 
-/// Registry entry together with its runtime availability.
-pub struct RegistryItem {
-    pub entry: RegistryEntry,
-    pub slot: FeedSlot,
+impl RegistryItem {
+    /// Return a reference to the [`RegistryEntry`] regardless of availability.
+    pub fn entry(&self) -> &RegistryEntry {
+        match self {
+            RegistryItem::Ready(entry, _) => entry,
+            RegistryItem::Failed(entry) => entry,
+        }
+    }
+
+    /// Return `true` if the feed is compiled and ready.
+    pub fn is_ready(&self) -> bool {
+        matches!(self, RegistryItem::Ready(..)) 
+    }
+
+    /// Return the feed if ready.
+    pub fn feed(&self) -> Option<&Arc<LuaFeed>> {
+        match self {
+            RegistryItem::Ready(_, feed) => Some(feed),
+            RegistryItem::Failed(_) => None,
+        }
+    }
 }
 
 impl std::fmt::Debug for ScriptRegistry {
@@ -111,19 +146,22 @@ impl ScriptRegistry {
 
         let content = tokio::fs::read_to_string(&registry_path)
             .await
-            .map_err(Error::RegistryNotFound)?;
+            .map_err(Error::registry_not_found)?;
 
         let registry_file: RegistryFile =
-            toml::from_str(&content).map_err(|e| Error::RegistryParse {
-                message: e.to_string(),
-            })?;
+            toml::from_str(&content).map_err(|e| Error::registry_parse(e.to_string(),
+            ))?;
+
+        if registry_file.schema_version > REGISTRY_SCHEMA_VERSION {
+            return Err(Error::registry_schema_too_new(registry_file.schema_version, REGISTRY_SCHEMA_VERSION));
+        }
 
         let mut entries: HashMap<String, RegistryEntry> =
             HashMap::with_capacity(registry_file.feeds.len());
         for entry in registry_file.feeds {
             if entries.contains_key(&entry.id) {
                 tracing::warn!(feed_id = %entry.id, "duplicate feed id in registry");
-                return Err(Error::DuplicateFeedId { id: entry.id });
+                return Err(Error::duplicate_feed_id(entry.id));
             }
             entries.insert(entry.id.clone(), entry);
         }
@@ -146,7 +184,7 @@ impl ScriptRegistry {
         );
         let script = tokio::fs::read_to_string(&script_path)
             .await
-            .map_err(Error::RegistryNotFound)?;
+            .map_err(Error::registry_not_found)?;
 
         let feed = engine.load_feed(&script).await?;
         Ok(feed)
@@ -158,19 +196,18 @@ impl ScriptRegistry {
         feeds: HashMap<String, Arc<LuaFeed>>,
     ) -> Result<Self> {
         if !feeds.keys().all(|id| entries.contains_key(id)) {
-            return Err(Error::RegistryParse {
-                message: "compiled feeds keys must be a subset of entries keys".to_string(),
-            });
+            return Err(Error::registry_parse("compiled feeds keys must be a subset of entries keys".to_string(),
+            ));
         }
 
         let items = entries
             .into_iter()
             .map(|(id, entry)| {
-                let slot = match feeds.get(&id) {
-                    Some(feed) => FeedSlot::Ready(Arc::clone(feed)),
-                    None => FeedSlot::Failed,
+                let item = match feeds.get(&id) {
+                    Some(feed) => RegistryItem::Ready(entry, Arc::clone(feed)),
+                    None => RegistryItem::Failed(entry),
                 };
-                (id, RegistryItem { entry, slot })
+                (id, item)
             })
             .collect();
 
@@ -216,13 +253,13 @@ impl ScriptRegistry {
             .join(encode_path_component(feed_id.as_str()));
         tokio::fs::create_dir_all(&script_dir)
             .await
-            .map_err(|e| Error::RegistryWrite(e.to_string()))?;
+            .map_err(|e| Error::registry_write(e.to_string()))?;
 
         let rel_path = feed_path(feed_id, version);
         let script_path = self.base_dir.join(&rel_path);
         tokio::fs::write(&script_path, content)
             .await
-            .map_err(|e| Error::RegistryWrite(e.to_string()))?;
+            .map_err(|e| Error::registry_write(e.to_string()))?;
 
         // 3. Upsert in memory and persist atomically.
         let new_entry = RegistryEntry {
@@ -245,10 +282,7 @@ impl ScriptRegistry {
 
         let previous = self.feeds.insert(
             feed_id.clone(),
-            RegistryItem {
-                entry: new_entry.clone(),
-                slot: FeedSlot::Ready(compiled_feed),
-            },
+            RegistryItem::Ready(new_entry.clone(), compiled_feed),
         );
         if let Err(e) = self.persist_registry().await {
             match previous {
@@ -283,10 +317,9 @@ impl ScriptRegistry {
         let removed = self
             .feeds
             .remove(feed_id)
-            .ok_or_else(|| Error::FeedNotFound {
-                id: feed_id.to_owned(),
-            })?;
-        let entry = removed.entry.clone();
+            .ok_or_else(|| Error::feed_not_found(feed_id.to_owned(),
+            ))?;
+        let entry = removed.entry().clone();
 
         if let Err(e) = self.persist_registry().await {
             self.feeds.insert(feed_id.to_owned(), removed);
@@ -300,12 +333,12 @@ impl ScriptRegistry {
         {
             self.feeds.insert(feed_id.to_owned(), removed);
             if let Err(rollback_err) = self.persist_registry().await {
-                return Err(Error::RegistryWrite(format!(
+                return Err(Error::registry_write(format!(
                     "remove file failed: {}; rollback failed: {}",
                     e, rollback_err
                 )));
             }
-            return Err(Error::RegistryWrite(e.to_string()));
+            return Err(Error::registry_write(e.to_string()));
         }
 
         tracing::info!(feed_id = %feed_id, "feed removed");
@@ -321,24 +354,24 @@ impl ScriptRegistry {
         let registry_path = registry_path(base_dir);
         if !registry_path.exists() {
             let empty = toml::to_string_pretty(&RegistryFile::default())
-                .map_err(|e| Error::RegistryWrite(e.to_string()))?;
+                .map_err(|e| Error::registry_write(e.to_string()))?;
             write_atomic(&registry_path, &empty)
                 .await
-                .map_err(|e| Error::RegistryWrite(e.to_string()))?;
+                .map_err(|e| Error::registry_write(e.to_string()))?;
         }
         Ok(())
     }
 
     /// Iterate over all registered feed entries, including unavailable ones.
     pub fn list_entries(&self) -> impl Iterator<Item = &RegistryEntry> {
-        self.feeds.values().map(|item| &item.entry)
+        self.feeds.values().map(|item| item.entry())
     }
 
     /// Iterate over all compiled feeds.
     pub fn list_feeds(&self) -> impl Iterator<Item = (&RegistryEntry, &Arc<LuaFeed>)> {
-        self.feeds.values().filter_map(|item| match &item.slot {
-            FeedSlot::Ready(feed) => Some((&item.entry, feed)),
-            FeedSlot::Failed => None,
+        self.feeds.values().filter_map(|item| match item {
+            RegistryItem::Ready(entry, feed) => Some((entry, feed)),
+            RegistryItem::Failed(_) => None,
         })
     }
 
@@ -351,7 +384,7 @@ impl ScriptRegistry {
     pub fn ready_len(&self) -> usize {
         self.feeds
             .values()
-            .filter(|item| matches!(item.slot, FeedSlot::Ready(_)))
+            .filter(|item| item.is_ready())
             .count()
     }
 
@@ -364,7 +397,7 @@ impl ScriptRegistry {
     pub fn has_feed(&self, feed_id: &str) -> bool {
         self.feeds
             .get(feed_id)
-            .is_some_and(|item| matches!(item.slot, FeedSlot::Ready(_)))
+            .is_some_and(|item| item.is_ready())
     }
 
     /// Return `true` if an entry with `feed_id` exists in the registry.
@@ -374,29 +407,32 @@ impl ScriptRegistry {
 
     /// Return the entry metadata for `feed_id`.
     pub fn entry(&self, feed_id: &str) -> Option<&RegistryEntry> {
-        self.feeds.get(feed_id).map(|item| &item.entry)
+        self.feeds.get(feed_id).map(|item| item.entry())
     }
 
     /// Return the feed for `feed_id`.
     pub fn feed(&self, feed_id: &str) -> Option<(&RegistryEntry, &Arc<LuaFeed>)> {
-        self.feeds.get(feed_id).and_then(|item| match &item.slot {
-            FeedSlot::Ready(feed) => Some((&item.entry, feed)),
-            FeedSlot::Failed => None,
+        self.feeds.get(feed_id).and_then(|item| match item {
+            RegistryItem::Ready(entry, feed) => Some((entry, feed)),
+            RegistryItem::Failed(_) => None,
         })
     }
 
     async fn persist_registry(&self) -> Result<()> {
         let mut entries: Vec<RegistryEntry> =
-            self.feeds.values().map(|item| item.entry.clone()).collect();
+            self.feeds.values().map(|item| item.entry().clone()).collect();
         entries.sort_by(|a, b| a.id.cmp(&b.id));
 
-        let registry_file = RegistryFile { feeds: entries };
+        let registry_file = RegistryFile {
+            schema_version: REGISTRY_SCHEMA_VERSION,
+            feeds: entries,
+        };
         let toml_content = toml::to_string_pretty(&registry_file)
-            .map_err(|e| Error::RegistryWrite(e.to_string()))?;
+            .map_err(|e| Error::registry_write(e.to_string()))?;
         let registry_path = registry_path(&self.base_dir);
         write_atomic(&registry_path, &toml_content)
             .await
-            .map_err(|e| Error::RegistryWrite(e.to_string()))
+            .map_err(|e| Error::registry_write(e.to_string()))
     }
 }
 
@@ -418,6 +454,7 @@ fn feed_path(feed_id: &str, version: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::{RegistryError, ScriptError};
     use tempfile::TempDir;
     use tokio::fs;
 
@@ -448,6 +485,7 @@ mod tests {
 -- @name    Test Feed
 -- @version 1.0.0
 -- @base_url https://example.com
+-- @schema_version 1
 -- ==/Feed==
 return {}
 "#;
@@ -459,6 +497,7 @@ return {}
 -- @name    Test Feed
 -- @version {version}
 -- @base_url https://example.com
+-- @schema_version 1
 -- ==/Feed==
 return {{
     search = {{
@@ -672,7 +711,7 @@ file    = "h647570/h322e302e30.lua"
             .await
             .expect_err("should fail");
         assert!(
-            matches!(err, Error::DuplicateFeedId { ref id } if id == "dup"),
+            matches!(err, Error::Registry(RegistryError::DuplicateFeedId { ref id }) if id == "dup"),
             "unexpected error: {err}"
         );
     }
@@ -688,7 +727,7 @@ file    = "h647570/h322e302e30.lua"
             .await
             .expect_err("should fail");
         assert!(
-            matches!(err, Error::RegistryNotFound(_)),
+            matches!(err, Error::Registry(RegistryError::NotFound(_))),
             "unexpected error: {err}"
         );
     }
@@ -704,7 +743,7 @@ file    = "h647570/h322e302e30.lua"
             .await
             .expect_err("should fail");
         assert!(
-            matches!(err, Error::RegistryParse { .. }),
+            matches!(err, Error::Registry(RegistryError::Parse { .. })),
             "unexpected error: {err}"
         );
     }
@@ -766,7 +805,7 @@ file    = "h647570/h322e302e30.lua"
             .install_feed(&script, &engine)
             .await
             .expect_err("install should fail when registry persist fails");
-        assert!(matches!(err, Error::RegistryWrite(_)));
+        assert!(matches!(err, Error::Registry(RegistryError::Write(_))));
 
         assert!(
             !registry.has_feed("rollback-feed"),
@@ -791,6 +830,7 @@ file    = "h647570/h322e302e30.lua"
 -- @name    Bad Feed
 -- @version 1.0.0
 -- @base_url https://example.com
+-- @schema_version 1
 -- ==/Feed==
 return {}
 "#;
@@ -803,7 +843,7 @@ return {}
             .install_feed(invalid_script, &engine)
             .await
             .expect_err("install should fail when feed loading fails");
-        assert!(matches!(err, Error::Lua(_)));
+        assert!(matches!(err, Error::Script(ScriptError::Lua(_))));
         assert!(!registry.has_feed("bad-feed"));
 
         let script_path = dir.path().join(feed_path("bad-feed", "1.0.0"));
@@ -882,7 +922,7 @@ return {}
             .remove_feed("rollback-remove")
             .await
             .expect_err("remove should fail when deleting script path fails");
-        assert!(matches!(err, Error::RegistryWrite(_)));
+        assert!(matches!(err, Error::Registry(RegistryError::Write(_))));
 
         assert!(
             registry.has_feed("rollback-remove"),

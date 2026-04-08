@@ -31,17 +31,9 @@ impl ReadingProgressStore {
 
         let content = tokio::fs::read_to_string(&path)
             .await
-            .map_err(|e| Error::Storage {
-                kind: StorageKind::ReadingProgress,
-                operation: StorageOperation::Read,
-                message: e.to_string(),
-            })?;
+            .map_err(|e| Error::storage(StorageKind::ReadingProgress, StorageOperation::Read, e.to_string()))?;
 
-        toml::from_str::<ReadingProgressFile>(&content).map_err(|e| Error::Format {
-            kind: FormatKind::ReadingProgress,
-            operation: FormatOperation::Deserialize,
-            message: e.to_string(),
-        })
+        toml::from_str::<ReadingProgressFile>(&content).map_err(|e| Error::format(FormatKind::ReadingProgress, FormatOperation::Deserialize, e.to_string()))
     }
 
     async fn save_progress_file(&self, file: &ReadingProgressFile) -> Result<()> {
@@ -49,26 +41,14 @@ impl ReadingProgressStore {
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(|e| Error::Storage {
-                    kind: StorageKind::ReadingProgress,
-                    operation: StorageOperation::CreateDir,
-                    message: e.to_string(),
-                })?;
+                .map_err(|e| Error::storage(StorageKind::ReadingProgress, StorageOperation::CreateDir, e.to_string()))?;
         }
 
-        let content = toml::to_string(file).map_err(|e| Error::Format {
-            kind: FormatKind::ReadingProgress,
-            operation: FormatOperation::Serialize,
-            message: e.to_string(),
-        })?;
+        let content = toml::to_string(file).map_err(|e| Error::format(FormatKind::ReadingProgress, FormatOperation::Serialize, e.to_string()))?;
 
         write_atomic(&path, &content)
             .await
-            .map_err(|e| Error::Storage {
-                kind: StorageKind::ReadingProgress,
-                operation: StorageOperation::Write,
-                message: e.to_string(),
-            })?;
+            .map_err(|e| Error::storage(StorageKind::ReadingProgress, StorageOperation::Write, e.to_string()))?;
 
         Ok(())
     }

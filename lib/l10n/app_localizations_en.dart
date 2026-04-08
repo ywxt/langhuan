@@ -134,14 +134,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bookDetailRemoveBookshelf => 'Remove from Local Bookshelf';
 
   @override
-  String get bookDetailSourceSupportsBookshelf =>
-      'This feed supports bookshelf';
-
-  @override
-  String get bookDetailSourceNoBookshelf =>
-      'This feed does not support bookshelf';
-
-  @override
   String get readerTitle => 'Reader';
 
   @override
