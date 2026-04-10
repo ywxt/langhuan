@@ -17,8 +17,8 @@
 //! local str  = json.encode({ key = "value" })
 //! ```
 
-mod json;
 mod html;
+mod json;
 
 use mlua::{Lua, Result, Value};
 

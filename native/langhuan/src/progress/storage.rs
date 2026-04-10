@@ -36,10 +36,7 @@ impl ReadingProgressStore {
             })?
         };
 
-        Ok(Self {
-            base_dir,
-            file,
-        })
+        Ok(Self { base_dir, file })
     }
 
     fn progress_path(&self) -> PathBuf {
@@ -112,11 +109,10 @@ impl ReadingProgressStore {
             paragraph_index = progress.paragraph_index,
             "saving reading progress"
         );
-        if let Some(existing) = self
-            .file
-            .entries
-            .iter_mut()
-            .find(|entry| entry.feed_id == progress.feed_id && entry.book_id == progress.book_id)
+        if let Some(existing) =
+            self.file.entries.iter_mut().find(|entry| {
+                entry.feed_id == progress.feed_id && entry.book_id == progress.book_id
+            })
         {
             *existing = progress;
         } else {

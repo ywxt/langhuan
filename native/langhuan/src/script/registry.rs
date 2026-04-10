@@ -115,7 +115,7 @@ impl RegistryItem {
 
     /// Return `true` if the feed is compiled and ready.
     pub fn is_ready(&self) -> bool {
-        matches!(self, RegistryItem::Ready(..)) 
+        matches!(self, RegistryItem::Ready(..))
     }
 
     /// Return the feed if ready.
@@ -155,11 +155,13 @@ impl ScriptRegistry {
             .map_err(Error::registry_not_found)?;
 
         let registry_file: RegistryFile =
-            serde_json::from_str(&content).map_err(|e| Error::registry_parse(e.to_string(),
-            ))?;
+            serde_json::from_str(&content).map_err(|e| Error::registry_parse(e.to_string()))?;
 
         if registry_file.schema_version > REGISTRY_SCHEMA_VERSION {
-            return Err(Error::registry_schema_too_new(registry_file.schema_version, REGISTRY_SCHEMA_VERSION));
+            return Err(Error::registry_schema_too_new(
+                registry_file.schema_version,
+                REGISTRY_SCHEMA_VERSION,
+            ));
         }
 
         let mut entries: HashMap<String, RegistryEntry> =
@@ -202,7 +204,8 @@ impl ScriptRegistry {
         feeds: HashMap<String, Arc<LuaFeed>>,
     ) -> Result<Self> {
         if !feeds.keys().all(|id| entries.contains_key(id)) {
-            return Err(Error::registry_parse("compiled feeds keys must be a subset of entries keys".to_string(),
+            return Err(Error::registry_parse(
+                "compiled feeds keys must be a subset of entries keys",
             ));
         }
 
@@ -254,9 +257,7 @@ impl ScriptRegistry {
         );
 
         // 2. Write the Lua script file.
-        let script_dir = self
-            .base_dir
-            .join(encode_path_component(feed_id.as_str()));
+        let script_dir = self.base_dir.join(encode_path_component(feed_id.as_str()));
         tokio::fs::create_dir_all(&script_dir)
             .await
             .map_err(|e| Error::registry_write(e.to_string()))?;
@@ -323,8 +324,7 @@ impl ScriptRegistry {
         let removed = self
             .feeds
             .remove(feed_id)
-            .ok_or_else(|| Error::feed_not_found(feed_id.to_owned(),
-            ))?;
+            .ok_or_else(|| Error::feed_not_found(feed_id.to_owned()))?;
         let entry = removed.entry().clone();
 
         if let Err(e) = self.persist_registry().await {
@@ -388,10 +388,7 @@ impl ScriptRegistry {
 
     /// Return the number of feeds currently available for requests.
     pub fn ready_len(&self) -> usize {
-        self.feeds
-            .values()
-            .filter(|item| item.is_ready())
-            .count()
+        self.feeds.values().filter(|item| item.is_ready()).count()
     }
 
     /// Return `true` if no feeds are registered.
@@ -401,9 +398,7 @@ impl ScriptRegistry {
 
     /// Return `true` if a feed with `feed_id` is currently registered.
     pub fn has_feed(&self, feed_id: &str) -> bool {
-        self.feeds
-            .get(feed_id)
-            .is_some_and(|item| item.is_ready())
+        self.feeds.get(feed_id).is_some_and(|item| item.is_ready())
     }
 
     /// Return `true` if an entry with `feed_id` exists in the registry.
@@ -425,8 +420,11 @@ impl ScriptRegistry {
     }
 
     async fn persist_registry(&self) -> Result<()> {
-        let mut entries: Vec<RegistryEntry> =
-            self.feeds.values().map(|item| item.entry().clone()).collect();
+        let mut entries: Vec<RegistryEntry> = self
+            .feeds
+            .values()
+            .map(|item| item.entry().clone())
+            .collect();
         entries.sort_by(|a, b| a.id.cmp(&b.id));
 
         let registry_file = RegistryFile {
@@ -454,7 +452,8 @@ fn registry_path(base_dir: &Path) -> PathBuf {
 
 #[inline]
 fn feed_path(feed_id: &str, version: &str) -> PathBuf {
-    Path::new(&encode_path_component(feed_id)).join(format!("{}.lua", encode_path_component(version)))
+    Path::new(&encode_path_component(feed_id))
+        .join(format!("{}.lua", encode_path_component(version)))
 }
 
 #[cfg(test)]
@@ -573,7 +572,7 @@ return {{
 
     #[tokio::test]
     async fn load_single_entry() {
-                let json = r#"{
+        let json = r#"{
     "feeds": [
         {
             "id": "test-feed",
@@ -583,7 +582,11 @@ return {{
         }
     ]
 }"#;
-        let dir = setup_dir(json, &[("h746573742d66656564/h312e302e30.lua", MINIMAL_SCRIPT)]).await;
+        let dir = setup_dir(
+            json,
+            &[("h746573742d66656564/h312e302e30.lua", MINIMAL_SCRIPT)],
+        )
+        .await;
         let registry = ScriptRegistry::load_entries(dir.path())
             .await
             .expect("load");
@@ -597,7 +600,7 @@ return {{
 
     #[tokio::test]
     async fn load_multiple_entries() {
-                let json = r#"{
+        let json = r#"{
     "feeds": [
         {
             "id": "feed-a",
@@ -615,7 +618,7 @@ return {{
     ]
 }"#;
         let dir = setup_dir(
-                        json,
+            json,
             &[
                 ("h666565642d61/h312e302e30.lua", MINIMAL_SCRIPT),
                 ("h666565642d62/h322e302e30.lua", MINIMAL_SCRIPT),
@@ -705,7 +708,7 @@ return {{
 
     #[tokio::test]
     async fn load_duplicate_id_returns_error() {
-                let json = r#"{
+        let json = r#"{
     "feeds": [
         {
             "id": "dup",
@@ -721,7 +724,7 @@ return {{
         }
     ]
 }"#;
-                let dir = setup_dir(json, &[]).await;
+        let dir = setup_dir(json, &[]).await;
         let err = ScriptRegistry::load_entries(dir.path())
             .await
             .expect_err("should fail");

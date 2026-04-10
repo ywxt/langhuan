@@ -443,7 +443,11 @@ impl<F: Feed> Feed for CachedFeed<F> {
         self.cached_chapters(book_id)
     }
 
-    fn paragraphs<'a>(&'a self, book_id: &'a str, chapter_id: &'a str) -> FeedStream<'a, Paragraph> {
+    fn paragraphs<'a>(
+        &'a self,
+        book_id: &'a str,
+        chapter_id: &'a str,
+    ) -> FeedStream<'a, Paragraph> {
         self.cached_paragraphs(book_id, chapter_id)
     }
 
@@ -467,7 +471,11 @@ impl<F: Feed + FeedAuthFlow> FeedAuthFlow for CachedFeed<F> {
         self.inner.parse_auth(support, page)
     }
 
-    fn set_auth_info(&self, support: &Self::SupportAuth, auth_info: Option<AuthInfo>) -> Result<()> {
+    fn set_auth_info(
+        &self,
+        support: &Self::SupportAuth,
+        auth_info: Option<AuthInfo>,
+    ) -> Result<()> {
         self.inner.set_auth_info(support, auth_info)
     }
 

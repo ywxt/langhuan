@@ -29,9 +29,9 @@ use tokio::task::JoinSet;
 
 use crate::localize_error;
 use crate::signals::{
-    FeedInstallOutcome, FeedInstallResult, FeedListResult, FeedMetaItem, FeedPreviewOutcome,
-    FeedPreviewResult, FeedRemoveOutcome, FeedRemoveResult, InstallFeedRequest,
-    ListFeedsRequest, PreviewFeedFromFile, PreviewFeedFromUrl, RemoveFeedRequest,
+    FeedInstallResult, FeedListResult, FeedMetaItem, FeedPreviewOutcome, FeedPreviewResult,
+    FeedRemoveResult, InstallFeedRequest, ListFeedsRequest, PreviewFeedFromFile,
+    PreviewFeedFromUrl, RemoveFeedRequest,
 };
 
 use super::app_data_actor::InitializeAppDataDirectory;
@@ -136,6 +136,7 @@ impl RegistryActor {
         &mut self,
         path: &str,
     ) -> Result<RegistryInitializationResult, String> {
+        tracing::info!(path = %path, "initializing registry actor storage");
         if self.registry.is_some() {
             return Err(t!("error.registry_reload_not_supported").to_string());
         }
@@ -192,6 +193,10 @@ impl RegistryActor {
         );
         self.cache_store = Some(Arc::new(CacheStore::new(cache_dir)));
         self.load_errors = load_errors;
+        tracing::info!(
+            feed_count = feed_count,
+            "registry actor storage initialized"
+        );
 
         Ok(RegistryInitializationResult {
             feed_count,
@@ -201,6 +206,7 @@ impl RegistryActor {
 
     /// Enumerate all feeds in the current registry.
     fn do_list_feeds(&self, req: ListFeedsRequest) -> FeedListResult {
+        tracing::debug!(request_id = %req.request_id, "received list feeds request");
         let items = match &self.registry {
             None => vec![],
             Some(registry) => registry
@@ -214,23 +220,22 @@ impl RegistryActor {
                 })
                 .collect(),
         };
-        FeedListResult {
-            request_id: req.request_id,
-            items,
-        }
+        FeedListResult::new(req.request_id, items)
+    }
+
+    fn require_registry(&mut self) -> Result<&mut ScriptRegistry, String> {
+        self.registry
+            .as_mut()
+            .ok_or_else(|| t!("error.app_data_dir_not_set").to_string())
     }
 
     /// Preview a feed script fetched from a remote URL.
     async fn do_preview_from_url(&mut self, req: PreviewFeedFromUrl) -> FeedPreviewResult {
+        tracing::debug!(request_id = %req.request_id, url = %req.url, "received feed preview from url request");
         let content = match langhuan::script::source::download_script(&req.url).await {
             Ok(c) => c,
             Err(e) => {
-                return FeedPreviewResult {
-                    request_id: req.request_id,
-                    outcome: FeedPreviewOutcome::Error {
-                        message: localize_error(&e),
-                    },
-                };
+                return FeedPreviewResult::error(req.request_id, localize_error(&e));
             }
         };
         self.do_preview(req.request_id, content)
@@ -238,14 +243,12 @@ impl RegistryActor {
 
     /// Preview a feed script read from a local file path.
     async fn do_preview_from_file(&mut self, req: PreviewFeedFromFile) -> FeedPreviewResult {
+        tracing::debug!(request_id = %req.request_id, path = %req.path, "received feed preview from file request");
         let content = match tokio::fs::read_to_string(&req.path).await {
             Ok(c) => c,
             Err(e) => {
                 let message = t!("error.file_read", error = e.to_string()).to_string();
-                return FeedPreviewResult {
-                    request_id: req.request_id,
-                    outcome: FeedPreviewOutcome::Error { message },
-                };
+                return FeedPreviewResult::error(req.request_id, message);
             }
         };
         self.do_preview(req.request_id, content)
@@ -253,78 +256,55 @@ impl RegistryActor {
 
     /// Confirm installation of a previously previewed feed.
     async fn do_install(&mut self, req: InstallFeedRequest) -> FeedInstallResult {
-        let content = match self.pending_installs.remove(&req.request_id) {
+        tracing::debug!(request_id = %req.request_id, "received feed install request");
+        let request_id = req.request_id;
+        let content = match self.pending_installs.remove(&request_id) {
             Some(c) => c,
             None => {
-                return FeedInstallResult {
-                    request_id: req.request_id,
-                    outcome: FeedInstallOutcome::Error {
-                        message: t!("error.no_pending_preview").to_string(),
-                    },
-                };
+                return FeedInstallResult::error(
+                    request_id,
+                    t!("error.no_pending_preview").to_string(),
+                );
             }
         };
 
         let registry = match self.registry.as_mut() {
             Some(registry) => registry,
             None => {
-                return FeedInstallResult {
-                    request_id: req.request_id,
-                    outcome: FeedInstallOutcome::Error {
-                        message: t!("error.app_data_dir_not_set").to_string(),
-                    },
-                };
+                return FeedInstallResult::error(
+                    request_id,
+                    t!("error.app_data_dir_not_set").to_string(),
+                );
             }
         };
 
         let entry = match registry.install_feed(&content, &self.engine).await {
             Ok(e) => e,
             Err(e) => {
-                return FeedInstallResult {
-                    request_id: req.request_id,
-                    outcome: FeedInstallOutcome::Error {
-                        message: localize_error(&e),
-                    },
-                };
+                return FeedInstallResult::error(request_id, localize_error(&e));
             }
         };
 
         self.load_errors.remove(&entry.id);
 
-        FeedInstallResult {
-            request_id: req.request_id,
-            outcome: FeedInstallOutcome::Success,
-        }
+        FeedInstallResult::success(request_id)
     }
 
     /// Remove an installed feed and update both in-memory state and disk.
     async fn do_remove(&mut self, req: RemoveFeedRequest) -> FeedRemoveResult {
-        let registry = match self.registry.as_mut() {
-            Some(registry) => registry,
-            None => {
-                return FeedRemoveResult {
-                    request_id: req.request_id,
-                    outcome: FeedRemoveOutcome::Error {
-                        message: t!("error.app_data_dir_not_set").to_string(),
-                    },
-                };
-            }
+        tracing::debug!(request_id = %req.request_id, feed_id = %req.feed_id, "received feed remove request");
+        let request_id = req.request_id;
+        let registry = match self.require_registry() {
+            Ok(registry) => registry,
+            Err(message) => return FeedRemoveResult::error(request_id, message),
         };
 
         match registry.remove_feed(&req.feed_id).await {
             Ok(()) => {
                 self.load_errors.remove(&req.feed_id);
-                FeedRemoveResult {
-                    request_id: req.request_id,
-                    outcome: FeedRemoveOutcome::Success,
-                }
+                FeedRemoveResult::success(request_id)
             }
-            Err(e) => FeedRemoveResult {
-                request_id: req.request_id,
-                outcome: FeedRemoveOutcome::Error {
-                    message: localize_error(&e),
-                },
-            },
+            Err(e) => FeedRemoveResult::error(request_id, localize_error(&e)),
         }
     }
 
@@ -334,12 +314,7 @@ impl RegistryActor {
         let (meta, _) = match langhuan::script::meta::parse_meta(&content) {
             Ok(m) => m,
             Err(e) => {
-                return FeedPreviewResult {
-                    request_id,
-                    outcome: FeedPreviewOutcome::Error {
-                        message: localize_error(&e),
-                    },
-                };
+                return FeedPreviewResult::error(request_id, localize_error(&e));
             }
         };
 
@@ -349,9 +324,9 @@ impl RegistryActor {
             .and_then(|reg| reg.entry(&meta.id).map(|entry| entry.version.clone()));
         self.pending_installs.insert(request_id.clone(), content);
 
-        FeedPreviewResult {
+        FeedPreviewResult::success(
             request_id,
-            outcome: FeedPreviewOutcome::Success {
+            FeedPreviewOutcome::Success {
                 id: meta.id.clone(),
                 name: meta.name.clone(),
                 version: meta.version.clone(),
@@ -362,9 +337,8 @@ impl RegistryActor {
                 current_version,
                 schema_version: meta.schema_version,
             },
-        }
+        )
     }
-
 }
 
 // ---------------------------------------------------------------------------

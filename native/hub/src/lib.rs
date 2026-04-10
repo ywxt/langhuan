@@ -80,20 +80,17 @@ fn localize_error(e: &langhuan::error::Error) -> String {
                 supported_version = supported_version
             )
             .to_string(),
+            ScriptError::AuthStatusNotSupported { feed_id } => {
+                t!("error.auth_status_not_supported", feed_id = feed_id).to_string()
+            }
         },
         Error::Registry(inner) => match inner {
-            RegistryError::NotFound(e) => {
-                t!("error.registry_not_found", error = e).to_string()
-            }
+            RegistryError::NotFound(e) => t!("error.registry_not_found", error = e).to_string(),
             RegistryError::Parse { message } => {
                 t!("error.registry_parse", message = message).to_string()
             }
-            RegistryError::Write(msg) => {
-                t!("error.registry_write", error = msg).to_string()
-            }
-            RegistryError::FeedNotFound { id } => {
-                t!("error.feed_not_found", id = id).to_string()
-            }
+            RegistryError::Write(msg) => t!("error.registry_write", error = msg).to_string(),
+            RegistryError::FeedNotFound { id } => t!("error.feed_not_found", id = id).to_string(),
             RegistryError::DuplicateFeedId { id } => {
                 t!("error.duplicate_feed_id", id = id).to_string()
             }

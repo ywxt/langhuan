@@ -49,11 +49,7 @@ impl std::fmt::Display for CacheSchemaMismatchError {
         write!(
             f,
             "{}/{}/{}: cached={}, expected={}",
-            self.feed_id,
-            self.book_id,
-            self.chapter_id,
-            self.cached_version,
-            self.expected_version
+            self.feed_id, self.book_id, self.chapter_id, self.cached_version, self.expected_version
         )
     }
 }
@@ -116,12 +112,19 @@ pub enum ScriptError {
 
     /// The feed script declares a schema version newer than this application
     /// supports.
-    #[error("feed {feed_id}: schema version {file_version} is newer than supported version {supported_version}")]
+    #[error(
+        "feed {feed_id}: schema version {file_version} is newer than supported version {supported_version}"
+    )]
     SchemaTooNew {
         feed_id: String,
         file_version: u32,
         supported_version: u32,
     },
+
+    /// The feed script does not implement a `status` handler but
+    /// `auth_status` was called.
+    #[error("feed {feed_id}: auth status check is not supported by this feed")]
+    AuthStatusNotSupported { feed_id: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +156,9 @@ pub enum RegistryError {
 
     /// The `registry.json` schema version is newer than this application
     /// supports.
-    #[error("registry schema version {file_version} is newer than supported version {supported_version}")]
+    #[error(
+        "registry schema version {file_version} is newer than supported version {supported_version}"
+    )]
     SchemaTooNew {
         file_version: u32,
         supported_version: u32,
@@ -191,9 +196,7 @@ pub enum PersistenceError {
 
     /// The content of a chapter cache file does not match the expected key.
     #[error("chapter cache key mismatch: {details}")]
-    CacheKeyMismatch {
-        details: Box<CacheKeyMismatchError>,
-    },
+    CacheKeyMismatch { details: Box<CacheKeyMismatchError> },
 }
 
 // ---------------------------------------------------------------------------
@@ -345,7 +348,11 @@ impl Error {
     }
 
     #[inline]
-    pub fn storage(kind: StorageKind, operation: StorageOperation, message: impl Into<String>) -> Self {
+    pub fn storage(
+        kind: StorageKind,
+        operation: StorageOperation,
+        message: impl Into<String>,
+    ) -> Self {
         PersistenceError::Storage {
             kind,
             operation,
@@ -355,7 +362,11 @@ impl Error {
     }
 
     #[inline]
-    pub fn format(kind: FormatKind, operation: FormatOperation, message: impl Into<String>) -> Self {
+    pub fn format(
+        kind: FormatKind,
+        operation: FormatOperation,
+        message: impl Into<String>,
+    ) -> Self {
         PersistenceError::Format {
             kind,
             operation,
@@ -376,6 +387,14 @@ impl Error {
     pub fn cache_key_mismatch(details: CacheKeyMismatchError) -> Self {
         PersistenceError::CacheKeyMismatch {
             details: Box::new(details),
+        }
+        .into()
+    }
+
+    #[inline]
+    pub fn auth_status_not_supported(feed_id: impl Into<String>) -> Self {
+        ScriptError::AuthStatusNotSupported {
+            feed_id: feed_id.into(),
         }
         .into()
     }

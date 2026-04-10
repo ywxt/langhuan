@@ -41,7 +41,10 @@ impl LocalBookshelf {
 
     #[must_use]
     pub fn contains(&self, identity: &BookIdentity) -> bool {
-        self.file.entries.iter().any(|entry| &entry.identity == identity)
+        self.file
+            .entries
+            .iter()
+            .any(|entry| &entry.identity == identity)
     }
 
     pub async fn add(&mut self, entry: BookshelfEntry) -> Result<LocalBookshelfAddOutcome> {
@@ -61,7 +64,10 @@ impl LocalBookshelf {
 
         self.file.entries.push(entry);
         self.persist().await?;
-        tracing::debug!(entries = self.file.entries.len(), "book added to local bookshelf");
+        tracing::debug!(
+            entries = self.file.entries.len(),
+            "book added to local bookshelf"
+        );
         Ok(LocalBookshelfAddOutcome::Added)
     }
 
@@ -72,7 +78,9 @@ impl LocalBookshelf {
             "removing book from local bookshelf"
         );
         let before = self.file.entries.len();
-        self.file.entries.retain(|entry| &entry.identity != identity);
+        self.file
+            .entries
+            .retain(|entry| &entry.identity != identity);
 
         if self.file.entries.len() == before {
             tracing::debug!(
@@ -84,7 +92,10 @@ impl LocalBookshelf {
         }
 
         self.persist().await?;
-        tracing::debug!(entries = self.file.entries.len(), "book removed from local bookshelf");
+        tracing::debug!(
+            entries = self.file.entries.len(),
+            "book removed from local bookshelf"
+        );
         Ok(LocalBookshelfRemoveOutcome::Removed)
     }
 
@@ -92,7 +103,10 @@ impl LocalBookshelf {
         self.file
             .entries
             .sort_by_key(|entry| std::cmp::Reverse(entry.added_at_unix_ms));
-        tracing::debug!(entries = self.file.entries.len(), "persisting local bookshelf");
+        tracing::debug!(
+            entries = self.file.entries.len(),
+            "persisting local bookshelf"
+        );
         self.store.save(&self.file).await
     }
 }
@@ -147,7 +161,10 @@ mod tests {
             LocalBookshelfRemoveOutcome::Removed
         );
         assert_eq!(
-            reloaded.remove(&a.identity).await.expect("remove missing a"),
+            reloaded
+                .remove(&a.identity)
+                .await
+                .expect("remove missing a"),
             LocalBookshelfRemoveOutcome::NotFound
         );
 

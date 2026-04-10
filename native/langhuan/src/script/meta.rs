@@ -92,13 +92,11 @@ fn extract_header_lines(script: &str) -> Result<(Vec<HeaderEntry>, usize)> {
     }
 
     if !in_header {
-        return Err(Error::script_parse(1, "missing ==Feed== header".to_owned(),
-        ));
+        return Err(Error::script_parse(1, "missing ==Feed== header"));
     }
 
     if body_offset.is_none() {
-        return Err(Error::script_parse(1, "missing ==/Feed== closing tag".to_owned(),
-        ));
+        return Err(Error::script_parse(1, "missing ==/Feed== closing tag"));
     }
 
     Ok((entries, body_offset.unwrap_or(0)))
@@ -160,13 +158,15 @@ impl FeedMetaBuilder {
         fn require(field: Option<String>, name: &str) -> Result<String> {
             match field {
                 Some(v) if !v.is_empty() => Ok(v),
-                _ => Err(Error::invalid_feed(format!("missing required field: @{name}"))),
+                _ => Err(Error::invalid_feed(format!(
+                    "missing required field: @{name}"
+                ))),
             }
         }
 
-        let schema_version = self.schema_version.ok_or_else(|| {
-            Error::invalid_feed("missing required field: @schema_version")
-        })?;
+        let schema_version = self
+            .schema_version
+            .ok_or_else(|| Error::invalid_feed("missing required field: @schema_version"))?;
 
         Ok(FeedMeta {
             id: require(self.id, "id")?,
@@ -178,7 +178,9 @@ impl FeedMetaBuilder {
             access_domains: {
                 for entry in &self.access_domains {
                     if !is_valid_hostname(entry) {
-                        return Err(Error::invalid_feed(format!("invalid domain in access_domains: '{entry}'")));
+                        return Err(Error::invalid_feed(format!(
+                            "invalid domain in access_domains: '{entry}'"
+                        )));
                     }
                 }
                 self.access_domains
@@ -264,7 +266,10 @@ end
     fn missing_required_field() {
         let script = "-- ==Feed==\n-- @id test\n-- ==/Feed==\n";
         let err = parse_meta(script).unwrap_err();
-        assert!(matches!(err, Error::Script(ScriptError::InvalidFeed { .. })));
+        assert!(matches!(
+            err,
+            Error::Script(ScriptError::InvalidFeed { .. })
+        ));
     }
 
     #[test]
@@ -319,7 +324,10 @@ end
 -- ==/Feed==
 "#;
         let err = parse_meta(script).unwrap_err();
-        assert!(matches!(err, Error::Script(ScriptError::InvalidFeed { .. })));
+        assert!(matches!(
+            err,
+            Error::Script(ScriptError::InvalidFeed { .. })
+        ));
     }
 
     #[test]
@@ -339,7 +347,10 @@ end
 -- ==/Feed==
 "#;
         let err = parse_meta(script).unwrap_err();
-        assert!(matches!(err, Error::Script(ScriptError::InvalidFeed { .. })));
+        assert!(matches!(
+            err,
+            Error::Script(ScriptError::InvalidFeed { .. })
+        ));
     }
 
     #[test]
@@ -353,7 +364,10 @@ end
 -- ==/Feed==
 "#;
         let err = parse_meta(script).unwrap_err();
-        assert!(matches!(err, Error::Script(ScriptError::InvalidFeed { .. })));
+        assert!(matches!(
+            err,
+            Error::Script(ScriptError::InvalidFeed { .. })
+        ));
     }
 
     #[test]

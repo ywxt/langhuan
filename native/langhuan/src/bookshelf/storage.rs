@@ -46,11 +46,21 @@ impl JsonBookshelfStore {
             return Ok(BookshelfFile::default());
         }
 
-        let content = tokio::fs::read_to_string(&self.path)
-            .await
-            .map_err(|e| Error::storage(StorageKind::Bookshelf, StorageOperation::Read, e.to_string()))?;
+        let content = tokio::fs::read_to_string(&self.path).await.map_err(|e| {
+            Error::storage(
+                StorageKind::Bookshelf,
+                StorageOperation::Read,
+                e.to_string(),
+            )
+        })?;
 
-        let parsed = serde_json::from_str(&content).map_err(|e| Error::format(FormatKind::Bookshelf, FormatOperation::Deserialize, e.to_string()))?;
+        let parsed = serde_json::from_str(&content).map_err(|e| {
+            Error::format(
+                FormatKind::Bookshelf,
+                FormatOperation::Deserialize,
+                e.to_string(),
+            )
+        })?;
         tracing::debug!(path = %self.path.display(), "bookshelf file loaded");
         Ok(parsed)
     }
@@ -62,16 +72,29 @@ impl JsonBookshelfStore {
             "saving bookshelf file"
         );
         if let Some(parent) = self.path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| Error::storage(StorageKind::Bookshelf, StorageOperation::CreateDir, e.to_string()))?;
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                Error::storage(
+                    StorageKind::Bookshelf,
+                    StorageOperation::CreateDir,
+                    e.to_string(),
+                )
+            })?;
         }
 
-        let content = serde_json::to_string_pretty(file)
-            .map_err(|e| Error::format(FormatKind::Bookshelf, FormatOperation::Serialize, e.to_string()))?;
-        write_atomic(&self.path, &content)
-            .await
-            .map_err(|e| Error::storage(StorageKind::Bookshelf, StorageOperation::Write, e.to_string()))?;
+        let content = serde_json::to_string_pretty(file).map_err(|e| {
+            Error::format(
+                FormatKind::Bookshelf,
+                FormatOperation::Serialize,
+                e.to_string(),
+            )
+        })?;
+        write_atomic(&self.path, &content).await.map_err(|e| {
+            Error::storage(
+                StorageKind::Bookshelf,
+                StorageOperation::Write,
+                e.to_string(),
+            )
+        })?;
         tracing::debug!(path = %self.path.display(), "bookshelf file saved");
         Ok(())
     }
@@ -102,7 +125,14 @@ mod tests {
 
         let store = JsonBookshelfStore::new(path);
         let err = store.load().await.expect_err("expected parse error");
-        assert!(matches!(err, Error::Persistence(PersistenceError::Format { kind: FormatKind::Bookshelf, operation: FormatOperation::Deserialize, .. })));
+        assert!(matches!(
+            err,
+            Error::Persistence(PersistenceError::Format {
+                kind: FormatKind::Bookshelf,
+                operation: FormatOperation::Deserialize,
+                ..
+            })
+        ));
     }
 
     #[tokio::test]

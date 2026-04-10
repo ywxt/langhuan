@@ -184,7 +184,10 @@ async fn paragraphs_returns_title_and_text_items() {
     let engine = ScriptEngine::new();
     let feed = engine.load_feed(&script).await.expect("load_feed failed");
 
-    let results: Vec<_> = feed.paragraphs("12345", "12345/67890").collect::<Vec<_>>().await;
+    let results: Vec<_> = feed
+        .paragraphs("12345", "12345/67890")
+        .collect::<Vec<_>>()
+        .await;
 
     assert!(!results.is_empty(), "expected paragraph stream items");
     for r in &results {
@@ -224,7 +227,10 @@ async fn paragraphs_supports_chaptercontent_br_layout() {
     let engine = ScriptEngine::new();
     let feed = engine.load_feed(&script).await.expect("load_feed failed");
 
-    let results: Vec<_> = feed.paragraphs("12345", "12345/24680").collect::<Vec<_>>().await;
+    let results: Vec<_> = feed
+        .paragraphs("12345", "12345/24680")
+        .collect::<Vec<_>>()
+        .await;
     let items: Vec<_> = results.into_iter().filter_map(|r| r.ok()).collect();
 
     let text_items: Vec<_> = items

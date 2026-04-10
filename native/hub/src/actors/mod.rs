@@ -4,8 +4,8 @@
 
 mod app_data_actor;
 mod bookshelf_actor;
-mod login_actor;
 mod locale_actor;
+mod login_actor;
 mod reading_progress_actor;
 mod registry_actor;
 mod stream_actor;
@@ -13,8 +13,8 @@ mod stream_actor;
 use app_data_actor::AppDataActor;
 use bookshelf_actor::BookshelfActor;
 use langhuan::script::runtime::ScriptEngine;
-use login_actor::LoginActor;
 use locale_actor::LocaleActor;
+use login_actor::LoginActor;
 use messages::prelude::Context;
 use reading_progress_actor::ReadingProgressActor;
 use registry_actor::RegistryActor;

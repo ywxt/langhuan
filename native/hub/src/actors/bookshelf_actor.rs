@@ -9,8 +9,8 @@ use rinf::{DartSignal, RustSignal};
 use tokio::task::JoinSet;
 
 use crate::signals::{
-    BookshelfAddRequest, BookshelfAddResult, BookshelfListEnd, BookshelfListItem, BookshelfListOutcome,
-    BookshelfListRequest, BookshelfOperationOutcome, BookshelfRemoveRequest, BookshelfRemoveResult,
+    BookshelfAddRequest, BookshelfAddResult, BookshelfListEnd, BookshelfListItem,
+    BookshelfListOutcome, BookshelfListRequest, BookshelfRemoveRequest, BookshelfRemoveResult,
 };
 
 use super::app_data_actor::InitializeAppDataDirectory;
@@ -76,6 +76,7 @@ impl BookshelfActor {
             source_book_id = %req.source_book_id,
             "received bookshelf add request"
         );
+        let request_id = req.request_id;
         let identity = BookIdentity {
             feed_id: req.feed_id,
             source_book_id: req.source_book_id,
@@ -86,24 +87,15 @@ impl BookshelfActor {
             added_at_unix_ms: now_unix_ms(),
         };
 
-        let outcome = match self.shelf.as_mut() {
+        match self.shelf.as_mut() {
             Some(shelf) => match shelf.add(entry).await {
-                Ok(LocalBookshelfAddOutcome::Added) => BookshelfOperationOutcome::Success,
+                Ok(LocalBookshelfAddOutcome::Added) => BookshelfAddResult::success(request_id),
                 Ok(LocalBookshelfAddOutcome::AlreadyExists) => {
-                    BookshelfOperationOutcome::AlreadyExists
+                    BookshelfAddResult::already_exists(request_id)
                 }
-                Err(e) => BookshelfOperationOutcome::Error {
-                    message: e.to_string(),
-                },
+                Err(e) => BookshelfAddResult::error(request_id, e.to_string()),
             },
-            None => BookshelfOperationOutcome::Error {
-                message: self.unavailable_message(),
-            },
-        };
-
-        BookshelfAddResult {
-            request_id: req.request_id,
-            outcome,
+            None => BookshelfAddResult::error(request_id, self.unavailable_message()),
         }
     }
 
@@ -114,27 +106,23 @@ impl BookshelfActor {
             source_book_id = %req.source_book_id,
             "received bookshelf remove request"
         );
+        let request_id = req.request_id;
         let identity = BookIdentity {
             feed_id: req.feed_id,
             source_book_id: req.source_book_id,
         };
 
-        let outcome = match self.shelf.as_mut() {
+        match self.shelf.as_mut() {
             Some(shelf) => match shelf.remove(&identity).await {
-                Ok(LocalBookshelfRemoveOutcome::Removed) => BookshelfOperationOutcome::Success,
-                Ok(LocalBookshelfRemoveOutcome::NotFound) => BookshelfOperationOutcome::NotFound,
-                Err(e) => BookshelfOperationOutcome::Error {
-                    message: e.to_string(),
-                },
+                Ok(LocalBookshelfRemoveOutcome::Removed) => {
+                    BookshelfRemoveResult::success(request_id)
+                }
+                Ok(LocalBookshelfRemoveOutcome::NotFound) => {
+                    BookshelfRemoveResult::not_found(request_id)
+                }
+                Err(e) => BookshelfRemoveResult::error(request_id, e.to_string()),
             },
-            None => BookshelfOperationOutcome::Error {
-                message: self.unavailable_message(),
-            },
-        };
-
-        BookshelfRemoveResult {
-            request_id: req.request_id,
-            outcome,
+            None => BookshelfRemoveResult::error(request_id, self.unavailable_message()),
         }
     }
 
@@ -291,6 +279,7 @@ mod tests {
     use std::error::Error;
     use std::io;
 
+    use crate::signals::BookshelfOperationOutcome;
     use messages::prelude::Context;
 
     use super::*;
@@ -329,7 +318,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_app_data_directory_keeps_followup_requests_generic_when_unavailable() -> TestResult {
+    async fn set_app_data_directory_keeps_followup_requests_generic_when_unavailable() -> TestResult
+    {
         let dir = tempfile::tempdir()?;
         let blocked_path = dir.path().join("blocked");
         std::fs::write(&blocked_path, "file")?;

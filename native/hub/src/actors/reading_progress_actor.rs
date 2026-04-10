@@ -37,6 +37,7 @@ impl ReadingProgressActor {
     async fn initialize_app_data_directory(&mut self, path: &str) -> Result<(), String> {
         let base_dir = Path::new(path);
         let progress_dir = progress_dir(base_dir);
+        tracing::info!(path = %progress_dir.display(), "initializing reading progress storage");
 
         if let Err(e) = tokio::fs::create_dir_all(&progress_dir).await {
             return Err(e.to_string());
@@ -47,6 +48,7 @@ impl ReadingProgressActor {
                 .await
                 .map_err(|e| localize_error(&e))?,
         );
+        tracing::info!("reading progress storage initialized");
         Ok(())
     }
 
@@ -149,13 +151,19 @@ impl Handler<InitializeAppDataDirectory> for ReadingProgressActor {
 #[async_trait]
 impl Notifiable<ReadingProgressGetRequest> for ReadingProgressActor {
     async fn notify(&mut self, msg: ReadingProgressGetRequest, _: &Context<Self>) {
-        self.do_reading_progress_get(msg).await.send_signal_to_dart();
+        tracing::debug!(request_id = %msg.request_id, feed_id = %msg.feed_id, book_id = %msg.book_id, "received reading progress get request");
+        self.do_reading_progress_get(msg)
+            .await
+            .send_signal_to_dart();
     }
 }
 
 #[async_trait]
 impl Notifiable<ReadingProgressSetRequest> for ReadingProgressActor {
     async fn notify(&mut self, msg: ReadingProgressSetRequest, _: &Context<Self>) {
-        self.do_reading_progress_set(msg).await.send_signal_to_dart();
+        tracing::debug!(request_id = %msg.request_id, feed_id = %msg.feed_id, book_id = %msg.book_id, chapter_id = %msg.chapter_id, "received reading progress set request");
+        self.do_reading_progress_set(msg)
+            .await
+            .send_signal_to_dart();
     }
 }

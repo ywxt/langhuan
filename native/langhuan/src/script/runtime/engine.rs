@@ -49,7 +49,11 @@ impl ScriptEngine {
 
         // 1b. Reject feeds whose schema version is newer than we support.
         if feed_meta.schema_version > crate::feed::meta::FEED_SCHEMA_VERSION {
-            return Err(crate::error::Error::feed_schema_too_new(feed_meta.id.clone(), feed_meta.schema_version, crate::feed::meta::FEED_SCHEMA_VERSION));
+            return Err(crate::error::Error::feed_schema_too_new(
+                feed_meta.id.clone(),
+                feed_meta.schema_version,
+                crate::feed::meta::FEED_SCHEMA_VERSION,
+            ));
         }
 
         tracing::info!(

@@ -41,7 +41,11 @@ impl AuthStore {
                     Error::storage(StorageKind::Auth, StorageOperation::Read, e.to_string())
                 })?;
                 let parsed: AuthFile = serde_json::from_str(&content).map_err(|e| {
-                    Error::format(FormatKind::Auth, FormatOperation::Deserialize, e.to_string())
+                    Error::format(
+                        FormatKind::Auth,
+                        FormatOperation::Deserialize,
+                        e.to_string(),
+                    )
                 })?;
 
                 if parsed.schema_version != AUTH_SCHEMA_VERSION {
@@ -75,19 +79,29 @@ impl AuthStore {
         Ok(self.auth_info_by_feed.get(feed_id).cloned())
     }
 
-    pub async fn set_auth_info(&mut self, feed_id: &str, auth_info: serde_json::Value) -> Result<()> {
+    pub async fn set_auth_info(
+        &mut self,
+        feed_id: &str,
+        auth_info: serde_json::Value,
+    ) -> Result<()> {
         self.auth_info_by_feed
             .insert(feed_id.to_owned(), auth_info.clone());
 
         let path = self.auth_file_path(feed_id);
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                Error::storage(StorageKind::Auth, StorageOperation::CreateDir, e.to_string())
+                Error::storage(
+                    StorageKind::Auth,
+                    StorageOperation::CreateDir,
+                    e.to_string(),
+                )
             })?;
         }
 
         let content = serde_json::to_string_pretty(&AuthFile::new(feed_id.to_owned(), auth_info))
-            .map_err(|e| Error::format(FormatKind::Auth, FormatOperation::Serialize, e.to_string()))?;
+            .map_err(|e| {
+            Error::format(FormatKind::Auth, FormatOperation::Serialize, e.to_string())
+        })?;
 
         write_atomic(&path, &content).await.map_err(|e| {
             Error::storage(StorageKind::Auth, StorageOperation::Write, e.to_string())
@@ -102,7 +116,11 @@ impl AuthStore {
         let path = self.auth_file_path(feed_id);
         if path.exists() {
             tokio::fs::remove_file(&path).await.map_err(|e| {
-                Error::storage(StorageKind::Auth, StorageOperation::RemoveFile, e.to_string())
+                Error::storage(
+                    StorageKind::Auth,
+                    StorageOperation::RemoveFile,
+                    e.to_string(),
+                )
             })?;
         }
         Ok(())

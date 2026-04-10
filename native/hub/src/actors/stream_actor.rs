@@ -74,6 +74,7 @@ impl StreamActor {
 
     /// Handle an incoming `SearchRequest` from Dart.
     async fn do_search(&mut self, req: SearchRequest) {
+        tracing::debug!(request_id = %req.request_id, feed_id = %req.feed_id, "received search request");
         let request_id = req.request_id.clone();
         let feed = match self.resolve_feed(&req.feed_id).await {
             Ok(feed) => feed,
@@ -90,6 +91,7 @@ impl StreamActor {
 
     /// Handle an incoming `ChaptersRequest` from Dart.
     async fn do_chapters(&mut self, req: ChaptersRequest) {
+        tracing::debug!(request_id = %req.request_id, feed_id = %req.feed_id, book_id = %req.book_id, "received chapters request");
         let request_id = req.request_id.clone();
         let feed = match self.resolve_feed(&req.feed_id).await {
             Ok(feed) => feed,
@@ -106,6 +108,7 @@ impl StreamActor {
 
     /// Handle an incoming `ChapterContentRequest` from Dart.
     async fn do_chapter_content(&mut self, req: ChapterContentRequest) {
+        tracing::debug!(request_id = %req.request_id, feed_id = %req.feed_id, book_id = %req.book_id, chapter_id = %req.chapter_id, "received chapter content request");
         let request_id = req.request_id.clone();
         let feed = match self.resolve_feed(&req.feed_id).await {
             Ok(feed) => feed,
@@ -122,6 +125,7 @@ impl StreamActor {
 
     /// Handle an incoming `BookInfoRequest` from Dart.
     async fn do_book_info(&mut self, req: BookInfoRequest) -> BookInfoResult {
+        tracing::debug!(feed_id = %req.feed_id, book_id = %req.book_id, "received book info request");
         match self.resolve_feed_result(&req.feed_id).await {
             Ok(feed) => run_book_info(&feed, req).await,
             Err(message) => BookInfoResult {
@@ -132,6 +136,7 @@ impl StreamActor {
 
     /// Cancel the task identified by `request_id`, if it is still running.
     fn do_cancel(&mut self, req: FeedCancelRequest) -> Option<FeedStreamEnd> {
+        tracing::debug!(request_id = %req.request_id, "received stream cancel request");
         self.stream_tasks
             .abort(&req.request_id)
             .then_some(FeedStreamEnd {

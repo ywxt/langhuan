@@ -51,10 +51,20 @@ pub struct CookieEntry {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub(crate) enum RequestPatchContext {
-    Search { feed_id: String },
-    BookInfo { feed_id: String, book_id: String },
-    Chapters { feed_id: String, book_id: String },
-    AuthStatus { feed_id: String },
+    Search {
+        feed_id: String,
+    },
+    BookInfo {
+        feed_id: String,
+        book_id: String,
+    },
+    Chapters {
+        feed_id: String,
+        book_id: String,
+    },
+    AuthStatus {
+        feed_id: String,
+    },
     Paragraphs {
         feed_id: String,
         book_id: String,
@@ -85,7 +95,8 @@ pub trait FeedAuthFlow: Feed + Send + Sync {
     fn parse_auth(&self, support: &Self::SupportAuth, page: &AuthPageContext) -> Result<AuthInfo>;
 
     /// Set/replace current auth payload for this feed instance.
-    fn set_auth_info(&self, support: &Self::SupportAuth, auth_info: Option<AuthInfo>) -> Result<()>;
+    fn set_auth_info(&self, support: &Self::SupportAuth, auth_info: Option<AuthInfo>)
+    -> Result<()>;
 
     /// Return auth status for this feed instance.
     fn auth_status(

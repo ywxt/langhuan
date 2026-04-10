@@ -51,7 +51,9 @@ impl DocInner {
 
     fn selector(selector_str: &str) -> Result<Selector> {
         Selector::parse(selector_str).map_err(|e| {
-            runtime_error(format!("html.select: invalid selector '{selector_str}': {e}"))
+            runtime_error(format!(
+                "html.select: invalid selector '{selector_str}': {e}"
+            ))
         })
     }
 
@@ -254,13 +256,13 @@ impl UserData for DocHandle {
 
 impl UserData for ElementHandle {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("text", |_, this, ()| {
-            this.inner.node_text(this.node_id)
-        });
+        methods.add_method("text", |_, this, ()| this.inner.node_text(this.node_id));
 
         methods.add_method("html", |_, this, ()| this.inner.node_html(this.node_id));
 
-        methods.add_method("outer_html", |_, this, ()| this.inner.node_outer_html(this.node_id));
+        methods.add_method("outer_html", |_, this, ()| {
+            this.inner.node_outer_html(this.node_id)
+        });
 
         methods.add_method("select", |_, this, selector: String| {
             let node_ids = this.inner.select_from_node(this.node_id, &selector)?;

@@ -39,7 +39,8 @@ pub trait Feed: Send + Sync {
     ///
     /// Returns a stream that yields each [`Paragraph`] as it is received,
     /// automatically following pagination.
-    fn paragraphs<'a>(&'a self, book_id: &'a str, chapter_id: &'a str) -> FeedStream<'a, Paragraph>;
+    fn paragraphs<'a>(&'a self, book_id: &'a str, chapter_id: &'a str)
+    -> FeedStream<'a, Paragraph>;
 
     /// The metadata of this feed (id, name, version, etc.).
     fn meta(&self) -> &FeedMeta;

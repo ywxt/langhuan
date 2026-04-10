@@ -3,9 +3,7 @@ use messages::prelude::{Actor, Address, Context, Notifiable};
 use rinf::{DartSignal, RustSignal};
 use tokio::task::JoinSet;
 
-use crate::signals::{
-    AppDataDirectoryOutcome, AppDataDirectorySet, SetAppDataDirectory,
-};
+use crate::signals::{AppDataDirectorySet, SetAppDataDirectory};
 
 use super::bookshelf_actor::BookshelfActor;
 use super::login_actor::LoginActor;
@@ -45,98 +43,84 @@ impl AppDataActor {
         }
     }
 
+    fn handle_init_result<T, E>(
+        result: Result<Result<T, String>, E>,
+        fallback_message: impl Into<String>,
+    ) -> Result<T, AppDataDirectorySet> {
+        match result {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(message)) => Err(AppDataDirectorySet::error(message)),
+            Err(_) => Err(AppDataDirectorySet::error(fallback_message.into())),
+        }
+    }
+
     async fn set_data_directory(&mut self, req: SetAppDataDirectory) -> AppDataDirectorySet {
+        tracing::info!(path = %req.path, "initializing app data directory");
+        let app_data_dir_error = t!("error.app_data_dir_not_set");
+        let bookshelf_error = t!("error.bookshelf_unavailable");
         let app_data_path = req.path;
 
-        let registry_result = match self
-            .registry_addr
-            .send(InitializeAppDataDirectory {
-                path: app_data_path.clone(),
-            })
-            .await
-        {
-            Ok(Ok(result)) => result,
-            Ok(Err(message)) => {
-                return AppDataDirectorySet {
-                    outcome: AppDataDirectoryOutcome::Error { message },
-                };
-            }
-            Err(_) => {
-                return AppDataDirectorySet {
-                    outcome: AppDataDirectoryOutcome::Error {
-                        message: t!("error.app_data_dir_not_set").to_string(),
-                    },
-                };
+        let registry_result = match Self::handle_init_result(
+            self.registry_addr
+                .send(InitializeAppDataDirectory {
+                    path: app_data_path.clone(),
+                })
+                .await,
+            app_data_dir_error.as_ref(),
+        ) {
+            Ok(result) => result,
+            Err(result) => {
+                tracing::warn!("failed to initialize registry actor storage");
+                return result;
             }
         };
 
-        match self
-            .login_addr
-            .send(InitializeAppDataDirectory {
-                path: app_data_path.clone(),
-            })
-            .await
-        {
-            Ok(Ok(())) => {}
-            Ok(Err(message)) => {
-                return AppDataDirectorySet {
-                    outcome: AppDataDirectoryOutcome::Error { message },
-                };
-            }
-            Err(_) => {
-                return AppDataDirectorySet {
-                    outcome: AppDataDirectoryOutcome::Error {
-                        message: t!("error.app_data_dir_not_set").to_string(),
-                    },
-                };
-            }
+        if let Err(result) = Self::handle_init_result(
+            self.login_addr
+                .send(InitializeAppDataDirectory {
+                    path: app_data_path.clone(),
+                })
+                .await,
+            app_data_dir_error.as_ref(),
+        ) {
+            tracing::warn!("failed to initialize login actor storage");
+            return result;
         }
 
-        match self
-            .bookshelf_addr
-            .send(InitializeAppDataDirectory {
-                path: app_data_path.clone(),
-            })
-            .await
-        {
-            Ok(Ok(())) => {}
-            Ok(Err(message)) => {
-                return AppDataDirectorySet {
-                    outcome: AppDataDirectoryOutcome::Error { message },
-                };
-            }
-            Err(_) => {
-                return AppDataDirectorySet {
-                    outcome: AppDataDirectoryOutcome::Error {
-                        message: t!("error.bookshelf_unavailable").to_string(),
-                    },
-                };
-            }
+        if let Err(result) = Self::handle_init_result(
+            self.bookshelf_addr
+                .send(InitializeAppDataDirectory {
+                    path: app_data_path.clone(),
+                })
+                .await,
+            bookshelf_error.as_ref(),
+        ) {
+            tracing::warn!("failed to initialize bookshelf actor storage");
+            return result;
         }
 
-        match self
-            .reading_progress_addr
-            .send(InitializeAppDataDirectory {
-                path: app_data_path,
-            })
-            .await
-        {
-            Ok(Ok(())) => AppDataDirectorySet {
-                outcome: match registry_result.warning_message {
-                    None => AppDataDirectoryOutcome::Success {
-                        feed_count: registry_result.feed_count,
-                    },
-                    Some(message) => AppDataDirectoryOutcome::Error { message },
-                },
-            },
-            Ok(Err(message)) => AppDataDirectorySet {
-                outcome: AppDataDirectoryOutcome::Error { message },
-            },
-            Err(_) => AppDataDirectorySet {
-                outcome: AppDataDirectoryOutcome::Error {
-                    message: t!("error.app_data_dir_not_set").to_string(),
-                },
-            },
+        match Self::handle_init_result(
+            self.reading_progress_addr
+                .send(InitializeAppDataDirectory {
+                    path: app_data_path,
+                })
+                .await,
+            app_data_dir_error,
+        ) {
+            Ok(()) => {
+                tracing::info!(
+                    feed_count = registry_result.feed_count,
+                    "app data directory initialized"
+                );
+                match registry_result.warning_message {
+                    None => AppDataDirectorySet::success(registry_result.feed_count),
+                    Some(message) => AppDataDirectorySet::error(message),
+                }
+            }
+            Err(result) => {
+                tracing::warn!("failed to initialize reading progress actor storage");
+                result
+            }
         }
     }
 
@@ -151,6 +135,7 @@ impl AppDataActor {
 #[async_trait]
 impl Notifiable<SetAppDataDirectory> for AppDataActor {
     async fn notify(&mut self, message: SetAppDataDirectory, _: &Context<Self>) {
+        tracing::debug!(path = %message.path, "received app data directory request");
         self.set_data_directory(message).await.send_signal_to_dart();
     }
 }
@@ -160,6 +145,7 @@ mod tests {
     use std::error::Error;
     use std::io;
 
+    use crate::signals::AppDataDirectoryOutcome;
     use langhuan::script::runtime::ScriptEngine;
     use messages::prelude::Context;
     use tokio::spawn;

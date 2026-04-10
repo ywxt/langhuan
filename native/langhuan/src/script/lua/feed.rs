@@ -190,7 +190,9 @@ impl LuaFeed {
         let http_request: HttpRequest = self.call_function(&pair.request, args)?;
         let http_request = self.apply_auth_patch(patch_context, http_request)?;
         let http_response = self.execute_http(&http_request).await?;
-        let lua_response = self.lua.to_value_with(&http_response, LUA_SERIALIZE_OPTIONS)?;
+        let lua_response = self
+            .lua
+            .to_value_with(&http_response, LUA_SERIALIZE_OPTIONS)?;
         let page: Page<T, Value> = pair.parse.call(lua_response)?;
         Ok(page)
     }
@@ -259,7 +261,9 @@ impl LuaFeed {
         let http_request: HttpRequest = self.call_function(&pair.request, args)?;
         let http_request = self.apply_auth_patch(patch_context, http_request)?;
         let http_response = self.execute_http(&http_request).await?;
-        let lua_response = self.lua.to_value_with(&http_response, LUA_SERIALIZE_OPTIONS)?;
+        let lua_response = self
+            .lua
+            .to_value_with(&http_response, LUA_SERIALIZE_OPTIONS)?;
         let value: Value = pair.parse.call(lua_response)?;
         let result: T = self.lua.from_value(value)?;
         Ok(result)
@@ -320,41 +324,6 @@ impl LuaFeed {
                 }
             }
         })
-    }
-
-    fn is_auth_info_expired(auth_info: &AuthInfo) -> bool {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-
-        if let Some(expire_at) = auth_info
-            .get("expire_at")
-            .and_then(serde_json::Value::as_i64)
-        {
-            return expire_at <= now;
-        }
-        if let Some(expires_at) = auth_info
-            .get("expires_at")
-            .and_then(serde_json::Value::as_i64)
-        {
-            return expires_at <= now;
-        }
-        if let (Some(updated_at), Some(ttl_sec)) = (
-            auth_info
-                .get("updated_at")
-                .and_then(serde_json::Value::as_i64),
-            auth_info.get("ttl_sec").and_then(serde_json::Value::as_i64),
-        ) {
-            return updated_at.saturating_add(ttl_sec) <= now;
-        }
-        if let Some(expired) = auth_info
-            .get("expired")
-            .and_then(serde_json::Value::as_bool)
-        {
-            return expired;
-        }
-        false
     }
 
     fn apply_auth_patch(
@@ -474,7 +443,11 @@ impl FeedAuthFlow for LuaFeed {
         Ok(auth_info)
     }
 
-    fn set_auth_info(&self, _support: &Self::SupportAuth, auth_info: Option<AuthInfo>) -> Result<()> {
+    fn set_auth_info(
+        &self,
+        _support: &Self::SupportAuth,
+        auth_info: Option<AuthInfo>,
+    ) -> Result<()> {
         let mut guard = self
             .auth_info
             .write()
@@ -484,15 +457,15 @@ impl FeedAuthFlow for LuaFeed {
     }
 
     async fn auth_status(&self, support: &Self::SupportAuth) -> Result<AuthStatus> {
-        let  cached_auth = {
+        let has_auth = {
             let guard = self
                 .auth_info
                 .read()
                 .map_err(|_| crate::error::Error::invalid_feed("auth state lock poisoned"))?;
-             guard.clone()
+            guard.is_some()
         };
 
-        if cached_auth.is_none() {
+        if !has_auth {
             return Ok(AuthStatus::LoggedOut);
         }
 
@@ -500,22 +473,17 @@ impl FeedAuthFlow for LuaFeed {
             let context = RequestPatchContext::AuthStatus {
                 feed_id: self.meta.id.clone(),
             };
-            let remote_status: String = self.execute_cycle(status_pair, (), &context).await?;
-            return Ok(match remote_status.as_str() {
-                "logged_in" => AuthStatus::LoggedIn,
-                "expired" => AuthStatus::Expired,
-                _ => AuthStatus::LoggedOut,
+            let is_valid: bool = self.execute_cycle(status_pair, (), &context).await?;
+            return Ok(if is_valid {
+                AuthStatus::LoggedIn
+            } else {
+                AuthStatus::Expired
             });
         }
 
-        let Some(auth_info) = cached_auth.as_ref() else {
-            return Ok(AuthStatus::LoggedOut);
-        };
-        if Self::is_auth_info_expired(auth_info) {
-            Ok(AuthStatus::Expired)
-        } else {
-            Ok(AuthStatus::LoggedIn)
-        }
+        Err(crate::error::Error::auth_status_not_supported(
+            &self.meta.id,
+        ))
     }
 }
 
@@ -845,5 +813,168 @@ return {{
         assert_eq!(results[0].as_ref().unwrap().title, "Book One");
         assert_eq!(results[1].as_ref().unwrap().id, "22");
         assert_eq!(results[1].as_ref().unwrap().title, "Book Two");
+    }
+
+    // -----------------------------------------------------------------------
+    // Auth / login tests
+    // -----------------------------------------------------------------------
+
+    const AUTH_STUBS: &str = "\
+    search     = { request = function(k, c) return { url = meta.base_url .. \"/\" } end, parse = function(r) return { items = {}, next_cursor = nil } end },\n\
+    book_info  = { request = function(id)   return { url = meta.base_url .. \"/\" } end, parse = function(r) return { id = \"\", title = \"\", author = \"\" } end },\n\
+    chapters   = { request = function(id, c) return { url = meta.base_url .. \"/\" } end, parse = function(r) return { items = {}, next_cursor = nil } end },\n\
+    paragraphs = { request = function(b, c, cur) return { url = meta.base_url .. \"/\" } end, parse = function(r) return { items = {}, next_cursor = nil } end },\n";
+
+    fn make_login_script_no_status(base_url: &str) -> String {
+        format!(
+            "{header}\nreturn {{\n{stubs}\n    login = {{\n        entry         = function() return {{ url = meta.base_url .. \"/login\" }} end,\n        parse         = function(page) return {{ token = page.current_url }} end,\n        patch_request = function(ctx, req, auth) return req end,\n    }},\n}}\n",
+            header = make_header(base_url),
+            stubs = AUTH_STUBS,
+        )
+    }
+
+    fn make_login_script_with_status(base_url: &str, status_result: bool) -> String {
+        let status_val = if status_result { "true" } else { "false" };
+        format!(
+            "{header}\nreturn {{\n{stubs}\n    login = {{\n        entry         = function() return {{ url = meta.base_url .. \"/login\" }} end,\n        parse         = function(page) return {{ token = \"tok\" }} end,\n        patch_request = function(ctx, req, auth) return req end,\n        status = {{\n            request = function() return {{ url = meta.base_url .. \"/status\" }} end,\n            parse   = function(resp) return {status_val} end,\n        }},\n    }},\n}}\n",
+            header = make_header(base_url),
+            stubs = AUTH_STUBS,
+            status_val = status_val,
+        )
+    }
+
+    /// A feed without a `login` block should return `None` from `supports_auth`.
+    #[tokio::test]
+    async fn supports_auth_returns_none_without_login_block() {
+        let feed = load_feed("http://localhost", SEARCH_BODY).await;
+        assert!(feed.supports_auth().is_none());
+    }
+
+    /// A feed with a `login` block should return `Some` from `supports_auth`.
+    #[tokio::test]
+    async fn supports_auth_returns_some_with_login_block() {
+        let feed = ScriptEngine::new()
+            .load_feed(&make_login_script_no_status("http://localhost"))
+            .await
+            .expect("load");
+        assert!(feed.supports_auth().is_some());
+    }
+
+    /// Without any stored `auth_info`, `auth_status` must return `LoggedOut`.
+    #[tokio::test]
+    async fn auth_status_logged_out_when_no_auth_info() {
+        let feed = ScriptEngine::new()
+            .load_feed(&make_login_script_no_status("http://localhost"))
+            .await
+            .expect("load");
+        let support = feed.supports_auth().expect("login block present");
+        let status = feed.auth_status(&support).await.expect("auth_status ok");
+        assert_eq!(status, AuthStatus::LoggedOut);
+    }
+
+    /// With stored `auth_info` but no `status` handler, `auth_status` must
+    /// return an `AuthStatusNotSupported` error.
+    #[tokio::test]
+    async fn auth_status_not_supported_without_status_handler() {
+        let feed = ScriptEngine::new()
+            .load_feed(&make_login_script_no_status("http://localhost"))
+            .await
+            .expect("load");
+        let support = feed.supports_auth().expect("login block present");
+        feed.set_auth_info(&support, Some(serde_json::json!({"token": "abc"})))
+            .expect("set_auth_info ok");
+        let err = feed
+            .auth_status(&support)
+            .await
+            .expect_err("should return error when status handler absent");
+        assert!(
+            matches!(
+                err,
+                crate::error::Error::Script(
+                    crate::error::ScriptError::AuthStatusNotSupported { .. }
+                )
+            ),
+            "expected AuthStatusNotSupported, got: {err:?}",
+        );
+    }
+
+    /// When the `status.parse` handler returns `true`, `auth_status` must
+    /// return `LoggedIn`.
+    #[tokio::test]
+    async fn auth_status_logged_in_when_status_returns_true() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("GET", "/status")
+            .with_status(200)
+            .with_body("{}")
+            .create_async()
+            .await;
+
+        let feed = ScriptEngine::new()
+            .load_feed(&make_login_script_with_status(&server.url(), true))
+            .await
+            .expect("load");
+        let support = feed.supports_auth().expect("login block present");
+        feed.set_auth_info(&support, Some(serde_json::json!({"token": "abc"})))
+            .expect("set_auth_info ok");
+        let status = feed.auth_status(&support).await.expect("auth_status ok");
+        assert_eq!(status, AuthStatus::LoggedIn);
+    }
+
+    /// When the `status.parse` handler returns `false`, `auth_status` must
+    /// return `Expired`.
+    #[tokio::test]
+    async fn auth_status_expired_when_status_returns_false() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("GET", "/status")
+            .with_status(200)
+            .with_body("{}")
+            .create_async()
+            .await;
+
+        let feed = ScriptEngine::new()
+            .load_feed(&make_login_script_with_status(&server.url(), false))
+            .await
+            .expect("load");
+        let support = feed.supports_auth().expect("login block present");
+        feed.set_auth_info(&support, Some(serde_json::json!({"token": "abc"})))
+            .expect("set_auth_info ok");
+        let status = feed.auth_status(&support).await.expect("auth_status ok");
+        assert_eq!(status, AuthStatus::Expired);
+    }
+
+    /// `auth_entry` must return the URL produced by the Lua `entry` function.
+    #[tokio::test]
+    async fn auth_entry_returns_url_from_lua() {
+        let feed = ScriptEngine::new()
+            .load_feed(&make_login_script_no_status("http://example.com"))
+            .await
+            .expect("load");
+        let support = feed.supports_auth().expect("login block present");
+        let entry = feed.auth_entry(&support).expect("auth_entry ok");
+        assert_eq!(entry.url, "http://example.com/login");
+    }
+
+    /// `parse_auth` must pass the page context to Lua and return the parsed
+    /// `AuthInfo` map.
+    #[tokio::test]
+    async fn parse_auth_extracts_token_from_page() {
+        let feed = ScriptEngine::new()
+            .load_feed(&make_login_script_no_status("http://localhost"))
+            .await
+            .expect("load");
+        let support = feed.supports_auth().expect("login block present");
+        let page = AuthPageContext {
+            current_url: "http://localhost/callback?code=XYZ".to_owned(),
+            response: Default::default(),
+            response_headers: vec![],
+            cookies: vec![],
+        };
+        let auth_info = feed.parse_auth(&support, &page).expect("parse_auth ok");
+        assert_eq!(
+            auth_info.get("token").and_then(|v| v.as_str()),
+            Some("http://localhost/callback?code=XYZ"),
+        );
     }
 }

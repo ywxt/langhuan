@@ -1,5 +1,5 @@
 pub mod models;
 pub mod storage;
 
-pub use models::{AuthFile, AUTH_SCHEMA_VERSION};
+pub use models::{AUTH_SCHEMA_VERSION, AuthFile};
 pub use storage::AuthStore;
