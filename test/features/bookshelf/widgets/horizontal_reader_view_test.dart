@@ -8,7 +8,7 @@ import 'package:langhuan/features/bookshelf/widgets/horizontal_reader_view.dart'
 import 'package:langhuan/features/bookshelf/widgets/page_breaker.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
-import 'package:langhuan/src/bindings/signals/signals.dart';
+import 'package:langhuan/src/rust/api/types.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock content provider
@@ -86,8 +86,8 @@ List<ChapterInfoModel> makeChapters(int count) {
 }
 
 List<ParagraphContent> makeContent(String chapterId) => [
-  ParagraphContentTitle(text: 'Title of $chapterId'),
-  ParagraphContentText(content: 'Body text of $chapterId. ' * 5),
+  ParagraphContent_Title(text: 'Title of $chapterId'),
+  ParagraphContent_Text(content: 'Body text of $chapterId. ' * 5),
 ];
 
 Widget buildTestWidget({
@@ -217,7 +217,7 @@ void main() {
       final chapters = makeChapters(3);
       // Make ch-0 have very short content (1 page), ch-1 fails, ch-2 ok.
       provider.immediateContent['ch-0'] = [
-        const ParagraphContentTitle(text: 'Ch 0'),
+        const ParagraphContent_Title(text: 'Ch 0'),
       ];
       provider.failingChapters.add('ch-1');
       provider.immediateContent['ch-2'] = makeContent('ch-2');
@@ -322,7 +322,7 @@ void main() {
       // Make chapters with very short content so each is 1 page.
       for (int i = 0; i < 3; i++) {
         provider.immediateContent['ch-$i'] = [
-          ParagraphContentTitle(text: 'Ch $i'),
+          ParagraphContent_Title(text: 'Ch $i'),
         ];
       }
 
@@ -366,7 +366,7 @@ void main() {
 
         // ch-0: ready immediately (short content = 1 page).
         provider.immediateContent['ch-0'] = [
-          const ParagraphContentTitle(text: 'Ch 0 Title'),
+          const ParagraphContent_Title(text: 'Ch 0 Title'),
         ];
         // ch-1: delayed loading (will stay in loading state).
         // We use a StreamController to keep it pending.
@@ -435,7 +435,7 @@ void main() {
         // All chapters ready immediately.
         for (int i = 0; i < 5; i++) {
           provider.immediateContent['ch-$i'] = [
-            ParagraphContentTitle(text: 'Ch $i Title'),
+            ParagraphContent_Title(text: 'Ch $i Title'),
           ];
         }
 
@@ -473,16 +473,16 @@ void main() {
         final chapters = makeChapters(4);
 
         provider.immediateContent['ch-0'] = [
-          const ParagraphContentTitle(text: 'Ch 0 Title'),
+          const ParagraphContent_Title(text: 'Ch 0 Title'),
         ];
 
         final delayedCh1 = StreamController<ParagraphContent>();
 
         provider.immediateContent['ch-2'] = [
-          const ParagraphContentTitle(text: 'Ch 2 Title'),
+          const ParagraphContent_Title(text: 'Ch 2 Title'),
         ];
         provider.immediateContent['ch-3'] = [
-          const ParagraphContentTitle(text: 'Ch 3 Title'),
+          const ParagraphContent_Title(text: 'Ch 3 Title'),
         ];
 
         final customProvider = _DelayedProvider(
@@ -511,9 +511,9 @@ void main() {
 
         // Resolve ch-1 with enough content to produce multiple pages,
         // which inserts extra pages before current viewport.
-        delayedCh1.add(const ParagraphContentTitle(text: 'Ch 1 Title'));
+        delayedCh1.add(const ParagraphContent_Title(text: 'Ch 1 Title'));
         delayedCh1.add(
-          ParagraphContentText(content: 'Ch 1 long body. ' * 2000),
+          ParagraphContent_Text(content: 'Ch 1 long body. ' * 2000),
         );
         await delayedCh1.close();
 

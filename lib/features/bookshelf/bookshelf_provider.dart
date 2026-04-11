@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../rust_init.dart';
-import '../../src/bindings/signals/signals.dart';
 import '../feeds/feed_service.dart';
 
 // ---------------------------------------------------------------------------
@@ -68,18 +67,14 @@ class BookshelfState {
 class BookshelfNotifier extends Notifier<BookshelfState> {
   bool _initialized = false;
 
-  bool _isBootstrapReady(AsyncValue<AppDataDirectorySet> bootstrap) {
+  bool _isBootstrapReady(AsyncValue<AppDataDirectoryResult> bootstrap) {
     if (bootstrap.isLoading || bootstrap.hasError) return false;
-    final result = bootstrap.asData?.value;
-    if (result == null) return false;
-    return result.outcome is AppDataDirectoryOutcomeSuccess;
+    return bootstrap.asData?.value != null;
   }
 
   @override
   BookshelfState build() {
     final bootstrap = ref.watch(appDataDirectorySetProvider);
-
-    if (bootstrap.isLoading) return const BookshelfState(isLoading: true);
 
     if (bootstrap.hasError) {
       return BookshelfState(
@@ -90,18 +85,9 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
       );
     }
 
-    final result = bootstrap.asData?.value;
-    if (result == null) return const BookshelfState();
+    if (bootstrap.isLoading) return const BookshelfState(isLoading: true);
 
-    final outcome = result.outcome;
-    if (outcome is AppDataDirectoryOutcomeError) {
-      return BookshelfState(
-        error: BookshelfError(
-          BookshelfErrorType.loadFailed,
-          originalError: outcome,
-        ),
-      );
-    }
+    if (bootstrap.asData?.value == null) return const BookshelfState();
 
     if (!_initialized) {
       _initialized = true;

@@ -1,17 +1,4 @@
 //! [`RegistryActor`] — manages the script registry and feed installation.
-//!
-//! # Responsibilities
-//! - Accept internal app-data initialization requests to load the script
-//!   registry from the scripts subdirectory and pre-compile every feed listed
-//!   in it.
-//! - Accept `ListFeedsRequest` from Dart to enumerate registered feeds.
-//! - Accept `PreviewFeedFromUrl` / `PreviewFeedFromFile` from Dart to preview
-//!   a feed script before installation.
-//! - Accept `InstallFeedRequest` / `RemoveFeedRequest` from Dart to manage
-//!   installed feeds.
-//! - Respond to `GetFeed` handler requests from other actors (e.g.
-//!   [`StreamActor`](super::stream_actor::StreamActor)) to look up a
-//!   pre-compiled [`LuaFeed`] by feed ID.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -23,16 +10,10 @@ use langhuan::cache::{CacheStore, CachedFeed};
 use langhuan::script::lua::LuaFeed;
 use langhuan::script::registry::ScriptRegistry;
 use langhuan::script::runtime::ScriptEngine;
-use messages::prelude::{Actor, Address, Context, Handler, Notifiable};
-use rinf::{DartSignal, RustSignal};
-use tokio::task::JoinSet;
+use messages::prelude::{Actor, Address, Context, Handler};
 
+use crate::api::types::{BridgeError, FeedMetaItem, FeedPreviewInfo};
 use crate::localize_error;
-use crate::signals::{
-    FeedInstallResult, FeedListResult, FeedMetaItem, FeedPreviewOutcome, FeedPreviewResult,
-    FeedRemoveResult, InstallFeedRequest, ListFeedsRequest, PreviewFeedFromFile,
-    PreviewFeedFromUrl, RemoveFeedRequest,
-};
 
 use super::app_data_actor::InitializeAppDataDirectory;
 
@@ -45,14 +26,10 @@ pub struct RegistryInitializationResult {
 // ResolveError
 // ---------------------------------------------------------------------------
 
-/// Error returned by [`Handler<GetFeed>`] when a feed cannot be resolved.
 #[derive(Debug, Clone)]
 pub enum ResolveError {
-    /// App data directory has not been set yet.
     DirNotSet,
-    /// Feed exists in registry but failed to compile.
     Unavailable { id: String },
-    /// Feed ID not found in registry.
     NotFound { id: String },
 }
 
@@ -71,58 +48,60 @@ impl fmt::Display for ResolveError {
 }
 
 // ---------------------------------------------------------------------------
-// GetFeed message
+// Actor-to-actor messages (unchanged)
 // ---------------------------------------------------------------------------
 
-/// Request message sent by [`StreamActor`](super::stream_actor::StreamActor)
-/// to look up a pre-compiled feed.
 pub struct GetFeed {
     pub feed_id: String,
 }
 
-/// Request all feed IDs currently known to registry entries.
 pub struct GetFeedIds;
+
+// ---------------------------------------------------------------------------
+// FRB-facing messages (replace old DartSignal types)
+// ---------------------------------------------------------------------------
+
+pub struct ListFeeds;
+
+pub struct PreviewFeedFromUrl {
+    pub url: String,
+}
+
+pub struct PreviewFeedFromFile {
+    pub path: String,
+}
+
+pub struct InstallFeed {
+    pub request_id: String,
+}
+
+pub struct RemoveFeed {
+    pub feed_id: String,
+}
 
 // ---------------------------------------------------------------------------
 // RegistryActor
 // ---------------------------------------------------------------------------
 
-/// Manages the script registry, feed compilation, preview, install, and
-/// removal.
 pub struct RegistryActor {
     engine: ScriptEngine,
-    /// The currently loaded script registry.  `None` until
-    /// `do_set_directory` succeeds for the first time.
     registry: Option<ScriptRegistry>,
-    /// Shared cache store used by [`CachedFeed`] wrappers.
     cache_store: Option<Arc<CacheStore>>,
-    /// Per-feed compile errors keyed by `feed_id`.
     load_errors: HashMap<String, String>,
-    /// Pending feed installs awaiting user confirmation, keyed by `request_id`.
     pending_installs: HashMap<String, String>,
-    /// Owned tasks that are canceled when the actor is dropped.
-    _owned_tasks: JoinSet<()>,
 }
 
 impl Actor for RegistryActor {}
 
 impl RegistryActor {
-    /// Creates the actor and spawns listener tasks for all registry-related
-    /// Dart signal types.
     pub fn new(self_addr: Address<Self>, engine: ScriptEngine) -> Self {
-        let mut _owned_tasks = JoinSet::new();
-        _owned_tasks.spawn(Self::listen_to_list_feeds(self_addr.clone()));
-        _owned_tasks.spawn(Self::listen_to_preview_from_url(self_addr.clone()));
-        _owned_tasks.spawn(Self::listen_to_preview_from_file(self_addr.clone()));
-        _owned_tasks.spawn(Self::listen_to_install(self_addr.clone()));
-        _owned_tasks.spawn(Self::listen_to_remove(self_addr.clone()));
+        let _ = self_addr; // kept for API compat with create_actors
         Self {
             engine,
             registry: None,
             cache_store: None,
             load_errors: HashMap::new(),
             pending_installs: HashMap::new(),
-            _owned_tasks,
         }
     }
 
@@ -130,8 +109,6 @@ impl RegistryActor {
     // Business logic
     // -----------------------------------------------------------------------
 
-    /// Load (or reload) the script registry from the scripts subdirectory and
-    /// eagerly compile every feed listed in it.
     async fn initialize_app_data_directory(
         &mut self,
         path: &str,
@@ -151,7 +128,6 @@ impl RegistryActor {
             return Err(e.to_string());
         }
 
-        // Ensure registry.json exists (creates an empty one on first run).
         if let Err(e) = ScriptRegistry::ensure_registry(&scripts_dir).await {
             return Err(localize_error(&e));
         }
@@ -204,10 +180,8 @@ impl RegistryActor {
         })
     }
 
-    /// Enumerate all feeds in the current registry.
-    fn do_list_feeds(&self, req: ListFeedsRequest) -> FeedListResult {
-        tracing::debug!(request_id = %req.request_id, "received list feeds request");
-        let items = match &self.registry {
+    fn do_list_feeds(&self) -> Vec<FeedMetaItem> {
+        match &self.registry {
             None => vec![],
             Some(registry) => registry
                 .list_entries()
@@ -219,130 +193,95 @@ impl RegistryActor {
                     error: self.load_errors.get(&entry.id).cloned(),
                 })
                 .collect(),
-        };
-        FeedListResult::new(req.request_id, items)
-    }
-
-    fn require_registry(&mut self) -> Result<&mut ScriptRegistry, String> {
-        self.registry
-            .as_mut()
-            .ok_or_else(|| t!("error.app_data_dir_not_set").to_string())
-    }
-
-    /// Preview a feed script fetched from a remote URL.
-    async fn do_preview_from_url(&mut self, req: PreviewFeedFromUrl) -> FeedPreviewResult {
-        tracing::debug!(request_id = %req.request_id, url = %req.url, "received feed preview from url request");
-        let content = match langhuan::script::source::download_script(&req.url).await {
-            Ok(c) => c,
-            Err(e) => {
-                return FeedPreviewResult::error(req.request_id, localize_error(&e));
-            }
-        };
-        self.do_preview(req.request_id, content)
-    }
-
-    /// Preview a feed script read from a local file path.
-    async fn do_preview_from_file(&mut self, req: PreviewFeedFromFile) -> FeedPreviewResult {
-        tracing::debug!(request_id = %req.request_id, path = %req.path, "received feed preview from file request");
-        let content = match tokio::fs::read_to_string(&req.path).await {
-            Ok(c) => c,
-            Err(e) => {
-                let message = t!("error.file_read", error = e.to_string()).to_string();
-                return FeedPreviewResult::error(req.request_id, message);
-            }
-        };
-        self.do_preview(req.request_id, content)
-    }
-
-    /// Confirm installation of a previously previewed feed.
-    async fn do_install(&mut self, req: InstallFeedRequest) -> FeedInstallResult {
-        tracing::debug!(request_id = %req.request_id, "received feed install request");
-        let request_id = req.request_id;
-        let content = match self.pending_installs.remove(&request_id) {
-            Some(c) => c,
-            None => {
-                return FeedInstallResult::error(
-                    request_id,
-                    t!("error.no_pending_preview").to_string(),
-                );
-            }
-        };
-
-        let registry = match self.registry.as_mut() {
-            Some(registry) => registry,
-            None => {
-                return FeedInstallResult::error(
-                    request_id,
-                    t!("error.app_data_dir_not_set").to_string(),
-                );
-            }
-        };
-
-        let entry = match registry.install_feed(&content, &self.engine).await {
-            Ok(e) => e,
-            Err(e) => {
-                return FeedInstallResult::error(request_id, localize_error(&e));
-            }
-        };
-
-        self.load_errors.remove(&entry.id);
-
-        FeedInstallResult::success(request_id)
-    }
-
-    /// Remove an installed feed and update both in-memory state and disk.
-    async fn do_remove(&mut self, req: RemoveFeedRequest) -> FeedRemoveResult {
-        tracing::debug!(request_id = %req.request_id, feed_id = %req.feed_id, "received feed remove request");
-        let request_id = req.request_id;
-        let registry = match self.require_registry() {
-            Ok(registry) => registry,
-            Err(message) => return FeedRemoveResult::error(request_id, message),
-        };
-
-        match registry.remove_feed(&req.feed_id).await {
-            Ok(()) => {
-                self.load_errors.remove(&req.feed_id);
-                FeedRemoveResult::success(request_id)
-            }
-            Err(e) => FeedRemoveResult::error(request_id, localize_error(&e)),
         }
     }
 
-    /// Parse `content`, cache it as a pending install, and build a
-    /// [`FeedPreviewResult`].
-    fn do_preview(&mut self, request_id: String, content: String) -> FeedPreviewResult {
-        let (meta, _) = match langhuan::script::meta::parse_meta(&content) {
-            Ok(m) => m,
-            Err(e) => {
-                return FeedPreviewResult::error(request_id, localize_error(&e));
-            }
-        };
+    fn require_registry(&mut self) -> Result<&mut ScriptRegistry, BridgeError> {
+        self.registry
+            .as_mut()
+            .ok_or_else(|| BridgeError::from(t!("error.app_data_dir_not_set").to_string()))
+    }
+
+    async fn do_preview_from_url(&mut self, url: String) -> Result<FeedPreviewInfo, BridgeError> {
+        tracing::debug!(url = %url, "preview feed from url");
+        let content = langhuan::script::source::download_script(&url)
+            .await
+            ?;
+        self.do_preview(content)
+    }
+
+    async fn do_preview_from_file(&mut self, path: String) -> Result<FeedPreviewInfo, BridgeError> {
+        tracing::debug!(path = %path, "preview feed from file");
+        let content = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| BridgeError::from(t!("error.file_read", error = e.to_string()).to_string()))?;
+        self.do_preview(content)
+    }
+
+    async fn do_install(&mut self, request_id: String) -> Result<(), BridgeError> {
+        tracing::debug!(request_id = %request_id, "install feed");
+        let content = self
+            .pending_installs
+            .remove(&request_id)
+            .ok_or_else(|| BridgeError::from(t!("error.no_pending_preview").to_string()))?;
+
+        let registry = self
+            .registry
+            .as_mut()
+            .ok_or_else(|| BridgeError::from(t!("error.app_data_dir_not_set").to_string()))?;
+
+        let entry = registry
+            .install_feed(&content, &self.engine)
+            .await
+            ?;
+
+        self.load_errors.remove(&entry.id);
+        Ok(())
+    }
+
+    async fn do_remove(&mut self, feed_id: String) -> Result<(), BridgeError> {
+        tracing::debug!(feed_id = %feed_id, "remove feed");
+        let registry = self.require_registry()?;
+        registry
+            .remove_feed(&feed_id)
+            .await
+            ?;
+        self.load_errors.remove(&feed_id);
+        Ok(())
+    }
+
+    /// Parse `content`, cache it as a pending install, and return preview info.
+    /// Returns the `request_id` that must be passed to `do_install`.
+    fn do_preview(&mut self, content: String) -> Result<FeedPreviewInfo, BridgeError> {
+        let (meta, _) = langhuan::script::meta::parse_meta(&content)
+            ?;
 
         let current_version = self
             .registry
             .as_ref()
             .and_then(|reg| reg.entry(&meta.id).map(|entry| entry.version.clone()));
-        self.pending_installs.insert(request_id.clone(), content);
 
-        FeedPreviewResult::success(
-            request_id,
-            FeedPreviewOutcome::Success {
-                id: meta.id.clone(),
-                name: meta.name.clone(),
-                version: meta.version.clone(),
-                author: meta.author.clone(),
-                description: meta.description.clone(),
-                base_url: meta.base_url.clone(),
-                access_domains: meta.access_domains.clone(),
-                current_version,
-                schema_version: meta.schema_version,
-            },
-        )
+        // Use the feed id as the pending-install key so the caller can pass it
+        // back in `InstallFeed`.
+        let request_id = meta.id.clone();
+        self.pending_installs.insert(request_id, content);
+
+        Ok(FeedPreviewInfo {
+            id: meta.id,
+            name: meta.name,
+            version: meta.version,
+            author: meta.author,
+            description: meta.description,
+            base_url: meta.base_url,
+            access_domains: meta.access_domains,
+            current_version,
+            schema_version: meta.schema_version,
+        })
     }
 }
 
 // ---------------------------------------------------------------------------
-// Handler impl — GetFeed (request-response from StreamActor)
+// Handler impls — actor-to-actor
 // ---------------------------------------------------------------------------
 
 #[async_trait]
@@ -382,12 +321,8 @@ impl Handler<GetFeedIds> for RegistryActor {
     }
 }
 
-fn cache_dir(base_dir: &Path) -> PathBuf {
-    base_dir.join("cache")
-}
-
 // ---------------------------------------------------------------------------
-// Notifiable impls
+// Handler impls — FRB-facing
 // ---------------------------------------------------------------------------
 
 #[async_trait]
@@ -400,79 +335,52 @@ impl Handler<InitializeAppDataDirectory> for RegistryActor {
 }
 
 #[async_trait]
-impl Notifiable<ListFeedsRequest> for RegistryActor {
-    async fn notify(&mut self, msg: ListFeedsRequest, _: &Context<Self>) {
-        self.do_list_feeds(msg).send_signal_to_dart();
+impl Handler<ListFeeds> for RegistryActor {
+    type Result = Vec<FeedMetaItem>;
+
+    async fn handle(&mut self, _: ListFeeds, _: &Context<Self>) -> Self::Result {
+        self.do_list_feeds()
     }
 }
 
 #[async_trait]
-impl Notifiable<PreviewFeedFromUrl> for RegistryActor {
-    async fn notify(&mut self, msg: PreviewFeedFromUrl, _: &Context<Self>) {
-        self.do_preview_from_url(msg).await.send_signal_to_dart();
+impl Handler<PreviewFeedFromUrl> for RegistryActor {
+    type Result = Result<FeedPreviewInfo, BridgeError>;
+
+    async fn handle(&mut self, msg: PreviewFeedFromUrl, _: &Context<Self>) -> Self::Result {
+        self.do_preview_from_url(msg.url).await
     }
 }
 
 #[async_trait]
-impl Notifiable<PreviewFeedFromFile> for RegistryActor {
-    async fn notify(&mut self, msg: PreviewFeedFromFile, _: &Context<Self>) {
-        self.do_preview_from_file(msg).await.send_signal_to_dart();
+impl Handler<PreviewFeedFromFile> for RegistryActor {
+    type Result = Result<FeedPreviewInfo, BridgeError>;
+
+    async fn handle(&mut self, msg: PreviewFeedFromFile, _: &Context<Self>) -> Self::Result {
+        self.do_preview_from_file(msg.path).await
     }
 }
 
 #[async_trait]
-impl Notifiable<InstallFeedRequest> for RegistryActor {
-    async fn notify(&mut self, msg: InstallFeedRequest, _: &Context<Self>) {
-        self.do_install(msg).await.send_signal_to_dart();
+impl Handler<InstallFeed> for RegistryActor {
+    type Result = Result<(), BridgeError>;
+
+    async fn handle(&mut self, msg: InstallFeed, _: &Context<Self>) -> Self::Result {
+        self.do_install(msg.request_id).await
     }
 }
 
 #[async_trait]
-impl Notifiable<RemoveFeedRequest> for RegistryActor {
-    async fn notify(&mut self, msg: RemoveFeedRequest, _: &Context<Self>) {
-        self.do_remove(msg).await.send_signal_to_dart();
+impl Handler<RemoveFeed> for RegistryActor {
+    type Result = Result<(), BridgeError>;
+
+    async fn handle(&mut self, msg: RemoveFeed, _: &Context<Self>) -> Self::Result {
+        self.do_remove(msg.feed_id).await
     }
 }
 
-// ---------------------------------------------------------------------------
-// Dart signal listeners
-// ---------------------------------------------------------------------------
-
-impl RegistryActor {
-    async fn listen_to_list_feeds(mut self_addr: Address<Self>) {
-        let receiver = ListFeedsRequest::get_dart_signal_receiver();
-        while let Some(signal_pack) = receiver.recv().await {
-            let _ = self_addr.notify(signal_pack.message).await;
-        }
-    }
-
-    async fn listen_to_preview_from_url(mut self_addr: Address<Self>) {
-        let receiver = PreviewFeedFromUrl::get_dart_signal_receiver();
-        while let Some(signal_pack) = receiver.recv().await {
-            let _ = self_addr.notify(signal_pack.message).await;
-        }
-    }
-
-    async fn listen_to_preview_from_file(mut self_addr: Address<Self>) {
-        let receiver = PreviewFeedFromFile::get_dart_signal_receiver();
-        while let Some(signal_pack) = receiver.recv().await {
-            let _ = self_addr.notify(signal_pack.message).await;
-        }
-    }
-
-    async fn listen_to_install(mut self_addr: Address<Self>) {
-        let receiver = InstallFeedRequest::get_dart_signal_receiver();
-        while let Some(signal_pack) = receiver.recv().await {
-            let _ = self_addr.notify(signal_pack.message).await;
-        }
-    }
-
-    async fn listen_to_remove(mut self_addr: Address<Self>) {
-        let receiver = RemoveFeedRequest::get_dart_signal_receiver();
-        while let Some(signal_pack) = receiver.recv().await {
-            let _ = self_addr.notify(signal_pack.message).await;
-        }
-    }
+fn cache_dir(base_dir: &Path) -> PathBuf {
+    base_dir.join("cache")
 }
 
 fn scripts_dir(base_dir: &Path) -> std::path::PathBuf {

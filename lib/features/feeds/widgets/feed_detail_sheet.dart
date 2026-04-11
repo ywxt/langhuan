@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/meta_row.dart';
-import '../../../src/bindings/signals/signals.dart';
+import '../../../src/rust/api/types.dart';
 import '../feed_service.dart';
 
 /// Opens a modal bottom sheet showing feed metadata.

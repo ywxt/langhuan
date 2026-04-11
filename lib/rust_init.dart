@@ -2,8 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:langhuan/features/feeds/feed_service.dart';
-import 'package:langhuan/src/bindings/signals/signals.dart';
+import 'package:langhuan/shared/app_service.dart';
 import 'package:path_provider/path_provider.dart';
 
 Future<Directory> _getAppDataDirectory() async {
@@ -11,9 +10,9 @@ Future<Directory> _getAppDataDirectory() async {
 }
 
 void _sendLocale() {
-  SetLocale(
-    locale: SchedulerBinding.instance.platformDispatcher.locale.toLanguageTag(),
-  ).sendSignalToRust();
+  AppService.instance.setLocale(
+    SchedulerBinding.instance.platformDispatcher.locale.toLanguageTag(),
+  );
 }
 
 void setLocaleToRust() {
@@ -23,9 +22,18 @@ void setLocaleToRust() {
   SchedulerBinding.instance.platformDispatcher.onLocaleChanged = _sendLocale;
 }
 
-final appDataDirectorySetProvider = FutureProvider<AppDataDirectorySet>((
+/// Result of setting the app data directory.
+///
+/// [feedCount] is the number of feeds loaded from the registry.
+class AppDataDirectoryResult {
+  const AppDataDirectoryResult({required this.feedCount});
+  final int feedCount;
+}
+
+final appDataDirectorySetProvider = FutureProvider<AppDataDirectoryResult>((
   ref,
 ) async {
   final path = (await _getAppDataDirectory()).path;
-  return FeedService.instance.setAppDataDirectory(path);
+  final feedCount = await AppService.instance.setAppDataDirectory(path);
+  return AppDataDirectoryResult(feedCount: feedCount);
 });

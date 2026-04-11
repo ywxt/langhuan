@@ -11,7 +11,7 @@ import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/delete_with_undo.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
-import '../../src/bindings/signals/signals.dart';
+import '../../src/rust/api/types.dart';
 import 'add_feed_sheet.dart';
 import 'feed_providers.dart';
 import 'widgets/feed_card.dart';
@@ -64,7 +64,9 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
   Widget build(BuildContext context) {
     final bootstrap = ref.watch(appDataDirectorySetProvider);
     final bootstrapReady =
-        bootstrap.asData?.value.outcome is AppDataDirectoryOutcomeSuccess;
+        !bootstrap.isLoading &&
+        !bootstrap.hasError &&
+        bootstrap.asData?.value != null;
     final feedState = ref.watch(feedListProvider);
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);

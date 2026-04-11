@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-import '../../../src/bindings/signals/signals.dart';
+import '../../../src/rust/api/types.dart';
 import '../../feeds/feed_service.dart';
 import 'page_breaker.dart';
 

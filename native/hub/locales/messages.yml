@@ -116,3 +116,6 @@ error.feed_unavailable:
 error.registry_reload_not_supported:
   en: "Registry reload is not supported at runtime"
   zh: "運行時不支持重新加載書源目錄"
+error.app_data_reload_not_supported:
+  en: "App data reload is not supported at runtime"
+  zh: "運行時不支持重新加載應用數據"

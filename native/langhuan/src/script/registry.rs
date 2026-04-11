@@ -26,7 +26,7 @@
 //! update `version` and `file` in `registry.json`.  Old files are kept for
 //! potential rollback.
 //!
-//! This module has **no dependency on rinf** — it is pure Rust / tokio.
+//! This module is pure Rust / tokio with no framework dependency.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

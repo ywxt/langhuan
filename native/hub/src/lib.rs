@@ -1,18 +1,17 @@
 //! This `hub` crate is the
 //! entry point of the Rust logic.
 
+#[allow(clippy::wildcard_imports)]
+mod frb_generated;
+
 #[macro_use]
 extern crate rust_i18n;
 
 rust_i18n::i18n!("locales", fallback = "en");
 
 mod actors;
+pub mod api;
 mod logging;
-mod signals;
-
-use actors::create_actors;
-use rinf::{dart_shutdown, write_interface};
-use tokio::spawn;
 
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
@@ -22,8 +21,6 @@ use jni::objects::JObject;
 // Uncomment below to target the web.
 // use tokio_with_wasm::alias as tokio;
 
-write_interface!();
-
 #[cfg(target_os = "android")]
 #[unsafe(export_name = "Java_org_eu_ywxt_langhuan_MainActivity_initRustlsVerifier")]
 pub extern "system" fn init_rustls_verifier(mut env: JNIEnv, _activity: JObject, context: JObject) {
@@ -31,22 +28,9 @@ pub extern "system" fn init_rustls_verifier(mut env: JNIEnv, _activity: JObject,
         .expect("failed to initialize rustls-platform-verifier");
 }
 
-// You can go with any async library, not just `tokio`.
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-    logging::init();
-    tracing::info!("hub runtime starting");
-
-    tracing::info!("spawning actor system");
-    spawn(create_actors());
-
-    // Keep the main function running until Dart shutdown.
-    dart_shutdown().await;
-    tracing::info!("hub runtime stopped");
-}
 /// Produce a locale-aware error string for a [`langhuan::error::Error`] using
 /// the global rust-i18n locale set by the `SetLocale` signal handler.
-fn localize_error(e: &langhuan::error::Error) -> String {
+pub(crate) fn localize_error(e: &langhuan::error::Error) -> String {
     use langhuan::error::{Error, PersistenceError, RegistryError, ScriptError};
     match e {
         Error::Script(inner) => match inner {

@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../rust_init.dart';
-import '../../src/bindings/signals/signals.dart';
+import '../../src/rust/api/types.dart';
 import 'feed_service.dart';
 
 // ---------------------------------------------------------------------------
@@ -62,11 +62,6 @@ class FeedListNotifier extends Notifier<FeedListState> {
       return const FeedListState();
     }
 
-    final outcome = result.outcome;
-    if (outcome is AppDataDirectoryOutcomeError) {
-      return FeedListState(error: outcome.message);
-    }
-
     if (!_requestedInitialLoad) {
       _requestedInitialLoad = true;
       Future.microtask(load);
@@ -77,31 +72,23 @@ class FeedListNotifier extends Notifier<FeedListState> {
 
   Future<void> load() async {
     final bootstrap = ref.read(appDataDirectorySetProvider);
-    final result = bootstrap.asData?.value;
 
     if (bootstrap.isLoading) {
       state = const FeedListState(isLoading: true);
       return;
     }
 
-    if (bootstrap.hasError) {
-      state = FeedListState(error: bootstrap.error);
-      return;
-    }
-
-    if (result == null || result.outcome is AppDataDirectoryOutcomeError) {
-      final outcome = result?.outcome;
-      final message = outcome is AppDataDirectoryOutcomeError
-          ? outcome.message
-          : 'app data directory not ready';
-      state = FeedListState(error: message);
+    if (bootstrap.hasError || bootstrap.asData?.value == null) {
+      state = FeedListState(
+        error: bootstrap.error ?? 'app data directory not ready',
+      );
       return;
     }
 
     state = const FeedListState(isLoading: true);
     try {
-      final result = await FeedService.instance.listFeeds();
-      state = FeedListState(items: List.unmodifiable(result.items));
+      final items = await FeedService.instance.listFeeds();
+      state = FeedListState(items: List.unmodifiable(items));
     } catch (e) {
       state = FeedListState(error: e);
     }
@@ -116,11 +103,7 @@ class FeedListNotifier extends Notifier<FeedListState> {
     state = state.copyWith(removingFeedId: () => feedId, error: () => null);
 
     try {
-      final result = await FeedService.instance.removeFeed(feedId);
-      final outcome = result.outcome;
-      if (outcome is FeedRemoveOutcomeError) {
-        return outcome.message;
-      }
+      await FeedService.instance.removeFeed(feedId);
 
       final selected = ref.read(selectedFeedProvider);
       if (selected?.id == feedId) {

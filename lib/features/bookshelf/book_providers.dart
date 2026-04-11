@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../src/bindings/signals/signals.dart';
+import '../../src/rust/api/types.dart';
 import '../feeds/feed_service.dart';
 
 // ---------------------------------------------------------------------------
@@ -14,7 +14,6 @@ class ChaptersState {
     this.items = const [],
     this.isLoading = false,
     this.error,
-    this.requestId,
   });
 
   final String feedId;
@@ -22,7 +21,6 @@ class ChaptersState {
   final List<ChapterInfoModel> items;
   final bool isLoading;
   final Object? error;
-  final String? requestId;
 
   bool get hasError => error != null;
 
@@ -32,7 +30,6 @@ class ChaptersState {
     List<ChapterInfoModel>? items,
     bool? isLoading,
     Object? Function()? error,
-    String? Function()? requestId,
   }) {
     return ChaptersState(
       feedId: feedId ?? this.feedId,
@@ -40,7 +37,6 @@ class ChaptersState {
       items: items ?? this.items,
       isLoading: isLoading ?? this.isLoading,
       error: error != null ? error() : this.error,
-      requestId: requestId != null ? requestId() : this.requestId,
     );
   }
 }
@@ -52,73 +48,30 @@ class ChaptersNotifier extends Notifier<ChaptersState> {
   ChaptersState build() => const ChaptersState();
 
   Future<void> load({required String feedId, required String bookId}) async {
-    await _cancelCurrent();
-    final runToken = ++_runToken;
+    _runToken++;
+    final runToken = _runToken;
 
     state = ChaptersState(feedId: feedId, bookId: bookId, isLoading: true);
 
     try {
-      final sessionId = await FeedService.instance.openChaptersSession(
-        feedId: feedId,
-        bookId: bookId,
-      );
-      if (runToken != _runToken) {
-        FeedService.instance.closeSession(sessionId);
-        return;
-      }
+      final items = await FeedService.instance
+          .chapters(feedId: feedId, bookId: bookId)
+          .toList();
+      if (runToken != _runToken) return;
 
-      state = state.copyWith(requestId: () => sessionId);
-
-      while (runToken == _runToken) {
-        final outcome = await FeedService.instance.pullNextChapterInfo(
-          sessionId,
-        );
-        if (outcome is PullChapterOutcomeItem) {
-          state = state.copyWith(
-            items: [
-              ...state.items,
-              ChapterInfoModel(
-                id: outcome.id,
-                title: outcome.title,
-                index: outcome.index,
-              ),
-            ],
-          );
-          continue;
-        }
-        if (outcome is PullChapterOutcomeEnd) {
-          break;
-        }
-        final error = outcome as PullChapterOutcomeError;
-        throw FeedPullException(message: error.message);
-      }
-
-      if (runToken == _runToken) {
-        state = state.copyWith(isLoading: false, requestId: () => null);
-      }
+      state = state.copyWith(items: items, isLoading: false);
     } catch (err) {
       if (runToken == _runToken) {
-        state = state.copyWith(
-          isLoading: false,
-          error: () => err,
-          requestId: () => null,
-        );
+        state = state.copyWith(isLoading: false, error: () => err);
       }
     }
   }
 
-  Future<void> cancel() async => _cancelCurrent();
+  Future<void> cancel() async => _runToken++;
 
   Future<void> retry({required String feedId}) async {
     if (state.bookId.isEmpty) return;
     await load(feedId: feedId, bookId: state.bookId);
-  }
-
-  Future<void> _cancelCurrent() async {
-    final id = state.requestId;
-    if (id != null) FeedService.instance.closeSession(id);
-    _runToken++;
-    state = state.copyWith(isLoading: false, requestId: () => null);
   }
 }
 
@@ -206,7 +159,6 @@ class ChapterContentState {
     this.items = const [],
     this.isLoading = false,
     this.error,
-    this.requestId,
   });
 
   final String feedId;
@@ -215,11 +167,10 @@ class ChapterContentState {
   final List<ParagraphContent> items;
   final bool isLoading;
   final Object? error;
-  final String? requestId;
 
   bool get hasError => error != null;
   List<String> get allParagraphs => items
-      .whereType<ParagraphContentText>()
+      .whereType<ParagraphContent_Text>()
       .map((p) => p.content)
       .toList(growable: false);
 
@@ -230,7 +181,6 @@ class ChapterContentState {
     List<ParagraphContent>? items,
     bool? isLoading,
     Object? Function()? error,
-    String? Function()? requestId,
   }) {
     return ChapterContentState(
       feedId: feedId ?? this.feedId,
@@ -239,7 +189,6 @@ class ChapterContentState {
       items: items ?? this.items,
       isLoading: isLoading ?? this.isLoading,
       error: error != null ? error() : this.error,
-      requestId: requestId != null ? requestId() : this.requestId,
     );
   }
 }
@@ -255,7 +204,6 @@ class ChapterContentNotifier extends Notifier<ChapterContentState> {
     required String bookId,
     required String chapterId,
   }) async {
-    await _cancelCurrent();
     final runToken = ++_runToken;
 
     state = ChapterContentState(
@@ -266,46 +214,20 @@ class ChapterContentNotifier extends Notifier<ChapterContentState> {
     );
 
     try {
-      final sessionId = await FeedService.instance.openParagraphsSession(
-        feedId: feedId,
-        bookId: bookId,
-        chapterId: chapterId,
-      );
-      if (runToken != _runToken) {
-        FeedService.instance.closeSession(sessionId);
-        return;
-      }
+      final items = await FeedService.instance
+          .paragraphs(feedId: feedId, bookId: bookId, chapterId: chapterId)
+          .toList();
+      if (runToken != _runToken) return;
 
-      state = state.copyWith(requestId: () => sessionId);
-
-      while (runToken == _runToken) {
-        final outcome = await FeedService.instance.pullNextParagraph(sessionId);
-        if (outcome is PullParagraphOutcomeItem) {
-          state = state.copyWith(items: [...state.items, outcome.paragraph]);
-          continue;
-        }
-        if (outcome is PullParagraphOutcomeEnd) {
-          break;
-        }
-        final error = outcome as PullParagraphOutcomeError;
-        throw FeedPullException(message: error.message);
-      }
-
-      if (runToken == _runToken) {
-        state = state.copyWith(isLoading: false, requestId: () => null);
-      }
+      state = state.copyWith(items: items, isLoading: false);
     } catch (err) {
       if (runToken == _runToken) {
-        state = state.copyWith(
-          isLoading: false,
-          error: () => err,
-          requestId: () => null,
-        );
+        state = state.copyWith(isLoading: false, error: () => err);
       }
     }
   }
 
-  Future<void> cancel() async => _cancelCurrent();
+  Future<void> cancel() async => _runToken++;
 
   Future<void> retry() async {
     if (state.feedId.isEmpty ||
@@ -318,13 +240,6 @@ class ChapterContentNotifier extends Notifier<ChapterContentState> {
       bookId: state.bookId,
       chapterId: state.chapterId,
     );
-  }
-
-  Future<void> _cancelCurrent() async {
-    final id = state.requestId;
-    if (id != null) FeedService.instance.closeSession(id);
-    _runToken++;
-    state = state.copyWith(isLoading: false, requestId: () => null);
   }
 }
 

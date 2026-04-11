@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../src/bindings/signals/signals.dart';
+import '../../../src/rust/api/types.dart';
 import '../feed_providers.dart';
 import '../feed_service.dart';
 import 'feed_detail_sheet.dart';

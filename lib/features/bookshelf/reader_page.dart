@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
-import '../../src/bindings/signals/signals.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
@@ -197,36 +196,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       return cached.items;
     }
 
-    final sessionId = await FeedService.instance.openChaptersSession(
-      feedId: widget.feedId,
-      bookId: widget.bookId,
-    );
-    final items = <ChapterInfoModel>[];
-    try {
-      while (true) {
-        final outcome = await FeedService.instance.pullNextChapterInfo(
-          sessionId,
-        );
-        if (outcome is PullChapterOutcomeItem) {
-          items.add(
-            ChapterInfoModel(
-              id: outcome.id,
-              title: outcome.title,
-              index: outcome.index,
-            ),
-          );
-          continue;
-        }
-        if (outcome is PullChapterOutcomeEnd) {
-          break;
-        }
-        final error = outcome as PullChapterOutcomeError;
-        throw FeedPullException(message: error.message);
-      }
-      return items;
-    } finally {
-      FeedService.instance.closeSession(sessionId);
-    }
+    return FeedService.instance
+        .chapters(feedId: widget.feedId, bookId: widget.bookId)
+        .toList();
   }
 
   String _resolveInitialChapterId(

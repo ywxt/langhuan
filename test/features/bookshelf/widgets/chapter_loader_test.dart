@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:langhuan/features/bookshelf/widgets/chapter_loader.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
-import 'package:langhuan/src/bindings/signals/signals.dart';
+import 'package:langhuan/src/rust/api/types.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock content provider
@@ -72,8 +72,8 @@ List<ChapterInfoModel> makeChapters(int count) {
 }
 
 const _sampleContent = [
-  ParagraphContentTitle(text: 'Title'),
-  ParagraphContentText(content: 'Body text'),
+  ParagraphContent_Title(text: 'Title'),
+  ParagraphContent_Text(content: 'Body text'),
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────

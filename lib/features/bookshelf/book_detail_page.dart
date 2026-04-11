@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../rust_init.dart';
-import '../../src/bindings/signals/signals.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/cover_image.dart';
 import '../../shared/widgets/cover_placeholder.dart';
@@ -12,6 +11,7 @@ import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
 import 'book_providers.dart';
 import 'bookshelf_provider.dart';
+import '../feeds/feed_service.dart';
 import 'reading_progress_provider.dart';
 
 class BookDetailPage extends ConsumerStatefulWidget {
@@ -75,7 +75,9 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     final bootstrap = ref.watch(appDataDirectorySetProvider);
     final bookshelfState = ref.watch(bookshelfProvider);
     final bookshelfReady =
-        bootstrap.asData?.value.outcome is AppDataDirectoryOutcomeSuccess;
+        !bootstrap.isLoading &&
+        !bootstrap.hasError &&
+        bootstrap.asData?.value != null;
 
     if (widget.feedId.isEmpty || widget.bookId.isEmpty) {
       return Scaffold(
@@ -305,7 +307,9 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
   Future<void> _addToBookshelf(BuildContext context) async {
     final l10n = AppLocalizations.of(context);
     final bootstrap = ref.read(appDataDirectorySetProvider);
-    if (bootstrap.asData?.value.outcome is! AppDataDirectoryOutcomeSuccess) {
+    if (bootstrap.isLoading ||
+        bootstrap.hasError ||
+        bootstrap.asData?.value == null) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -329,7 +333,9 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
   Future<void> _removeFromBookshelf(BuildContext context) async {
     final l10n = AppLocalizations.of(context);
     final bootstrap = ref.read(appDataDirectorySetProvider);
-    if (bootstrap.asData?.value.outcome is! AppDataDirectoryOutcomeSuccess) {
+    if (bootstrap.isLoading ||
+        bootstrap.hasError ||
+        bootstrap.asData?.value == null) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()

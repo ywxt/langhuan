@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../src/bindings/signals/signals.dart';
+import '../../src/rust/api/types.dart';
 import 'feed_providers.dart';
 import 'feed_service.dart';
 
@@ -78,18 +78,15 @@ class AddFeedNotifier extends Notifier<AddFeedState> {
 
     state = const AddFeedInstalling();
 
-    final result = await FeedService.instance.installFeed(
-      current.preview.requestId,
-    );
-
-    final outcome = result.outcome;
-    switch (outcome) {
-      case FeedInstallOutcomeSuccess():
-        // Refresh the feed list so the newly installed feed appears.
-        ref.read(feedListProvider.notifier).load();
-        state = const AddFeedSuccess();
-      case FeedInstallOutcomeError():
-        state = AddFeedError(message: outcome.message);
+    try {
+      await FeedService.instance.installFeed(current.preview.requestId);
+      // Refresh the feed list so the newly installed feed appears.
+      ref.read(feedListProvider.notifier).load();
+      state = const AddFeedSuccess();
+    } on BridgeError catch (e) {
+      state = AddFeedError(message: e.message);
+    } catch (e) {
+      state = AddFeedError(message: e.toString());
     }
   }
 

@@ -1,0 +1,6 @@
+rust_input: crate::api
+rust_root: native/hub/
+rust_output: native/hub/src/frb_generated.rs
+dart_output: lib/src/rust
+dart_entrypoint_class_name: RustLib
+type_64bit_int: true

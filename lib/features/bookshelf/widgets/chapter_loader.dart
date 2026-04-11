@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../../../src/bindings/signals/signals.dart';
+import '../../../src/rust/api/types.dart';
 import '../../feeds/feed_service.dart';
 import 'reader_types.dart';
 
@@ -35,40 +35,19 @@ class _DefaultContentProvider implements ChapterContentProvider {
     final requestId =
         'chapter-${DateTime.now().millisecondsSinceEpoch}-$chapterId';
 
-    Stream<ParagraphContent> stream() async* {
-      final sessionId = await FeedService.instance.openParagraphsSession(
-        feedId: feedId,
-        bookId: bookId,
-        chapterId: chapterId,
-      );
-      _sessionsByRequestId[requestId] = sessionId;
+    final stream = FeedService.instance.paragraphs(
+      feedId: feedId,
+      bookId: bookId,
+      chapterId: chapterId,
+    );
 
-      while (true) {
-        final outcome = await FeedService.instance.pullNextParagraph(sessionId);
-        if (outcome is PullParagraphOutcomeItem) {
-          yield outcome.paragraph;
-          continue;
-        }
-        if (outcome is PullParagraphOutcomeEnd) {
-          break;
-        }
-        final error = outcome as PullParagraphOutcomeError;
-        throw FeedPullException(message: error.message);
-      }
-    }
-
-    return (requestId: requestId, stream: stream());
+    return (requestId: requestId, stream: stream);
   }
 
   @override
   void cancel(String requestId) {
-    final sessionId = _sessionsByRequestId.remove(requestId);
-    if (sessionId != null) {
-      FeedService.instance.closeSession(sessionId);
-    }
+    // No session to close — the Future-based API handles its own lifecycle.
   }
-
-  static final Map<String, String> _sessionsByRequestId = <String, String>{};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

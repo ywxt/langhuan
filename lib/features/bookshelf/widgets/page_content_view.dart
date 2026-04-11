@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
-import '../../../src/bindings/signals/signals.dart';
+import '../../../src/rust/api/types.dart';
 import 'page_breaker.dart';
 
 /// Renders a single computed [PageContent] — a list of [PageItem]s that
@@ -36,7 +36,7 @@ class PageContentView extends StatelessWidget {
             for (int i = 0; i < items.length; i++) ...[
               if (i > 0)
                 SizedBox(
-                  height: items[i].source is ParagraphContentImage
+                  height: items[i].source is ParagraphContent_Image
                       ? LanghuanTheme.spaceLg
                       : LanghuanTheme.spaceMd,
                 ),
@@ -51,7 +51,7 @@ class PageContentView extends StatelessWidget {
   Widget _buildItem(BuildContext context, ThemeData theme, PageItem item) {
     final source = item.source;
 
-    if (source is ParagraphContentTitle) {
+    if (source is ParagraphContent_Title) {
       return Text(
         source.text,
         style: theme.textTheme.headlineSmall,
@@ -59,7 +59,7 @@ class PageContentView extends StatelessWidget {
       );
     }
 
-    if (source is ParagraphContentText) {
+    if (source is ParagraphContent_Text) {
       final text = item.isPartial ? item.visibleText : source.content;
       return Text(
         text,
@@ -67,7 +67,7 @@ class PageContentView extends StatelessWidget {
       );
     }
 
-    if (source is ParagraphContentImage) {
+    if (source is ParagraphContent_Image) {
       return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

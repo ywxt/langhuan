@@ -11,14 +11,15 @@ edition = "2024"
 # `staticlib` is for iOS and macOS.
 crate-type = ["lib", "cdylib", "staticlib"]
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
+
 [lints.clippy]
-unwrap_used = "deny"
-expect_used = "deny"
 wildcard_imports = "deny"
 
 [dependencies]
 langhuan = { path = "../langhuan" }
-rinf = "8.10.0"
+flutter_rust_bridge = "=2.12.0"
 serde = { version = "1.0.219", features = ["derive"] }
 tokio = { version = "1.45.0", features = ["rt", "macros", "time", "sync"] }
 tokio-stream = "0.1"

@@ -10,16 +10,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:langhuan/app.dart';
 import 'package:langhuan/rust_init.dart';
-import 'package:langhuan/src/bindings/signals/signals.dart';
 
 void main() {
   testWidgets('App renders with bottom navigation', (
     WidgetTester tester,
   ) async {
     // Provide a fake bootstrap result so the app can settle without Rust.
-    const fakeBootstrap = AppDataDirectorySet(
-      outcome: AppDataDirectoryOutcomeSuccess(feedCount: 0),
-    );
+    const fakeBootstrap = AppDataDirectoryResult(feedCount: 0);
 
     await tester.pumpWidget(
       ProviderScope(

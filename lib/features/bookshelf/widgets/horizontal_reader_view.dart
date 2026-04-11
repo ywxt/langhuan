@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../src/bindings/signals/signals.dart';
+import '../../../src/rust/api/types.dart';
 import 'chapter_loader.dart';
 import 'chapter_status_block.dart';
 import 'page_breaker.dart';
@@ -746,7 +746,7 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
       final paragraphs = slot.paragraphs;
       if (paragraphs != null && paragraphs.isNotEmpty) {
         final first = paragraphs.first;
-        if (first is ParagraphContentTitle) return first.text;
+        if (first is ParagraphContent_Title) return first.text;
       }
     }
     final l10n = AppLocalizations.of(context);

@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../src/bindings/signals/signals.dart';
+import '../../../src/rust/api/types.dart';
 import '../../feeds/feed_providers.dart';
 
 /// Horizontal chip row for selecting a feed source on the search page.

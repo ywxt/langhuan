@@ -1,13 +1,14 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
-import 'package:rinf/rinf.dart';
-import 'package:tuple/tuple.dart';
 
-import '../../src/bindings/signals/signals.dart';
+import '../../src/rust/api/auth.dart' as rust_auth;
+import '../../src/rust/api/bookshelf.dart' as rust_bookshelf;
+import '../../src/rust/api/feed_stream.dart' as rust_stream;
+import '../../src/rust/api/reading_progress.dart' as rust_progress;
+import '../../src/rust/api/registry.dart' as rust_registry;
+import '../../src/rust/api/types.dart';
 
 // ---------------------------------------------------------------------------
-// Domain models (mirrors Rust structs)
+// Domain models (mirrors Rust structs, kept for backward compat with UI)
 // ---------------------------------------------------------------------------
 
 @immutable
@@ -25,6 +26,15 @@ class SearchResultModel {
   final String author;
   final String? coverUrl;
   final String? description;
+
+  factory SearchResultModel.fromRust(SearchResultItem item) =>
+      SearchResultModel(
+        id: item.id,
+        title: item.title,
+        author: item.author,
+        coverUrl: item.coverUrl,
+        description: item.description,
+      );
 }
 
 @immutable
@@ -38,6 +48,9 @@ class ChapterInfoModel {
   final String id;
   final String title;
   final int index;
+
+  factory ChapterInfoModel.fromRust(ChapterItem item) =>
+      ChapterInfoModel(id: item.id, title: item.title, index: item.index);
 }
 
 @immutable
@@ -55,6 +68,14 @@ class BookInfoModel {
   final String author;
   final String? coverUrl;
   final String? description;
+
+  factory BookInfoModel.fromRust(BookInfo info) => BookInfoModel(
+    id: info.id,
+    title: info.title,
+    author: info.author,
+    coverUrl: info.coverUrl,
+    description: info.description,
+  );
 }
 
 @immutable
@@ -103,6 +124,17 @@ class BookshelfItemModel {
   final String? description;
 
   String get stableId => '$feedId:$sourceBookId';
+
+  factory BookshelfItemModel.fromRust(BookshelfListItem item) =>
+      BookshelfItemModel(
+        feedId: item.feedId,
+        sourceBookId: item.sourceBookId,
+        title: item.title,
+        author: item.author,
+        addedAtUnixMs: item.addedAtUnixMs,
+        coverUrl: item.coverUrl,
+        description: item.descriptionSnapshot,
+      );
 }
 
 @immutable
@@ -120,6 +152,15 @@ class ReadingProgressModel {
   final String chapterId;
   final int paragraphIndex;
   final int updatedAtMs;
+
+  factory ReadingProgressModel.fromRust(ReadingProgressItem item) =>
+      ReadingProgressModel(
+        feedId: item.feedId,
+        bookId: item.bookId,
+        chapterId: item.chapterId,
+        paragraphIndex: item.paragraphIndex,
+        updatedAtMs: item.updatedAtMs,
+      );
 }
 
 enum FeedAuthStatusModel { loggedIn, loggedOut, expired, unsupported }
@@ -133,166 +174,125 @@ class FeedAuthEntryModel {
 }
 
 // ---------------------------------------------------------------------------
+// Bookshelf operation outcome (kept for provider compat)
+// ---------------------------------------------------------------------------
+
+sealed class BookshelfOperationOutcome {
+  const BookshelfOperationOutcome();
+}
+
+class BookshelfOperationOutcomeAdded extends BookshelfOperationOutcome {
+  const BookshelfOperationOutcomeAdded();
+}
+
+class BookshelfOperationOutcomeAlreadyExists extends BookshelfOperationOutcome {
+  const BookshelfOperationOutcomeAlreadyExists();
+}
+
+class BookshelfOperationOutcomeRemoved extends BookshelfOperationOutcome {
+  const BookshelfOperationOutcomeRemoved();
+}
+
+class BookshelfOperationOutcomeNotFound extends BookshelfOperationOutcome {
+  const BookshelfOperationOutcomeNotFound();
+}
+
+class BookshelfOperationOutcomeError extends BookshelfOperationOutcome {
+  const BookshelfOperationOutcomeError({required this.message});
+  final String message;
+}
+
+// ---------------------------------------------------------------------------
 // FeedService
 // ---------------------------------------------------------------------------
 
-/// Wraps Rinf signals into pull-based session APIs.
-///
-/// Flutter opens a session, then explicitly sends `PullNextRequest` for each
-/// next item. Rust only advances feed streams when PullNext is requested.
+/// Wraps FRB-generated Rust API calls into a convenient service layer.
 class FeedService {
   FeedService._();
 
   static final FeedService instance = FeedService._();
 
   // -------------------------------------------------------------------------
-  // Request ID generation
+  // Search
   // -------------------------------------------------------------------------
 
-  int _counter = 0;
-
-  /// Generate a unique request ID.
-  String _nextId() =>
-      'req-${DateTime.now().millisecondsSinceEpoch}-${_counter++}';
-
-  // -------------------------------------------------------------------------
-  // Pull session: search
-  // -------------------------------------------------------------------------
-
-  Future<String> openSearchSession({
+  Stream<SearchResultModel> search({
     required String feedId,
     required String keyword,
-  }) async {
-    final sessionId = _nextId();
-    final result = await _subscribeAndSend(
-      responseStream: OpenSessionResult.rustSignalStream,
-      matches: (message) => message.sessionId == sessionId,
-      send: () {
-        OpenSearchSession(
-          sessionId: sessionId,
-          feedId: feedId,
-          keyword: keyword,
-        ).sendSignalToRust();
-      },
+  }) async* {
+    final stream = await rust_stream.openSearchStream(
+      feedId: feedId,
+      keyword: keyword,
     );
-
-    final outcome = result.outcome;
-    if (outcome is OpenSessionOutcomeError) {
-      throw FeedPullException(message: outcome.message);
+    try {
+      while (true) {
+        final item = await stream.next();
+        if (item == null) break;
+        yield SearchResultModel.fromRust(item);
+      }
+    } finally {
+      stream.cancel();
     }
-    return sessionId;
-  }
-
-  Future<PullSearchOutcome> pullNextSearchResult(String sessionId) {
-    return _subscribeAndSend(
-      responseStream: PullSearchResult.rustSignalStream,
-      matches: (message) => message.sessionId == sessionId,
-      send: () => PullNextRequest(sessionId: sessionId).sendSignalToRust(),
-    ).then((message) => message.outcome);
   }
 
   // -------------------------------------------------------------------------
-  // Pull session: chapters
+  // Chapters
   // -------------------------------------------------------------------------
 
-  Future<String> openChaptersSession({
+  Stream<ChapterInfoModel> chapters({
     required String feedId,
     required String bookId,
-  }) async {
-    final sessionId = _nextId();
-    final result = await _subscribeAndSend(
-      responseStream: OpenSessionResult.rustSignalStream,
-      matches: (message) => message.sessionId == sessionId,
-      send: () {
-        OpenChaptersSession(
-          sessionId: sessionId,
-          feedId: feedId,
-          bookId: bookId,
-        ).sendSignalToRust();
-      },
+  }) async* {
+    final stream = await rust_stream.openChaptersStream(
+      feedId: feedId,
+      bookId: bookId,
     );
-
-    final outcome = result.outcome;
-    if (outcome is OpenSessionOutcomeError) {
-      throw FeedPullException(message: outcome.message);
+    try {
+      while (true) {
+        final item = await stream.next();
+        if (item == null) break;
+        yield ChapterInfoModel.fromRust(item);
+      }
+    } finally {
+      stream.cancel();
     }
-    return sessionId;
-  }
-
-  Future<PullChapterOutcome> pullNextChapterInfo(String sessionId) {
-    return _subscribeAndSend(
-      responseStream: PullChapterResult.rustSignalStream,
-      matches: (message) => message.sessionId == sessionId,
-      send: () => PullNextRequest(sessionId: sessionId).sendSignalToRust(),
-    ).then((message) => message.outcome);
   }
 
   // -------------------------------------------------------------------------
   // Book info
   // -------------------------------------------------------------------------
 
-  /// Request detailed information for a single book.
   Future<BookInfoModel> bookInfo({
     required String feedId,
     required String bookId,
-  }) {
-    return _subscribeAndSendNext(
-      responseStream: BookInfoResult.rustSignalStream,
-      send: () {
-        BookInfoRequest(feedId: feedId, bookId: bookId).sendSignalToRust();
-      },
-    ).then((message) {
-      final outcome = message.outcome;
-      if (outcome is BookInfoOutcomeError) {
-        throw BookInfoException(message: outcome.message);
-      }
-      final success = outcome as BookInfoOutcomeSuccess;
-      return BookInfoModel(
-        id: success.id,
-        title: success.title,
-        author: success.author,
-        coverUrl: success.coverUrl,
-        description: success.description,
-      );
-    });
+  }) async {
+    final info = await rust_stream.bookInfo(feedId: feedId, bookId: bookId);
+    return BookInfoModel.fromRust(info);
   }
 
   // -------------------------------------------------------------------------
-  // Pull session: chapter content
+  // Paragraphs
   // -------------------------------------------------------------------------
 
-  Future<String> openParagraphsSession({
+  Stream<ParagraphContent> paragraphs({
     required String feedId,
     required String bookId,
     required String chapterId,
-  }) async {
-    final sessionId = _nextId();
-    final result = await _subscribeAndSend(
-      responseStream: OpenSessionResult.rustSignalStream,
-      matches: (message) => message.sessionId == sessionId,
-      send: () {
-        OpenParagraphsSession(
-          sessionId: sessionId,
-          feedId: feedId,
-          bookId: bookId,
-          chapterId: chapterId,
-        ).sendSignalToRust();
-      },
+  }) async* {
+    final stream = await rust_stream.openParagraphsStream(
+      feedId: feedId,
+      bookId: bookId,
+      chapterId: chapterId,
     );
-
-    final outcome = result.outcome;
-    if (outcome is OpenSessionOutcomeError) {
-      throw FeedPullException(message: outcome.message);
+    try {
+      while (true) {
+        final item = await stream.next();
+        if (item == null) break;
+        yield item;
+      }
+    } finally {
+      stream.cancel();
     }
-    return sessionId;
-  }
-
-  Future<PullParagraphOutcome> pullNextParagraph(String sessionId) {
-    return _subscribeAndSend(
-      responseStream: PullParagraphResult.rustSignalStream,
-      matches: (message) => message.sessionId == sessionId,
-      send: () => PullNextRequest(sessionId: sessionId).sendSignalToRust(),
-    ).then((message) => message.outcome);
   }
 
   // -------------------------------------------------------------------------
@@ -302,121 +302,64 @@ class FeedService {
   Future<BookshelfOperationOutcome> addToBookshelf({
     required String feedId,
     required String sourceBookId,
-  }) {
-    final requestId = _nextId();
-    return _subscribeAndSend(
-      responseStream: BookshelfAddResult.rustSignalStream,
-      matches: (message) => message.requestId == requestId,
-      send: () {
-        BookshelfAddRequest(
-          requestId: requestId,
-          feedId: feedId,
-          sourceBookId: sourceBookId,
-        ).sendSignalToRust();
-      },
-    ).then((message) => message.outcome);
+  }) async {
+    try {
+      final outcome = await rust_bookshelf.bookshelfAdd(
+        feedId: feedId,
+        sourceBookId: sourceBookId,
+      );
+      return switch (outcome) {
+        BookshelfAddOutcome.added => const BookshelfOperationOutcomeAdded(),
+        BookshelfAddOutcome.alreadyExists =>
+          const BookshelfOperationOutcomeAlreadyExists(),
+      };
+    } on BridgeError catch (e) {
+      return BookshelfOperationOutcomeError(message: e.message);
+    }
   }
 
   Future<BookshelfOperationOutcome> removeFromBookshelf({
     required String feedId,
     required String sourceBookId,
-  }) {
-    final requestId = _nextId();
-    return _subscribeAndSend(
-      responseStream: BookshelfRemoveResult.rustSignalStream,
-      matches: (message) => message.requestId == requestId,
-      send: () {
-        BookshelfRemoveRequest(
-          requestId: requestId,
-          feedId: feedId,
-          sourceBookId: sourceBookId,
-        ).sendSignalToRust();
-      },
-    ).then((message) => message.outcome);
+  }) async {
+    try {
+      final outcome = await rust_bookshelf.bookshelfRemove(
+        feedId: feedId,
+        sourceBookId: sourceBookId,
+      );
+      return switch (outcome) {
+        BookshelfRemoveOutcome.removed =>
+          const BookshelfOperationOutcomeRemoved(),
+        BookshelfRemoveOutcome.notFound =>
+          const BookshelfOperationOutcomeNotFound(),
+      };
+    } on BridgeError catch (e) {
+      return BookshelfOperationOutcomeError(message: e.message);
+    }
   }
 
-  Future<List<BookshelfItemModel>> listBookshelf() {
-    final requestId = _nextId();
-    final completer = Completer<List<BookshelfItemModel>>();
-    final items = <BookshelfItemModel>[];
-
-    StreamSubscription<RustSignalPack<BookshelfListItem>>? itemSub;
-    StreamSubscription<RustSignalPack<BookshelfListEnd>>? endSub;
-
-    itemSub = BookshelfListItem.rustSignalStream
-        .where((pack) => pack.message.requestId == requestId)
-        .listen((pack) {
-          final it = pack.message;
-          items.add(
-            BookshelfItemModel(
-              feedId: it.feedId,
-              sourceBookId: it.sourceBookId,
-              title: it.title,
-              author: it.author,
-              coverUrl: it.coverUrl,
-              description: it.descriptionSnapshot,
-              addedAtUnixMs: it.addedAtUnixMs,
-            ),
-          );
-        });
-
-    endSub = BookshelfListEnd.rustSignalStream
-        .where((pack) => pack.message.requestId == requestId)
-        .listen((pack) async {
-          final outcome = pack.message.outcome;
-          await itemSub?.cancel();
-          await endSub?.cancel();
-
-          if (outcome is BookshelfListOutcomeFailed) {
-            completer.completeError(
-              BookshelfOperationException(message: outcome.message),
-            );
-            return;
-          }
-
-          items.sort((a, b) => b.addedAtUnixMs.compareTo(a.addedAtUnixMs));
-          completer.complete(items);
-        });
-
-    BookshelfListRequest(requestId: requestId).sendSignalToRust();
-    return completer.future;
+  Future<List<BookshelfItemModel>> listBookshelf() async {
+    final items = await rust_bookshelf.bookshelfList();
+    final result = items
+        .map(BookshelfItemModel.fromRust)
+        .toList(growable: false);
+    result.sort((a, b) => b.addedAtUnixMs.compareTo(a.addedAtUnixMs));
+    return result;
   }
+
+  // -------------------------------------------------------------------------
+  // Reading progress
+  // -------------------------------------------------------------------------
 
   Future<ReadingProgressModel?> getReadingProgress({
     required String feedId,
     required String bookId,
-  }) {
-    final requestId = _nextId();
-    return _subscribeAndSend(
-      responseStream: ReadingProgressGetResult.rustSignalStream,
-      matches: (message) => message.requestId == requestId,
-      send: () {
-        ReadingProgressGetRequest(
-          requestId: requestId,
-          feedId: feedId,
-          bookId: bookId,
-        ).sendSignalToRust();
-      },
-    ).then((message) {
-      final outcome = message.outcome;
-      if (outcome is ReadingProgressGetOutcomeError) {
-        throw ReadingProgressException(message: outcome.message);
-      }
-
-      final success = outcome as ReadingProgressGetOutcomeSuccess;
-      final item = success.progress;
-      if (item == null) {
-        return null;
-      }
-
-      return ReadingProgressModel(
-        feedId: item.feedId,
-        bookId: item.bookId,
-        chapterId: item.chapterId,
-        paragraphIndex: item.paragraphIndex,
-        updatedAtMs: item.updatedAtMs,
-      );
-    });
+  }) async {
+    final item = await rust_progress.getReadingProgress(
+      feedId: feedId,
+      bookId: bookId,
+    );
+    return item != null ? ReadingProgressModel.fromRust(item) : null;
   }
 
   Future<void> setReadingProgress({
@@ -426,320 +369,109 @@ class FeedService {
     required int paragraphIndex,
     required int updatedAtMs,
   }) {
-    final requestId = _nextId();
-    return _subscribeAndSend(
-      responseStream: ReadingProgressSetResult.rustSignalStream,
-      matches: (message) => message.requestId == requestId,
-      send: () {
-        ReadingProgressSetRequest(
-          requestId: requestId,
-          feedId: feedId,
-          bookId: bookId,
-          chapterId: chapterId,
-          paragraphIndex: paragraphIndex,
-          updatedAtMs: updatedAtMs,
-        ).sendSignalToRust();
-      },
-    ).then((message) {
-      final outcome = message.outcome;
-      if (outcome is ReadingProgressSetOutcomeError) {
-        throw ReadingProgressException(message: outcome.message);
-      }
-    });
-  }
-
-  // -------------------------------------------------------------------------
-  // Session close
-  // -------------------------------------------------------------------------
-
-  void closeSession(String sessionId) {
-    CloseSessionRequest(sessionId: sessionId).sendSignalToRust();
-  }
-
-  // -------------------------------------------------------------------------
-  // App data directory
-  // -------------------------------------------------------------------------
-
-  /// Tell Rust which directory should be used as the app data root.
-  ///
-  /// Rust will keep feeds under `scripts/` and bookshelf data under
-  /// `bookshelf/`, then respond with an [AppDataDirectorySet] signal. If the
-  /// registry file does
-  /// not exist yet, `success` will be `false` and an error message will be
-  /// provided — no crash.
-  ///
-  /// Returns a [Future] that completes once Rust has finished loading.
-  Future<AppDataDirectorySet> setAppDataDirectory(String path) {
-    return _subscribeAndSendNext(
-      responseStream: AppDataDirectorySet.rustSignalStream,
-      send: () => SetAppDataDirectory(path: path).sendSignalToRust(),
+    return rust_progress.setReadingProgress(
+      feedId: feedId,
+      bookId: bookId,
+      chapterId: chapterId,
+      paragraphIndex: paragraphIndex,
+      updatedAtMs: updatedAtMs,
     );
   }
 
-  /// Request a list of all feeds currently loaded in Rust.
-  ///
-  /// Returns a [Future] that completes with the [FeedListResult] once Rust
-  /// responds.
-  Future<FeedListResult> listFeeds() {
-    final requestId = _nextId();
-    return _subscribeAndSend(
-      responseStream: FeedListResult.rustSignalStream,
-      matches: (message) => message.requestId == requestId,
-      send: () => ListFeedsRequest(requestId: requestId).sendSignalToRust(),
-    );
+  // -------------------------------------------------------------------------
+  // Feed list
+  // -------------------------------------------------------------------------
+
+  Future<List<FeedMetaItem>> listFeeds() {
+    return rust_registry.listFeeds();
   }
 
   // -------------------------------------------------------------------------
   // Feed install
   // -------------------------------------------------------------------------
 
-  /// Request a preview of a feed script from a remote [url].
-  ///
-  /// Returns a [Future] that resolves to a [FeedPreviewModel] once Rust has
-  /// downloaded and parsed the script.  Throws a [FeedPreviewException] on
-  /// failure.
   Future<FeedPreviewModel> previewFromUrl(String url) async {
-    final requestId = _nextId();
-    return _awaitPreview(
-      requestId,
-      () =>
-          PreviewFeedFromUrl(requestId: requestId, url: url).sendSignalToRust(),
-    );
+    final info = await rust_registry.previewFeedFromUrl(url: url);
+    return _toPreviewModel(info);
   }
 
-  /// Request a preview of a feed script from a local file [path].
-  /// Rust reads the file, decodes it as UTF-8, and responds with a
-  /// [FeedPreviewModel].  Throws a [FeedPreviewException] on failure.
   Future<FeedPreviewModel> previewFromFile(String path) async {
-    final requestId = _nextId();
-    return _awaitPreview(
-      requestId,
-      () => PreviewFeedFromFile(
-        requestId: requestId,
-        path: path,
-      ).sendSignalToRust(),
-    );
+    final info = await rust_registry.previewFeedFromFile(path: path);
+    return _toPreviewModel(info);
   }
 
   /// Confirm installation of a previously previewed feed.
   ///
-  /// [requestId] must match the one returned by the preceding preview call.
-  /// Returns a [Future] that resolves to the [FeedInstallResult] once Rust
-  /// finishes writing the script to disk and updating the current registry.
-  Future<FeedInstallResult> installFeed(String requestId) {
-    return _subscribeAndSend(
-      responseStream: FeedInstallResult.rustSignalStream,
-      matches: (message) => message.requestId == requestId,
-      send: () => InstallFeedRequest(requestId: requestId).sendSignalToRust(),
-    );
+  /// [requestId] is the feed id returned by the preview call.
+  Future<void> installFeed(String requestId) {
+    return rust_registry.installFeed(requestId: requestId);
   }
 
-  /// Remove an installed feed by [feedId].
-  ///
-  /// Returns a [Future] that resolves to [FeedRemoveResult] when Rust finishes.
-  Future<FeedRemoveResult> removeFeed(String feedId) {
-    final requestId = _nextId();
-    return _subscribeAndSend(
-      responseStream: FeedRemoveResult.rustSignalStream,
-      matches: (message) => message.requestId == requestId,
-      send: () => RemoveFeedRequest(
-        requestId: requestId,
-        feedId: feedId,
-      ).sendSignalToRust(),
-    );
+  Future<void> removeFeed(String feedId) {
+    return rust_registry.removeFeed(feedId: feedId);
   }
 
-  Future<FeedPreviewModel> _awaitPreview(
-    String requestId,
-    void Function() send,
-  ) {
-    return _subscribeAndSend(
-      responseStream: FeedPreviewResult.rustSignalStream,
-      matches: (message) => message.requestId == requestId,
-      send: send,
-    ).then((message) {
-      final outcome = message.outcome;
-      if (outcome is FeedPreviewOutcomeError) {
-        throw FeedPreviewException(message: outcome.message);
-      }
-      final success = outcome as FeedPreviewOutcomeSuccess;
-      return FeedPreviewModel(
-        requestId: message.requestId,
-        id: success.id,
-        name: success.name,
-        version: success.version,
-        author: success.author,
-        description: success.description,
-        baseUrl: success.baseUrl,
-        accessDomains: List.unmodifiable(success.accessDomains),
-        currentVersion: success.currentVersion,
-      );
-    });
+  FeedPreviewModel _toPreviewModel(FeedPreviewInfo info) {
+    return FeedPreviewModel(
+      requestId: info.id,
+      id: info.id,
+      name: info.name,
+      version: info.version,
+      author: info.author,
+      description: info.description,
+      baseUrl: info.baseUrl,
+      accessDomains: info.accessDomains.toList(growable: false),
+      currentVersion: info.currentVersion,
+    );
   }
 
   // -------------------------------------------------------------------------
   // Feed auth
   // -------------------------------------------------------------------------
 
-  Future<bool> isFeedAuthSupported(String feedId) {
-    final requestId = _nextId();
-    return _subscribeAndSend(
-      responseStream: FeedAuthCapabilityResult.rustSignalStream,
-      matches: (message) => message.requestId == requestId,
-      send: () {
-        FeedAuthCapabilityRequest(
-          requestId: requestId,
-          feedId: feedId,
-        ).sendSignalToRust();
-      },
-    ).then((message) {
-      final outcome = message.outcome;
-      if (outcome is FeedAuthCapabilityOutcomeSupported) {
-        return true;
-      }
-      if (outcome is FeedAuthCapabilityOutcomeUnsupported) {
-        return false;
-      }
-      final error = outcome as FeedAuthCapabilityOutcomeError;
-      throw FeedAuthException(message: error.message);
-    });
+  Future<bool> isFeedAuthSupported(String feedId) async {
+    final cap = await rust_auth.feedAuthCapability(feedId: feedId);
+    return cap == AuthCapability.supported;
   }
 
-  Future<FeedAuthEntryModel?> getFeedAuthEntry(String feedId) {
-    final requestId = _nextId();
-    return _subscribeAndSend(
-      responseStream: FeedAuthEntryResult.rustSignalStream,
-      matches: (message) => message.requestId == requestId,
-      send: () {
-        FeedAuthEntryRequest(
-          requestId: requestId,
-          feedId: feedId,
-        ).sendSignalToRust();
-      },
-    ).then((message) {
-      final outcome = message.outcome;
-      if (outcome is FeedAuthEntryOutcomeSuccess) {
-        return FeedAuthEntryModel(url: outcome.url, title: outcome.title);
-      }
-      if (outcome is FeedAuthEntryOutcomeUnsupported) {
-        return null;
-      }
-      final error = outcome as FeedAuthEntryOutcomeError;
-      throw FeedAuthException(message: error.message);
-    });
+  Future<FeedAuthEntryModel?> getFeedAuthEntry(String feedId) async {
+    final entry = await rust_auth.feedAuthEntry(feedId: feedId);
+    if (entry == null) return null;
+    return FeedAuthEntryModel(url: entry.url, title: entry.title);
   }
 
   Future<void> submitFeedAuthPage({
     required String feedId,
     required String currentUrl,
     required String response,
-    required List<Tuple2<String, String>> responseHeaders,
+    required List<(String, String)> responseHeaders,
     required List<CookieEntry> cookies,
   }) {
-    final requestId = _nextId();
-    return _subscribeAndSend(
-      responseStream: FeedAuthSubmitPageResult.rustSignalStream,
-      matches: (message) => message.requestId == requestId,
-      send: () {
-        FeedAuthSubmitPageRequest(
-          requestId: requestId,
-          feedId: feedId,
-          currentUrl: currentUrl,
-          response: response,
-          responseHeaders: responseHeaders,
-          cookies: cookies,
-        ).sendSignalToRust();
-      },
-    ).then((message) {
-      final outcome = message.outcome;
-      if (outcome is FeedAuthSubmitPageOutcomeSuccess) {
-        return;
-      }
-      if (outcome is FeedAuthSubmitPageOutcomeUnsupported) {
-        throw const FeedAuthException(message: 'feed auth not supported');
-      }
-      final error = outcome as FeedAuthSubmitPageOutcomeError;
-      throw FeedAuthException(message: error.message);
-    });
+    return rust_auth.feedAuthSubmitPage(
+      feedId: feedId,
+      currentUrl: currentUrl,
+      response: response,
+      responseHeaders: responseHeaders,
+      cookies: cookies,
+    );
   }
 
-  Future<FeedAuthStatusModel> getFeedAuthStatus(String feedId) {
-    final requestId = _nextId();
-    return _subscribeAndSend(
-      responseStream: FeedAuthStatusResult.rustSignalStream,
-      matches: (message) => message.requestId == requestId,
-      send: () {
-        FeedAuthStatusRequest(
-          requestId: requestId,
-          feedId: feedId,
-        ).sendSignalToRust();
-      },
-    ).then((message) {
-      final outcome = message.outcome;
-      if (outcome is FeedAuthStatusOutcomeLoggedIn) {
-        return FeedAuthStatusModel.loggedIn;
-      }
-      if (outcome is FeedAuthStatusOutcomeExpired) {
-        return FeedAuthStatusModel.expired;
-      }
-      if (outcome is FeedAuthStatusOutcomeLoggedOut) {
-        return FeedAuthStatusModel.loggedOut;
-      }
-      final error = outcome as FeedAuthStatusOutcomeError;
-      throw FeedAuthException(message: error.message);
-    });
+  Future<FeedAuthStatusModel> getFeedAuthStatus(String feedId) async {
+    final status = await rust_auth.feedAuthStatus(feedId: feedId);
+    return switch (status) {
+      AuthStatus.loggedIn => FeedAuthStatusModel.loggedIn,
+      AuthStatus.expired => FeedAuthStatusModel.expired,
+      AuthStatus.loggedOut => FeedAuthStatusModel.loggedOut,
+    };
   }
 
   Future<void> clearFeedAuth(String feedId) {
-    final requestId = _nextId();
-    return _subscribeAndSend(
-      responseStream: FeedAuthClearResult.rustSignalStream,
-      matches: (message) => message.requestId == requestId,
-      send: () {
-        FeedAuthClearRequest(
-          requestId: requestId,
-          feedId: feedId,
-        ).sendSignalToRust();
-      },
-    ).then((message) {
-      final outcome = message.outcome;
-      if (outcome is FeedAuthClearOutcomeSuccess) {
-        return;
-      }
-      final error = outcome as FeedAuthClearOutcomeError;
-      throw FeedAuthException(message: error.message);
-    });
-  }
-
-  // -------------------------------------------------------------------------
-  // Internal helpers
-  // -------------------------------------------------------------------------
-
-  Future<T> _subscribeAndSend<T>({
-    required Stream<RustSignalPack<T>> responseStream,
-    required bool Function(T message) matches,
-    required void Function() send,
-  }) {
-    final future = responseStream
-        .where((pack) => matches(pack.message))
-        .first
-        .then((pack) => pack.message);
-    send();
-    return future;
-  }
-
-  Future<T> _subscribeAndSendNext<T>({
-    required Stream<RustSignalPack<T>> responseStream,
-    required void Function() send,
-  }) {
-    final future = responseStream.first.then((pack) => pack.message);
-    send();
-    return future;
+    return rust_auth.feedAuthClear(feedId: feedId);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Exception
+// Exceptions
 // ---------------------------------------------------------------------------
 
 class FeedPullException implements Exception {
@@ -758,40 +490,4 @@ class FeedPreviewException implements Exception {
 
   @override
   String toString() => 'FeedPreviewException: $message';
-}
-
-class BookInfoException implements Exception {
-  const BookInfoException({required this.message});
-
-  final String message;
-
-  @override
-  String toString() => 'BookInfoException: $message';
-}
-
-class BookshelfOperationException implements Exception {
-  const BookshelfOperationException({required this.message});
-
-  final String message;
-
-  @override
-  String toString() => 'BookshelfOperationException: $message';
-}
-
-class ReadingProgressException implements Exception {
-  const ReadingProgressException({required this.message});
-
-  final String message;
-
-  @override
-  String toString() => 'ReadingProgressException: $message';
-}
-
-class FeedAuthException implements Exception {
-  const FeedAuthException({required this.message});
-
-  final String message;
-
-  @override
-  String toString() => 'FeedAuthException: $message';
 }

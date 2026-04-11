@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../../l10n/app_localizations.dart';
-import '../../../src/bindings/signals/signals.dart';
+import '../../../src/rust/api/types.dart';
 import 'chapter_loader.dart';
 import 'chapter_status_block.dart';
 import 'paragraph_view.dart';
@@ -459,7 +459,7 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
 
     // Skip the first paragraph if it is the title (already shown as header).
     final hasInlineTitle =
-        paragraphs.isNotEmpty && paragraphs.first is ParagraphContentTitle;
+        paragraphs.isNotEmpty && paragraphs.first is ParagraphContent_Title;
     final startIndex = hasInlineTitle ? 1 : 0;
 
     return Column(
@@ -497,8 +497,8 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
   }
 
   String _resolveTitle(List<ParagraphContent> paragraphs, ChapterSlot slot) {
-    if (paragraphs.isNotEmpty && paragraphs.first is ParagraphContentTitle) {
-      return (paragraphs.first as ParagraphContentTitle).text;
+    if (paragraphs.isNotEmpty && paragraphs.first is ParagraphContent_Title) {
+      return (paragraphs.first as ParagraphContent_Title).text;
     }
     return _slotTitle(slot);
   }

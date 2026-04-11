@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
-import '../../../src/bindings/signals/signals.dart';
+import '../../../src/rust/api/types.dart';
 
 /// Renders a single [ParagraphContent] item (title, text, or image).
 ///
@@ -17,23 +17,23 @@ class ParagraphView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    if (item is ParagraphContentTitle) {
+    if (item is ParagraphContent_Title) {
       return Text(
-        (item as ParagraphContentTitle).text,
+        (item as ParagraphContent_Title).text,
         style: theme.textTheme.headlineSmall,
         textAlign: TextAlign.center,
       );
     }
 
-    if (item is ParagraphContentText) {
+    if (item is ParagraphContent_Text) {
       return Text(
-        (item as ParagraphContentText).content,
+        (item as ParagraphContent_Text).content,
         style: theme.textTheme.bodyLarge?.copyWith(height: 1.8),
       );
     }
 
-    if (item is ParagraphContentImage) {
-      final img = item as ParagraphContentImage;
+    if (item is ParagraphContent_Image) {
+      final img = item as ParagraphContent_Image;
       return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

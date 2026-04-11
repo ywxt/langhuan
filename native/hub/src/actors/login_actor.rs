@@ -4,46 +4,64 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use langhuan::auth::AuthStore;
 use langhuan::cache::CachedFeed;
-use langhuan::feed::{AuthPageContext, AuthStatus, CookieEntry as FeedCookieEntry, FeedAuthFlow};
-use langhuan::script::lua::LuaFeed;
-use messages::prelude::{Actor, Address, Context, Handler, Notifiable};
-use rinf::{DartSignal, RustSignal};
-use tokio::task::JoinSet;
-
-use crate::localize_error;
-use crate::signals::{
-    FeedAuthCapabilityRequest, FeedAuthCapabilityResult, FeedAuthClearRequest, FeedAuthClearResult,
-    FeedAuthEntryRequest, FeedAuthEntryResult, FeedAuthStatusRequest, FeedAuthStatusResult,
-    FeedAuthSubmitPageRequest, FeedAuthSubmitPageResult,
+use langhuan::feed::{
+    AuthPageContext, AuthStatus as FeedAuthStatus, CookieEntry as FeedCookieEntry, FeedAuthFlow,
 };
+use langhuan::script::lua::LuaFeed;
+use messages::prelude::{Actor, Address, Context, Handler};
+
+use crate::api::types::{AuthCapability, AuthEntryInfo, AuthStatus, BridgeError, CookieEntry};
+use crate::localize_error;
 
 use super::app_data_actor::InitializeAppDataDirectory;
 use super::registry_actor::{GetFeed, GetFeedIds, RegistryActor};
 
-/// Dedicated actor for feed auth/login responsibilities.
+// ---------------------------------------------------------------------------
+// FRB-facing messages
+// ---------------------------------------------------------------------------
+
+pub struct FeedAuthCapabilityMsg {
+    pub feed_id: String,
+}
+
+pub struct FeedAuthEntryMsg {
+    pub feed_id: String,
+}
+
+pub struct FeedAuthSubmitPageMsg {
+    pub feed_id: String,
+    pub current_url: String,
+    pub response: String,
+    pub response_headers: Vec<(String, String)>,
+    pub cookies: Vec<CookieEntry>,
+}
+
+pub struct FeedAuthStatusMsg {
+    pub feed_id: String,
+}
+
+pub struct FeedAuthClearMsg {
+    pub feed_id: String,
+}
+
+// ---------------------------------------------------------------------------
+// Actor
+// ---------------------------------------------------------------------------
+
 pub struct LoginActor {
     registry_addr: Address<RegistryActor>,
     auth_dir: Option<PathBuf>,
     auth_store: Option<AuthStore>,
-    _owned_tasks: JoinSet<()>,
 }
 
 impl Actor for LoginActor {}
 
 impl LoginActor {
-    pub fn new(self_addr: Address<Self>, registry_addr: Address<RegistryActor>) -> Self {
-        let mut _owned_tasks = JoinSet::new();
-        _owned_tasks.spawn(Self::listen_to_auth_capability(self_addr.clone()));
-        _owned_tasks.spawn(Self::listen_to_auth_entry(self_addr.clone()));
-        _owned_tasks.spawn(Self::listen_to_auth_submit_page(self_addr.clone()));
-        _owned_tasks.spawn(Self::listen_to_auth_status(self_addr.clone()));
-        _owned_tasks.spawn(Self::listen_to_auth_clear(self_addr));
-
+    pub fn new(registry_addr: Address<RegistryActor>) -> Self {
         Self {
             registry_addr,
             auth_dir: None,
             auth_store: None,
-            _owned_tasks,
         }
     }
 
@@ -101,26 +119,10 @@ impl LoginActor {
         }
     }
 
-    fn auth_store(&self) -> Result<&AuthStore, String> {
-        self.auth_store
-            .as_ref()
-            .ok_or_else(|| t!("error.app_data_dir_not_set").to_string())
-    }
-
-    fn auth_store_mut(&mut self) -> Result<&mut AuthStore, String> {
+    fn auth_store_mut(&mut self) -> Result<&mut AuthStore, BridgeError> {
         self.auth_store
             .as_mut()
-            .ok_or_else(|| t!("error.app_data_dir_not_set").to_string())
-    }
-
-    /// Resolve a feed, mapping any error through `err_fn` into an early-return
-    /// value.  Callers write `let feed = self.resolve_feed_or(…).await?;`.
-    async fn resolve_feed_or<R>(
-        &mut self,
-        feed_id: &str,
-        err_fn: impl FnOnce(String) -> R,
-    ) -> Result<Arc<CachedFeed<LuaFeed>>, R> {
-        self.resolve_feed(feed_id).await.map_err(err_fn)
+            .ok_or_else(|| BridgeError::from(t!("error.app_data_dir_not_set").to_string()))
     }
 
     async fn hydrate_feed_auth(
@@ -132,7 +134,10 @@ impl LoginActor {
             return Ok(());
         };
 
-        let auth_store = self.auth_store()?;
+        let auth_store = self
+            .auth_store
+            .as_ref()
+            .ok_or_else(|| t!("error.app_data_dir_not_set").to_string())?;
         let auth_info = auth_store
             .get_auth_info(feed_id)
             .await
@@ -141,56 +146,40 @@ impl LoginActor {
             .map_err(|e| localize_error(&e))
     }
 
-    async fn do_auth_capability(
-        &mut self,
-        req: FeedAuthCapabilityRequest,
-    ) -> FeedAuthCapabilityResult {
-        let id = &req.request_id;
-        match self.resolve_feed(&req.feed_id).await {
-            Err(msg) => FeedAuthCapabilityResult::error(id, msg),
-            Ok(feed) if feed.supports_auth().is_some() => FeedAuthCapabilityResult::supported(id),
-            Ok(_) => FeedAuthCapabilityResult::unsupported(id),
+    async fn do_auth_capability(&mut self, feed_id: &str) -> Result<AuthCapability, BridgeError> {
+        match self.resolve_feed(feed_id).await {
+            Err(msg) => Err(BridgeError::from(msg)),
+            Ok(feed) if feed.supports_auth().is_some() => Ok(AuthCapability::Supported),
+            Ok(_) => Ok(AuthCapability::Unsupported),
         }
     }
 
-    async fn do_auth_entry(&mut self, req: FeedAuthEntryRequest) -> FeedAuthEntryResult {
-        let id = &req.request_id;
-        let feed = match self
-            .resolve_feed_or(&req.feed_id, |m| FeedAuthEntryResult::error(id, m))
-            .await
-        {
-            Ok(f) => f,
-            Err(r) => return r,
-        };
+    async fn do_auth_entry(&mut self, feed_id: &str) -> Result<Option<AuthEntryInfo>, BridgeError> {
+        let feed = self.resolve_feed(feed_id).await?;
         let Some(support) = feed.supports_auth() else {
-            return FeedAuthEntryResult::unsupported(id);
+            return Ok(None);
         };
         match feed.auth_entry(&support) {
-            Ok(entry) => FeedAuthEntryResult::success(id, entry.url, entry.title),
-            Err(e) => FeedAuthEntryResult::error(id, localize_error(&e)),
+            Ok(entry) => Ok(Some(AuthEntryInfo {
+                url: entry.url,
+                title: entry.title,
+            })),
+            Err(e) => Err(BridgeError::from(e)),
         }
     }
 
-    async fn do_auth_submit_page(
-        &mut self,
-        req: FeedAuthSubmitPageRequest,
-    ) -> FeedAuthSubmitPageResult {
-        let id = req.request_id.clone();
-        let feed = match self
-            .resolve_feed_or(&req.feed_id, |m| FeedAuthSubmitPageResult::error(&id, m))
-            .await
-        {
-            Ok(f) => f,
-            Err(r) => return r,
-        };
+    async fn do_auth_submit_page(&mut self, msg: FeedAuthSubmitPageMsg) -> Result<(), BridgeError> {
+        let feed = self.resolve_feed(&msg.feed_id).await?;
         let Some(support) = feed.supports_auth() else {
-            return FeedAuthSubmitPageResult::unsupported(&id);
+            return Err(BridgeError::from(
+                t!("error.auth_status_not_supported", feed_id = &msg.feed_id).to_string(),
+            ));
         };
         let page = AuthPageContext {
-            current_url: req.current_url,
-            response: req.response.into(),
-            response_headers: req.response_headers,
-            cookies: req
+            current_url: msg.current_url,
+            response: msg.response.into(),
+            response_headers: msg.response_headers,
+            cookies: msg
                 .cookies
                 .into_iter()
                 .map(|item| FeedCookieEntry {
@@ -205,109 +194,44 @@ impl LoginActor {
                 })
                 .collect(),
         };
-        let auth_info = match feed.parse_auth(&support, &page) {
-            Ok(a) => a,
-            Err(e) => return FeedAuthSubmitPageResult::error(&id, localize_error(&e)),
-        };
-        let store = match self.auth_store_mut() {
-            Ok(s) => s,
-            Err(m) => return FeedAuthSubmitPageResult::error(&id, m),
-        };
-        if let Err(e) = store.set_auth_info(&req.feed_id, auth_info.clone()).await {
-            return FeedAuthSubmitPageResult::error(&id, localize_error(&e));
-        }
-        match feed.set_auth_info(&support, Some(auth_info)) {
-            Ok(()) => FeedAuthSubmitPageResult::success(&id),
-            Err(e) => FeedAuthSubmitPageResult::error(&id, localize_error(&e)),
-        }
+        let auth_info = feed.parse_auth(&support, &page)?;
+        let store = self.auth_store_mut()?;
+        store.set_auth_info(&msg.feed_id, auth_info.clone()).await?;
+        feed.set_auth_info(&support, Some(auth_info))
+            .map_err(BridgeError::from)
     }
 
-    async fn do_auth_status(&mut self, req: FeedAuthStatusRequest) -> FeedAuthStatusResult {
-        let id = &req.request_id;
-        let feed = match self
-            .resolve_feed_or(&req.feed_id, |m| FeedAuthStatusResult::error(id, m))
-            .await
-        {
-            Ok(f) => f,
-            Err(r) => return r,
-        };
-        if let Err(m) = self.hydrate_feed_auth(&req.feed_id, &feed).await {
-            return FeedAuthStatusResult::error(id, m);
-        }
+    async fn do_auth_status(&mut self, feed_id: &str) -> Result<AuthStatus, BridgeError> {
+        let feed = self.resolve_feed(feed_id).await?;
+        self.hydrate_feed_auth(feed_id, &feed).await?;
         let Some(support) = feed.supports_auth() else {
-            return FeedAuthStatusResult::error(
-                id,
-                t!("error.auth_status_not_supported", feed_id = &req.feed_id).to_string(),
-            );
+            return Err(BridgeError::from(
+                t!("error.auth_status_not_supported", feed_id = feed_id).to_string(),
+            ));
         };
         match feed.auth_status(&support).await {
-            Ok(AuthStatus::LoggedIn) => FeedAuthStatusResult::logged_in(id),
-            Ok(AuthStatus::Expired) => FeedAuthStatusResult::expired(id),
-            Ok(AuthStatus::LoggedOut) => FeedAuthStatusResult::logged_out(id),
-            Err(e) => FeedAuthStatusResult::error(id, localize_error(&e)),
+            Ok(FeedAuthStatus::LoggedIn) => Ok(AuthStatus::LoggedIn),
+            Ok(FeedAuthStatus::Expired) => Ok(AuthStatus::Expired),
+            Ok(FeedAuthStatus::LoggedOut) => Ok(AuthStatus::LoggedOut),
+            Err(e) => Err(BridgeError::from(e)),
         }
     }
 
-    async fn do_auth_clear(&mut self, req: FeedAuthClearRequest) -> FeedAuthClearResult {
-        let id = req.request_id.clone();
-        let feed = match self
-            .resolve_feed_or(&req.feed_id, |m| FeedAuthClearResult::error(&id, m))
-            .await
-        {
-            Ok(f) => f,
-            Err(r) => return r,
-        };
+    async fn do_auth_clear(&mut self, feed_id: &str) -> Result<(), BridgeError> {
+        let feed = self.resolve_feed(feed_id).await?;
         let Some(support) = feed.supports_auth() else {
-            return FeedAuthClearResult::success(&id);
+            return Ok(());
         };
-        let store = match self.auth_store_mut() {
-            Ok(s) => s,
-            Err(m) => return FeedAuthClearResult::error(&id, m),
-        };
-        if let Err(e) = store.clear_auth_info(&req.feed_id).await {
-            return FeedAuthClearResult::error(&id, localize_error(&e));
-        }
-        match feed.set_auth_info(&support, None) {
-            Ok(()) => FeedAuthClearResult::success(&id),
-            Err(e) => FeedAuthClearResult::error(&id, localize_error(&e)),
-        }
-    }
-
-    async fn listen_to_auth_capability(mut self_addr: Address<Self>) {
-        let receiver = FeedAuthCapabilityRequest::get_dart_signal_receiver();
-        while let Some(signal_pack) = receiver.recv().await {
-            let _ = self_addr.notify(signal_pack.message).await;
-        }
-    }
-
-    async fn listen_to_auth_entry(mut self_addr: Address<Self>) {
-        let receiver = FeedAuthEntryRequest::get_dart_signal_receiver();
-        while let Some(signal_pack) = receiver.recv().await {
-            let _ = self_addr.notify(signal_pack.message).await;
-        }
-    }
-
-    async fn listen_to_auth_submit_page(mut self_addr: Address<Self>) {
-        let receiver = FeedAuthSubmitPageRequest::get_dart_signal_receiver();
-        while let Some(signal_pack) = receiver.recv().await {
-            let _ = self_addr.notify(signal_pack.message).await;
-        }
-    }
-
-    async fn listen_to_auth_status(mut self_addr: Address<Self>) {
-        let receiver = FeedAuthStatusRequest::get_dart_signal_receiver();
-        while let Some(signal_pack) = receiver.recv().await {
-            let _ = self_addr.notify(signal_pack.message).await;
-        }
-    }
-
-    async fn listen_to_auth_clear(mut self_addr: Address<Self>) {
-        let receiver = FeedAuthClearRequest::get_dart_signal_receiver();
-        while let Some(signal_pack) = receiver.recv().await {
-            let _ = self_addr.notify(signal_pack.message).await;
-        }
+        let store = self.auth_store_mut()?;
+        store.clear_auth_info(feed_id).await?;
+        feed.set_auth_info(&support, None)
+            .map_err(BridgeError::from)
     }
 }
+
+// ---------------------------------------------------------------------------
+// Handler impls
+// ---------------------------------------------------------------------------
 
 #[async_trait]
 impl Handler<InitializeAppDataDirectory> for LoginActor {
@@ -319,84 +243,46 @@ impl Handler<InitializeAppDataDirectory> for LoginActor {
 }
 
 #[async_trait]
-impl Notifiable<FeedAuthCapabilityRequest> for LoginActor {
-    async fn notify(&mut self, msg: FeedAuthCapabilityRequest, _: &Context<Self>) {
-        tracing::debug!(request_id = %msg.request_id, feed_id = %msg.feed_id, "received auth capability request");
-        self.do_auth_capability(msg).await.send_signal_to_dart();
+impl Handler<FeedAuthCapabilityMsg> for LoginActor {
+    type Result = Result<AuthCapability, BridgeError>;
+
+    async fn handle(&mut self, msg: FeedAuthCapabilityMsg, _: &Context<Self>) -> Self::Result {
+        self.do_auth_capability(&msg.feed_id).await
     }
 }
 
 #[async_trait]
-impl Notifiable<FeedAuthEntryRequest> for LoginActor {
-    async fn notify(&mut self, msg: FeedAuthEntryRequest, _: &Context<Self>) {
-        tracing::debug!(request_id = %msg.request_id, feed_id = %msg.feed_id, "received auth entry request");
-        self.do_auth_entry(msg).await.send_signal_to_dart();
+impl Handler<FeedAuthEntryMsg> for LoginActor {
+    type Result = Result<Option<AuthEntryInfo>, BridgeError>;
+
+    async fn handle(&mut self, msg: FeedAuthEntryMsg, _: &Context<Self>) -> Self::Result {
+        self.do_auth_entry(&msg.feed_id).await
     }
 }
 
 #[async_trait]
-impl Notifiable<FeedAuthSubmitPageRequest> for LoginActor {
-    async fn notify(&mut self, msg: FeedAuthSubmitPageRequest, _: &Context<Self>) {
-        tracing::debug!(request_id = %msg.request_id, feed_id = %msg.feed_id, "received auth submit page request");
-        self.do_auth_submit_page(msg).await.send_signal_to_dart();
+impl Handler<FeedAuthSubmitPageMsg> for LoginActor {
+    type Result = Result<(), BridgeError>;
+
+    async fn handle(&mut self, msg: FeedAuthSubmitPageMsg, _: &Context<Self>) -> Self::Result {
+        self.do_auth_submit_page(msg).await
     }
 }
 
 #[async_trait]
-impl Notifiable<FeedAuthStatusRequest> for LoginActor {
-    async fn notify(&mut self, msg: FeedAuthStatusRequest, _: &Context<Self>) {
-        tracing::debug!(request_id = %msg.request_id, feed_id = %msg.feed_id, "received auth status request");
-        self.do_auth_status(msg).await.send_signal_to_dart();
+impl Handler<FeedAuthStatusMsg> for LoginActor {
+    type Result = Result<AuthStatus, BridgeError>;
+
+    async fn handle(&mut self, msg: FeedAuthStatusMsg, _: &Context<Self>) -> Self::Result {
+        self.do_auth_status(&msg.feed_id).await
     }
 }
 
 #[async_trait]
-impl Notifiable<FeedAuthClearRequest> for LoginActor {
-    async fn notify(&mut self, msg: FeedAuthClearRequest, _: &Context<Self>) {
-        tracing::debug!(request_id = %msg.request_id, feed_id = %msg.feed_id, "received auth clear request");
-        self.do_auth_clear(msg).await.send_signal_to_dart();
-    }
-}
+impl Handler<FeedAuthClearMsg> for LoginActor {
+    type Result = Result<(), BridgeError>;
 
-#[cfg(test)]
-mod tests {
-    use std::error::Error;
-
-    use langhuan::script::runtime::ScriptEngine;
-    use messages::prelude::Context;
-
-    use super::*;
-    use crate::actors::registry_actor::RegistryActor;
-
-    type TestResult = Result<(), Box<dyn Error>>;
-
-    #[tokio::test]
-    async fn initialize_app_data_directory_creates_auth_subdir() -> TestResult {
-        let dir = tempfile::tempdir()?;
-
-        let registry_context = Context::new();
-        let registry_addr = registry_context.address();
-        let login_context = Context::new();
-        let login_addr = login_context.address();
-
-        let registry_actor = RegistryActor::new(registry_addr.clone(), ScriptEngine::new());
-        tokio::spawn(registry_context.run(registry_actor));
-
-        let init_registry = registry_addr
-            .clone()
-            .send(InitializeAppDataDirectory {
-                path: dir.path().to_string_lossy().to_string(),
-            })
-            .await;
-        assert!(matches!(init_registry, Ok(Ok(_))));
-
-        let mut login_actor = LoginActor::new(login_addr, registry_addr);
-        let result = login_actor
-            .initialize_app_data_directory(&dir.path().to_string_lossy())
-            .await;
-
-        assert!(result.is_ok());
-        assert!(dir.path().join("auth").is_dir());
-        Ok(())
+    async fn handle(&mut self, msg: FeedAuthClearMsg, _: &Context<Self>) -> Self::Result {
+        self.do_auth_clear(&msg.feed_id).await
     }
 }

@@ -2,7 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:langhuan/features/bookshelf/bookshelf_provider.dart';
 import 'package:langhuan/rust_init.dart';
-import 'package:langhuan/src/bindings/signals/signals.dart';
 import 'dart:async';
 
 void main() {
@@ -11,7 +10,7 @@ void main() {
       overrides: [
         appDataDirectorySetProvider.overrideWith((ref) async {
           // Keep bootstrap pending so bookshelf notifier must not schedule load.
-          return Completer<AppDataDirectorySet>().future;
+          return Completer<AppDataDirectoryResult>().future;
         }),
       ],
     );
@@ -24,17 +23,21 @@ void main() {
   });
 
   test('bookshelf provider exposes bootstrap error outcome', () async {
-    const bootstrap = AppDataDirectorySet(
-      outcome: AppDataDirectoryOutcomeError(message: 'bootstrap failed'),
-    );
     final container = ProviderContainer(
       overrides: [
-        appDataDirectorySetProvider.overrideWith((ref) async => bootstrap),
+        appDataDirectorySetProvider.overrideWith((ref) async {
+          throw Exception('bootstrap failed');
+        }),
       ],
     );
     addTearDown(container.dispose);
 
-    await container.read(appDataDirectorySetProvider.future);
+    // Force both providers to be active so the error propagates.
+    container.listen(appDataDirectorySetProvider, (_, _) {});
+    container.listen(bookshelfProvider, (_, _) {});
+
+    // Wait for the error to propagate through the provider graph.
+    await Future<void>.delayed(const Duration(milliseconds: 100));
 
     final state = container.read(bookshelfProvider);
     expect(state.isLoading, isFalse);

@@ -8,7 +8,7 @@ import 'package:langhuan/features/bookshelf/widgets/paragraph_view.dart';
 import 'package:langhuan/features/bookshelf/widgets/vertical_reader_view.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
-import 'package:langhuan/src/bindings/signals/signals.dart';
+import 'package:langhuan/src/rust/api/types.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock content provider
@@ -54,8 +54,8 @@ List<ChapterInfoModel> makeChapters(int count) {
 }
 
 List<ParagraphContent> makeContent(String chapterId) => [
-  ParagraphContentTitle(text: 'Title of $chapterId'),
-  ParagraphContentText(content: 'Body text of $chapterId.'),
+  ParagraphContent_Title(text: 'Title of $chapterId'),
+  ParagraphContent_Text(content: 'Body text of $chapterId.'),
 ];
 
 Widget buildTestWidget({
@@ -286,9 +286,9 @@ void main() {
     testWidgets('reports paragraph progress while scrolling', (tester) async {
       final chapters = makeChapters(2);
       provider.immediateContent['ch-0'] = [
-        const ParagraphContentTitle(text: 'Title of ch-0'),
+        const ParagraphContent_Title(text: 'Title of ch-0'),
         for (int i = 0; i < 20; i++)
-          ParagraphContentText(content: 'Paragraph $i of ch-0'),
+          ParagraphContent_Text(content: 'Paragraph $i of ch-0'),
       ];
       provider.immediateContent['ch-1'] = makeContent('ch-1');
 

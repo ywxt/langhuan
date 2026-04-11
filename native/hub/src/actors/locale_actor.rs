@@ -1,38 +1,30 @@
 use async_trait::async_trait;
 use messages::{
     actor::Actor,
-    prelude::{Address, Context, Notifiable},
+    prelude::Context,
 };
-use tokio::task::JoinSet;
 
-use crate::signals::SetLocale;
-
-pub struct LocaleActor {
-    _owned_tasks: JoinSet<()>,
+/// Message sent from the FRB API layer to update the locale.
+pub struct SetLocale {
+    pub locale: String,
 }
 
-impl LocaleActor {
-    pub fn new(addr: Address<Self>) -> Self {
-        let mut _owned_tasks = JoinSet::new();
-        _owned_tasks.spawn(Self::listen_for_locale_changes(addr));
-        Self { _owned_tasks }
-    }
+pub struct LocaleActor;
 
-    async fn listen_for_locale_changes(mut self_addr: Address<Self>) {
-        use rinf::DartSignal;
-        let rx = SetLocale::get_dart_signal_receiver();
-        while let Some(pack) = rx.recv().await {
-            let _ = self_addr.notify(pack.message).await;
-        }
+impl LocaleActor {
+    pub fn new() -> Self {
+        Self
     }
 }
 
 impl Actor for LocaleActor {}
 
 #[async_trait]
-impl Notifiable<SetLocale> for LocaleActor {
-    async fn notify(&mut self, message: SetLocale, _: &Context<Self>) {
-        tracing::debug!(locale = %message.locale, "locale updated from Dart signal");
+impl messages::prelude::Handler<SetLocale> for LocaleActor {
+    type Result = ();
+
+    async fn handle(&mut self, message: SetLocale, _: &Context<Self>) {
+        tracing::debug!(locale = %message.locale, "locale updated from Dart");
         rust_i18n::set_locale(&message.locale);
     }
 }

@@ -2,34 +2,64 @@
 //! To build a solid app, avoid communicating by sharing memory.
 //! Focus on message passing instead.
 
-mod app_data_actor;
-mod bookshelf_actor;
-mod locale_actor;
-mod login_actor;
-mod reading_progress_actor;
-mod registry_actor;
-mod stream_actor;
+pub(crate) mod app_data_actor;
+pub(crate) mod bookshelf_actor;
+pub(crate) mod locale_actor;
+pub(crate) mod login_actor;
+pub(crate) mod reading_progress_actor;
+pub(crate) mod registry_actor;
+pub(crate) mod stream_actor;
 
-use app_data_actor::AppDataActor;
-use bookshelf_actor::BookshelfActor;
+pub(crate) use app_data_actor::AppDataActor;
+pub(crate) use bookshelf_actor::BookshelfActor;
 use langhuan::script::runtime::ScriptEngine;
-use locale_actor::LocaleActor;
-use login_actor::LoginActor;
-use messages::prelude::Context;
-use reading_progress_actor::ReadingProgressActor;
-use registry_actor::RegistryActor;
-use stream_actor::StreamActor;
+pub(crate) use locale_actor::LocaleActor;
+pub(crate) use login_actor::LoginActor;
+use messages::prelude::{Address, Context};
+pub(crate) use reading_progress_actor::ReadingProgressActor;
+pub(crate) use registry_actor::RegistryActor;
+pub(crate) use stream_actor::StreamActor;
 use tokio::spawn;
+use tokio::sync::OnceCell;
 
 // Uncomment below to target the web.
 // use tokio_with_wasm::alias as tokio;
 
+/// Global actor addresses, initialised once by [`create_actors`].
+static ACTOR_ADDRESSES: OnceCell<ActorAddresses> = OnceCell::const_new();
+
+/// Holds addresses for every actor in the system.
+pub(crate) struct ActorAddresses {
+    pub registry: Address<RegistryActor>,
+    pub bookshelf: Address<BookshelfActor>,
+    pub stream: Address<StreamActor>,
+    pub login: Address<LoginActor>,
+    pub reading_progress: Address<ReadingProgressActor>,
+    pub locale: Address<LocaleActor>,
+    pub app_data: Address<AppDataActor>,
+}
+
+/// Returns a reference to the global actor addresses.
+///
+/// Returns an error if called before [`create_actors`] has completed.
+pub(crate) fn addresses() -> Result<&'static ActorAddresses, crate::api::types::BridgeError> {
+    ACTOR_ADDRESSES.get().ok_or_else(|| {
+        crate::api::types::BridgeError::from(
+            "actors not yet initialised — call create_actors() first".to_owned(),
+        )
+    })
+}
+
 /// Creates and spawns the actors in the async system.
 pub async fn create_actors() {
+    if addresses().is_ok() {
+        tracing::warn!("create_actors called more than once — ignoring");
+        return;
+    }
     tracing::debug!("creating locale actor");
     let locale_context = Context::new();
     let locale_addr = locale_context.address();
-    let locale_actor = LocaleActor::new(locale_addr.clone());
+    let locale_actor = LocaleActor::new();
     spawn(locale_context.run(locale_actor));
 
     let engine = ScriptEngine::new();
@@ -58,15 +88,14 @@ pub async fn create_actors() {
     let reading_progress_addr = reading_progress_context.address();
 
     let registry_actor = RegistryActor::new(registry_addr.clone(), engine);
-    let login_actor = LoginActor::new(login_addr.clone(), registry_addr.clone());
+    let login_actor = LoginActor::new(registry_addr.clone());
     let app_data_actor = AppDataActor::new(
-        app_data_addr,
         registry_addr.clone(),
-        login_addr,
+        login_addr.clone(),
         bookshelf_addr.clone(),
         reading_progress_addr.clone(),
     );
-    let reading_progress_actor = ReadingProgressActor::new(reading_progress_addr);
+    let reading_progress_actor = ReadingProgressActor::new();
     spawn(registry_context.run(registry_actor));
     spawn(login_context.run(login_actor));
     spawn(app_data_context.run(app_data_actor));
@@ -77,11 +106,26 @@ pub async fn create_actors() {
     tracing::debug!("creating stream actor");
     let stream_context = Context::new();
     let stream_addr = stream_context.address();
-    let stream_actor = StreamActor::new(stream_addr, registry_addr.clone());
+    let stream_actor = StreamActor::new(registry_addr.clone());
     spawn(stream_context.run(stream_actor));
 
-    let bookshelf_actor = BookshelfActor::new(bookshelf_addr, registry_addr);
+    let bookshelf_actor = BookshelfActor::new(registry_addr.clone());
     spawn(bookshelf_context.run(bookshelf_actor));
+
+    if ACTOR_ADDRESSES
+        .set(ActorAddresses {
+            registry: registry_addr,
+            bookshelf: bookshelf_addr,
+            stream: stream_addr,
+            login: login_addr,
+            reading_progress: reading_progress_addr,
+            locale: locale_addr,
+            app_data: app_data_addr,
+        })
+        .is_err()
+    {
+        panic!("create_actors called more than once");
+    }
 
     tracing::info!("all actors spawned");
 }

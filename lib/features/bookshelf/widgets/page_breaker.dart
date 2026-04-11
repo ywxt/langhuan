@@ -2,7 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-import '../../../src/bindings/signals/signals.dart';
+import '../../../src/rust/api/types.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data models
@@ -26,19 +26,19 @@ class PageItem {
   /// Index of this paragraph in the full content list.
   final int paragraphIndex;
 
-  /// For [ParagraphContentText] only: character offset of the visible
+  /// For [ParagraphContent_Text] only: character offset of the visible
   /// sub-string start.  `null` means start from the beginning.
   final int? startOffset;
 
-  /// For [ParagraphContentText] only: character offset of the visible
+  /// For [ParagraphContent_Text] only: character offset of the visible
   /// sub-string end (exclusive).  `null` means display to the end.
   final int? endOffset;
 
-  /// Returns the visible text for a [ParagraphContentText] item,
+  /// Returns the visible text for a [ParagraphContent_Text] item,
   /// respecting [startOffset] / [endOffset].
   String get visibleText {
-    if (source is! ParagraphContentText) return '';
-    final full = (source as ParagraphContentText).content;
+    if (source is! ParagraphContent_Text) return '';
+    final full = (source as ParagraphContent_Text).content;
     final s = startOffset ?? 0;
     final e = endOffset ?? full.length;
     return full.substring(s, e);
@@ -116,7 +116,7 @@ class PageBreaker {
       // Add spacing before this item (except the first item on the page).
       final spacing = currentPageItems.isEmpty ? 0.0 : paragraphSpacing;
 
-      if (item is ParagraphContentTitle) {
+      if (item is ParagraphContent_Title) {
         final h = _measureTitle(item.text, availableWidth);
         if (remainingHeight - spacing < h && currentPageItems.isNotEmpty) {
           // Doesn't fit → flush current page, start new one.
@@ -127,7 +127,7 @@ class PageBreaker {
         final actualSpacing = currentPageItems.isEmpty ? 0.0 : paragraphSpacing;
         remainingHeight -= actualSpacing + h;
         currentPageItems.add(PageItem(source: item, paragraphIndex: i));
-      } else if (item is ParagraphContentImage) {
+      } else if (item is ParagraphContent_Image) {
         final h = imageHeight;
         if (remainingHeight - spacing < h && currentPageItems.isNotEmpty) {
           pages.add(PageContent(items: currentPageItems));
@@ -137,7 +137,7 @@ class PageBreaker {
         final actualSpacing = currentPageItems.isEmpty ? 0.0 : paragraphSpacing;
         remainingHeight -= actualSpacing + h;
         currentPageItems.add(PageItem(source: item, paragraphIndex: i));
-      } else if (item is ParagraphContentText) {
+      } else if (item is ParagraphContent_Text) {
         _layoutTextParagraph(
           text: item.content,
           paragraphIndex: i,
@@ -190,7 +190,7 @@ class PageBreaker {
   void _layoutTextParagraph({
     required String text,
     required int paragraphIndex,
-    required ParagraphContentText source,
+    required ParagraphContent_Text source,
     required double availableWidth,
     required double availableHeight,
     required double spacing,

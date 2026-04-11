@@ -48,7 +48,7 @@ app.*.map.json
 /.cargo/
 /target/
 
-# Generated signals
-/lib/src/bincode
-/lib/src/serde
-/lib/src/bindings
+# flutter_rust_bridge generated files
+lib/src/rust/
+native/hub/src/frb_generated*
+frb_generated.h

@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:langhuan/features/bookshelf/widgets/reader_display_mapper.dart';
 import 'package:langhuan/features/bookshelf/widgets/reader_types.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
-import 'package:langhuan/src/bindings/signals/signals.dart';
+import 'package:langhuan/src/rust/api/types.dart';
 
 void main() {
   group('buildChapterDisplayEntries', () {
@@ -22,8 +22,8 @@ void main() {
         chapterId: 'c2',
         chapterIndex: 1,
         state: ChapterReady([
-          ParagraphContentTitle(text: 'Chapter Two'),
-          ParagraphContentText(content: 'Body'),
+          ParagraphContent_Title(text: 'Chapter Two'),
+          ParagraphContent_Text(content: 'Body'),
         ]),
       );
 
@@ -63,7 +63,7 @@ void main() {
       const slot = ChapterSlot(
         chapterId: 'c1',
         chapterIndex: 4,
-        state: ChapterReady([ParagraphContentText(content: 'No title here')]),
+        state: ChapterReady([ParagraphContent_Text(content: 'No title here')]),
       );
 
       final entries = buildChapterDisplayEntries(slots: [slot], l10n: l10n);
@@ -112,7 +112,7 @@ void main() {
         chapterId: 'c2',
         chapterIndex: 1,
         title: 'My Chapter',
-        content: [ParagraphContentText(content: 'text')],
+        content: [ParagraphContent_Text(content: 'text')],
       );
       expect(entry.kind, ChapterDisplayKind.success);
       expect(entry.content, hasLength(1));

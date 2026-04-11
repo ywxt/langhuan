@@ -1,5 +1,5 @@
 import '../../../l10n/app_localizations.dart';
-import '../../../src/bindings/signals/signals.dart';
+import '../../../src/rust/api/types.dart';
 import 'reader_types.dart';
 
 /// UI-ready chapter entry derived from a [ChapterSlot].
@@ -115,8 +115,8 @@ List<ChapterDisplayEntry> buildChapterDisplayEntries({
 }
 
 String _resolveTitle(List<ParagraphContent> content, String fallback) {
-  if (content.isNotEmpty && content.first is ParagraphContentTitle) {
-    return (content.first as ParagraphContentTitle).text;
+  if (content.isNotEmpty && content.first is ParagraphContent_Title) {
+    return (content.first as ParagraphContent_Title).text;
   }
   return fallback;
 }

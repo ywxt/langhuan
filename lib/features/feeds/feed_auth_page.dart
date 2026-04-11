@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:tuple/tuple.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../shared/theme/app_theme.dart';
-import '../../src/bindings/signals/signals.dart' show CookieEntry;
+import '../../src/rust/api/types.dart';
 import 'feed_service.dart';
 
 class FeedAuthPage extends StatefulWidget {
@@ -17,17 +16,18 @@ class FeedAuthPage extends StatefulWidget {
 }
 
 class _FeedAuthPageState extends State<FeedAuthPage> {
-  late final WebViewController _controller;
+  InAppWebViewController? _controller;
   bool _isSubmitting = false;
   bool _isLoadingEntry = true;
   String? _error;
   FeedAuthEntryModel? _entry;
 
+  /// Response headers captured from the most recent main-frame navigation.
+  List<(String, String)> _lastResponseHeaders = const [];
+
   @override
   void initState() {
     super.initState();
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted);
     _loadEntry();
   }
 
@@ -51,9 +51,6 @@ class _FeedAuthPageState extends State<FeedAuthPage> {
       }
 
       _entry = entry;
-      await _controller.loadRequest(Uri.parse(entry.url));
-      if (!mounted) return;
-
       setState(() {
         _isLoadingEntry = false;
       });
@@ -67,30 +64,41 @@ class _FeedAuthPageState extends State<FeedAuthPage> {
   }
 
   Future<void> _submitPage() async {
-    if (_isSubmitting) return;
+    if (_isSubmitting || _controller == null) return;
 
     setState(() {
       _isSubmitting = true;
     });
 
     try {
-      final currentUrl = await _controller.currentUrl() ?? _entry?.url ?? '';
-      final htmlRaw = await _controller.runJavaScriptReturningResult(
-        'document.documentElement.outerHTML',
-      );
+      final controller = _controller!;
+      final currentUrl =
+          (await controller.getUrl())?.toString() ?? _entry?.url ?? '';
 
-      final html = _normalizeJsStringResult(htmlRaw);
-      final cookiesRaw = await _controller.runJavaScriptReturningResult(
-        'document.cookie',
-      );
-      final cookies = _normalizeJsStringResult(cookiesRaw);
-      final structuredCookies = _parseCookieHeader(cookies);
+      final html =
+          await controller.evaluateJavascript(
+                source: 'document.documentElement.outerHTML',
+              )
+              as String? ??
+          '';
+
+      // Collect cookies via CookieManager for the current URL.
+      final url = await controller.getUrl();
+      final cookieManager = CookieManager.instance();
+      final rawCookies = url != null
+          ? await cookieManager.getCookies(url: url)
+          : <Cookie>[];
+      final structuredCookies = rawCookies
+          .map((c) => CookieEntry(name: c.name, value: c.value.toString()))
+          .toList(growable: false);
+
+      final responseHeaders = _lastResponseHeaders;
 
       await FeedService.instance.submitFeedAuthPage(
         feedId: widget.feedId,
         currentUrl: currentUrl,
         response: html,
-        responseHeaders: const <Tuple2<String, String>>[],
+        responseHeaders: responseHeaders,
         cookies: structuredCookies,
       );
 
@@ -108,39 +116,6 @@ class _FeedAuthPageState extends State<FeedAuthPage> {
         });
       }
     }
-  }
-
-  String _normalizeJsStringResult(Object value) {
-    final text = value.toString();
-    if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
-      return text
-          .substring(1, text.length - 1)
-          .replaceAll(r'\n', '\n')
-          .replaceAll(r'\"', '"');
-    }
-    return text;
-  }
-
-  List<CookieEntry> _parseCookieHeader(String cookieHeader) {
-    if (cookieHeader.trim().isEmpty) {
-      return const [];
-    }
-
-    return cookieHeader
-        .split(';')
-        .map((item) => item.trim())
-        .where((item) => item.isNotEmpty)
-        .map((item) {
-          final idx = item.indexOf('=');
-          if (idx <= 0) {
-            return CookieEntry(name: item, value: '');
-          }
-          return CookieEntry(
-            name: item.substring(0, idx).trim(),
-            value: item.substring(idx + 1).trim(),
-          );
-        })
-        .toList(growable: false);
   }
 
   @override
@@ -173,7 +148,69 @@ class _FeedAuthPageState extends State<FeedAuthPage> {
                 child: Text(_error!),
               ),
             )
-          : WebViewWidget(controller: _controller),
+          : InAppWebView(
+              initialUrlRequest: URLRequest(url: WebUri(_entry!.url)),
+              initialSettings: InAppWebViewSettings(javaScriptEnabled: true),
+              onWebViewCreated: (controller) {
+                _controller = controller;
+              },
+              onLoadStop: (controller, url) async {
+                if (url == null) return;
+                _lastResponseHeaders = await _fetchResponseHeaders(
+                  controller,
+                  url.toString(),
+                );
+              },
+            ),
     );
+  }
+
+  /// Fetch response headers for [url] via JS `fetch()` inside the WebView.
+  ///
+  /// Falls back to an empty list on CORS or other errors.
+  Future<List<(String, String)>> _fetchResponseHeaders(
+    InAppWebViewController controller,
+    String url,
+  ) async {
+    try {
+      final result = await controller.evaluateJavascript(
+        source:
+            '''
+(async () => {
+  try {
+    const r = await fetch('${_escapeJsString(url)}', {
+      method: 'GET',
+      credentials: 'include',
+    });
+    const pairs = [];
+    r.headers.forEach((v, k) => pairs.push(k + '\\x00' + v));
+    return pairs.join('\\n');
+  } catch (_) {
+    return '';
+  }
+})()
+''',
+      );
+      final text = (result as String?) ?? '';
+      if (text.isEmpty) return const [];
+      return text
+          .split('\n')
+          .where((line) => line.contains('\x00'))
+          .map((line) {
+            final idx = line.indexOf('\x00');
+            return (line.substring(0, idx), line.substring(idx + 1));
+          })
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static String _escapeJsString(String value) {
+    return value
+        .replaceAll(r'\', r'\\')
+        .replaceAll("'", r"\'")
+        .replaceAll('\n', r'\n')
+        .replaceAll('\r', r'\r');
   }
 }

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:langhuan/features/bookshelf/widgets/reader_types.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
-import 'package:langhuan/src/bindings/signals/signals.dart';
+import 'package:langhuan/src/rust/api/types.dart';
 
 void main() {
   group('normalizeChapterErrorMessage', () {
@@ -41,8 +41,8 @@ void main() {
 
     test('ChapterReady holds paragraphs', () {
       const paragraphs = [
-        ParagraphContentTitle(text: 'Title'),
-        ParagraphContentText(content: 'Body'),
+        ParagraphContent_Title(text: 'Title'),
+        ParagraphContent_Text(content: 'Body'),
       ];
       const state = ChapterReady(paragraphs);
       expect(state.paragraphs, hasLength(2));
@@ -89,8 +89,8 @@ void main() {
         chapterId: 'c1',
         chapterIndex: 0,
         state: ChapterReady([
-          ParagraphContentTitle(text: 'Title'),
-          ParagraphContentText(content: 'Body'),
+          ParagraphContent_Title(text: 'Title'),
+          ParagraphContent_Text(content: 'Body'),
         ]),
       );
 
@@ -128,7 +128,7 @@ void main() {
       );
 
       final updated = original.copyWith(
-        state: const ChapterReady([ParagraphContentText(content: 'Hello')]),
+        state: const ChapterReady([ParagraphContent_Text(content: 'Hello')]),
       );
 
       expect(updated.chapterId, 'c1');

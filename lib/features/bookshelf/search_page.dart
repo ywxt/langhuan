@@ -7,7 +7,7 @@ import '../../l10n/app_localizations.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
-import '../../src/bindings/signals/signals.dart';
+import '../../src/rust/api/types.dart';
 import '../feeds/feed_providers.dart';
 import '../feeds/feed_service.dart';
 import '../feeds/search_provider.dart';
@@ -68,7 +68,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   void _onSearch() {
     final bootstrap = ref.read(appDataDirectorySetProvider);
     final bootstrapReady =
-        bootstrap.asData?.value.outcome is AppDataDirectoryOutcomeSuccess;
+        !bootstrap.isLoading &&
+        !bootstrap.hasError &&
+        bootstrap.asData?.value != null;
     if (!bootstrapReady) return;
 
     final feedState = ref.read(feedListProvider);
@@ -90,7 +92,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   Widget build(BuildContext context) {
     final bootstrap = ref.watch(appDataDirectorySetProvider);
     final bootstrapReady =
-        bootstrap.asData?.value.outcome is AppDataDirectoryOutcomeSuccess;
+        !bootstrap.isLoading &&
+        !bootstrap.hasError &&
+        bootstrap.asData?.value != null;
     final feedState = ref.watch(feedListProvider);
     final selectedFeed = ref.watch(selectedFeedProvider);
     final visibleFeeds = _visibleFeeds(feedState);
@@ -263,32 +267,50 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
 
     // Results list — card-style items with spacing
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(
-        horizontal: LanghuanTheme.spaceLg,
-        vertical: LanghuanTheme.spaceSm,
-      ),
-      itemCount: searchState.items.length,
-      itemBuilder: (context, index) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: LanghuanTheme.spaceSm),
-          child: SearchResultCard(
-            item: searchState.items[index],
-            onTap: selectedFeed == null
-                ? null
-                : () {
-                    final item = searchState.items[index];
-                    context.pushNamed(
-                      'bookshelf-book-detail',
-                      queryParameters: {
-                        'feedId': selectedFeed.id,
-                        'bookId': item.id,
-                      },
-                    );
-                  },
-          ),
-        );
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollEndNotification &&
+            notification.metrics.extentAfter < 200 &&
+            !searchState.isLoadingMore &&
+            searchState.hasMore) {
+          ref.read(searchProvider.notifier).loadMore();
+        }
+        return false;
       },
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(
+          horizontal: LanghuanTheme.spaceLg,
+          vertical: LanghuanTheme.spaceSm,
+        ),
+        itemCount: searchState.items.length + (searchState.hasMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index >= searchState.items.length) {
+            // Loading indicator at the bottom
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: LanghuanTheme.spaceLg),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.only(bottom: LanghuanTheme.spaceSm),
+            child: SearchResultCard(
+              item: searchState.items[index],
+              onTap: selectedFeed == null
+                  ? null
+                  : () {
+                      final item = searchState.items[index];
+                      context.pushNamed(
+                        'bookshelf-book-detail',
+                        queryParameters: {
+                          'feedId': selectedFeed.id,
+                          'bookId': item.id,
+                        },
+                      );
+                    },
+            ),
+          );
+        },
+      ),
     );
   }
 }
