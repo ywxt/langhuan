@@ -30,6 +30,9 @@ pub struct BookshelfRemove {
 
 pub struct BookshelfList;
 
+/// Returns the set of `(feed_id, book_id)` pairs currently on the bookshelf.
+pub struct GetProtectedBooks;
+
 // ---------------------------------------------------------------------------
 // Actor
 // ---------------------------------------------------------------------------
@@ -225,6 +228,31 @@ impl Handler<BookshelfList> for BookshelfActor {
 
     async fn handle(&mut self, _: BookshelfList, _: &Context<Self>) -> Self::Result {
         self.list().await
+    }
+}
+
+#[async_trait]
+impl Handler<GetProtectedBooks> for BookshelfActor {
+    type Result = Result<std::collections::HashSet<(String, String)>, BridgeError>;
+
+    async fn handle(&mut self, _: GetProtectedBooks, _: &Context<Self>) -> Self::Result {
+        let shelf = self
+            .shelf
+            .as_ref()
+            .ok_or_else(|| BridgeError::from(self.unavailable_message()))?;
+
+        let set = shelf
+            .entries()
+            .iter()
+            .map(|e| {
+                (
+                    e.identity.feed_id.clone(),
+                    e.identity.source_book_id.clone(),
+                )
+            })
+            .collect();
+
+        Ok(set)
     }
 }
 

@@ -6,6 +6,7 @@ pub mod types;
 pub mod app_data;
 pub mod auth;
 pub mod bookshelf;
+pub mod cleanup;
 pub mod feed_stream;
 pub mod init;
 pub mod locale;

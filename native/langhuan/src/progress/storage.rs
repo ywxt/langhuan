@@ -125,6 +125,42 @@ impl ReadingProgressStore {
         tracing::debug!("reading progress saved");
         Ok(())
     }
+
+    /// Remove reading progress entries that are older than `max_age` and whose
+    /// `(feed_id, book_id)` is not in the `protected` set.
+    ///
+    /// Returns the number of entries removed.
+    pub async fn remove_stale_entries(
+        &mut self,
+        protected: &std::collections::HashSet<(String, String)>,
+        max_age: std::time::Duration,
+    ) -> Result<u64> {
+        let cutoff_ms = {
+            let cutoff = std::time::SystemTime::now() - max_age;
+            cutoff
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0)
+        };
+
+        let before = self.file.entries.len();
+        self.file.entries.retain(|entry| {
+            let key = (entry.feed_id.clone(), entry.book_id.clone());
+            if protected.contains(&key) {
+                return true;
+            }
+            entry.updated_at_ms >= cutoff_ms
+        });
+        let removed = (before - self.file.entries.len()) as u64;
+
+        if removed > 0 {
+            let snapshot = self.file.clone();
+            self.save_progress_file(&snapshot).await?;
+            tracing::info!(removed, "stale reading progress entries removed");
+        }
+
+        Ok(removed)
+    }
 }
 
 #[cfg(test)]
@@ -158,5 +194,69 @@ mod tests {
 
         assert_eq!(loaded.chapter_id, "chapter-10");
         assert_eq!(loaded.paragraph_index, 12);
+    }
+
+    #[tokio::test]
+    async fn remove_stale_entries_keeps_protected_and_recent() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut store = ReadingProgressStore::open(temp_dir.path())
+            .await
+            .expect("open");
+
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+        let old_ms = now_ms - 20 * 24 * 3600 * 1000; // 20 days ago
+
+        // Old + protected → keep
+        store
+            .set_reading_progress(ReadingProgress {
+                feed_id: "feed-a".into(),
+                book_id: "book-1".into(),
+                chapter_id: "ch-1".into(),
+                paragraph_index: 0,
+                updated_at_ms: old_ms,
+            })
+            .await
+            .unwrap();
+
+        // Old + not protected → remove
+        store
+            .set_reading_progress(ReadingProgress {
+                feed_id: "feed-b".into(),
+                book_id: "book-2".into(),
+                chapter_id: "ch-5".into(),
+                paragraph_index: 3,
+                updated_at_ms: old_ms,
+            })
+            .await
+            .unwrap();
+
+        // Recent + not protected → keep
+        store
+            .set_reading_progress(ReadingProgress {
+                feed_id: "feed-c".into(),
+                book_id: "book-3".into(),
+                chapter_id: "ch-2".into(),
+                paragraph_index: 1,
+                updated_at_ms: now_ms,
+            })
+            .await
+            .unwrap();
+
+        let mut protected = std::collections::HashSet::new();
+        protected.insert(("feed-a".to_string(), "book-1".to_string()));
+
+        let max_age = std::time::Duration::from_secs(15 * 24 * 3600);
+        let removed = store
+            .remove_stale_entries(&protected, max_age)
+            .await
+            .unwrap();
+
+        assert_eq!(removed, 1);
+        assert!(store.get_reading_progress("feed-a", "book-1").await.unwrap().is_some());
+        assert!(store.get_reading_progress("feed-b", "book-2").await.unwrap().is_none());
+        assert!(store.get_reading_progress("feed-c", "book-3").await.unwrap().is_some());
     }
 }

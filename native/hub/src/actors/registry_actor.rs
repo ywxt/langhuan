@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use std::collections::HashSet;
+
 use langhuan::cache::{CacheStore, CachedFeed};
 use langhuan::script::lua::LuaFeed;
 use langhuan::script::registry::ScriptRegistry;
@@ -79,6 +81,12 @@ pub struct RemoveFeed {
     pub feed_id: String,
 }
 
+/// Message: clean up stale cache entries.
+pub struct CleanupStaleCache {
+    pub protected: HashSet<(String, String)>,
+    pub max_age: std::time::Duration,
+}
+
 // ---------------------------------------------------------------------------
 // RegistryActor
 // ---------------------------------------------------------------------------
@@ -86,7 +94,7 @@ pub struct RemoveFeed {
 pub struct RegistryActor {
     engine: ScriptEngine,
     registry: Option<ScriptRegistry>,
-    cache_store: Option<Arc<CacheStore>>,
+    cache_store: Option<CacheStore>,
     load_errors: HashMap<String, String>,
     pending_installs: HashMap<String, String>,
 }
@@ -167,7 +175,7 @@ impl RegistryActor {
         self.registry = Some(
             ScriptRegistry::new(&scripts_dir, entries, feeds).map_err(|e| localize_error(&e))?,
         );
-        self.cache_store = Some(Arc::new(CacheStore::new(cache_dir)));
+        self.cache_store = Some(CacheStore::new(cache_dir));
         self.load_errors = load_errors;
         tracing::info!(
             feed_count = feed_count,
@@ -295,7 +303,7 @@ impl Handler<GetFeed> for RegistryActor {
         if let Some((_, feed)) = registry.feed(&msg.feed_id) {
             return Ok(Arc::new(CachedFeed::new(
                 Arc::clone(feed),
-                Arc::clone(cache_store),
+                cache_store.clone(),
             )));
         }
 
@@ -376,6 +384,23 @@ impl Handler<RemoveFeed> for RegistryActor {
 
     async fn handle(&mut self, msg: RemoveFeed, _: &Context<Self>) -> Self::Result {
         self.do_remove(msg.feed_id).await
+    }
+}
+
+#[async_trait]
+impl Handler<CleanupStaleCache> for RegistryActor {
+    type Result = Result<u64, BridgeError>;
+
+    async fn handle(&mut self, msg: CleanupStaleCache, _: &Context<Self>) -> Self::Result {
+        let store = self
+            .cache_store
+            .as_ref()
+            .ok_or_else(|| BridgeError::from(t!("error.app_data_dir_not_set").to_string()))?;
+
+        store
+            .cleanup_stale_books(&msg.protected, msg.max_age)
+            .await
+            .map_err(BridgeError::from)
     }
 }
 

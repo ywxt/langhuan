@@ -1,11 +1,44 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../shared/app_service.dart';
 import '../../shared/constants.dart';
 import '../../shared/theme/app_theme.dart';
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  bool _isCleaning = false;
+
+  Future<void> _cleanupCache() async {
+    if (_isCleaning) return;
+    setState(() => _isCleaning = true);
+
+    try {
+      final removed = await AppService.instance.cleanupStaleData();
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      final message = removed > 0
+          ? l10n.settingsCleanupSuccess(removed)
+          : l10n.settingsCleanupNothingToClean;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } catch (_) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.settingsCleanupError)));
+    } finally {
+      if (mounted) setState(() => _isCleaning = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +65,35 @@ class SettingsPage extends StatelessWidget {
                 style: theme.textTheme.headlineLarge,
               ),
             ),
+
+            // ── Storage section ────────────────────────────────────────
+            _SectionLabel(label: l10n.settingsStorage),
+            const SizedBox(height: LanghuanTheme.spaceSm),
+            _SettingsCard(
+              children: [
+                _SettingsRow(
+                  icon: Icons.cleaning_services_outlined,
+                  label: l10n.settingsCleanupCache,
+                  subtitle: l10n.settingsCleanupCacheDescription,
+                  trailing: _isCleaning
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          Icons.chevron_right,
+                          size: 20,
+                          color: theme.colorScheme.onSurfaceVariant.withAlpha(
+                            120,
+                          ),
+                        ),
+                  onTap: _isCleaning ? null : _cleanupCache,
+                ),
+              ],
+            ),
+
+            const SizedBox(height: LanghuanTheme.spaceLg),
 
             // ── About section ──────────────────────────────────────────
             _SectionLabel(label: l10n.settingsAbout),
@@ -118,12 +180,14 @@ class _SettingsRow extends StatelessWidget {
   const _SettingsRow({
     required this.icon,
     required this.label,
+    this.subtitle,
     this.trailing,
     this.onTap,
   });
 
   final IconData icon;
   final String label;
+  final String? subtitle;
   final Widget? trailing;
   final VoidCallback? onTap;
 
@@ -143,7 +207,23 @@ class _SettingsRow extends StatelessWidget {
           children: [
             Icon(icon, size: 20, color: theme.colorScheme.onSurfaceVariant),
             const SizedBox(width: LanghuanTheme.spaceMd),
-            Expanded(child: Text(label, style: theme.textTheme.bodyLarge)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: theme.textTheme.bodyLarge),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
             ?trailing,
           ],
         ),

@@ -398,5 +398,26 @@
   "@addFeedErrorPreview": { "description": "Error message when preview fails" },
 
   "addFeedErrorInstall": "Failed to install feed",
-  "@addFeedErrorInstall": { "description": "Error message when install fails" }
+  "@addFeedErrorInstall": { "description": "Error message when install fails" },
+
+  "settingsStorage": "Storage",
+  "@settingsStorage": { "description": "Settings section: storage management" },
+
+  "settingsCleanupCache": "Clear stale cache",
+  "@settingsCleanupCache": { "description": "Settings row: clean up old cache data" },
+
+  "settingsCleanupCacheDescription": "Remove cached data and reading progress older than 15 days (bookshelf items are preserved)",
+  "@settingsCleanupCacheDescription": { "description": "Subtitle for the cache cleanup row" },
+
+  "settingsCleanupSuccess": "{count} items cleaned up",
+  "@settingsCleanupSuccess": {
+    "description": "Snackbar after successful cleanup",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "settingsCleanupNothingToClean": "Nothing to clean up",
+  "@settingsCleanupNothingToClean": { "description": "Snackbar when cleanup removes nothing" },
+
+  "settingsCleanupError": "Cleanup failed",
+  "@settingsCleanupError": { "description": "Snackbar when cleanup encounters an error" }
 }

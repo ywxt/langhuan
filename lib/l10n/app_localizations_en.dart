@@ -375,4 +375,25 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addFeedErrorInstall => 'Failed to install feed';
+
+  @override
+  String get settingsStorage => 'Storage';
+
+  @override
+  String get settingsCleanupCache => 'Clear stale cache';
+
+  @override
+  String get settingsCleanupCacheDescription =>
+      'Remove cached data and reading progress older than 15 days (bookshelf items are preserved)';
+
+  @override
+  String settingsCleanupSuccess(int count) {
+    return '$count items cleaned up';
+  }
+
+  @override
+  String get settingsCleanupNothingToClean => 'Nothing to clean up';
+
+  @override
+  String get settingsCleanupError => 'Cleanup failed';
 }

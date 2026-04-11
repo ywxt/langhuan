@@ -130,5 +130,12 @@
   "addFeedInstall": "安裝",
   "addFeedSuccess": "書源安裝成功",
   "addFeedErrorPreview": "預覽書源失敗",
-  "addFeedErrorInstall": "安裝書源失敗"
+  "addFeedErrorInstall": "安裝書源失敗",
+
+  "settingsStorage": "存儲",
+  "settingsCleanupCache": "清理緩存",
+  "settingsCleanupCacheDescription": "清理15天前的緩存數據和閱讀進度（書架中的書不受影響）",
+  "settingsCleanupSuccess": "已清理 {count} 項",
+  "settingsCleanupNothingToClean": "沒有需要清理的數據",
+  "settingsCleanupError": "清理失敗"
 }

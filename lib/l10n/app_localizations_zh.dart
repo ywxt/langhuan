@@ -371,4 +371,24 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get addFeedErrorInstall => '安裝書源失敗';
+
+  @override
+  String get settingsStorage => '存儲';
+
+  @override
+  String get settingsCleanupCache => '清理緩存';
+
+  @override
+  String get settingsCleanupCacheDescription => '清理15天前的緩存數據和閱讀進度（書架中的書不受影響）';
+
+  @override
+  String settingsCleanupSuccess(int count) {
+    return '已清理 $count 項';
+  }
+
+  @override
+  String get settingsCleanupNothingToClean => '沒有需要清理的數據';
+
+  @override
+  String get settingsCleanupError => '清理失敗';
 }

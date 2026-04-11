@@ -212,12 +212,12 @@ macro_rules! cache_first_value {
 /// ```
 pub struct CachedFeed<F: Feed> {
     inner: Arc<F>,
-    cache_store: Arc<CacheStore>,
+    cache_store: CacheStore,
 }
 
 impl<F: Feed> CachedFeed<F> {
     /// Wrap an existing feed with caching.
-    pub fn new(inner: Arc<F>, cache_store: Arc<CacheStore>) -> Self {
+    pub fn new(inner: Arc<F>, cache_store: CacheStore) -> Self {
         Self { inner, cache_store }
     }
 
@@ -227,7 +227,7 @@ impl<F: Feed> CachedFeed<F> {
     }
 
     /// Get a reference to the cache store (useful for cache management).
-    pub fn cache_store(&self) -> &Arc<CacheStore> {
+    pub fn cache_store(&self) -> &CacheStore {
         &self.cache_store
     }
 
@@ -482,11 +482,4 @@ impl<F: Feed + FeedAuthFlow> FeedAuthFlow for CachedFeed<F> {
     async fn auth_status(&self, support: &Self::SupportAuth) -> Result<AuthStatus> {
         self.inner.auth_status(support).await
     }
-}
-
-#[cfg(test)]
-mod tests {
-    // Note: Full integration tests for CachedFeed are complex due to the Feed trait.
-    // The CacheStore is tested separately in storage.rs with concrete tests.
-    // CachedFeed will be tested at the hub/actors level where concrete Feed types are used.
 }

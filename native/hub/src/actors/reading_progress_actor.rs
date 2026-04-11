@@ -15,6 +15,12 @@ pub struct GetReadingProgress {
     pub book_id: String,
 }
 
+/// Message: remove stale reading progress entries.
+pub struct CleanupStaleProgress {
+    pub protected: std::collections::HashSet<(String, String)>,
+    pub max_age: std::time::Duration,
+}
+
 /// Message: set reading progress for a book.
 pub struct SetReadingProgress {
     pub feed_id: String,
@@ -111,6 +117,23 @@ impl Handler<SetReadingProgress> for ReadingProgressActor {
         store
             .set_reading_progress(progress)
             .await
-            .map_err(|e| BridgeError::from(e))
+            .map_err(BridgeError::from)
+    }
+}
+
+#[async_trait]
+impl Handler<CleanupStaleProgress> for ReadingProgressActor {
+    type Result = Result<u64, BridgeError>;
+
+    async fn handle(&mut self, msg: CleanupStaleProgress, _: &Context<Self>) -> Self::Result {
+        let store = self
+            .store
+            .as_mut()
+            .ok_or_else(|| BridgeError::from(t!("error.app_data_dir_not_set").to_string()))?;
+
+        store
+            .remove_stale_entries(&msg.protected, msg.max_age)
+            .await
+            .map_err(BridgeError::from)
     }
 }

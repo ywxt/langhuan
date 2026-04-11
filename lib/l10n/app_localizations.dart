@@ -781,6 +781,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to install feed'**
   String get addFeedErrorInstall;
+
+  /// Settings section: storage management
+  ///
+  /// In en, this message translates to:
+  /// **'Storage'**
+  String get settingsStorage;
+
+  /// Settings row: clean up old cache data
+  ///
+  /// In en, this message translates to:
+  /// **'Clear stale cache'**
+  String get settingsCleanupCache;
+
+  /// Subtitle for the cache cleanup row
+  ///
+  /// In en, this message translates to:
+  /// **'Remove cached data and reading progress older than 15 days (bookshelf items are preserved)'**
+  String get settingsCleanupCacheDescription;
+
+  /// Snackbar after successful cleanup
+  ///
+  /// In en, this message translates to:
+  /// **'{count} items cleaned up'**
+  String settingsCleanupSuccess(int count);
+
+  /// Snackbar when cleanup removes nothing
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing to clean up'**
+  String get settingsCleanupNothingToClean;
+
+  /// Snackbar when cleanup encounters an error
+  ///
+  /// In en, this message translates to:
+  /// **'Cleanup failed'**
+  String get settingsCleanupError;
 }
 
 class _AppLocalizationsDelegate

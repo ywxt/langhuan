@@ -186,12 +186,13 @@ impl CacheStore {
         Ok(())
     }
 
-    /// Clear cached book info for a specific book under a feed.
+    /// Clear cached book info and its cover for a specific book under a feed.
     pub async fn clear_book_info(&self, feed_id: &str, book_id: &str) -> Result<()> {
         let path = self.book_info_path(feed_id, book_id);
         self.remove_file_if_exists(&path).await?;
+        self.clear_cover(feed_id, book_id).await?;
 
-        tracing::debug!(feed_id = %feed_id, book_id = %book_id, "cleared book info cache");
+        tracing::debug!(feed_id = %feed_id, book_id = %book_id, "cleared book info and cover cache");
         Ok(())
     }
 
@@ -454,6 +455,135 @@ impl CacheStore {
     pub fn cache_dir(&self) -> &PathBuf {
         &self.cache_dir
     }
+
+    /// Remove stale book cache directories that are older than `max_age` and
+    /// not in the `protected` set.
+    ///
+    /// Each element in `protected` is a `(feed_id, book_id)` pair whose cache
+    /// must be kept regardless of age (e.g. books on the bookshelf).
+    ///
+    /// Staleness is determined by the newest `cached_at_ms` timestamp found
+    /// in the JSON cache entry files inside each book directory.
+    ///
+    /// Returns the number of book directories removed.
+    pub async fn cleanup_stale_books(
+        &self,
+        protected: &std::collections::HashSet<(String, String)>,
+        max_age: std::time::Duration,
+    ) -> Result<u64> {
+        use crate::util::path_key::decode_path_component;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let cutoff_ms = (SystemTime::now() - max_age)
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+
+        let mut removed = 0u64;
+
+        if !self.cache_dir.exists() {
+            return Ok(0);
+        }
+
+        let mut feed_dirs = tokio::fs::read_dir(&self.cache_dir).await.map_err(|e| {
+            Error::storage(
+                StorageKind::ChapterCache,
+                StorageOperation::Read,
+                e.to_string(),
+            )
+        })?;
+
+        while let Some(feed_entry) = feed_dirs.next_entry().await.map_err(|e| {
+            Error::storage(
+                StorageKind::ChapterCache,
+                StorageOperation::Read,
+                e.to_string(),
+            )
+        })? {
+            let feed_path = feed_entry.path();
+            if !feed_path.is_dir() {
+                continue;
+            }
+            let Some(feed_id) = feed_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(decode_path_component)
+            else {
+                continue;
+            };
+
+            let Ok(mut book_dirs) = tokio::fs::read_dir(&feed_path).await else {
+                continue;
+            };
+
+            while let Ok(Some(book_entry)) = book_dirs.next_entry().await {
+                let book_path = book_entry.path();
+                if !book_path.is_dir() {
+                    continue;
+                }
+                let Some(book_id) = book_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .and_then(decode_path_component)
+                else {
+                    continue;
+                };
+
+                if protected.contains(&(feed_id.clone(), book_id.clone())) {
+                    continue;
+                }
+
+                let is_stale = newest_cached_at_ms_in_dir(&book_path)
+                    .await
+                    .is_none_or(|ms| ms < cutoff_ms);
+
+                if is_stale {
+                    tracing::debug!(feed_id, book_id, "removing stale book cache");
+                    match self.clear_book(&feed_id, &book_id).await {
+                        Ok(()) => removed += 1,
+                        Err(e) => {
+                            tracing::warn!(feed_id, book_id, error = %e, "failed to remove stale book cache")
+                        }
+                    }
+                }
+            }
+
+            // remove_dir only succeeds when the directory is empty.
+            let _ = tokio::fs::remove_dir(&feed_path).await;
+        }
+
+        tracing::info!(removed, "cache cleanup complete");
+        Ok(removed)
+    }
+}
+
+/// A minimal struct used only to extract `cached_at_ms` from any JSON cache
+/// entry without deserializing the full payload.
+#[derive(serde::Deserialize)]
+struct CachedAtProbe {
+    cached_at_ms: i64,
+}
+
+/// Scan all `.json` files in a book cache directory and return the newest
+/// `cached_at_ms` value found.
+async fn newest_cached_at_ms_in_dir(dir: &std::path::Path) -> Option<i64> {
+    let mut rd = tokio::fs::read_dir(dir).await.ok()?;
+    let mut newest: Option<i64> = None;
+
+    while let Ok(Some(entry)) = rd.next_entry().await {
+        let path = entry.path();
+        if path.extension().is_none_or(|ext| ext != "json") {
+            continue;
+        }
+        if let Ok(content) = tokio::fs::read_to_string(&path).await
+            && let Ok(probe) = serde_json::from_str::<CachedAtProbe>(&content)
+        {
+            newest =
+                Some(newest.map_or(probe.cached_at_ms, |prev: i64| prev.max(probe.cached_at_ms)));
+        }
+    }
+
+    newest
 }
 
 #[cfg(test)]
@@ -643,5 +773,82 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[tokio::test]
+    async fn cleanup_stale_books_removes_old_and_keeps_protected() {
+        let temp_dir = TempDir::new().unwrap();
+        let store = CacheStore::new(temp_dir.path());
+
+        let twenty_days_ago_ms = {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let ago = SystemTime::now() - std::time::Duration::from_secs(20 * 24 * 3600);
+            ago.duration_since(UNIX_EPOCH).unwrap().as_millis() as i64
+        };
+
+        // Create cache entries for 3 books.
+        // book-1 and book-3 get old timestamps; book-2 stays fresh.
+        let entry_a = ChapterCacheEntry {
+            feed_id: "feed-a".to_string(),
+            book_id: "book-1".to_string(),
+            chapter_id: "ch-1".to_string(),
+            paragraphs: vec![],
+            cached_at_ms: twenty_days_ago_ms,
+            schema_version: CACHE_SCHEMA_VERSION,
+        };
+        let entry_b = ChapterCacheEntry::new(
+            "feed-a".to_string(),
+            "book-2".to_string(),
+            "ch-1".to_string(),
+            vec![],
+        );
+        let entry_c = ChapterCacheEntry {
+            feed_id: "feed-b".to_string(),
+            book_id: "book-3".to_string(),
+            chapter_id: "ch-1".to_string(),
+            paragraphs: vec![],
+            cached_at_ms: twenty_days_ago_ms,
+            schema_version: CACHE_SCHEMA_VERSION,
+        };
+        store.set_chapter(&entry_a).await.unwrap();
+        store.set_chapter(&entry_b).await.unwrap();
+        store.set_chapter(&entry_c).await.unwrap();
+
+        // Protect book-1 (on bookshelf).
+        let mut protected = std::collections::HashSet::new();
+        protected.insert(("feed-a".to_string(), "book-1".to_string()));
+
+        let max_age = std::time::Duration::from_secs(15 * 24 * 3600);
+        let removed = store
+            .cleanup_stale_books(&protected, max_age)
+            .await
+            .unwrap();
+
+        // book-3 should be removed (old + not protected).
+        assert_eq!(removed, 1);
+        // book-1 should still exist (protected).
+        assert!(
+            store
+                .get_chapter("feed-a", "book-1", "ch-1")
+                .await
+                .unwrap()
+                .is_some()
+        );
+        // book-2 should still exist (recent).
+        assert!(
+            store
+                .get_chapter("feed-a", "book-2", "ch-1")
+                .await
+                .unwrap()
+                .is_some()
+        );
+        // book-3 should be gone.
+        assert!(
+            store
+                .get_chapter("feed-b", "book-3", "ch-1")
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 }
