@@ -14,6 +14,7 @@ use crate::feed::{
 };
 use crate::http::{self, HttpRequest, HttpResponse};
 use crate::model::{BookInfo, ChapterInfo, Page, Paragraph, SearchResult};
+use crate::script::runtime::engine::timed_call;
 use crate::script::LUA_SERIALIZE_OPTIONS;
 
 // ---------------------------------------------------------------------------
@@ -193,7 +194,7 @@ impl LuaFeed {
         let lua_response = self
             .lua
             .to_value_with(&http_response, LUA_SERIALIZE_OPTIONS)?;
-        let page: Page<T, Value> = pair.parse.call(lua_response)?;
+        let page: Page<T, Value> = timed_call(&self.lua, &pair.parse, lua_response)?;
         Ok(page)
     }
 
@@ -276,7 +277,7 @@ impl LuaFeed {
         let lua_response = self
             .lua
             .to_value_with(&http_response, LUA_SERIALIZE_OPTIONS)?;
-        let value: Value = pair.parse.call(lua_response)?;
+        let value: Value = timed_call(&self.lua, &pair.parse, lua_response)?;
         tracing::debug!(
             feed_id = %self.meta.id,
             lua_value_type = %value.type_name(),
@@ -299,7 +300,7 @@ impl LuaFeed {
         func: &mlua::Function,
         args: impl mlua::IntoLuaMulti,
     ) -> Result<T> {
-        let value: Value = func.call(args)?;
+        let value: Value = timed_call(&self.lua, func, args)?;
         let result: T = self.lua.from_value(value).map_err(|e| {
             tracing::error!(
                 feed_id = %self.meta.id,
@@ -382,9 +383,11 @@ impl LuaFeed {
         let request_value = self.lua.to_value_with(&request, LUA_SERIALIZE_OPTIONS)?;
         let auth_value = self.lua.to_value_with(&auth_info, LUA_SERIALIZE_OPTIONS)?;
 
-        let value: Value = login
-            .patch_request
-            .call((context_value, request_value, auth_value))?;
+        let value: Value = timed_call(
+            &self.lua,
+            &login.patch_request,
+            (context_value, request_value, auth_value),
+        )?;
         let patched: HttpRequest = self.lua.from_value(value).map_err(|e| {
             tracing::error!(
                 feed_id = %self.meta.id,
@@ -469,14 +472,14 @@ impl FeedAuthFlow for LuaFeed {
     }
 
     fn auth_entry(&self, support: &Self::SupportAuth) -> Result<AuthEntry> {
-        let value: Value = support.login().entry.call(())?;
+        let value: Value = timed_call(&self.lua, &support.login().entry, ())?;
         let entry: AuthEntry = self.lua.from_value(value)?;
         Ok(entry)
     }
 
     fn parse_auth(&self, support: &Self::SupportAuth, page: &AuthPageContext) -> Result<AuthInfo> {
         let page_value = self.lua.to_value_with(page, LUA_SERIALIZE_OPTIONS)?;
-        let value: Value = support.login().parse.call(page_value)?;
+        let value: Value = timed_call(&self.lua, &support.login().parse, page_value)?;
         let auth_info: AuthInfo = self.lua.from_value(value)?;
         Ok(auth_info)
     }

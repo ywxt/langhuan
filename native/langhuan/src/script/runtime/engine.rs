@@ -1,6 +1,7 @@
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use mlua::{Lua, LuaSerdeExt, StdLib};
+use mlua::{HookTriggers, Lua, LuaSerdeExt, StdLib, VmState};
 use reqwest::Client;
 
 use crate::error::Result;
@@ -8,6 +9,49 @@ use crate::feed::FeedMeta;
 use crate::script::lua::feed::{FeedHandlers, LuaFeed};
 use crate::script::meta;
 use crate::script::runtime::modules;
+
+/// Maximum execution time for a single Lua call before it is interrupted.
+const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30);
+
+// Memory limit for Lua VMs: 10 MiB (in bytes).
+const MEMORY_LIMIT: usize = 10 * 1024 * 1024;
+
+/// Call a Lua function with a per-call execution timeout.
+///
+/// Sets an instruction-counting hook before the call that checks elapsed time.
+/// The hook is removed after the call completes (or errors). This gives each
+/// call an independent `SCRIPT_TIMEOUT` window.
+pub(crate) fn timed_call<R: mlua::FromLuaMulti>(
+    lua: &Lua,
+    func: &mlua::Function,
+    args: impl mlua::IntoLuaMulti,
+) -> mlua::Result<R> {
+    timed_call_with_timeout(lua, func, args, SCRIPT_TIMEOUT)
+}
+
+fn timed_call_with_timeout<R: mlua::FromLuaMulti>(
+    lua: &Lua,
+    func: &mlua::Function,
+    args: impl mlua::IntoLuaMulti,
+    timeout: Duration,
+) -> mlua::Result<R> {
+    let start = Instant::now();
+    lua.set_hook(
+        HookTriggers::new().every_nth_instruction(4096),
+        move |_lua, _debug| {
+            if start.elapsed() > timeout {
+                Err(mlua::Error::RuntimeError(
+                    "script execution timed out".into(),
+                ))
+            } else {
+                Ok(VmState::Continue)
+            }
+        },
+    )?;
+    let result = func.call(args);
+    lua.remove_hook();
+    result
+}
 
 /// The script engine manages Lua VM creation and HTTP client sharing.
 ///
@@ -111,6 +155,8 @@ fn create_sandbox_lua() -> Result<Lua> {
         | StdLib::OS;
 
     let lua = Lua::new_with(safe_libs, mlua::LuaOptions::default())?;
+    
+    lua.set_memory_limit(MEMORY_LIMIT)?;
 
     // -- Restrict `base` library functions that can execute code or access the filesystem ---
     {
@@ -180,5 +226,23 @@ mod tests {
             assert(os.rename == nil, "os.rename should be disabled in sandbox");
         "#;
         let _: () = lua.load(code).eval().unwrap();
+    }
+
+    #[test]
+    fn test_infinite_loop_is_interrupted() {
+        let lua = create_sandbox_lua().expect("failed to create sandbox Lua VM");
+        let func = lua
+            .load("while true do end")
+            .into_function()
+            .expect("compile chunk");
+
+        let err = timed_call_with_timeout::<()>(&lua, &func, (), Duration::from_millis(100))
+            .expect_err("infinite loop should be interrupted");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("timed out"),
+            "unexpected error: {msg}"
+        );
     }
 }

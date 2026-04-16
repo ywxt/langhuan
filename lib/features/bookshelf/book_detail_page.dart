@@ -62,7 +62,14 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     if (!mounted) return;
     await _chaptersNotifier.load(feedId: widget.feedId, bookId: widget.bookId);
     if (!mounted) return;
-    await _progressNotifier.load(feedId: widget.feedId, bookId: widget.bookId);
+    final chapters = ref.read(chaptersProvider).items;
+    final fallbackChapterId = chapters.isEmpty ? '' : chapters.first.id;
+    await _progressNotifier.load(
+      feedId: widget.feedId,
+      bookId: widget.bookId,
+      fallbackChapterId: fallbackChapterId,
+      fallbackParagraphIndex: 0,
+    );
   }
 
   @override

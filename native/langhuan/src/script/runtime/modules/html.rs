@@ -235,6 +235,20 @@ impl UserData for NodeListHandle {
             let descendants = unique_descendants(&this.nodes, &selector)?;
             Ok(create_node_list(descendants))
         });
+
+        methods.add_meta_method(MetaMethod::Pairs, |lua, this, ()| {
+            let nodes = this.nodes.clone();
+            let len = nodes.len();
+            let iter = lua.create_function(move |_, idx: i64| {
+                let next = idx + 1;
+                if (next as usize) <= len {
+                    Ok((Some(next), nodes.get((next - 1) as usize).cloned()))
+                } else {
+                    Ok((None, None))
+                }
+            })?;
+            Ok((iter, mlua::Value::Nil, 0i64))
+        });
     }
 }
 
