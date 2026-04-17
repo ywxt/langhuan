@@ -38,6 +38,8 @@ class HorizontalReaderView extends StatefulWidget {
     this.initialFromEnd = false,
     this.onJumpRegistered,
     this.onParagraphLongPress,
+    this.selectedChapterId,
+    this.selectedParagraphIndex,
   });
 
   final ValueNotifier<ChapterLoadState> prevSlot;
@@ -57,7 +59,9 @@ class HorizontalReaderView extends StatefulWidget {
   final int initialParagraphIndex;
   final bool initialFromEnd;
   final ValueChanged<void Function(int, double)>? onJumpRegistered;
-  final void Function(String chapterId, int paragraphIndex, ParagraphContent paragraph)? onParagraphLongPress;
+  final void Function(String chapterId, int paragraphIndex, ParagraphContent paragraph, Rect globalRect)? onParagraphLongPress;
+  final String? selectedChapterId;
+  final int? selectedParagraphIndex;
 
   @override
   State<HorizontalReaderView> createState() => _HorizontalReaderViewState();
@@ -342,15 +346,17 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView> {
     }
 
     final localIndex = index - _centerOffset;
+    final isSelectedChapter = widget.selectedChapterId == widget.centerChapterId;
     return Padding(
       padding: widget.contentPadding,
       child: PageContentView(
         page: _centerPages[localIndex],
         fontScale: widget.fontScale,
         lineHeight: widget.lineHeight,
+        selectedParagraphIndex: isSelectedChapter ? widget.selectedParagraphIndex : null,
         onParagraphLongPress: widget.onParagraphLongPress != null
-            ? (paragraphIndex, paragraph) =>
-                widget.onParagraphLongPress!(widget.centerChapterId, paragraphIndex, paragraph)
+            ? (paragraphIndex, paragraph, rect) =>
+                widget.onParagraphLongPress!(widget.centerChapterId, paragraphIndex, paragraph, rect)
             : null,
       ),
     );

@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import '../../../src/rust/api/types.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5,6 +7,24 @@ import '../../../src/rust/api/types.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum ChapterDirection { previous, next }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Paragraph selection — long-pressed paragraph info for toolbar overlay
+// ─────────────────────────────────────────────────────────────────────────────
+
+class ParagraphSelection {
+  const ParagraphSelection({
+    required this.chapterId,
+    required this.paragraphIndex,
+    required this.paragraph,
+    required this.rect,
+  });
+
+  final String chapterId;
+  final int paragraphIndex;
+  final ParagraphContent paragraph;
+  final Rect rect;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chapter load state — sealed hierarchy

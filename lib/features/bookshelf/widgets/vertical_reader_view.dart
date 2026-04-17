@@ -46,6 +46,8 @@ class VerticalReaderView extends StatefulWidget {
     this.initialOffset = 0,
     this.onJumpRegistered,
     this.onParagraphLongPress,
+    this.selectedChapterId,
+    this.selectedParagraphIndex,
   });
 
   final ValueNotifier<ChapterLoadState> prevSlot;
@@ -65,7 +67,9 @@ class VerticalReaderView extends StatefulWidget {
   final int initialParagraphIndex;
   final double initialOffset;
   final ValueChanged<void Function(int, double)>? onJumpRegistered;
-  final void Function(String chapterId, int paragraphIndex, ParagraphContent paragraph)? onParagraphLongPress;
+  final void Function(String chapterId, int paragraphIndex, ParagraphContent paragraph, Rect globalRect)? onParagraphLongPress;
+  final String? selectedChapterId;
+  final int? selectedParagraphIndex;
 
   @override
   State<VerticalReaderView> createState() => _VerticalReaderViewState();
@@ -83,6 +87,12 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
   bool _jumpInProgress = false;
   String? _reportedChapterId;
 
+  // Paragraph index to scroll into view after layout. -1 means none.
+  int _scrollTargetParagraph = -1;
+  final GlobalKey _jumpTargetKey = GlobalKey();
+  int _ensureRetries = 0;
+  static const _maxEnsureRetries = 10;
+
   static const _gap = 48.0;
 
   @override
@@ -92,9 +102,14 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
     _reportedChapterId = widget.centerChapterId;
     widget.onJumpRegistered?.call(jumpTo);
 
-    if (widget.initialParagraphIndex > 0 || widget.initialOffset > 0) {
+    if (widget.initialParagraphIndex > 0) {
+      _scrollTargetParagraph = widget.initialParagraphIndex;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToInitial();
+        _ensureTargetVisible();
+      });
+    } else if (widget.initialOffset > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToOffset(widget.initialOffset);
       });
     }
   }
@@ -153,47 +168,75 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
   }
 
 
-  void _scrollToInitial() {
+  void _scrollToOffset(double offset) {
     if (!_scrollController.hasClients) return;
-    if (widget.initialParagraphIndex <= 0) {
-      _scrollController.jumpTo(widget.initialOffset.clamp(
-        _scrollController.position.minScrollExtent,
-        _scrollController.position.maxScrollExtent,
-      ));
-      return;
-    }
-    final avgH =
-        (widget.fontScale * 16 * widget.lineHeight * 4) + LanghuanTheme.spaceMd;
-    final target = widget.initialParagraphIndex * avgH + widget.initialOffset;
-    _scrollController.jumpTo(target.clamp(
+    _scrollController.jumpTo(offset.clamp(
       _scrollController.position.minScrollExtent,
       _scrollController.position.maxScrollExtent,
     ));
   }
 
+  void _ensureTargetVisible() {
+    if (!mounted || !_scrollController.hasClients) return;
+    final ctx = _jumpTargetKey.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.0,
+        duration: Duration.zero,
+      );
+      setState(() => _scrollTargetParagraph = -1);
+      _jumpInProgress = false;
+      _ensureRetries = 0;
+      return;
+    }
+
+    // Give up after too many retries to avoid infinite loop.
+    if (++_ensureRetries > _maxEnsureRetries) {
+      setState(() => _scrollTargetParagraph = -1);
+      _jumpInProgress = false;
+      _ensureRetries = 0;
+      return;
+    }
+
+    // The target paragraph isn't laid out yet (SliverList is lazy).
+    // Do a rough jump to bring it into the viewport's neighbourhood,
+    // then retry next frame when the lazy list has built it.
+    final state = widget.centerSlot.value;
+    if (state is ChapterLoaded && state.paragraphs.isNotEmpty) {
+      final totalCount = state.paragraphs.length;
+      final centerExtent = _sliverExtent(_centerSliverKey);
+      if (centerExtent > 0 && _scrollTargetParagraph >= 0) {
+        final ratio = _scrollTargetParagraph / totalCount;
+        final estimated = ratio * centerExtent;
+        _scrollController.jumpTo(estimated.clamp(
+          _scrollController.position.minScrollExtent,
+          _scrollController.position.maxScrollExtent,
+        ));
+      }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureTargetVisible();
+    });
+  }
+
   /// Called externally (by content manager) to jump to a specific position.
   void jumpTo(int paragraphIndex, double offset) {
     _jumpInProgress = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) {
+    _ensureRetries = 0;
+    if (paragraphIndex <= 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToOffset(offset);
         _jumpInProgress = false;
-        return;
-      }
-      if (paragraphIndex <= 0) {
-        _scrollController.jumpTo(offset.clamp(
-          _scrollController.position.minScrollExtent,
-          _scrollController.position.maxScrollExtent,
-        ));
-      } else {
-        final avgH = (widget.fontScale * 16 * widget.lineHeight * 4) +
-            LanghuanTheme.spaceMd;
-        final target = paragraphIndex * avgH + offset;
-        _scrollController.jumpTo(target.clamp(
-          _scrollController.position.minScrollExtent,
-          _scrollController.position.maxScrollExtent,
-        ));
-      }
-      _jumpInProgress = false;
+      });
+      return;
+    }
+    setState(() {
+      _scrollTargetParagraph = paragraphIndex;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureTargetVisible();
     });
   }
 
@@ -214,8 +257,38 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
   }
 
   void _reportOffset() {
+    if (!_scrollController.hasClients) return;
+
+    final vpHeight = _scrollController.position.viewportDimension;
+    final center = _scrollController.offset + vpHeight / 2;
     final chapterId = _reportedChapterId ?? widget.centerChapterId;
-    widget.onPositionUpdate(chapterId, 0, _scrollController.offset);
+
+    // Estimate paragraph index from scroll position within the chapter.
+    final state = _stateFor(chapterId);
+    int paragraph = 0;
+    if (state is ChapterLoaded && state.paragraphs.isNotEmpty) {
+      double chapterOffset;
+      double extent;
+      if (chapterId == widget.centerChapterId) {
+        extent = _sliverExtent(_centerSliverKey);
+        chapterOffset = center;
+      } else if (chapterId == widget.prevChapterId) {
+        extent = _sliverExtent(_prevSliverKey);
+        chapterOffset = -center; // prev sliver grows in negative space
+      } else {
+        extent = _sliverExtent(_nextSliverKey);
+        final centerExt = _sliverExtent(_centerSliverKey);
+        chapterOffset = center - centerExt - _gap;
+      }
+      if (extent > 0) {
+        final ratio = (chapterOffset / extent).clamp(0.0, 1.0);
+        paragraph = (ratio * state.paragraphs.length)
+            .floor()
+            .clamp(0, state.paragraphs.length - 1);
+      }
+    }
+
+    widget.onPositionUpdate(chapterId, paragraph, _scrollController.offset);
   }
 
   // ─ Chapter detection ───────────────────────────────────────────────────
@@ -378,14 +451,21 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
             itemCount: paragraphs.length,
             itemBuilder: (_, i) {
               final idx = reverseChildren ? paragraphs.length - 1 - i : i;
+              final isSelected = widget.selectedChapterId == chapterId &&
+                  widget.selectedParagraphIndex == idx;
+              final isJumpTarget = !reverseChildren &&
+                  chapterId == widget.centerChapterId &&
+                  idx == _scrollTargetParagraph;
               return Padding(
+                key: isJumpTarget ? _jumpTargetKey : null,
                 padding: const EdgeInsets.only(bottom: LanghuanTheme.spaceMd),
                 child: ParagraphView(
                   paragraph: paragraphs[idx],
                   fontScale: widget.fontScale,
                   lineHeight: widget.lineHeight,
+                  selected: isSelected,
                   onLongPress: widget.onParagraphLongPress != null
-                      ? () => widget.onParagraphLongPress!(chapterId, idx, paragraphs[idx])
+                      ? (rect) => widget.onParagraphLongPress!(chapterId, idx, paragraphs[idx], rect)
                       : null,
                 ),
               );

@@ -10,13 +10,15 @@ class ParagraphView extends StatelessWidget {
     required this.paragraph,
     this.fontScale = 1.0,
     this.lineHeight = 1.8,
+    this.selected = false,
     this.onLongPress,
   });
 
   final ParagraphContent paragraph;
   final double fontScale;
   final double lineHeight;
-  final VoidCallback? onLongPress;
+  final bool selected;
+  final void Function(Rect globalRect)? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -76,12 +78,29 @@ class ParagraphView extends StatelessWidget {
         ),
     };
 
-    if (onLongPress != null) {
-      return GestureDetector(
-        onLongPress: onLongPress,
-        child: child,
+    Widget result = child;
+
+    if (selected) {
+      result = DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: result,
       );
     }
-    return child;
+
+    if (onLongPress != null) {
+      return GestureDetector(
+        onLongPress: () {
+          final box = context.findRenderObject() as RenderBox?;
+          if (box == null || !box.hasSize) return;
+          final topLeft = box.localToGlobal(Offset.zero);
+          onLongPress!(topLeft & box.size);
+        },
+        child: result,
+      );
+    }
+    return result;
   }
 }

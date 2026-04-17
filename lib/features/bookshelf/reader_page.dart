@@ -19,6 +19,7 @@ import 'widgets/chapter_content_manager.dart';
 import 'widgets/reader_bottom_bar.dart';
 import 'widgets/reader_controller.dart';
 import 'widgets/reader_top_bar.dart';
+import 'widgets/reader_types.dart';
 
 class ReaderPage extends ConsumerStatefulWidget {
   const ReaderPage({
@@ -46,6 +47,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   bool _isRefreshingChapter = false;
   late final ReadingProgressNotifier _progressNotifier;
   late final ReaderController _readerController;
+
+  // Paragraph selection for long-press toolbar
+  ParagraphSelection? _selection;
 
   @override
   void initState() {
@@ -150,8 +154,22 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     return '';
   }
 
+  void _showToast(String message) {
+    final theme = Theme.of(context);
+    Fluttertoast.showToast(
+      msg: message,
+      backgroundColor: theme.colorScheme.onSurface,
+      textColor: theme.colorScheme.surface,
+      fontSize: 14,
+    );
+  }
+
   void _toggleControls() {
     setState(() {
+      if (_selection != null) {
+        _selection = null;
+        return;
+      }
       _showControls = !_showControls;
     });
   }
@@ -219,47 +237,29 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
           paragraphPreview: preview,
         );
     if (!mounted || created == null) return;
-    Fluttertoast.showToast(msg: AppLocalizations.of(context).readerBookmarkAdded);
+    _showToast(AppLocalizations.of(context).readerBookmarkAdded);
   }
 
   void _onParagraphLongPress(
     String chapterId,
     int paragraphIndex,
     ParagraphContent paragraph,
+    Rect globalRect,
   ) {
-    final l10n = AppLocalizations.of(context);
-    final size = MediaQuery.sizeOf(context);
-
-    showMenu<String>(
-      context: context,
-      position: RelativeRect.fromLTRB(
-        size.width / 2 - 80,
-        size.height / 2 - 24,
-        size.width / 2 + 80,
-        size.height / 2 + 24,
-      ),
-      items: [
-        PopupMenuItem(
-          value: 'bookmark',
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.bookmark_add_outlined, size: 20),
-              const SizedBox(width: 8),
-              Text(l10n.readerAddBookmark),
-            ],
-          ),
-        ),
-      ],
-    ).then((value) {
-      if (value == 'bookmark') {
-        _addBookmark(
-          chapterId: chapterId,
-          paragraphIndex: paragraphIndex,
-          paragraph: paragraph,
-        );
-      }
+    setState(() {
+      _selection = ParagraphSelection(
+        chapterId: chapterId,
+        paragraphIndex: paragraphIndex,
+        paragraph: paragraph,
+        rect: globalRect,
+      );
     });
+  }
+
+  void _clearSelection() {
+    if (_selection != null) {
+      setState(() => _selection = null);
+    }
   }
 
   Future<void> _openBookmarkSheet() async {
@@ -312,7 +312,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                   onPressed: () async {
                     await ref.read(bookmarkProvider.notifier).remove(item.id);
                     if (!mounted) return;
-                    Fluttertoast.showToast(msg: l10n.readerBookmarkRemoved);
+                    _showToast(l10n.readerBookmarkRemoved);
                   },
                 ),
               );
@@ -448,6 +448,74 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     );
   }
 
+  Widget _buildSelectionToolbar(ThemeData theme) {
+    final sel = _selection!;
+    final l10n = AppLocalizations.of(context);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+
+    const toolbarHeight = 40.0;
+    const toolbarPadding = 8.0;
+    final top = sel.rect.top - toolbarHeight - toolbarPadding;
+    final safeTop = top < MediaQuery.of(context).padding.top + 4
+        ? sel.rect.bottom + toolbarPadding
+        : top;
+
+    return Positioned(
+      top: safeTop,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: Material(
+          elevation: 4,
+          borderRadius: BorderRadius.circular(8),
+          color: theme.colorScheme.surfaceContainer,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: screenWidth * 0.7),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _toolbarButton(
+                  icon: Icons.bookmark_add_outlined,
+                  label: l10n.readerAddBookmark,
+                  onTap: () {
+                    _addBookmark(
+                      chapterId: sel.chapterId,
+                      paragraphIndex: sel.paragraphIndex,
+                      paragraph: sel.paragraph,
+                    );
+                    _clearSelection();
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _toolbarButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18),
+            const SizedBox(width: 4),
+            Text(label, style: const TextStyle(fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -539,8 +607,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                       LanghuanTheme.spaceLg,
                     ),
                     onParagraphLongPress: _onParagraphLongPress,
+                    selectedChapterId: _selection?.chapterId,
+                    selectedParagraphIndex: _selection?.paragraphIndex,
                   ),
                 ),
+                if (_selection != null)
+                  _buildSelectionToolbar(readerTheme),
                 Positioned(
                   top: 0,
                   left: 0,
