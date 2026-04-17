@@ -3,17 +3,21 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
+import '../../src/rust/api/types.dart';
 import '../feeds/feed_service.dart';
 import 'bookmark_provider.dart';
 import 'book_providers.dart';
 import 'reader_settings_provider.dart';
 import 'reading_progress_provider.dart';
+import 'widgets/chapter_content_manager.dart';
 import 'widgets/reader_bottom_bar.dart';
+import 'widgets/reader_controller.dart';
 import 'widgets/reader_top_bar.dart';
 
 class ReaderPage extends ConsumerStatefulWidget {
@@ -41,15 +45,25 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   bool _showControls = false;
   bool _isRefreshingChapter = false;
   late final ReadingProgressNotifier _progressNotifier;
+  late final ReaderController _readerController;
 
   @override
   void initState() {
     super.initState();
     _progressNotifier = ref.read(readingProgressProvider.notifier);
+    _readerController = ReaderController();
+    _readerController.onPositionChanged = _onPositionChanged;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _initializeBook();
     });
+  }
+
+  @override
+  void dispose() {
+    _readerController.onPositionChanged = null;
+    _readerController.dispose();
+    super.dispose();
   }
 
   Future<void> _initializeBook() async {
@@ -89,6 +103,23 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
         _isInitializing = false;
       });
 
+      // If the page was opened with a specific chapterId (e.g. from book detail),
+      // use that instead of the saved reading progress.
+      final String startChapterId;
+      final int startParagraph;
+      if (widget.chapterId.isNotEmpty &&
+          chapters.any((c) => c.id == widget.chapterId)) {
+        startChapterId = widget.chapterId;
+        startParagraph = widget.paragraphIndex;
+      } else {
+        startChapterId = ref.read(readingProgressProvider).activeChapterId;
+        startParagraph = ref.read(readingProgressProvider).activeParagraphIndex;
+      }
+      _readerController.jumpTo(
+        chapterId: startChapterId,
+        paragraphIndex: startParagraph,
+      );
+
       unawaited(
         ref
             .read(bookInfoProvider.notifier)
@@ -126,10 +157,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   }
 
   void _jumpToChapter(String chapterId, {int paragraphIndex = 0}) {
-    _progressNotifier.setActiveChapter(
-      chapterId,
-      paragraphIndex: paragraphIndex,
-    );
+    _readerController.jumpTo(chapterId: chapterId, paragraphIndex: paragraphIndex);
+  }
+
+  void _onPositionChanged(ReaderPosition pos) {
+    _progressNotifier.setActiveChapter(pos.chapterId, paragraphIndex: pos.paragraphIndex);
+    _progressNotifier.setActiveOffset(pos.offset);
     unawaited(_progressNotifier.saveActive());
   }
 
@@ -158,11 +191,23 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     }
   }
 
+  String _paragraphPreview(ParagraphContent paragraph) {
+    final text = switch (paragraph) {
+      ParagraphContent_Title(:final text) => text,
+      ParagraphContent_Text(:final content) => content,
+      ParagraphContent_Image(:final alt) => alt ?? '',
+    };
+    final trimmed = text.trim().replaceAll(RegExp(r'\s+'), ' ');
+    return trimmed.length > 20 ? '${trimmed.substring(0, 20)}…' : trimmed;
+  }
+
   Future<void> _addBookmark({
     required String chapterId,
     required int paragraphIndex,
+    required ParagraphContent paragraph,
   }) async {
     if (chapterId.isEmpty) return;
+    final preview = _paragraphPreview(paragraph);
     final created = await ref
         .read(bookmarkProvider.notifier)
         .add(
@@ -170,13 +215,51 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
           bookId: widget.bookId,
           chapterId: chapterId,
           paragraphIndex: paragraphIndex,
-          paragraphName: '',
-          paragraphPreview: '',
+          paragraphName: preview,
+          paragraphPreview: preview,
         );
     if (!mounted || created == null) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(AppLocalizations.of(context).readerBookmarkAdded)),
-    );
+    Fluttertoast.showToast(msg: AppLocalizations.of(context).readerBookmarkAdded);
+  }
+
+  void _onParagraphLongPress(
+    String chapterId,
+    int paragraphIndex,
+    ParagraphContent paragraph,
+  ) {
+    final l10n = AppLocalizations.of(context);
+    final size = MediaQuery.sizeOf(context);
+
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        size.width / 2 - 80,
+        size.height / 2 - 24,
+        size.width / 2 + 80,
+        size.height / 2 + 24,
+      ),
+      items: [
+        PopupMenuItem(
+          value: 'bookmark',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.bookmark_add_outlined, size: 20),
+              const SizedBox(width: 8),
+              Text(l10n.readerAddBookmark),
+            ],
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == 'bookmark') {
+        _addBookmark(
+          chapterId: chapterId,
+          paragraphIndex: paragraphIndex,
+          paragraph: paragraph,
+        );
+      }
+    });
   }
 
   Future<void> _openBookmarkSheet() async {
@@ -229,9 +312,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                   onPressed: () async {
                     await ref.read(bookmarkProvider.notifier).remove(item.id);
                     if (!mounted) return;
-                    ScaffoldMessenger.of(this.context).showSnackBar(
-                      SnackBar(content: Text(l10n.readerBookmarkRemoved)),
-                    );
+                    Fluttertoast.showToast(msg: l10n.readerBookmarkRemoved);
                   },
                 ),
               );
@@ -243,24 +324,50 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   }
 
   Future<void> _openTocSheet() async {
+    final reading = ref.read(readingProgressProvider);
+    final activeId = reading.activeChapterId;
+    final activeIdx = _chapters.indexWhere((c) => c.id == activeId);
+    final scrollController = ScrollController(
+      initialScrollOffset: activeIdx > 0 ? activeIdx * 56.0 : 0,
+    );
+
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (context) => ListView.builder(
-        itemCount: _chapters.length,
-        itemBuilder: (context, index) {
-          final chapter = _chapters[index];
-          return ListTile(
-            leading: Text('${index + 1}'),
-            title: Text(chapter.title),
-            onTap: () {
-              Navigator.of(context).pop();
-              _jumpToChapter(chapter.id);
+      builder: (context) => Consumer(
+        builder: (context, ref, _) {
+          final reading = ref.watch(readingProgressProvider);
+          final currentActiveId = reading.activeChapterId;
+          return ListView.builder(
+            controller: scrollController,
+            itemCount: _chapters.length,
+            itemBuilder: (context, index) {
+              final chapter = _chapters[index];
+              final isActive = chapter.id == currentActiveId;
+              return ListTile(
+                leading: Text('${index + 1}'),
+                title: Text(
+                  chapter.title,
+                  style: isActive
+                      ? TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        )
+                      : null,
+                ),
+                selected: isActive,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _jumpToChapter(chapter.id);
+                },
+              );
             },
           );
         },
       ),
     );
+
+    scrollController.dispose();
   }
 
   Future<void> _openInterfaceSheet() async {
@@ -391,7 +498,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     final activeChapterId = reading.activeChapterId.isEmpty
         ? _chapters.first.id
         : reading.activeChapterId;
-    final activeParagraphIndex = reading.activeParagraphIndex;
 
     final currentIdx = _chapters
         .indexWhere((c) => c.id == activeChapterId)
@@ -418,11 +524,21 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: Center(
-                    child: Text(
-                      l10n.readerTitle,
-                      style: readerTheme.textTheme.bodyLarge,
+                  child: ChapterContentManager(
+                    feedId: widget.feedId,
+                    bookId: widget.bookId,
+                    chapters: _chapters,
+                    controller: _readerController,
+                    mode: settings.mode,
+                    fontScale: settings.fontScale,
+                    lineHeight: settings.lineHeight,
+                    contentPadding: EdgeInsets.fromLTRB(
+                      LanghuanTheme.spaceLg,
+                      topPadding + LanghuanTheme.spaceMd,
+                      LanghuanTheme.spaceLg,
+                      LanghuanTheme.spaceLg,
                     ),
+                    onParagraphLongPress: _onParagraphLongPress,
                   ),
                 ),
                 Positioned(
@@ -444,15 +560,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                               readerTheme.colorScheme.surfaceContainer,
                           titleTextStyle: readerTheme.textTheme.titleMedium,
                           bookmarksTooltip: l10n.readerBookmarks,
-                          addBookmarkTooltip: l10n.readerBookmarkAddHint,
                           refreshTooltip: l10n.readerRefreshChapter,
                           isRefreshing: _isRefreshingChapter,
                           onBack: () => Navigator.of(context).pop(),
                           onOpenBookmarks: _openBookmarkSheet,
-                          onAddBookmark: () => _addBookmark(
-                            chapterId: activeChapterId,
-                            paragraphIndex: activeParagraphIndex,
-                          ),
                           onRefresh: () =>
                               _refreshCurrentChapter(activeChapterId),
                         ),

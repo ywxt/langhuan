@@ -494,6 +494,12 @@ abstract class AppLocalizations {
   /// **'No bookmarks yet'**
   String get readerNoBookmarks;
 
+  /// Popup menu item for adding a bookmark on long press
+  ///
+  /// In en, this message translates to:
+  /// **'Add Bookmark'**
+  String get readerAddBookmark;
+
   /// Search input hint in TOC bottom sheet
   ///
   /// In en, this message translates to:

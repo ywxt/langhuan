@@ -220,6 +220,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readerNoBookmarks => 'No bookmarks yet';
 
   @override
+  String get readerAddBookmark => 'Add Bookmark';
+
+  @override
   String get readerSearchTocHint => 'Search chapters';
 
   @override

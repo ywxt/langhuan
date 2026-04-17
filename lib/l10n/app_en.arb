@@ -230,6 +230,9 @@
   "readerNoBookmarks": "No bookmarks yet",
   "@readerNoBookmarks": { "description": "Bookmark list empty state" },
 
+  "readerAddBookmark": "Add Bookmark",
+  "@readerAddBookmark": { "description": "Popup menu item for adding a bookmark on long press" },
+
   "readerSearchTocHint": "Search chapters",
   "@readerSearchTocHint": { "description": "Search input hint in TOC bottom sheet" },
 

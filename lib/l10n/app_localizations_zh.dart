@@ -219,6 +219,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerNoBookmarks => '暫無書籤';
 
   @override
+  String get readerAddBookmark => '添加書籤';
+
+  @override
   String get readerSearchTocHint => '搜索章節';
 
   @override

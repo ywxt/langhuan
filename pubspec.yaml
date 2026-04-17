@@ -47,6 +47,7 @@ dependencies:
     sdk: flutter
   intl: any
   freezed_annotation: ^3.1.0
+  fluttertoast: ^9.0.0
 
 dev_dependencies:
   flutter_test:

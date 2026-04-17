@@ -74,6 +74,7 @@
   "readerBookmarkLabelTitle": "新增書籤",
   "readerBookmarkLabelHint": "可選標籤",
   "readerNoBookmarks": "暫無書籤",
+  "readerAddBookmark": "添加書籤",
   "readerSearchTocHint": "搜索章節",
   "readerSearchBookmarksHint": "搜索書籤",
   "readerBookmarkParagraph": "第 {index} 段",
