@@ -1,13 +1,13 @@
 use crate::actors::addresses;
 use crate::actors::bookmark_actor::{AddBookmark, ListBookmarks, RemoveBookmark};
-use crate::api::types::{BookmarkItem, BridgeError};
+use crate::api::types::{BookmarkItem, BridgeError, ParagraphId};
 
 /// Add a bookmark for the current reading position.
 pub async fn add_bookmark(
     feed_id: String,
     book_id: String,
     chapter_id: String,
-    paragraph_id: String,
+    paragraph_id: ParagraphId,
     paragraph_name: String,
     paragraph_preview: String,
     label: String,
@@ -19,7 +19,7 @@ pub async fn add_bookmark(
             feed_id,
             book_id,
             chapter_id,
-            paragraph_id,
+            paragraph_id: paragraph_id.to_string_lossy(),
             paragraph_name,
             paragraph_preview,
             label,

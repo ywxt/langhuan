@@ -82,6 +82,55 @@ impl std::fmt::Display for CacheKeyMismatchError {
 }
 
 // ---------------------------------------------------------------------------
+// Expected error codes (Lua → Rust structured errors)
+// ---------------------------------------------------------------------------
+
+/// Error codes that Lua scripts can raise via `@langhuan/error` to signal
+/// an anticipated condition (as opposed to a runtime bug).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExpectedErrorCode {
+    AuthRequired,
+    CfChallenge,
+    RateLimited,
+    ContentNotFound,
+    SourceUnavailable,
+    Unknown(String),
+}
+
+impl ExpectedErrorCode {
+    pub fn from_code(code: &str) -> Self {
+        match code {
+            "auth_required" => Self::AuthRequired,
+            "cf_challenge" => Self::CfChallenge,
+            "rate_limited" => Self::RateLimited,
+            "content_not_found" => Self::ContentNotFound,
+            "source_unavailable" => Self::SourceUnavailable,
+            other => Self::Unknown(other.to_owned()),
+        }
+    }
+}
+
+pub(crate) const EXPECTED_ERROR_PREFIX: &str = "@langhuan_expected:";
+
+/// Try to extract an expected error from an `mlua::Error`.
+///
+/// Walks through `CallbackError` wrappers to find a `RuntimeError` whose
+/// message starts with `@langhuan_expected:<code>:<message>`.
+pub fn extract_expected_error(e: &mlua::Error) -> Option<(ExpectedErrorCode, String)> {
+    match e {
+        mlua::Error::RuntimeError(msg) => parse_expected_message(msg),
+        mlua::Error::CallbackError { cause, .. } => extract_expected_error(cause),
+        _ => None,
+    }
+}
+
+fn parse_expected_message(msg: &str) -> Option<(ExpectedErrorCode, String)> {
+    let rest = msg.strip_prefix(EXPECTED_ERROR_PREFIX)?;
+    let (code_str, message) = rest.split_once(':')?;
+    Some((ExpectedErrorCode::from_code(code_str), message.to_owned()))
+}
+
+// ---------------------------------------------------------------------------
 // Sub-error: ScriptError — feed script loading / validation
 // ---------------------------------------------------------------------------
 
@@ -134,6 +183,13 @@ pub enum ScriptError {
         feed_id: String,
         kind: String,
         id: String,
+    },
+
+    /// An expected/anticipated error raised by the script via `@langhuan/error`.
+    #[error("expected script error [{code:?}]: {message}")]
+    Expected {
+        code: ExpectedErrorCode,
+        message: String,
     },
 }
 
@@ -250,6 +306,10 @@ impl Error {
                 }
                 false
             }
+            Error::Script(ScriptError::Expected { code, .. }) => matches!(
+                code,
+                ExpectedErrorCode::RateLimited | ExpectedErrorCode::SourceUnavailable
+            ),
             Error::Script(_) | Error::Registry(_) | Error::Persistence(_) => false,
         }
     }
@@ -258,11 +318,14 @@ impl Error {
 /// A specialized `Result` type for langhuan operations.
 pub type Result<T> = std::result::Result<T, Error>;
 
-// Transitive From: mlua::Error → ScriptError::Lua → Error::Script
-// Needed because `?` on mlua::Result in functions returning `error::Result`
-// cannot chain two #[from] conversions automatically.
+// Transitive From: mlua::Error → Error::Script
+// Inspects the error for the `@langhuan_expected:` convention before falling
+// back to `ScriptError::Lua`.
 impl From<mlua::Error> for Error {
     fn from(e: mlua::Error) -> Self {
+        if let Some((code, message)) = extract_expected_error(&e) {
+            return Error::Script(ScriptError::Expected { code, message });
+        }
         Error::Script(ScriptError::Lua(e))
     }
 }
@@ -470,5 +533,100 @@ mod tests {
         let e = result.expect_err("expected connect failure");
         let err = Error::Http(e);
         assert!(err.is_retryable(), "connect errors must be retryable");
+    }
+
+    #[test]
+    fn extract_expected_error_parses_runtime_error() {
+        let lua_err =
+            mlua::Error::RuntimeError("@langhuan_expected:auth_required:please login".into());
+        let result = extract_expected_error(&lua_err);
+        assert_eq!(
+            result,
+            Some((ExpectedErrorCode::AuthRequired, "please login".into()))
+        );
+    }
+
+    #[test]
+    fn extract_expected_error_returns_none_for_plain_runtime() {
+        let lua_err = mlua::Error::RuntimeError("some random error".into());
+        assert!(extract_expected_error(&lua_err).is_none());
+    }
+
+    #[test]
+    fn extract_expected_error_unwraps_callback_error() {
+        let inner = mlua::Error::RuntimeError(
+            "@langhuan_expected:cf_challenge:cloudflare blocked".into(),
+        );
+        let lua_err = mlua::Error::CallbackError {
+            traceback: String::new(),
+            cause: inner.into(),
+        };
+        let result = extract_expected_error(&lua_err);
+        assert_eq!(
+            result,
+            Some((ExpectedErrorCode::CfChallenge, "cloudflare blocked".into()))
+        );
+    }
+
+    #[test]
+    fn extract_expected_error_unknown_code() {
+        let lua_err =
+            mlua::Error::RuntimeError("@langhuan_expected:custom_code:details".into());
+        let result = extract_expected_error(&lua_err);
+        assert_eq!(
+            result,
+            Some((ExpectedErrorCode::Unknown("custom_code".into()), "details".into()))
+        );
+    }
+
+    #[test]
+    fn from_mlua_error_routes_expected() {
+        let lua_err =
+            mlua::Error::RuntimeError("@langhuan_expected:rate_limited:slow down".into());
+        let err: Error = lua_err.into();
+        assert!(matches!(
+            err,
+            Error::Script(ScriptError::Expected {
+                code: ExpectedErrorCode::RateLimited,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn from_mlua_error_routes_plain_to_lua() {
+        let lua_err = mlua::Error::RuntimeError("ordinary error".into());
+        let err: Error = lua_err.into();
+        assert!(matches!(err, Error::Script(ScriptError::Lua(_))));
+    }
+
+    #[test]
+    fn expected_rate_limited_is_retryable() {
+        let err: Error = ScriptError::Expected {
+            code: ExpectedErrorCode::RateLimited,
+            message: "slow down".into(),
+        }
+        .into();
+        assert!(err.is_retryable());
+    }
+
+    #[test]
+    fn expected_source_unavailable_is_retryable() {
+        let err: Error = ScriptError::Expected {
+            code: ExpectedErrorCode::SourceUnavailable,
+            message: "down".into(),
+        }
+        .into();
+        assert!(err.is_retryable());
+    }
+
+    #[test]
+    fn expected_auth_required_not_retryable() {
+        let err: Error = ScriptError::Expected {
+            code: ExpectedErrorCode::AuthRequired,
+            message: "login".into(),
+        }
+        .into();
+        assert!(!err.is_retryable());
     }
 }

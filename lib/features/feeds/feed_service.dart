@@ -9,6 +9,22 @@ import '../../src/rust/api/registry.dart' as rust_registry;
 import '../../src/rust/api/types.dart';
 
 // ---------------------------------------------------------------------------
+// ParagraphId ↔ String helpers (synchronous, no FFI round-trip)
+// ---------------------------------------------------------------------------
+
+extension ParagraphIdStringExt on ParagraphId {
+  String toStringValue() => switch (this) {
+    ParagraphId_Index(field0: final i) => i.toString(),
+    ParagraphId_Id(field0: final s) => s,
+  };
+}
+
+ParagraphId paragraphIdFromString(String s) {
+  final i = int.tryParse(s);
+  return i != null ? ParagraphId.index(i) : ParagraphId.id(s);
+}
+
+// ---------------------------------------------------------------------------
 // Domain models (mirrors Rust structs, kept for backward compat with UI)
 // ---------------------------------------------------------------------------
 
@@ -157,7 +173,7 @@ class ReadingProgressModel {
         feedId: item.feedId,
         bookId: item.bookId,
         chapterId: item.chapterId,
-        paragraphId: item.paragraphId,
+        paragraphId: item.paragraphId.toStringValue(),
         updatedAtMs: item.updatedAtMs,
       );
 }
@@ -191,7 +207,7 @@ class BookmarkModel {
     feedId: item.feedId,
     bookId: item.bookId,
     chapterId: item.chapterId,
-    paragraphId: item.paragraphId,
+    paragraphId: item.paragraphId.toStringValue(),
     paragraphName: item.paragraphName,
     paragraphPreview: item.paragraphPreview,
     label: item.label,
@@ -418,7 +434,7 @@ class FeedService {
       feedId: feedId,
       bookId: bookId,
       chapterId: chapterId,
-      paragraphId: paragraphId,
+      paragraphId: paragraphIdFromString(paragraphId),
       updatedAtMs: updatedAtMs,
     );
   }
@@ -453,7 +469,7 @@ class FeedService {
       feedId: feedId,
       bookId: bookId,
       chapterId: chapterId,
-      paragraphId: paragraphId,
+      paragraphId: paragraphIdFromString(paragraphId),
       paragraphName: paragraphName,
       paragraphPreview: paragraphPreview,
       label: label,
@@ -562,18 +578,20 @@ class FeedService {
 // ---------------------------------------------------------------------------
 
 class FeedPullException implements Exception {
-  const FeedPullException({required this.message});
+  const FeedPullException({required this.message, required this.kind});
 
   final String message;
+  final ErrorKind kind;
 
   @override
   String toString() => 'FeedPullException: $message';
 }
 
 class FeedPreviewException implements Exception {
-  const FeedPreviewException({required this.message});
+  const FeedPreviewException({required this.message, required this.kind});
 
   final String message;
+  final ErrorKind kind;
 
   @override
   String toString() => 'FeedPreviewException: $message';

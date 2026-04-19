@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use langhuan::bookmark::{Bookmark, BookmarkStore};
 use messages::prelude::{Actor, Context, Handler};
 
-use crate::api::types::{BookmarkItem, BridgeError};
+use crate::api::types::{BookmarkItem, BridgeError, ParagraphId};
 use crate::localize_error;
 
 use super::app_data_actor::InitializeAppDataDirectory;
@@ -124,7 +124,7 @@ impl Handler<AddBookmark> for BookmarkActor {
             feed_id: stored.feed_id,
             book_id: stored.book_id,
             chapter_id: stored.chapter_id,
-            paragraph_id: stored.paragraph_id,
+            paragraph_id: ParagraphId::from_stored(stored.paragraph_id),
             paragraph_name: stored.paragraph_name,
             paragraph_preview: stored.paragraph_preview,
             label: stored.label,
@@ -169,7 +169,7 @@ impl Handler<ListBookmarks> for BookmarkActor {
                 feed_id: b.feed_id,
                 book_id: b.book_id,
                 chapter_id: b.chapter_id,
-                paragraph_id: b.paragraph_id,
+                paragraph_id: ParagraphId::from_stored(b.paragraph_id),
                 paragraph_name: b.paragraph_name,
                 paragraph_preview: b.paragraph_preview,
                 label: b.label,

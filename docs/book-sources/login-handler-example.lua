@@ -4,6 +4,21 @@
 -- 1) Copy the `login = { ... }` section into your feed's returned table.
 -- 2) Adjust `entry.url` and parse rules to your site.
 -- 3) Keep auth payload as plain table; Rust persists it as JSON.
+--
+-- Error handling:
+-- Use `require("@langhuan/error")` to raise structured expected errors.
+-- For example, in a parse handler that detects the user is not logged in:
+--
+--   local err = require("@langhuan/error")
+--   err.auth_required("Please log in to access this content")
+--
+-- Available convenience methods:
+--   err.auth_required(msg)     -- login needed
+--   err.cf_challenge(msg)      -- Cloudflare / anti-bot challenge
+--   err.rate_limited(msg)      -- too many requests
+--   err.content_not_found(msg) -- content does not exist
+--   err.source_unavailable(msg)-- source is temporarily down
+--   err.raise(code, msg)       -- custom error code
 
 local function trim(s)
     if s == nil then

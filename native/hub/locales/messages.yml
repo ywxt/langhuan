@@ -128,3 +128,21 @@ error.registry_reload_not_supported:
 error.app_data_reload_not_supported:
   en: "App data reload is not supported at runtime"
   zh: "運行時不支持重新加載應用數據"
+error.expected.auth_required:
+  en: "Login required: %{message}"
+  zh: "需要登錄：%{message}"
+error.expected.cf_challenge:
+  en: "Cloudflare challenge detected: %{message}"
+  zh: "觸發了 Cloudflare 驗證：%{message}"
+error.expected.rate_limited:
+  en: "Rate limited: %{message}"
+  zh: "請求過於頻繁：%{message}"
+error.expected.content_not_found:
+  en: "Content not found: %{message}"
+  zh: "找不到內容：%{message}"
+error.expected.source_unavailable:
+  en: "Source unavailable: %{message}"
+  zh: "書源暫時不可用：%{message}"
+error.expected.unknown:
+  en: "Script error [%{code}]: %{message}"
+  zh: "腳本錯誤 [%{code}]：%{message}"

@@ -9,9 +9,9 @@ import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
 import '../../src/rust/api/types.dart';
 import '../feeds/feed_providers.dart';
-import '../feeds/feed_service.dart';
 import '../feeds/search_provider.dart';
 import 'widgets/feed_selector.dart';
+import 'widgets/reader_types.dart';
 import 'widgets/search_result_card.dart';
 
 // ---------------------------------------------------------------------------
@@ -28,8 +28,6 @@ class SearchPage extends ConsumerStatefulWidget {
 class _SearchPageState extends ConsumerState<SearchPage> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
-  Future<bool>? _authSupportedFuture;
-  String? _authSupportedFeedId;
 
   List<FeedMetaItem> _visibleFeeds(FeedListState feedState) {
     return feedState.items
@@ -197,71 +195,54 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     AppLocalizations l10n,
   ) {
     if (searchState.hasError) {
-      if (selectedFeed == null) {
-        return ErrorState(
-          title: l10n.searchError,
-          message: searchState.error.toString(),
-          onRetry: null,
-          retryLabel: l10n.searchRetry,
-        );
-      }
+      final showAuth = selectedFeed != null &&
+          isAuthRequiredError(searchState.error);
 
-      if (_authSupportedFeedId != selectedFeed.id) {
-        _authSupportedFeedId = selectedFeed.id;
-        _authSupportedFuture =
-            FeedService.instance.isFeedAuthSupported(selectedFeed.id);
-      }
-
-      return FutureBuilder<bool>(
-        future: _authSupportedFuture,
-        builder: (context, snapshot) {
-          final supportsAuth = snapshot.data ?? false;
-
-          return Column(
-            children: [
-              Expanded(
-                child: ErrorState(
-                  title: l10n.searchError,
-                  message: searchState.error.toString(),
-                  onRetry: () => ref
+      return Column(
+        children: [
+          Expanded(
+            child: ErrorState(
+              title: l10n.searchError,
+              message: normalizeErrorMessage(searchState.error!),
+              onRetry: selectedFeed == null
+                  ? null
+                  : () => ref
                       .read(searchProvider.notifier)
                       .retry(feedId: selectedFeed.id),
-                  retryLabel: l10n.searchRetry,
-                ),
+              retryLabel: l10n.searchRetry,
+            ),
+          ),
+          if (showAuth)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                LanghuanTheme.spaceLg,
+                0,
+                LanghuanTheme.spaceLg,
+                LanghuanTheme.spaceLg,
               ),
-              if (supportsAuth)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    LanghuanTheme.spaceLg,
-                    0,
-                    LanghuanTheme.spaceLg,
-                    LanghuanTheme.spaceLg,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      l10n.searchAuthHint,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          l10n.searchAuthHint,
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ),
-                      const SizedBox(width: LanghuanTheme.spaceSm),
-                      FilledButton.icon(
-                        onPressed: () {
-                          context.pushNamed(
-                            'feed-auth',
-                            queryParameters: {'feedId': selectedFeed.id},
-                          );
-                        },
-                        icon: const Icon(Icons.login),
-                        label: Text(l10n.searchAuthAction),
-                      ),
-                    ],
+                  const SizedBox(width: LanghuanTheme.spaceSm),
+                  FilledButton.icon(
+                    onPressed: () {
+                      context.pushNamed(
+                        'feed-auth',
+                        queryParameters: {'feedId': selectedFeed.id},
+                      );
+                    },
+                    icon: const Icon(Icons.login),
+                    label: Text(l10n.searchAuthAction),
                   ),
-                ),
-            ],
-          );
-        },
+                ],
+              ),
+            ),
+        ],
       );
     }
 

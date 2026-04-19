@@ -17,7 +17,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 
-use crate::api::types::{BookInfo, BridgeError, ChapterItem, ParagraphContent, SearchResultItem};
+use crate::api::types::{BookInfo, BridgeError, ChapterItem, ParagraphContent, ParagraphId, SearchResultItem};
 
 use super::conversion_actor::{BuildTransformChain, ConversionActor};
 use super::registry_actor::{GetFeed, RegistryActor};
@@ -117,9 +117,9 @@ async fn drive_stream_transformed<S>(
             Ok(paragraph) => {
                 for p in transform_chain.apply(paragraph) {
                     let content = match p {
-                        Paragraph::Title { id, text } => ParagraphContent::Title { id, text },
-                        Paragraph::Text { id, content } => ParagraphContent::Text { id, content },
-                        Paragraph::Image { id, url, alt } => ParagraphContent::Image { id, url, alt },
+                        Paragraph::Title { id, text } => ParagraphContent::Title { id: ParagraphId::from(id), text },
+                        Paragraph::Text { id, content } => ParagraphContent::Text { id: ParagraphId::from(id), content },
+                        Paragraph::Image { id, url, alt } => ParagraphContent::Image { id: ParagraphId::from(id), url, alt },
                     };
                     if tx.send(Ok(content)).await.is_err() {
                         return; // receiver dropped
@@ -308,9 +308,9 @@ impl Handler<OpenParagraphsStream> for FeedActor {
                     feed.paragraphs(&book_id, &chapter_id),
                     tx,
                     |paragraph| match paragraph {
-                        Paragraph::Title { id, text } => ParagraphContent::Title { id, text },
-                        Paragraph::Text { id, content } => ParagraphContent::Text { id, content },
-                        Paragraph::Image { id, url, alt } => ParagraphContent::Image { id, url, alt },
+                        Paragraph::Title { id, text } => ParagraphContent::Title { id: ParagraphId::from(id), text },
+                        Paragraph::Text { id, content } => ParagraphContent::Text { id: ParagraphId::from(id), content },
+                        Paragraph::Image { id, url, alt } => ParagraphContent::Image { id: ParagraphId::from(id), url, alt },
                     },
                 )
                 .await

@@ -13,10 +13,41 @@ use flutter_rust_bridge::frb;
 #[derive(Debug, Clone)]
 #[frb(dart_code = r"
   @override
-  String toString() => 'BridgeError: $message';
+  String toString() => 'BridgeError($kind): $message';
 ")]
 pub struct BridgeError {
+    pub kind: ErrorKind,
     pub message: String,
+}
+
+/// Classifies the error so Flutter can display appropriate UI.
+#[derive(Debug, Clone)]
+pub enum ErrorKind {
+    /// Unclassified internal error.
+    Internal,
+    /// Network / HTTP failure (connection, timeout, 5xx).
+    Network,
+    /// Lua runtime error (a bug in the script).
+    ScriptRuntime,
+    /// Script configuration / loading error (missing function, bad metadata).
+    ScriptConfig,
+    /// An anticipated error raised by the script via `@langhuan/error`.
+    ScriptExpected { reason: ScriptExpectedReason },
+    /// Local storage I/O error.
+    Storage,
+    /// Feed registry error.
+    Registry,
+}
+
+/// Sub-classification for script-expected errors.
+#[derive(Debug, Clone)]
+pub enum ScriptExpectedReason {
+    AuthRequired,
+    CfChallenge,
+    RateLimited,
+    ContentNotFound,
+    SourceUnavailable,
+    Other,
 }
 
 impl std::fmt::Display for BridgeError {
@@ -29,13 +60,17 @@ impl std::error::Error for BridgeError {}
 
 impl From<String> for BridgeError {
     fn from(message: String) -> Self {
-        Self { message }
+        Self {
+            kind: ErrorKind::Internal,
+            message,
+        }
     }
 }
 
 impl From<messages::prelude::SendError> for BridgeError {
     fn from(e: messages::prelude::SendError) -> Self {
         Self {
+            kind: ErrorKind::Internal,
             message: format!("internal error: {e}"),
         }
     }
@@ -43,7 +78,30 @@ impl From<messages::prelude::SendError> for BridgeError {
 
 impl From<langhuan::error::Error> for BridgeError {
     fn from(e: langhuan::error::Error) -> Self {
+        use langhuan::error::{Error, ExpectedErrorCode, ScriptError};
+
+        let kind = match &e {
+            Error::Script(ScriptError::Expected { code, .. }) => {
+                let reason = match code {
+                    ExpectedErrorCode::AuthRequired => ScriptExpectedReason::AuthRequired,
+                    ExpectedErrorCode::CfChallenge => ScriptExpectedReason::CfChallenge,
+                    ExpectedErrorCode::RateLimited => ScriptExpectedReason::RateLimited,
+                    ExpectedErrorCode::ContentNotFound => ScriptExpectedReason::ContentNotFound,
+                    ExpectedErrorCode::SourceUnavailable => {
+                        ScriptExpectedReason::SourceUnavailable
+                    }
+                    ExpectedErrorCode::Unknown(_) => ScriptExpectedReason::Other,
+                };
+                ErrorKind::ScriptExpected { reason }
+            }
+            Error::Script(ScriptError::Lua(_)) => ErrorKind::ScriptRuntime,
+            Error::Script(_) => ErrorKind::ScriptConfig,
+            Error::Http(_) => ErrorKind::Network,
+            Error::Persistence(_) => ErrorKind::Storage,
+            Error::Registry(_) => ErrorKind::Registry,
+        };
         Self {
+            kind,
             message: crate::localize_error(&e),
         }
     }
@@ -114,10 +172,43 @@ pub struct ChapterItem {
     pub title: String,
 }
 
+/// Identifies a paragraph within a chapter.
+pub enum ParagraphId {
+    /// Sequential index assigned automatically when the source omits an id.
+    Index(i64),
+    /// Explicit identifier provided by the book source.
+    Id(String),
+}
+
+impl ParagraphId {
+    pub fn to_string_lossy(&self) -> String {
+        match self {
+            ParagraphId::Index(i) => i.to_string(),
+            ParagraphId::Id(s) => s.clone(),
+        }
+    }
+
+    pub fn from_stored(s: String) -> Self {
+        match s.parse::<i64>() {
+            Ok(i) => ParagraphId::Index(i),
+            Err(_) => ParagraphId::Id(s),
+        }
+    }
+}
+
+impl From<langhuan::model::ParagraphId> for ParagraphId {
+    fn from(id: langhuan::model::ParagraphId) -> Self {
+        match id {
+            langhuan::model::ParagraphId::Index(i) => ParagraphId::Index(i as i64),
+            langhuan::model::ParagraphId::Id(s) => ParagraphId::Id(s),
+        }
+    }
+}
+
 pub enum ParagraphContent {
-    Title { id: String, text: String },
-    Text { id: String, content: String },
-    Image { id: String, url: String, alt: Option<String> },
+    Title { id: ParagraphId, text: String },
+    Text { id: ParagraphId, content: String },
+    Image { id: ParagraphId, url: String, alt: Option<String> },
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +272,7 @@ pub struct ReadingProgressItem {
     pub feed_id: String,
     pub book_id: String,
     pub chapter_id: String,
-    pub paragraph_id: String,
+    pub paragraph_id: ParagraphId,
     pub updated_at_ms: i64,
 }
 
@@ -194,7 +285,7 @@ pub struct BookmarkItem {
     pub feed_id: String,
     pub book_id: String,
     pub chapter_id: String,
-    pub paragraph_id: String,
+    pub paragraph_id: ParagraphId,
     pub paragraph_name: String,
     pub paragraph_preview: String,
     pub label: String,

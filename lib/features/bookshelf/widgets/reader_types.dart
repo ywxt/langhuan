@@ -60,3 +60,14 @@ String normalizeErrorMessage(Object error) {
   }
   return text;
 }
+
+ErrorKind? extractErrorKind(Object? error) {
+  if (error is BridgeError) return error.kind;
+  return null;
+}
+
+bool isAuthRequiredError(Object? error) {
+  final kind = extractErrorKind(error);
+  return kind is ErrorKind_ScriptExpected &&
+      kind.reason == ScriptExpectedReason.authRequired;
+}

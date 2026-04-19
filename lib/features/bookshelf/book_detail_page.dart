@@ -13,6 +13,7 @@ import 'book_providers.dart';
 import 'bookshelf_provider.dart';
 import '../feeds/feed_service.dart';
 import 'reading_progress_provider.dart';
+import 'widgets/reader_types.dart';
 
 class BookDetailPage extends ConsumerStatefulWidget {
   const BookDetailPage({super.key, required this.feedId, required this.bookId});
@@ -108,7 +109,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
         appBar: AppBar(title: Text(l10n.bookDetailTitle)),
         body: ErrorState(
           title: l10n.bookDetailError,
-          message: bookInfoState.error.toString(),
+          message: normalizeErrorMessage(bookInfoState.error!),
           onRetry: () async {
             await ref.read(bookInfoProvider.notifier).retry();
             await ref
@@ -265,7 +266,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                 padding: const EdgeInsets.symmetric(horizontal: LanghuanTheme.spaceLg),
                 child: ErrorState(
                   title: l10n.bookDetailChaptersError,
-                  message: chaptersState.error.toString(),
+                  message: normalizeErrorMessage(chaptersState.error!),
                   onRetry: () => ref
                       .read(chaptersProvider.notifier)
                       .retry(feedId: widget.feedId),

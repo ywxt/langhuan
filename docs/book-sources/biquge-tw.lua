@@ -16,6 +16,7 @@
 ---@diagnostic disable: undefined-global
 
 local html = require("@langhuan/html")
+local err = require("@langhuan/error")
 
 --- Build browser-mimicking HTTP headers to bypass Cloudflare
 local function get_headers()
@@ -107,7 +108,7 @@ end
 
 local function ensure_not_blocked(resp)
     if is_cf_challenge(resp.body) then
-        error("biquge.tw returned Cloudflare challenge page; source cannot continue")
+        err.cf_challenge("biquge.tw returned Cloudflare challenge page")
     end
 end
 
@@ -384,10 +385,6 @@ local function parse_chapter_items(resp)
     return items
 end
 
-local function generate_id()
-    return string.format("%08x%08x", math.random(0, 0x7FFFFFFF), math.random(0, 0x7FFFFFFF))
-end
-
 local function parse_paragraph_items(resp)
     local body = resp.body or ""
     local doc = parse_doc(body)
@@ -406,7 +403,6 @@ local function parse_paragraph_items(resp)
     if title ~= "" then
         table.insert(items, {
             type = "title",
-            id = generate_id(),
             text = title,
         })
     end
@@ -438,7 +434,6 @@ local function parse_paragraph_items(resp)
                 then
                     table.insert(items, {
                         type = "text",
-                        id = generate_id(),
                         content = text,
                     })
                 end
@@ -459,7 +454,6 @@ local function parse_paragraph_items(resp)
                 if text ~= "" then
                     table.insert(items, {
                         type = "text",
-                        id = generate_id(),
                         content = text,
                     })
                 end

@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../../../src/rust/api/types.dart';
+import '../../feeds/feed_service.dart' show ParagraphIdStringExt;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data models
@@ -75,7 +76,7 @@ class PageBreaker {
         PageContent(
           items: [
             for (int i = 0; i < items.length; i++)
-              PageItem(source: items[i], paragraphIndex: i, paragraphId: items[i].id),
+              PageItem(source: items[i], paragraphIndex: i, paragraphId: items[i].id.toStringValue()),
           ],
         ),
       ];
@@ -98,7 +99,7 @@ class PageBreaker {
         }
         final sp = cur.isEmpty ? 0.0 : paragraphSpacing;
         remaining -= sp + th;
-        cur.add(PageItem(source: item, paragraphIndex: i, paragraphId: item.id));
+        cur.add(PageItem(source: item, paragraphIndex: i, paragraphId: item.id.toStringValue()));
       } else if (item is ParagraphContent_Image) {
         if (remaining - spacing < imageHeight && cur.isNotEmpty) {
           pages.add(PageContent(items: cur));
@@ -107,12 +108,12 @@ class PageBreaker {
         }
         final sp = cur.isEmpty ? 0.0 : paragraphSpacing;
         remaining -= sp + imageHeight;
-        cur.add(PageItem(source: item, paragraphIndex: i, paragraphId: item.id));
+        cur.add(PageItem(source: item, paragraphIndex: i, paragraphId: item.id.toStringValue()));
       } else if (item is ParagraphContent_Text) {
         _layoutText(
           text: item.content,
           paragraphIndex: i,
-          paragraphId: item.id,
+          paragraphId: item.id.toStringValue(),
           source: item,
           width: w,
           pageHeight: h,
@@ -137,7 +138,7 @@ class PageBreaker {
             PageContent(
               items: [
                 for (int i = 0; i < items.length; i++)
-                  PageItem(source: items[i], paragraphIndex: i, paragraphId: items[i].id),
+                  PageItem(source: items[i], paragraphIndex: i, paragraphId: items[i].id.toStringValue()),
               ],
             ),
           ]

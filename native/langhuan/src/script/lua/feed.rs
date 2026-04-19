@@ -15,7 +15,7 @@ use crate::feed::{
     RequestPatchContext,
 };
 use crate::http::{self, HttpRequest, HttpResponse};
-use crate::model::{BookInfo, ChapterInfo, Page, Paragraph, SearchResult};
+use crate::model::{BookInfo, ChapterInfo, Page, Paragraph, RawParagraph, SearchResult};
 use crate::script::LUA_SERIALIZE_OPTIONS;
 use crate::script::runtime::engine::timed_call;
 
@@ -502,10 +502,30 @@ impl Feed for LuaFeed {
             book_id: book_id.to_owned(),
             chapter_id: chapter_id.to_owned(),
         };
-        let inner = self.paged_stream_by(&self.handlers.paragraphs, patch_context, move |cursor| {
-            (book_id, chapter_id, cursor.clone())
+        let raw_stream: FeedStream<'a, RawParagraph> =
+            self.paged_stream_by(&self.handlers.paragraphs, patch_context, move |cursor| {
+                (book_id, chapter_id, cursor.clone())
+            });
+        let indexed_stream: FeedStream<'a, Paragraph> = Box::pin(stream! {
+            let mut index: usize = 0;
+            let mut raw_stream = std::pin::pin!(raw_stream);
+            while let Some(result) = raw_stream.next().await {
+                match result {
+                    Ok(raw) => {
+                        let paragraph = raw.into_paragraph(index);
+                        index += 1;
+                        yield Ok(paragraph);
+                    }
+                    Err(err) => {
+                        yield Err(err);
+                        break;
+                    }
+                }
+            }
         });
-        self.dedup_stream(inner, "paragraph", |item: &Paragraph| item.id().to_owned())
+        self.dedup_stream(indexed_stream, "paragraph", |item: &Paragraph| {
+            item.id().to_string()
+        })
     }
 
     fn meta(&self) -> &FeedMeta {

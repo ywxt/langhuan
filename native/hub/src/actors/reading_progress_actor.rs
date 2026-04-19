@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use langhuan::progress::{ReadingProgress, ReadingProgressStore};
 use messages::prelude::{Actor, Context, Handler};
 
-use crate::api::types::{BridgeError, ReadingProgressItem};
+use crate::api::types::{BridgeError, ParagraphId, ReadingProgressItem};
 use crate::localize_error;
 
 use super::app_data_actor::InitializeAppDataDirectory;
@@ -88,7 +88,7 @@ impl Handler<GetReadingProgress> for ReadingProgressActor {
                 feed_id: item.feed_id,
                 book_id: item.book_id,
                 chapter_id: item.chapter_id,
-                paragraph_id: item.paragraph_id,
+                paragraph_id: ParagraphId::from_stored(item.paragraph_id),
                 updated_at_ms: item.updated_at_ms,
             })),
             Err(e) => Err(BridgeError::from(e)),

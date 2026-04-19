@@ -678,7 +678,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
         appBar: AppBar(title: Text(l10n.readerTitle)),
         body: ErrorState(
           title: l10n.readerLoadError,
-          message: _initError.toString(),
+          message: normalizeErrorMessage(_initError!),
           onRetry: _initializeBook,
           retryLabel: l10n.bookDetailRetry,
         ),

@@ -17,6 +17,7 @@
 //! local str  = json.encode({ key = "value" })
 //! ```
 
+mod error;
 mod html;
 mod json;
 
@@ -32,6 +33,7 @@ type ModuleFactory = fn(&Lua) -> Result<Value>;
 const BUILTIN_MODULES: &[(&str, ModuleFactory)] = &[
     ("@langhuan/json", json::module),
     ("@langhuan/html", html::module),
+    ("@langhuan/error", error::module),
 ];
 
 /// Register all built-in modules and install the custom `require` function.

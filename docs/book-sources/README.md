@@ -6,6 +6,7 @@ Book sources are Lua scripts that tell Langhuan how to fetch novel content from 
 
 - [`biquge-tw.lua`](biquge-tw.lua) — A complete feed source for biquge.tw.
 - [`login-handler-example.lua`](login-handler-example.lua) — A template snippet demonstrating the login flow hooks.
+- [`../error-handling.md`](../error-handling.md) — Error handling API for the `@langhuan/error` module.
 
 ## Script Header
 
@@ -44,25 +45,25 @@ Each book source runs in an **isolated, sandboxed Lua 5.4 VM**. The sandbox is d
 
 ### Enabled Standard Libraries
 
-| Library     | Description                                                                     |
-| ----------- | ------------------------------------------------------------------------------- |
+| Library     | Description                                                                    |
+| ----------- | ------------------------------------------------------------------------------ |
 | `string`    | String manipulation (`string.find`, `string.match`, `string.gsub`, etc.)       |
 | `table`     | Table manipulation (`table.insert`, `table.remove`, `table.sort`, etc.)        |
 | `math`      | Math functions (`math.min`, `math.max`, `math.floor`, etc.)                    |
 | `utf8`      | UTF-8 support (`utf8.len`, `utf8.codes`, etc.)                                 |
-| `coroutine` | Coroutine support                                                               |
+| `coroutine` | Coroutine support                                                              |
 | `os`        | Partially enabled. Date/time helpers like `os.date`, `os.time`, `os.difftime`. |
 
 Base functions that can dynamically execute code are disabled: `load`, `loadfile`, `loadstring`, `dofile`.
 
 ### Disabled / Restricted Standard Libraries
 
-| Library / API | Restriction                                                                 | Reason                                                        |
-| ------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Library / API | Restriction                                                                                                                        | Reason                                                         |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `os`          | Partially enabled only. `os.execute`, `os.exit`, `os.getenv`, `os.remove`, `os.rename`, `os.tmpname`, `os.setlocale` are disabled. | Prevent command execution, env access, and filesystem mutation |
-| `io`          | Completely disabled                                                          | No filesystem access                                          |
-| `debug`       | Completely disabled                                                          | No debug introspection                                        |
-| `package`     | Completely disabled (custom `require` is used)                              | No arbitrary module loading                                   |
+| `io`          | Completely disabled                                                                                                                | No filesystem access                                           |
+| `debug`       | Completely disabled                                                                                                                | No debug introspection                                         |
+| `package`     | Completely disabled (custom `require` is used)                                                                                     | No arbitrary module loading                                    |
 
 ### Built-in Modules
 
@@ -78,40 +79,40 @@ local html = require("@langhuan/html")
 
 **Module functions:**
 
-| Function       | Parameters          | Returns    | Description                                          |
-| -------------- | ------------------- | ---------- | ---------------------------------------------------- |
-| `html.parse()` | `html_str: string`  | `Document` | Parse an HTML string. Errors if input is empty/blank. |
+| Function       | Parameters         | Returns    | Description                                           |
+| -------------- | ------------------ | ---------- | ----------------------------------------------------- |
+| `html.parse()` | `html_str: string` | `Document` | Parse an HTML string. Errors if input is empty/blank. |
 
 **Document:**
 
-| Method           | Parameters          | Returns    | Description                                    |
-| ---------------- | ------------------- | ---------- | ---------------------------------------------- |
-| `doc:select()`   | `selector: string`  | `NodeList` | Select all elements matching a CSS selector.   |
+| Method         | Parameters         | Returns    | Description                                  |
+| -------------- | ------------------ | ---------- | -------------------------------------------- |
+| `doc:select()` | `selector: string` | `NodeList` | Select all elements matching a CSS selector. |
 
 **NodeList:**
 
-| Method / Operator   | Parameters          | Returns          | Description                                                                 |
-| ------------------- | ------------------- | ---------------- | --------------------------------------------------------------------------- |
-| `#list`             | —                   | `integer`        | Number of elements in the list.                                             |
-| `list[i]`           | `i: integer`        | `Element \| nil` | 1-based index access. Returns `nil` for out-of-bounds.                      |
-| `list:first()`      | —                   | `Element \| nil` | First element, or `nil` if empty.                                           |
-| `list:text()`       | —                   | `string`         | Concatenated text of all elements (whitespace normalized).                  |
-| `list:attr()`       | `name: string`      | `string \| nil`  | Attribute value from the first element only.                                |
-| `list:attrs()`      | —                   | `table`          | All attributes of the first element as `{ key = value, ... }`.             |
-| `list:html()`       | —                   | `string \| nil`  | Inner HTML of the first element, or `nil` if empty.                         |
-| `list:outer_html()` | —                   | `string \| nil`  | Outer HTML of the first element, or `nil` if empty.                         |
-| `list:select()`     | `selector: string`  | `NodeList`       | Select descendants matching selector from all elements (deduplicated).      |
+| Method / Operator   | Parameters         | Returns          | Description                                                            |
+| ------------------- | ------------------ | ---------------- | ---------------------------------------------------------------------- |
+| `#list`             | —                  | `integer`        | Number of elements in the list.                                        |
+| `list[i]`           | `i: integer`       | `Element \| nil` | 1-based index access. Returns `nil` for out-of-bounds.                 |
+| `list:first()`      | —                  | `Element \| nil` | First element, or `nil` if empty.                                      |
+| `list:text()`       | —                  | `string`         | Concatenated text of all elements (whitespace normalized).             |
+| `list:attr()`       | `name: string`     | `string \| nil`  | Attribute value from the first element only.                           |
+| `list:attrs()`      | —                  | `table`          | All attributes of the first element as `{ key = value, ... }`.         |
+| `list:html()`       | —                  | `string \| nil`  | Inner HTML of the first element, or `nil` if empty.                    |
+| `list:outer_html()` | —                  | `string \| nil`  | Outer HTML of the first element, or `nil` if empty.                    |
+| `list:select()`     | `selector: string` | `NodeList`       | Select descendants matching selector from all elements (deduplicated). |
 
 **Element:**
 
-| Method               | Parameters          | Returns    | Description                                    |
-| -------------------- | ------------------- | ---------- | ---------------------------------------------- |
-| `elem:text()`        | —                   | `string`   | Text content (whitespace normalized).          |
-| `elem:attr()`        | `name: string`      | `string \| nil` | Attribute value by name.                  |
-| `elem:attrs()`       | —                   | `table`    | All attributes as `{ key = value, ... }`.      |
-| `elem:html()`        | —                   | `string`   | Inner HTML.                                    |
-| `elem:outer_html()`  | —                   | `string`   | Outer HTML (includes the element's own tags).  |
-| `elem:select()`      | `selector: string`  | `NodeList` | Select descendants matching a CSS selector.    |
+| Method              | Parameters         | Returns         | Description                                   |
+| ------------------- | ------------------ | --------------- | --------------------------------------------- |
+| `elem:text()`       | —                  | `string`        | Text content (whitespace normalized).         |
+| `elem:attr()`       | `name: string`     | `string \| nil` | Attribute value by name.                      |
+| `elem:attrs()`      | —                  | `table`         | All attributes as `{ key = value, ... }`.     |
+| `elem:html()`       | —                  | `string`        | Inner HTML.                                   |
+| `elem:outer_html()` | —                  | `string`        | Outer HTML (includes the element's own tags). |
+| `elem:select()`     | `selector: string` | `NodeList`      | Select descendants matching a CSS selector.   |
 
 **Example:**
 
@@ -139,6 +140,25 @@ local links = doc:select("div.content"):select("a")
 local attrs = first:attrs()     -- { class = "title", id = "main" }
 ```
 
+#### `@langhuan/error`
+
+Structured error reporting module. Lets scripts raise **expected errors** (login required, Cloudflare challenge, rate limiting, etc.) that the Flutter UI can act on — as opposed to plain `error()` which is treated as a script bug.
+
+```lua
+local err = require("@langhuan/error")
+```
+
+| Function                          | Parameters              | Description                              |
+| --------------------------------- | ----------------------- | ---------------------------------------- |
+| `err.auth_required(message)`      | `message: string`       | Login is required to proceed             |
+| `err.cf_challenge(message)`       | `message: string`       | Cloudflare / anti-bot challenge detected |
+| `err.rate_limited(message)`       | `message: string`       | Too many requests; try again later       |
+| `err.content_not_found(message)`  | `message: string`       | The requested content does not exist     |
+| `err.source_unavailable(message)` | `message: string`       | The source is temporarily down           |
+| `err.raise(code, message)`        | `code, message: string` | Custom error code                        |
+
+For full details, error code semantics, and examples, see the [Error Handling Guide](../error-handling.md).
+
 #### `@langhuan/json`
 
 JSON encoding/decoding module.
@@ -147,10 +167,10 @@ JSON encoding/decoding module.
 local json = require("@langhuan/json")
 ```
 
-| Function        | Parameters        | Returns  | Description                                                    |
-| --------------- | ----------------- | -------- | -------------------------------------------------------------- |
-| `json.decode()` | `str: string`     | `any`    | Parse a JSON string into a Lua value. JSON `null` → Lua `nil`. |
-| `json.encode()` | `value: any`      | `string` | Serialize a Lua value to a JSON string. Lua `nil` → JSON `null`. |
+| Function        | Parameters    | Returns  | Description                                                      |
+| --------------- | ------------- | -------- | ---------------------------------------------------------------- |
+| `json.decode()` | `str: string` | `any`    | Parse a JSON string into a Lua value. JSON `null` → Lua `nil`.   |
+| `json.encode()` | `value: any`  | `string` | Serialize a Lua value to a JSON string. Lua `nil` → JSON `null`. |
 
 **Example:**
 
@@ -249,6 +269,8 @@ Returns: [`Page`](#page) of `SearchResult`:
 | `cover_url`   | `string` | No       | Cover image URL  |
 | `description` | `string` | No       | Book description |
 
+Book IDs must be unique within a single search result stream. The runtime validates this and returns an error when a duplicate ID is encountered.
+
 ### `book_info.request(book_id)`
 
 Build the HTTP request for book details. This handler is **not paginated** — no cursor parameter.
@@ -303,6 +325,8 @@ Returns: [`Page`](#page) of `ChapterInfo`:
 | `id`    | `string` | Yes      | Chapter identifier |
 | `title` | `string` | Yes      | Chapter title      |
 
+Chapter IDs must be unique within a single book. The runtime validates this and returns an error when a duplicate ID is encountered.
+
 Chapters are ordered by their position in the returned list (stream order).
 
 ### `paragraphs.request(book_id, chapter_id, cursor)`
@@ -325,13 +349,17 @@ Parse the HTTP response into chapter paragraphs.
 | --------- | ------------------------------- | ----------------- |
 | `resp`    | [`HttpResponse`](#httpresponse) | The HTTP response |
 
-Returns: [`Page`](#page) of `Paragraph`. Each paragraph is a tagged table with a `type` discriminator and a unique `id`:
+Returns: [`Page`](#page) of `Paragraph`. Each paragraph is a tagged table with a `type` discriminator and an optional `id`:
 
-| Variant                                                        | Fields                                                                          | Description           |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------- |
-| `{ type = "title", id = string, text = string }`               | `id`: `string` (required), `text`: `string` (required)                         | Section/chapter title |
-| `{ type = "text", id = string, content = string }`             | `id`: `string` (required), `content`: `string` (required)                      | Text paragraph        |
-| `{ type = "image", id = string, url = string, alt = string? }` | `id`: `string` (required), `url`: `string` (required), `alt`: `string` (optional) | Inline image          |
+| Variant                                                         | Fields                                                                            | Description           |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------- |
+| `{ type = "title", id = string?, text = string }`               | `id`: `string` (optional), `text`: `string` (required)                            | Section/chapter title |
+| `{ type = "text", id = string?, content = string }`             | `id`: `string` (optional), `content`: `string` (required)                         | Text paragraph        |
+| `{ type = "image", id = string?, url = string, alt = string? }` | `id`: `string` (optional), `url`: `string` (required), `alt`: `string` (optional) | Inline image          |
+
+**Paragraph ID:** The `id` field is optional. When omitted (`nil`), the runtime automatically assigns a sequential index (0, 1, 2, …) within the chapter. When provided, the value is used as-is. If your source provides stable, unique identifiers for paragraphs, pass them through; otherwise, simply omit `id` and let the runtime handle it.
+
+**ID uniqueness:** Whether assigned automatically or provided by the script, IDs must be unique across all paragraphs within a single chapter (including across multiple pages when `next_cursor` is used). The runtime validates this and returns an error when a duplicate ID is encountered.
 
 ## Optional: Login Support
 

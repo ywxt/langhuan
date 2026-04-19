@@ -31,7 +31,7 @@ pub extern "system" fn init_rustls_verifier(mut env: JNIEnv, _activity: JObject,
 /// Produce a locale-aware error string for a [`langhuan::error::Error`] using
 /// the global rust-i18n locale set by the `SetLocale` signal handler.
 pub(crate) fn localize_error(e: &langhuan::error::Error) -> String {
-    use langhuan::error::{Error, PersistenceError, RegistryError, ScriptError};
+    use langhuan::error::{Error, ExpectedErrorCode, PersistenceError, RegistryError, ScriptError};
     match e {
         Error::Script(inner) => match inner {
             ScriptError::Lua(e) => t!("error.lua", error = e).to_string(),
@@ -78,6 +78,26 @@ pub(crate) fn localize_error(e: &langhuan::error::Error) -> String {
                 id = id
             )
             .to_string(),
+            ScriptError::Expected { code, message } => match code {
+                ExpectedErrorCode::AuthRequired => {
+                    t!("error.expected.auth_required", message = message).to_string()
+                }
+                ExpectedErrorCode::CfChallenge => {
+                    t!("error.expected.cf_challenge", message = message).to_string()
+                }
+                ExpectedErrorCode::RateLimited => {
+                    t!("error.expected.rate_limited", message = message).to_string()
+                }
+                ExpectedErrorCode::ContentNotFound => {
+                    t!("error.expected.content_not_found", message = message).to_string()
+                }
+                ExpectedErrorCode::SourceUnavailable => {
+                    t!("error.expected.source_unavailable", message = message).to_string()
+                }
+                ExpectedErrorCode::Unknown(code) => {
+                    t!("error.expected.unknown", code = code, message = message).to_string()
+                }
+            },
         },
         Error::Registry(inner) => match inner {
             RegistryError::NotFound(e) => t!("error.registry_not_found", error = e).to_string(),

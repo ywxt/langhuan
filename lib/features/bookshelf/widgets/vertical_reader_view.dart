@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../src/rust/api/types.dart';
+import '../../feeds/feed_service.dart' show ParagraphIdStringExt;
 import 'chapter_status_block.dart';
 import 'chapter_store.dart';
 import 'paragraph_view.dart';
@@ -171,7 +172,7 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
     final paras = widget.store.paragraphsAt(widget.activeChapterSeq);
     if (paras != null && paras.isNotEmpty && _scrollTargetParagraphId.isNotEmpty) {
       // Find the index of the target paragraph by ID
-      int targetIdx = paras.indexWhere((p) => p.id == _scrollTargetParagraphId);
+      int targetIdx = paras.indexWhere((p) => p.id.toStringValue() == _scrollTargetParagraphId);
       if (targetIdx >= 0) {
         final vpHeight = _scrollController.position.viewportDimension;
         final estimatedItemHeight = vpHeight / 4;
@@ -438,7 +439,7 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
           }
         }
       }
-      paragraphId = paras[paraIdx].id;
+      paragraphId = paras[paraIdx].id.toStringValue();
     }
 
     store.setActive(bestSeq);
@@ -521,7 +522,7 @@ class _VerticalReaderViewState extends State<VerticalReaderView> {
     final localIdx = item.localIndex!;
     final paragraph = item.paragraph!;
     final seq = item.chapterSeq!;
-    final paragraphId = paragraph.id;
+    final paragraphId = paragraph.id.toStringValue();
 
     final isSelected = widget.selectedChapterId == chapterId &&
         widget.selectedParagraphId == paragraphId;
