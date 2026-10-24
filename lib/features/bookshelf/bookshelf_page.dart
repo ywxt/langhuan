@@ -5,10 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/always_disabled_focus_node.dart';
-import '../../shared/widgets/cover_image.dart';
 import '../../shared/widgets/cover_placeholder.dart';
 import '../../shared/widgets/empty_state.dart';
 import 'bookshelf_provider.dart';
+import 'widgets/book_cover.dart';
 
 class BookshelfPage extends ConsumerWidget {
   const BookshelfPage({super.key});
@@ -122,13 +122,12 @@ class BookshelfPage extends ConsumerWidget {
                               child: SizedBox(
                                 width: 44,
                                 height: 60,
-                                child: item.coverUrl == null
-                                    ? const _SmallCoverPlaceholder()
-                                    : CoverImage(
-                                        url: item.coverUrl!,
-                                        placeholder:
-                                            const _SmallCoverPlaceholder(),
-                                      ),
+                                child: BookCover(
+                                  feedId: item.feedId,
+                                  bookId: item.sourceBookId,
+                                  url: item.coverUrl,
+                                  placeholder: const _SmallCoverPlaceholder(),
+                                ),
                               ),
                             ),
                           ),

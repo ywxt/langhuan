@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../l10n/app_localizations.dart';
 import '../../rust_init.dart';
 import '../../shared/theme/app_theme.dart';
-import '../../shared/widgets/cover_image.dart';
 import '../../shared/widgets/cover_placeholder.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
@@ -13,6 +12,7 @@ import 'book_providers.dart';
 import 'bookshelf_provider.dart';
 import '../feeds/feed_service.dart';
 import 'reading_progress_provider.dart';
+import 'widgets/book_cover.dart';
 import 'widgets/reader_types.dart';
 
 class BookDetailPage extends ConsumerStatefulWidget {
@@ -155,12 +155,12 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                         child: SizedBox(
                           width: 120,
                           height: 160,
-                          child: book.coverUrl == null
-                              ? const _LargeCoverPlaceholder()
-                              : CoverImage(
-                                  url: book.coverUrl!,
-                                  placeholder: const _LargeCoverPlaceholder(),
-                                ),
+                          child: BookCover(
+                            feedId: widget.feedId,
+                            bookId: widget.bookId,
+                            url: book.coverUrl,
+                            placeholder: const _LargeCoverPlaceholder(),
+                          ),
                         ),
                       ),
                     ),
