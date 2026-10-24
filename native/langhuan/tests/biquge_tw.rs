@@ -33,21 +33,49 @@ fn load_script_for_server(server: &ServerGuard) -> String {
         .replace("-- @access_domain img.biquge.tw", "")
 }
 
-/// Build a minimal HTML search-results page that the biquge-tw parser can
-/// process.  The selector used by the script is:
-///   `a[href*="/book/"][href$=".html"]`
-/// and IDs are extracted with the pattern `/book/(%d+)%.html`.
+/// Build a search-results page that mirrors the live site's `.result-card`
+/// layout: each card carries a cover image (`.book-cover img`), a title link
+/// (`.book-title`), an author (`.book-meta .author`), an intro
+/// (`.book-intro`), and a latest-chapter link (which must not be mistaken
+/// for the book link).
 fn search_results_html() -> String {
     r#"<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><title>搜尋結果</title></head>
 <body>
 <div class="result-list">
-  <div class="result-item">
-    <a href="/book/12345.html">剛好遇見你</a>
+  <div class="result-card">
+    <div class="book-cover">
+      <a href="/book/12345.html">
+        <img src="https://img.biquge.tw/45/45013/45013s.jpg" alt="剛好遇見你">
+      </a>
+    </div>
+    <div class="book-info">
+      <a href="/book/12345.html" class="book-title">剛好遇見你</a>
+      <div class="book-meta">
+        <span class="author">測試作者甲</span>
+        <span class="badge badge-done">完結</span>
+      </div>
+      <div class="book-intro">    這是第一本書的簡介。
+</div>
+      <div class="latest">最新章節：<a href="/book/12345/99901.html">第一百章</a></div>
+    </div>
   </div>
-  <div class="result-item">
-    <a href="/book/67890.html">剛好是你</a>
+  <div class="result-card">
+    <div class="book-cover">
+      <a href="/book/67890.html">
+        <img src="https://img.biquge.tw/216/216428/216428s.jpg" alt="剛好是你">
+      </a>
+    </div>
+    <div class="book-info">
+      <a href="/book/67890.html" class="book-title">剛好是你</a>
+      <div class="book-meta">
+        <span class="author">測試作者乙</span>
+        <span class="badge badge-ongoing">連載</span>
+      </div>
+      <div class="book-intro">這是第二本書的簡介，比第一本長一些。</div>
+      <div class="latest">最新章節：<a href="/book/67890/99902.html">第九十九章</a></div>
+    </div>
   </div>
 </div>
 </body>
@@ -142,7 +170,7 @@ async fn search_returns_results() {
         titles
     );
 
-    // Verify search-result fields are complete under current parser behavior.
+    // Verify search-result fields are parsed from the result-card layout.
     for item in &items {
         assert!(
             !item.id.trim().is_empty(),
@@ -156,16 +184,26 @@ async fn search_returns_results() {
             !item.author.trim().is_empty(),
             "author should not be empty: {item:?}"
         );
-        // Current parser may not provide these fields from search HTML.
-        assert!(
-            item.cover_url.is_none()
-                || item.cover_url.as_deref().unwrap().starts_with("http")
-                || item.cover_url.as_deref().unwrap().starts_with('/')
+        let expected_cover = match item.id.as_str() {
+            "12345" => "https://img.biquge.tw/45/45013/45013s.jpg",
+            "67890" => "https://img.biquge.tw/216/216428/216428s.jpg",
+            other => panic!("unexpected book id: {other}"),
+        };
+        assert_eq!(
+            item.cover_url.as_deref(),
+            Some(expected_cover),
+            "cover_url should be extracted from .book-cover img"
         );
         assert!(
-            item.description.is_none() || !item.description.as_deref().unwrap().trim().is_empty()
+            item.description.as_deref().is_some_and(|d| !d.trim().is_empty()),
+            "description should be extracted from .book-intro: {item:?}"
         );
     }
+
+    let by_id = |id: &str| items.iter().find(|i| i.id == id).unwrap();
+    assert_eq!(by_id("12345").author, "測試作者甲");
+    assert_eq!(by_id("67890").author, "測試作者乙");
+    assert_eq!(by_id("12345").description.as_deref(), Some("這是第一本書的簡介。"));
 }
 
 #[tokio::test]
@@ -361,6 +399,19 @@ async fn search_live_site_smoke() {
             "live item author should not be empty"
         );
     }
+
+    // The live layout renders a cover image inside every result card.
+    assert!(
+        search_items.iter().all(|i| i
+            .cover_url
+            .as_deref()
+            .is_some_and(|u| u.starts_with("https://"))),
+        "live search should extract cover URLs from result cards: {:?}",
+        search_items
+            .iter()
+            .map(|i| (&i.id, &i.cover_url))
+            .collect::<Vec<_>>()
+    );
 
     // Paragraph-content live smoke: search -> first book -> first chapter -> paragraphs.
     let first_book = search_items

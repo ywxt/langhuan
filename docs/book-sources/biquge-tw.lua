@@ -1,7 +1,7 @@
 -- ==Feed==
 -- @id           biquge-tw
 -- @name         筆趣閣（biquge.tw）
--- @version      1.2.1
+-- @version      1.3.0
 -- @author       GitHub Copilot
 -- @description  適配 biquge.tw 的書源，支持搜尋、詳情、目錄、正文（含多頁章節）
 -- @base_url     https://www.biquge.tw
@@ -185,7 +185,55 @@ local function parse_search_items(body)
         return items
     end
 
-    -- Primary strategy: find h3 elements that contain book links.
+    -- Primary strategy: structured result cards. Each card carries the cover
+    -- image (.book-cover img), title (.book-title), author (.book-meta
+    -- .author) and intro (.book-intro).
+    local cards = doc:select(".result-card")
+    for i = 1, #cards do
+        local card = cards[i]
+        local link = card:select(".book-title"):first()
+        if not link then
+            link = card:select('.book-info a[href*="/book/"][href$=".html"]'):first()
+        end
+        if not link then
+            link = card:select('a[href*="/book/"][href$=".html"]'):first()
+        end
+        if link then
+            local id = extract_book_id(link:attr("href"))
+            if id and not seen[id] then
+                local title_node = card:select(".book-title"):first()
+                local title = title_node and clean_text(title_node:text())
+                    or clean_text(link:text())
+                if title ~= "" then
+                    local author_node = card:select(".book-meta .author"):first()
+                    local author = author_node and clean_text(author_node:text()) or ""
+                    if author == "" then
+                        author = "未知"
+                    end
+
+                    local img = card:select(".book-cover img"):first()
+                    local cover = img and img:attr("src") or nil
+                    if cover == "" then
+                        cover = nil
+                    end
+
+                    local intro_node = card:select(".book-intro"):first()
+                    local description = intro_node and clean_text(intro_node:text()) or ""
+
+                    table.insert(items, {
+                        id = id,
+                        title = title,
+                        author = author,
+                        cover_url = cover,
+                        description = description ~= "" and description or nil,
+                    })
+                    seen[id] = true
+                end
+            end
+        end
+    end
+
+    -- Fallback (legacy layout): find h3 elements that contain book links.
     -- Each search result is rendered as an h3 heading with a link.
     local h3_nodes = doc:select("h3")
     for i = 1, #h3_nodes do
