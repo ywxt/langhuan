@@ -12,9 +12,6 @@ analyzer:
     - build/**
     - android/**
     - ios/**
-    # Vendored cargokit build tool; its Dart dependencies are only resolved
-    # when cargokit runs during a native build.
-    - rust_builder/**
 include: package:flutter_lints/flutter.yaml
 
 linter:

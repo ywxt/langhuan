@@ -13,8 +13,9 @@
 # cannot, so they are declared here.
 # The Rust toolchain is fully declarative: oxalica/rust-overlay provides a
 # prebuilt stable toolchain (pinned by flake.lock) with the Android
-# cross-targets cargokit builds for, and a small `rustup` shim satisfies
-# cargokit's insistence on driving builds through rustup.
+# cross-targets the Native Assets build hook compiles for, and a small
+# `rustup` shim satisfies native_toolchain_rust's insistence on driving
+# builds through rustup.
 # Inside the shell, `flutter run` deploys to a device or the emulator.
 {
   description = "Langhuan development environment (Flutter + Rust + Android)";
@@ -141,12 +142,13 @@
             ];
           };
 
-          # Cargokit (vendored by flutter_rust_bridge) refuses to build
-          # local sources when it cannot find a `rustup` executable: with
-          # rustup absent it falls back to precompiled binaries, which a
-          # local crate never publishes. This shim satisfies its exact
-          # call surface with the declarative toolchain above:
+          # Both the old Cargokit integration and the current Native Assets
+          # builder (native_toolchain_rust, driving `cargo build` for
+          # hook/build.dart) insist on driving builds through a `rustup`
+          # executable. This shim satisfies their exact call surface with
+          # the declarative toolchain above:
           #   - `run <toolchain> <command...>` executes the command directly
+          #   - `show active-toolchain` reports the nix rustc as active
           #   - toolchain/target/component management is a successful no-op
           #   - queries report what the nix toolchain actually contains
           rustupShim = pkgs.writeShellScriptBin "rustup" ''
@@ -158,10 +160,23 @@
                 shift 2
                 exec "$@"
                 ;;
+              show)
+                case "''${2-}" in
+                  active-toolchain)
+                    # Mirror the real rustup's "<channel>-<host> (default)"
+                    # line; callers only log the output, but keep it truthful.
+                    echo "$(rustc --version | sed -n 's/^rustc \([0-9][0-9.]*\).*/\1/p')-$(rustc -vV | sed -n 's/^host: //p') (default)"
+                    ;;
+                  *)
+                    echo "rustup shim: unsupported command: $*" >&2
+                    exit 1
+                    ;;
+                esac
+                ;;
               toolchain)
                 case "''${2-}" in
                   list)
-                    echo "stable-$(rustc -vV | sed -n 's/^host: //p') (default)"
+                    echo "$(rustc --version | sed -n 's/^rustc \([0-9][0-9.]*\).*/\1/p')-$(rustc -vV | sed -n 's/^host: //p') (default)"
                     ;;
                   install)
                     # Toolchains come from the nix store; nothing to install.
