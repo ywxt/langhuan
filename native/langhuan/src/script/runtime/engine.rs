@@ -6,6 +6,7 @@ use reqwest::Client;
 
 use crate::error::Result;
 use crate::feed::FeedMeta;
+use crate::http::new_client;
 use crate::script::lua::feed::{FeedHandlers, LuaFeed};
 use crate::script::meta;
 use crate::script::runtime::modules;
@@ -66,7 +67,7 @@ impl ScriptEngine {
     /// Create a new script engine with a default HTTP client.
     pub fn new() -> Self {
         Self {
-            client: Arc::new(Client::new()),
+            client: Arc::new(new_client()),
         }
     }
 

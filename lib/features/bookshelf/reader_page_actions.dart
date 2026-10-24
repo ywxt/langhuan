@@ -35,6 +35,7 @@ class ReaderPageActions {
     if (!created) return;
 
     final context = contextOf();
+    if (!context.mounted) return;
     showReaderToast(context, AppLocalizations.of(context).readerBookmarkAdded);
   }
 

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../../../../lib/features/bookshelf/widgets/horizontal_reader_view.dart';
-import '../../../../lib/features/bookshelf/widgets/page_breaker.dart';
-import '../../../../lib/src/rust/api/types.dart';
+import 'package:langhuan/features/bookshelf/widgets/horizontal_reader_view.dart';
+import 'package:langhuan/features/bookshelf/widgets/page_breaker.dart';
+import 'package:langhuan/src/rust/api/types.dart';
 
 PageContent _page(String id, String text) {
   return PageContent(

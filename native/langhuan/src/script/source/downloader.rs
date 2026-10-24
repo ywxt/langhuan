@@ -1,10 +1,11 @@
 //! Utilities for downloading feed scripts from a remote URL.
 
 use crate::error::Result;
+use crate::http::new_client;
 
 /// Download a Lua feed script from `url` and return its content as a string.
 ///
-/// Uses a one-off [`reqwest::Client`] with default settings.  The caller is
+/// Uses a one-off [`reqwest::Client`] from [`new_client`].  The caller is
 /// responsible for validating the returned content by passing it to
 /// [`crate::script::meta::parse_meta`].
 ///
@@ -13,7 +14,7 @@ use crate::error::Result;
 ///   a non-2xx status.
 pub async fn download_script(url: &str) -> Result<String> {
     tracing::debug!(url = %url, "downloading feed script");
-    let client = reqwest::Client::new();
+    let client = new_client();
     let content = client
         .get(url)
         .send()

@@ -7,6 +7,14 @@
 
 # The following line activates a set of recommended lints for Flutter apps,
 # packages, and plugins designed to encourage good coding practices.
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    # Vendored cargokit build tool; its Dart dependencies are only resolved
+    # when cargokit runs during a native build.
+    - rust_builder/**
 include: package:flutter_lints/flutter.yaml
 
 linter:

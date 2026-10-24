@@ -48,27 +48,48 @@ native/hub/                 # FRB 橋接層 + Actor 系統
 
 ## 構建
 
-環境要求：
+### 使用 Nix（推薦）
 
-- [Flutter SDK](https://docs.flutter.dev/get-started/install)（≥ 3.11.3）
-- [Rust 工具鏈](https://www.rust-lang.org/tools/install)
+開發環境完全聲明式：Nix flake 提供 Flutter（stable）、帶 Android 交叉編譯 target 的 Rust 穩定工具鏈、綁定生成器、許可證已預接受的 Android SDK/NDK、模擬器，以及一個 Pixel 7 AVD（Android 16），AVD 存放在項目內的 `.avd/` 目錄。SDK 攜帶應用及其插件編譯所需的全部平臺（API 35、36），以及 AVD 啓動所需的唯一系統鏡像（API 36），構建期間不會再下載任何內容。
+
+環境要求：x86_64-linux 主機上的 Nix（含 flakes）與 [direnv](https://direnv.net/)。
 
 ```bash
-# 確認環境
+direnv allow                            # 或：nix develop
+flutter doctor                          # 所有項目應爲綠色
+flutter_rust_bridge_codegen generate    # 首次構建前必須執行
+emulator -avd Pixel_7_API_36            # 可選：啓動模擬器
+flutter run                             # 在真機或模擬器上運行
+flutter build apk --release             # 或 --debug；APK 在 build/app/outputs/flutter-apk/
+```
+
+`flutter run -d linux` 同樣可用。
+
+### 不使用 Nix
+
+手動安裝工具鏈：
+
+- [Flutter SDK](https://docs.flutter.dev/get-started/install)（stable，Dart ≥ 3.11.3）
+- [Rust 工具鏈](https://www.rust-lang.org/tools/install)，並添加 Android 交叉編譯 target：
+
+  ```bash
+  rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+  ```
+
+- Android SDK（許可證已接受、帶 Flutter 所釘定的 NDK 版本；缺什麼 `flutter doctor` 會指出）
+
+```bash
+cargo install flutter_rust_bridge_codegen --version 2.13.0   # 僅首次
 flutter doctor
-rustc --version
-
-# 安裝代碼生成工具（僅首次）
-cargo install flutter_rust_bridge_codegen
-
-# 生成 Dart ↔ Rust 綁定（首次構建前必須執行）
-flutter_rust_bridge_codegen generate
-
-# 運行
+flutter_rust_bridge_codegen generate    # 首次構建前必須執行
 flutter run
 ```
 
+### 綁定
+
 後續修改 Rust API（`native/hub/src/api/` 中的函數）後，需重新執行 `flutter_rust_bridge_codegen generate` 更新綁定。生成的 Dart 代碼位於 `lib/src/rust/`，生成的 Rust 代碼位於 `native/hub/src/frb_generated.rs`——請勿手動編輯這些文件。
+
+> `flutter_rust_bridge` 的版本需要在 Dart 運行時（`pubspec.lock`）、Rust crate（`native/hub/Cargo.toml`）與代碼生成器之間保持一致。Nix 環境下執行 `nix flake update` 後運行 `flutter pub upgrade flutter_rust_bridge`，下次 `generate` 時生成器會自動升級 Rust crate；手動環境請保持 `cargo install` 的生成器版本一致。
 
 ## 書源腳本
 

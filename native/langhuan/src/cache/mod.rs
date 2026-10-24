@@ -395,7 +395,7 @@ async fn download_cover_to_cache(
     book_id: &str,
     url: &str,
 ) {
-    let resp = match reqwest::get(url).await {
+    let resp = match crate::http::new_client().get(url).send().await {
         Ok(r) => r,
         Err(e) => {
             tracing::debug!(

@@ -35,8 +35,8 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
         type: FileType.custom,
         allowedExtensions: ["lua"],
       );
-      if (result == null || result.files.isEmpty) return;
-      final path = result.files.first.path;
+      if (result.isEmpty) return;
+      final path = result.first.path;
       if (path == null) return;
       if (!mounted) return;
       Navigator.of(context).pop();

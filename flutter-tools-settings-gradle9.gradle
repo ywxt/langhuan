@@ -1,0 +1,48 @@
+// Replacement for the Groovy settings shim that nixpkgs' flutter wrapper
+// installs in packages/flutter_tools/gradle (see the
+// "gradle-flutter-tools-wrapper.patch" in nixpkgs' flutter packaging).
+//
+// Identical to the nixpkgs original except for one change: the original
+// ends with
+//
+//     apply from: new File("$settingsDir/settings.gradle.kts")
+//
+// to reuse the sibling Kotlin settings script's repository configuration,
+// but evaluating a settings file through `apply from:` leaves the build's
+// Settings state unattached, which deterministically crashes the
+// configuration-cache promo handler of Gradle >= 9.1 in composite builds:
+//
+//     IllegalStateException: The settings are not yet available for build.
+//
+// The repositories block is therefore declared directly below. Everything
+// else (redirecting the included build's projectDir and build directory
+// into ~/.cache, because the SDK itself is a read-only store path) is
+// unchanged from the nixpkgs original.
+def engineShortRev = (new File("$settingsDir/../../../bin/internal/engine.version")).text.take(10)
+def dir = new File("$System.env.HOME/.cache/flutter/nix-flutter-tools-gradle/$engineShortRev")
+dir.mkdirs()
+
+def buildScript = new File(dir, "build.gradle.kts")
+if (!buildScript.exists()) {
+  java.nio.file.Files.createSymbolicLink(buildScript.toPath(), new File("$settingsDir/build.gradle.kts").toPath())
+}
+def srcLink = new File(dir, "src")
+if (!srcLink.exists()) {
+  java.nio.file.Files.createSymbolicLink(srcLink.toPath(), new File("$settingsDir/src").toPath())
+}
+
+rootProject.projectDir = dir
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+gradle.allprojects { project ->
+  project.beforeEvaluate {
+    project.layout.buildDirectory = new File("$dir/build")
+  }
+}

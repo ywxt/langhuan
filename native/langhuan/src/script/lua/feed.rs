@@ -606,8 +606,6 @@ impl FeedAuthFlow for LuaFeed {
 
 #[cfg(test)]
 mod tests {
-    use tokio_stream::StreamExt as _;
-
     use super::*;
     use crate::error::{Error, ScriptError};
     use crate::script::runtime::ScriptEngine;

@@ -30,8 +30,11 @@ android {
     }
 
     // Bumping the plugin compileSdkVersion requires all clients of this plugin
-    // to bump the version in their app.
-    compileSdkVersion 33
+    // to bump the version in their app. This module is vendored into this
+    // app and built only against it, so it tracks the app's compileSdk
+    // (36). The nix-provided SDK carries platforms 34–36; a read-only
+    // store cannot auto-install anything older.
+    compileSdkVersion 36
 
     // Use the NDK version
     // declared in /android/app/build.gradle file of the Flutter project.

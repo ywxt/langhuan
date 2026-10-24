@@ -13,20 +13,8 @@ mod actors;
 pub mod api;
 mod logging;
 
-#[cfg(target_os = "android")]
-use jni::JNIEnv;
-#[cfg(target_os = "android")]
-use jni::objects::JObject;
-
 // Uncomment below to target the web.
 // use tokio_with_wasm::alias as tokio;
-
-#[cfg(target_os = "android")]
-#[unsafe(export_name = "Java_org_eu_ywxt_langhuan_MainActivity_initRustlsVerifier")]
-pub extern "system" fn init_rustls_verifier(mut env: JNIEnv, _activity: JObject, context: JObject) {
-    rustls_platform_verifier::android::init_with_env(&mut env, context)
-        .expect("failed to initialize rustls-platform-verifier");
-}
 
 /// Produce a locale-aware error string for a [`langhuan::error::Error`] using
 /// the global rust-i18n locale set by the `SetLocale` signal handler.

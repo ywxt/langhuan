@@ -65,7 +65,8 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                               type: FileType.custom,
                               allowedExtensions: const ['ttf', 'otf'],
                             );
-                            final path = result?.files.single.path;
+                            if (result.isEmpty) return;
+                            final path = result.single.path;
                             if (path == null || path.isEmpty) return;
 
                             try {

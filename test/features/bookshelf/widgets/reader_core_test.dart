@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import '../../../../lib/features/bookshelf/widgets/reader_core.dart';
-import '../../../../lib/features/bookshelf/widgets/reader_types.dart';
-import '../../../../lib/features/feeds/feed_service.dart';
-import '../../../../lib/src/rust/api/types.dart';
+import 'package:langhuan/features/bookshelf/widgets/reader_core.dart';
+import 'package:langhuan/features/bookshelf/widgets/reader_types.dart';
+import 'package:langhuan/features/feeds/feed_service.dart';
+import 'package:langhuan/src/rust/api/types.dart';
 
 List<ParagraphContent> _paragraphs(String chapterId) {
   return [

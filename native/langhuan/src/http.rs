@@ -7,12 +7,45 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use bytes::Bytes;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
+
+// ---------------------------------------------------------------------------
+// Client construction
+// ---------------------------------------------------------------------------
+
+/// Build the HTTP client used across the app.
+///
+/// TLS is verified against the Mozilla root set compiled into the binary on
+/// every platform. reqwest's default root source — `rustls-platform-verifier`
+/// — reads the platform trust store instead, which on Android drags in JNI
+/// glue: the crate's `jni` feature, an exported JNI symbol in `hub`, and a
+/// manual initialization call from `MainActivity`. Bundled roots keep the
+/// whole TLS stack pure Rust with zero platform integration. The tradeoff:
+/// user-installed CA certificates (proxy or enterprise) are not trusted.
+pub fn new_client() -> Client {
+    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+    let roots = rustls::RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    };
+    let mut tls = rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .expect("safe default TLS protocol versions")
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    // reqwest never touches a preconfigured TLS config, so ALPN must be set
+    // here for HTTP/2 to remain negotiable.
+    tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    Client::builder()
+        .tls_backend_preconfigured(tls)
+        .build()
+        .expect("failed to build HTTP client")
+}
 
 // ---------------------------------------------------------------------------
 // HttpBody
