@@ -10,6 +10,11 @@ import '../../src/rust/api/types.dart' show ChineseConversionMode;
 
 enum ReaderThemeMode { system, light, dark, sepia }
 
+/// How the reader advances through content.
+///
+/// Order matters: index 0 is the default for existing readers.
+enum ReaderPageMode { horizontal, vertical }
+
 class ReaderFontOption {
   const ReaderFontOption({
     required this.id,
@@ -49,6 +54,7 @@ class ReaderSettingsState {
     this.lineHeight = 1.8,
     this.themeMode = ReaderThemeMode.system,
     this.chineseConversion = ChineseConversionMode.none,
+    this.pageMode = ReaderPageMode.horizontal,
   });
 
   final double fontScale;
@@ -60,6 +66,7 @@ class ReaderSettingsState {
   final double lineHeight;
   final ReaderThemeMode themeMode;
   final ChineseConversionMode chineseConversion;
+  final ReaderPageMode pageMode;
 
   ReaderSettingsState copyWith({
     double? fontScale,
@@ -71,6 +78,7 @@ class ReaderSettingsState {
     double? lineHeight,
     ReaderThemeMode? themeMode,
     ChineseConversionMode? chineseConversion,
+    ReaderPageMode? pageMode,
   }) {
     return ReaderSettingsState(
       fontScale: fontScale ?? this.fontScale,
@@ -86,6 +94,7 @@ class ReaderSettingsState {
       lineHeight: lineHeight ?? this.lineHeight,
       themeMode: themeMode ?? this.themeMode,
       chineseConversion: chineseConversion ?? this.chineseConversion,
+      pageMode: pageMode ?? this.pageMode,
     );
   }
 }
@@ -100,6 +109,7 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
   static const _kLineHeight = 'reader.lineHeight';
   static const _kThemeMode = 'reader.themeMode';
   static const _kChineseConversion = 'reader.chineseConversion';
+  static const _kPageMode = 'reader.pageMode';
 
   @override
   ReaderSettingsState build() {
@@ -196,7 +206,20 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
     state = state.copyWith(chineseConversion: mode);
     _persistState();
     // Fire-and-forget: notify Rust backend so subsequent streams use this mode.
-    rust_conversion.setChineseConversionMode(mode: mode);
+    _syncConversionMode(mode);
+  }
+
+  /// Push the conversion mode to the Rust backend. Fire-and-forget: a
+  /// missing bridge (tests, previews) must never break settings handling.
+  void _syncConversionMode(ChineseConversionMode mode) {
+    try {
+      rust_conversion.setChineseConversionMode(mode: mode);
+    } catch (_) {}
+  }
+
+  void setPageMode(ReaderPageMode mode) {
+    state = state.copyWith(pageMode: mode);
+    _persistState();
   }
 
   Future<void> _restoreFromStorage() async {
@@ -221,6 +244,7 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
 
     final themeIndex = prefs.getInt(_kThemeMode);
     final conversionIndex = prefs.getInt(_kChineseConversion);
+    final pageModeIndex = prefs.getInt(_kPageMode);
 
     final restoredThemeMode =
         themeIndex != null &&
@@ -236,6 +260,13 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
         ? ChineseConversionMode.values[conversionIndex]
         : state.chineseConversion;
 
+    final restoredPageMode =
+        pageModeIndex != null &&
+            pageModeIndex >= 0 &&
+            pageModeIndex < ReaderPageMode.values.length
+        ? ReaderPageMode.values[pageModeIndex]
+        : state.pageMode;
+
     final storedFilePath = prefs.getString(_kCustomFontFilePath);
     final storedDisplayName = prefs.getString(_kCustomFontDisplayName);
     final storedFontFamily = prefs.getString(_kFontFamily);
@@ -247,12 +278,13 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
       lineHeight: lineHeight,
       themeMode: restoredThemeMode,
       chineseConversion: restoredConversion,
+      pageMode: restoredPageMode,
       fontFamily: () => storedFontFamily,
       customFontFilePath: () => storedFilePath,
       customFontDisplayName: () => storedDisplayName,
     );
 
-    rust_conversion.setChineseConversionMode(mode: restoredConversion);
+    _syncConversionMode(restoredConversion);
 
     if (storedFilePath != null && storedFilePath.isNotEmpty) {
       try {
@@ -298,6 +330,7 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
     await prefs.setDouble(_kLineHeight, state.lineHeight);
     await prefs.setInt(_kThemeMode, state.themeMode.index);
     await prefs.setInt(_kChineseConversion, state.chineseConversion.index);
+    await prefs.setInt(_kPageMode, state.pageMode.index);
   }
 }
 

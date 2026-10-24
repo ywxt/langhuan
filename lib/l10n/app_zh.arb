@@ -56,6 +56,7 @@
   "readerChapterProgress": "第 {current} / {total} 章",
   "readerModeVertical": "上下滑動",
   "readerModeHorizontal": "左右翻頁",
+  "readerModeLabel": "閱讀方式",
   "readerChapterFallbackTitle": "第 {index} 章",
 
   "readerEndOfBook": "已讀完全書",

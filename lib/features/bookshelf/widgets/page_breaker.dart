@@ -36,9 +36,13 @@ class PageItem {
 }
 
 class PageContent {
-  const PageContent({required this.items});
+  const PageContent({required this.items, this.chapterId = ''});
 
   final List<PageItem> items;
+
+  /// Chapter this page belongs to (set by the content manager when pages
+  /// from several chapters are concatenated into one list).
+  final String chapterId;
 
   int get firstParagraphIndex => items.isEmpty ? 0 : items.first.paragraphIndex;
   String get firstParagraphId => items.isEmpty ? '' : items.first.paragraphId;
@@ -65,7 +69,10 @@ class PageBreaker {
   final double imageHeight;
   final ui.TextDirection textDirection;
 
-  List<PageContent> computePages(List<ParagraphContent> items) {
+  List<PageContent> computePages(
+    List<ParagraphContent> items, {
+    String chapterId = '',
+  }) {
     if (items.isEmpty) return const [];
 
     final double w = pageSize.width;
@@ -74,6 +81,7 @@ class PageBreaker {
     if (w <= 0 || h <= 0) {
       return [
         PageContent(
+          chapterId: chapterId,
           items: [
             for (int i = 0; i < items.length; i++)
               PageItem(source: items[i], paragraphIndex: i, paragraphId: items[i].id.toStringValue()),
@@ -93,7 +101,7 @@ class PageBreaker {
       if (item is ParagraphContent_Title) {
         final th = _measureTitle(item.text, w);
         if (remaining - spacing < th && cur.isNotEmpty) {
-          pages.add(PageContent(items: cur));
+          pages.add(PageContent(chapterId: chapterId, items: cur));
           cur = [];
           remaining = h;
         }
@@ -102,7 +110,7 @@ class PageBreaker {
         cur.add(PageItem(source: item, paragraphIndex: i, paragraphId: item.id.toStringValue()));
       } else if (item is ParagraphContent_Image) {
         if (remaining - spacing < imageHeight && cur.isNotEmpty) {
-          pages.add(PageContent(items: cur));
+          pages.add(PageContent(chapterId: chapterId, items: cur));
           cur = [];
           remaining = h;
         }
@@ -130,12 +138,13 @@ class PageBreaker {
     }
 
     if (cur.isNotEmpty) {
-      pages.add(PageContent(items: cur));
+      pages.add(PageContent(chapterId: chapterId, items: cur));
     }
 
     return pages.isEmpty
         ? [
             PageContent(
+              chapterId: chapterId,
               items: [
                 for (int i = 0; i < items.length; i++)
                   PageItem(source: items[i], paragraphIndex: i, paragraphId: items[i].id.toStringValue()),

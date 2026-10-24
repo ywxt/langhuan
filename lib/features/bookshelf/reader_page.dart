@@ -187,6 +187,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                       bookId: widget.bookId,
                       chapters: _screenController.chapters,
                       controller: _readerController,
+                      pageMode: settings.pageMode,
+                      onToggleControls: _toggleControls,
                       fontScale: settings.fontScale,
                       fontFamily: settings.fontFamily,
                       letterSpacing: settings.letterSpacing,

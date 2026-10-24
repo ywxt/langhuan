@@ -60,6 +60,25 @@ class ReaderController extends ChangeNotifier {
     _pendingParagraphOffset = 0;
   }
 
+  // ─ Reload command (parent → content manager) ───────────────────────────
+
+  String? _pendingReloadChapterId;
+
+  String? get pendingReloadChapterId => _pendingReloadChapterId;
+
+  /// Ask the content manager to re-read a chapter (e.g. after the pull
+  /// refresh warmed the backend cache).
+  void requestChapterReload(String chapterId) {
+    _pendingReloadChapterId = chapterId;
+    notifyListeners();
+  }
+
+  String? consumeChapterReload() {
+    final value = _pendingReloadChapterId;
+    _pendingReloadChapterId = null;
+    return value;
+  }
+
   // ─ Position reporting (content manager → parent) ───────────────────────
 
   /// External listener for position changes — set by ReaderPage to save

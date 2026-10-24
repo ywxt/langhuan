@@ -177,6 +177,9 @@
   "readerModeHorizontal": "Horizontal Paging",
   "@readerModeHorizontal": { "description": "Reader mode toggle label: horizontal paging" },
 
+  "readerModeLabel": "Reading Mode",
+  "@readerModeLabel": { "description": "Section label above the reader mode toggle" },
+
   "readerChapterFallbackTitle": "Chapter {index}",
   "@readerChapterFallbackTitle": {
     "description": "Fallback chapter title when source does not provide one",

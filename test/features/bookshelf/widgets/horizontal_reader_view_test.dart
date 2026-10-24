@@ -3,10 +3,16 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:langhuan/features/bookshelf/widgets/horizontal_reader_view.dart';
 import 'package:langhuan/features/bookshelf/widgets/page_breaker.dart';
+import 'package:langhuan/l10n/app_localizations.dart';
 import 'package:langhuan/src/rust/api/types.dart';
 
-PageContent _page(String id, String text) {
+PageContent _page(
+  String id,
+  String text, {
+  String chapterId = 'c1',
+}) {
   return PageContent(
+    chapterId: chapterId,
     items: [
       PageItem(
         source: ParagraphContent_Text(id: ParagraphId.id(id), content: text),
@@ -18,27 +24,34 @@ PageContent _page(String id, String text) {
 }
 
 Widget _host({
-  required PageContent current,
-  PageContent? prev,
-  PageContent? next,
-  required VoidCallback onNext,
-  required VoidCallback onPrev,
+  ReaderSlot? current,
+  ReaderSlot? prev,
+  ReaderSlot? next,
+  bool isFirst = false,
+  bool isLast = false,
+  VoidCallback? onNext,
+  VoidCallback? onPrev,
+  VoidCallback? onToggle,
+  void Function(String chapterId)? onRetryChapter,
 }) {
   return MaterialApp(
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     home: Scaffold(
       body: SizedBox.expand(
         child: HorizontalReaderView(
-          currentPage: current,
-          prevPage: prev,
-          nextPage: next,
-          isFirstPage: prev == null,
-          isLastPage: next == null,
+          currentSlot: current ?? ReaderSlotPage(_page('p1', 'page one')),
+          prevSlot: prev,
+          nextSlot: next,
+          isFirstPage: isFirst,
+          isLastPage: isLast,
           fontScale: 1,
           lineHeight: 1.8,
           contentPadding: EdgeInsets.zero,
-          onNextPage: onNext,
-          onPrevPage: onPrev,
-          centerChapterId: 'c1',
+          onNextPage: onNext ?? () {},
+          onPrevPage: onPrev ?? () {},
+          onToggleControls: onToggle ?? () {},
+          onRetryChapter: onRetryChapter,
         ),
       ),
     ),
@@ -46,81 +59,212 @@ Widget _host({
 }
 
 void main() {
-  testWidgets('swipe left requests next page', (tester) async {
-    var nextCalls = 0;
-    var prevCalls = 0;
-
+  testWidgets('renders the current page text', (tester) async {
     await tester.pumpWidget(
-      _host(
-        current: _page('p1', 'current'),
-        next: _page('p2', 'next'),
-        onNext: () => nextCalls++,
-        onPrev: () => prevCalls++,
-      ),
+      _host(current: ReaderSlotPage(_page('p1', 'page one'))),
     );
 
-    final target = find.byType(HorizontalReaderView);
-    await tester.drag(target, const Offset(-350, 0));
-    await tester.pumpAndSettle();
-
-    expect(nextCalls, 1);
-    expect(prevCalls, 0);
+    expect(find.text('page one'), findsOneWidget);
   });
 
-  testWidgets('swipe right requests previous page', (tester) async {
-    var nextCalls = 0;
-    var prevCalls = 0;
+  group('tap zones', () {
+    testWidgets('right third turns to the next page', (tester) async {
+      var nextCalls = 0;
+      await tester.pumpWidget(
+        _host(
+          current: ReaderSlotPage(_page('p1', 'page one')),
+          next: ReaderSlotPage(_page('p2', 'page two')),
+          onNext: () => nextCalls++,
+        ),
+      );
 
-    await tester.pumpWidget(
-      _host(
-        current: _page('p2', 'current'),
-        prev: _page('p1', 'prev'),
-        next: _page('p3', 'next'),
-        onNext: () => nextCalls++,
-        onPrev: () => prevCalls++,
-      ),
-    );
+      await tester.tapAt(const Offset(600, 300));
+      await tester.pump();
 
-    final target = find.byType(HorizontalReaderView);
-    await tester.drag(target, const Offset(350, 0));
-    await tester.pumpAndSettle();
+      expect(nextCalls, 1);
+    });
 
-    expect(prevCalls, 1);
-    expect(nextCalls, 0);
+    testWidgets('left third turns to the previous page', (tester) async {
+      var prevCalls = 0;
+      await tester.pumpWidget(
+        _host(
+          current: ReaderSlotPage(_page('p2', 'page two')),
+          prev: ReaderSlotPage(_page('p1', 'page one')),
+          onPrev: () => prevCalls++,
+        ),
+      );
+
+      await tester.tapAt(const Offset(100, 300));
+      await tester.pump();
+
+      expect(prevCalls, 1);
+    });
+
+    testWidgets('middle third toggles the controls', (tester) async {
+      var toggles = 0;
+      await tester.pumpWidget(
+        _host(current: ReaderSlotPage(_page('p1', 'page one')), onToggle: () {
+          toggles++;
+        }),
+      );
+
+      await tester.tapAt(const Offset(350, 300));
+      await tester.pump();
+
+      expect(toggles, 1);
+    });
+
+    testWidgets('left tap on the first page does nothing', (tester) async {
+      var prevCalls = 0;
+      await tester.pumpWidget(
+        _host(
+          current: ReaderSlotPage(_page('p1', 'page one')),
+          isFirst: true,
+          onPrev: () => prevCalls++,
+        ),
+      );
+
+      await tester.tapAt(const Offset(100, 300));
+      await tester.pump();
+
+      expect(prevCalls, 0);
+    });
+
+    testWidgets('right tap on the last page does nothing', (tester) async {
+      var nextCalls = 0;
+      await tester.pumpWidget(
+        _host(
+          current: ReaderSlotPage(_page('p1', 'page one')),
+          isLast: true,
+          onNext: () => nextCalls++,
+        ),
+      );
+
+      await tester.tapAt(const Offset(600, 300));
+      await tester.pump();
+
+      expect(nextCalls, 0);
+    });
   });
 
-  testWidgets('rebuild after settle keeps swipe behavior stable', (
-    tester,
-  ) async {
-    var nextCalls = 0;
+  group('swipe', () {
+    testWidgets('drag left past the threshold settles onto next', (tester) async {
+      var nextCalls = 0;
+      await tester.pumpWidget(
+        _host(
+          current: ReaderSlotPage(_page('p1', 'page one')),
+          next: ReaderSlotPage(_page('p2', 'page two')),
+          onNext: () => nextCalls++,
+        ),
+      );
 
-    await tester.pumpWidget(
-      _host(
-        current: _page('p1', 'current'),
-        next: _page('p2', 'next'),
-        onNext: () => nextCalls++,
-        onPrev: () {},
-      ),
-    );
+      await tester.drag(
+        find.byType(HorizontalReaderView),
+        const Offset(-300, 0),
+      );
+      await tester.pumpAndSettle();
 
-    final target = find.byType(HorizontalReaderView);
-    await tester.drag(target, const Offset(-350, 0));
-    await tester.pumpAndSettle();
-    expect(nextCalls, 1);
+      expect(nextCalls, 1);
+    });
 
-    await tester.pumpWidget(
-      _host(
-        current: _page('p2', 'new current'),
-        next: _page('p3', 'next'),
-        prev: _page('p1', 'prev'),
-        onNext: () => nextCalls++,
-        onPrev: () {},
-      ),
-    );
-    await tester.pumpAndSettle();
+    testWidgets('drag right past the threshold settles onto prev', (tester) async {
+      var prevCalls = 0;
+      await tester.pumpWidget(
+        _host(
+          current: ReaderSlotPage(_page('p2', 'page two')),
+          prev: ReaderSlotPage(_page('p1', 'page one')),
+          onPrev: () => prevCalls++,
+        ),
+      );
 
-    await tester.drag(target, const Offset(-350, 0));
-    await tester.pumpAndSettle();
-    expect(nextCalls, 2);
+      await tester.drag(
+        find.byType(HorizontalReaderView),
+        const Offset(300, 0),
+      );
+      await tester.pumpAndSettle();
+
+      expect(prevCalls, 1);
+    });
+
+    testWidgets('drag cannot cross the first page boundary', (tester) async {
+      var prevCalls = 0;
+      await tester.pumpWidget(
+        _host(
+          current: ReaderSlotPage(_page('p1', 'page one')),
+          isFirst: true,
+          onPrev: () => prevCalls++,
+        ),
+      );
+
+      await tester.drag(
+        find.byType(HorizontalReaderView),
+        const Offset(300, 0),
+      );
+      await tester.pumpAndSettle();
+
+      expect(prevCalls, 0);
+    });
+  });
+
+  group('slots', () {
+    testWidgets('loading slot shows a spinner', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          current: ReaderSlotPage(_page('p1', 'page one')),
+          next: const ReaderSlotLoading('c2'),
+        ),
+      );
+
+      // The next slot is off-screen; drag part-way to reveal it.
+      await tester.drag(
+        find.byType(HorizontalReaderView),
+        const Offset(-150, 0),
+      );
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('error slot shows the retry button', (tester) async {
+      final retryChapters = <String>[];
+      await tester.pumpWidget(
+        _host(
+          current: ReaderSlotPage(_page('p1', 'page one')),
+          next: const ReaderSlotError(chapterId: 'c2', message: 'boom'),
+          onRetryChapter: retryChapters.add,
+        ),
+      );
+
+      await tester.drag(
+        find.byType(HorizontalReaderView),
+        const Offset(-150, 0),
+      );
+      await tester.pump();
+
+      expect(find.text('boom'), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
+    });
+
+    testWidgets('dragging past the last page shows the end-of-book mark', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          current: ReaderSlotPage(_page('p1', 'page one')),
+          isLast: true,
+        ),
+      );
+
+      await tester.drag(
+        find.byType(HorizontalReaderView),
+        const Offset(-150, 0),
+      );
+      await tester.pump();
+
+      expect(
+        find.text("You've reached the end of the book"),
+        findsOneWidget,
+      );
+    });
   });
 }

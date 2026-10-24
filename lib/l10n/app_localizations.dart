@@ -398,6 +398,12 @@ abstract class AppLocalizations {
   /// **'Horizontal Paging'**
   String get readerModeHorizontal;
 
+  /// Section label above the reader mode toggle
+  ///
+  /// In en, this message translates to:
+  /// **'Reading Mode'**
+  String get readerModeLabel;
+
   /// Fallback chapter title when source does not provide one
   ///
   /// In en, this message translates to:

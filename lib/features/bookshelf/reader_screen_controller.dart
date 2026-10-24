@@ -171,6 +171,9 @@ class ReaderScreenController extends ChangeNotifier {
             forceRefresh: true,
           )
           .drain<void>();
+      // The backend cache is warm now — make the reader re-read the chapter
+      // so the new content actually shows.
+      _readerController.requestChapterReload(chapterId);
     } finally {
       _isRefreshingChapter = false;
       _notify();

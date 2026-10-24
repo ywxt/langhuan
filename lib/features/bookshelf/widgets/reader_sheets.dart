@@ -37,16 +37,36 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                   Row(
                     children: [
                       Icon(
-                        Icons.swap_horiz,
+                        Icons.auto_stories_outlined,
                         size: 18,
                         color: Theme.of(context).colorScheme.primary,
                       ),
                       const SizedBox(width: LanghuanTheme.spaceSm),
                       Text(
-                        l10n.readerModeHorizontal,
+                        l10n.readerModeLabel,
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ],
+                  ),
+                  const SizedBox(height: LanghuanTheme.spaceSm),
+                  SegmentedButton<ReaderPageMode>(
+                    segments: [
+                      ButtonSegment(
+                        value: ReaderPageMode.horizontal,
+                        icon: const Icon(Icons.swap_horiz, size: 18),
+                        label: Text(l10n.readerModeHorizontal),
+                      ),
+                      ButtonSegment(
+                        value: ReaderPageMode.vertical,
+                        icon: const Icon(Icons.swap_vert, size: 18),
+                        label: Text(l10n.readerModeVertical),
+                      ),
+                    ],
+                    selected: {settings.pageMode},
+                    onSelectionChanged: (selection) {
+                      setModalState(() {});
+                      notifier.setPageMode(selection.first);
+                    },
                   ),
                   const SizedBox(height: LanghuanTheme.spaceMd),
                   Text('Font File'),

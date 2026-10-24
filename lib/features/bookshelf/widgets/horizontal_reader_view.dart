@@ -3,15 +3,53 @@ import 'package:flutter/material.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../src/rust/api/types.dart';
 import 'chapter_status_block.dart';
-import 'page_breaker.dart';
 import 'page_content_view.dart';
+import 'page_breaker.dart';
 
+/// What a page slot of the paged reader shows.
+///
+/// The content manager resolves slots from a flat, cross-chapter page list,
+/// so loading and error states of *neighboring chapters* flow through the
+/// same channel as regular pages — turning past a chapter boundary is just
+/// an index change, with no slide handshakes.
+sealed class ReaderSlot {
+  const ReaderSlot();
+}
+
+class ReaderSlotPage extends ReaderSlot {
+  const ReaderSlotPage(this.page);
+
+  final PageContent page;
+}
+
+class ReaderSlotLoading extends ReaderSlot {
+  const ReaderSlotLoading(this.chapterId);
+
+  final String chapterId;
+}
+
+class ReaderSlotError extends ReaderSlot {
+  const ReaderSlotError({required this.chapterId, required this.message});
+
+  final String chapterId;
+  final String message;
+}
+
+/// Horizontal paged reader.
+///
+/// Renders a 3-page strip (prev / current / next). Drag and settle gestures
+/// move the strip; while a drag or animation is in flight the visible pages
+/// are frozen (snapshot), and the offset resets atomically in the build that
+/// delivers the new page after a turn — no intermediate-frame flash.
+///
+/// Tap zones: left third = previous page, right third = next page, middle
+/// third toggles the reader controls.
 class HorizontalReaderView extends StatefulWidget {
   const HorizontalReaderView({
     super.key,
-    required this.currentPage,
-    this.prevPage,
-    this.nextPage,
+    required this.currentSlot,
+    this.prevSlot,
+    this.nextSlot,
     required this.isFirstPage,
     required this.isLastPage,
     required this.fontScale,
@@ -22,19 +60,16 @@ class HorizontalReaderView extends StatefulWidget {
     required this.contentPadding,
     required this.onNextPage,
     required this.onPrevPage,
-    required this.centerChapterId,
-    this.prevError,
-    this.nextError,
-    this.onRetryPrev,
-    this.onRetryNext,
+    required this.onToggleControls,
+    this.onRetryChapter,
     this.onParagraphLongPress,
     this.selectedChapterId,
     this.selectedParagraphId,
   });
 
-  final PageContent? currentPage;
-  final PageContent? prevPage;
-  final PageContent? nextPage;
+  final ReaderSlot? currentSlot;
+  final ReaderSlot? prevSlot;
+  final ReaderSlot? nextSlot;
   final bool isFirstPage;
   final bool isLastPage;
   final double fontScale;
@@ -45,11 +80,9 @@ class HorizontalReaderView extends StatefulWidget {
   final EdgeInsets contentPadding;
   final VoidCallback onNextPage;
   final VoidCallback onPrevPage;
-  final String centerChapterId;
-  final String? prevError;
-  final String? nextError;
-  final VoidCallback? onRetryPrev;
-  final VoidCallback? onRetryNext;
+  final VoidCallback onToggleControls;
+  final void Function(String chapterId)? onRetryChapter;
+
   final void Function(
     String chapterId,
     String paragraphId,
@@ -57,6 +90,7 @@ class HorizontalReaderView extends StatefulWidget {
     Rect globalRect,
   )?
   onParagraphLongPress;
+
   final String? selectedChapterId;
   final String? selectedParagraphId;
 
@@ -76,13 +110,11 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
   bool _isSettling = false;
 
   /// Frozen snapshot — only updated when idle (not dragging / settling).
-  PageContent? _snapCurrent;
-  PageContent? _snapPrev;
-  PageContent? _snapNext;
+  ReaderSlot? _snapCurrent;
+  ReaderSlot? _snapPrev;
+  ReaderSlot? _snapNext;
   bool _snapIsFirst = false;
   bool _snapIsLast = false;
-  String? _snapPrevError;
-  String? _snapNextError;
 
   /// Direction the settle animation is heading: -1 next, 0 snap-back, 1 prev.
   int _settleDir = 0;
@@ -118,19 +150,15 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
   bool get _busy => _isDragging || _isSettling || _pendingSettle;
 
   void _syncSnapshot() {
-    _snapCurrent = widget.currentPage;
-    _snapPrev = widget.prevPage;
-    _snapNext = widget.nextPage;
+    _snapCurrent = widget.currentSlot;
+    _snapPrev = widget.prevSlot;
+    _snapNext = widget.nextSlot;
     _snapIsFirst = widget.isFirstPage;
     _snapIsLast = widget.isLastPage;
-    _snapPrevError = widget.prevError;
-    _snapNextError = widget.nextError;
   }
 
-  bool get _canGoPrev =>
-      _snapPrev != null || !_snapIsFirst || _snapPrevError != null;
-  bool get _canGoNext =>
-      _snapNext != null || !_snapIsLast || _snapNextError != null;
+  bool get _canGoPrev => _snapPrev != null || !_snapIsFirst;
+  bool get _canGoNext => _snapNext != null || !_snapIsLast;
 
   // ─ Gesture handling ───────────────────────────────────────────────────
 
@@ -168,6 +196,18 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
 
     _settleDir = dir;
     _animateTo(dir * pageWidth, pageWidth);
+  }
+
+  void _onTapUp(TapUpDetails details, double pageWidth) {
+    if (_busy) return;
+    final dx = details.localPosition.dx;
+    if (dx < pageWidth / 3) {
+      if (_canGoPrev) widget.onPrevPage();
+    } else if (dx > pageWidth * 2 / 3) {
+      if (_canGoNext) widget.onNextPage();
+    } else {
+      widget.onToggleControls();
+    }
   }
 
   void _animateTo(double target, double pageWidth) {
@@ -256,6 +296,7 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
           onHorizontalDragStart: _onDragStart,
           onHorizontalDragUpdate: _onDragUpdate,
           onHorizontalDragEnd: (d) => _onDragEnd(d, pageWidth),
+          onTapUp: (d) => _onTapUp(d, pageWidth),
           child: ClipRect(
             child: ValueListenableBuilder<double>(
               valueListenable: _offset,
@@ -294,71 +335,74 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
   }
 
   Widget _buildCurrentPage(BuildContext context) {
-    final isSelectedChapter =
-        widget.selectedChapterId == widget.centerChapterId;
-
-    return Padding(
-      padding: widget.contentPadding,
-      child: PageContentView(
-        page: _snapCurrent!,
-        fontScale: widget.fontScale,
-        fontFamily: widget.fontFamily,
-        letterSpacing: widget.letterSpacing,
-        paragraphSpacing: widget.paragraphSpacing,
-        lineHeight: widget.lineHeight,
-        selectedParagraphId: isSelectedChapter
-            ? widget.selectedParagraphId
-            : null,
-        onParagraphLongPress: widget.onParagraphLongPress != null
-            ? (paragraphId, paragraph, rect) => widget.onParagraphLongPress!(
-                widget.centerChapterId,
-                paragraphId,
-                paragraph,
-                rect,
-              )
-            : null,
-      ),
-    );
+    return _buildSlotContent(_snapCurrent!, isCurrent: true);
   }
 
   Widget _buildSlot(
-    PageContent? page, {
+    ReaderSlot? slot, {
     bool isPrev = false,
     bool isNext = false,
   }) {
-    if (page == null) {
+    if (slot == null) {
       if (isPrev && _snapIsFirst) {
         return const SizedBox.shrink();
       }
       if (isNext && _snapIsLast) {
         return _buildEndOfBook(context);
       }
-      final error = isPrev ? _snapPrevError : _snapNextError;
-      final onRetry = isPrev ? widget.onRetryPrev : widget.onRetryNext;
-      if (error != null) {
+      return const SizedBox.shrink();
+    }
+    return _buildSlotContent(slot);
+  }
+
+  Widget _buildSlotContent(
+    ReaderSlot slot, {
+    bool isCurrent = false,
+  }) {
+    switch (slot) {
+      case ReaderSlotPage(:final page):
+        return Padding(
+          padding: widget.contentPadding,
+          child: PageContentView(
+            page: page,
+            fontScale: widget.fontScale,
+            fontFamily: widget.fontFamily,
+            letterSpacing: widget.letterSpacing,
+            paragraphSpacing: widget.paragraphSpacing,
+            lineHeight: widget.lineHeight,
+            selectedParagraphId:
+                isCurrent &&
+                    widget.selectedChapterId == page.chapterId
+                ? widget.selectedParagraphId
+                : null,
+            onParagraphLongPress:
+                widget.onParagraphLongPress != null
+                    ? (paragraphId, paragraph, rect) =>
+                        widget.onParagraphLongPress!(
+                          page.chapterId,
+                          paragraphId,
+                          paragraph,
+                          rect,
+                        )
+                    : null,
+          ),
+        );
+      case ReaderSlotLoading():
+        return const Center(
+          child: ChapterStatusBlock(kind: ChapterStatusBlockKind.loading),
+        );
+      case ReaderSlotError(:final chapterId, :final message):
         return Center(
           child: ChapterStatusBlock(
             kind: ChapterStatusBlockKind.error,
-            message: error,
-            onRetry: onRetry,
+            message: message,
+            onRetry:
+                widget.onRetryChapter != null
+                    ? () => widget.onRetryChapter!(chapterId)
+                    : null,
           ),
         );
-      }
-      return const Center(
-        child: ChapterStatusBlock(kind: ChapterStatusBlockKind.loading),
-      );
     }
-    return Padding(
-      padding: widget.contentPadding,
-      child: PageContentView(
-        page: page,
-        fontScale: widget.fontScale,
-        fontFamily: widget.fontFamily,
-        letterSpacing: widget.letterSpacing,
-        paragraphSpacing: widget.paragraphSpacing,
-        lineHeight: widget.lineHeight,
-      ),
-    );
   }
 
   Widget _buildEndOfBook(BuildContext context) {

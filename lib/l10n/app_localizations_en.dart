@@ -169,6 +169,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readerModeHorizontal => 'Horizontal Paging';
 
   @override
+  String get readerModeLabel => 'Reading Mode';
+
+  @override
   String readerChapterFallbackTitle(int index) {
     return 'Chapter $index';
   }
