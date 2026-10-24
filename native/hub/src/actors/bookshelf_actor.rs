@@ -137,7 +137,6 @@ impl From<ShelfItem> for BookshelfListItem {
             author: item.author,
             cover_url: item.cover_url,
             description_snapshot: item.description,
-            has_cover: item.has_cover,
             added_at_unix_ms: item.added_at_ms,
         }
     }
@@ -267,7 +266,6 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "Book One");
         assert_eq!(items[0].description_snapshot.as_deref(), Some("Newer desc"));
-        assert!(!items[0].has_cover);
 
         let removed = actor
             .remove(BookshelfRemove {

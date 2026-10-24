@@ -17,7 +17,6 @@ pub struct ShelfItem {
     pub author: String,
     pub description: Option<String>,
     pub cover_url: Option<String>,
-    pub has_cover: bool,
     pub added_at_ms: i64,
 }
 
@@ -94,11 +93,9 @@ impl BookshelfRepo for Connection {
 
     fn shelf_items(&self) -> Result<Vec<ShelfItem>> {
         let mut stmt = self.prepare_cached(
-            "SELECT s.feed_id, s.book_id, b.title, b.author, b.description, b.cover_url, \
-                    (c.feed_id IS NOT NULL) AS has_cover, s.added_at_ms \
+            "SELECT s.feed_id, s.book_id, b.title, b.author, b.description, b.cover_url, s.added_at_ms \
              FROM bookshelf s \
              JOIN books b ON b.feed_id = s.feed_id AND b.book_id = s.book_id \
-             LEFT JOIN covers c ON c.feed_id = s.feed_id AND c.book_id = s.book_id \
              ORDER BY s.added_at_ms DESC, s.feed_id, s.book_id",
         )?;
         let items = stmt
@@ -110,8 +107,7 @@ impl BookshelfRepo for Connection {
                     author: row.get(3)?,
                     description: row.get(4)?,
                     cover_url: row.get(5)?,
-                    has_cover: row.get::<_, i64>(6)? == 1,
-                    added_at_ms: row.get(7)?,
+                    added_at_ms: row.get(6)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -167,7 +163,6 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].book_id, "b2"); // newest first
         assert_eq!(items[0].title, "Two");
-        assert!(!items[0].has_cover);
 
         assert!(conn.is_shelved("f1", "b1").unwrap());
         let protected = conn.protected_pairs().unwrap();

@@ -170,8 +170,6 @@ pub struct BookshelfListItem {
     pub author: String,
     pub cover_url: Option<String>,
     pub description_snapshot: Option<String>,
-    /// Whether downloaded cover bytes are available (via `getCover`).
-    pub has_cover: bool,
     pub added_at_unix_ms: i64,
 }
 

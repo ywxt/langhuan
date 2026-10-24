@@ -130,7 +130,6 @@ class BookshelfItemModel {
     required this.title,
     required this.author,
     required this.addedAtUnixMs,
-    required this.hasCover,
     this.coverUrl,
     this.description,
   });
@@ -143,9 +142,6 @@ class BookshelfItemModel {
   final String? coverUrl;
   final String? description;
 
-  /// Whether downloaded cover bytes are available in the database.
-  final bool hasCover;
-
   String get stableId => '$feedId:$sourceBookId';
 
   factory BookshelfItemModel.fromRust(BookshelfListItem item) =>
@@ -157,7 +153,6 @@ class BookshelfItemModel {
         addedAtUnixMs: item.addedAtUnixMs,
         coverUrl: item.coverUrl,
         description: item.descriptionSnapshot,
-        hasCover: item.hasCover,
       );
 }
 
