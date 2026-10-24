@@ -70,7 +70,7 @@ impl Handler<AddBookmark> for BookmarkActor {
     async fn handle(&mut self, msg: AddBookmark, _: &Context<Self>) -> Self::Result {
         let db = self.db()?.clone();
         let row = BookmarkRow {
-            id: uuid(),
+            id: next_bookmark_id(),
             feed_id: msg.feed_id,
             book_id: msg.book_id,
             chapter_id: msg.chapter_id,
@@ -136,16 +136,34 @@ impl From<BookmarkRow> for BookmarkItem {
     }
 }
 
-/// Generate a simple unique ID (timestamp + random-ish suffix).
-fn uuid() -> String {
+/// Generate a unique bookmark id: nanosecond timestamp plus a process-wide
+/// counter, so ids created within the same nanosecond still differ. Stable
+/// across restarts (time moves forward) and cheap — no dependency on a
+/// random source.
+fn next_bookmark_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    // Use a simple deterministic suffix based on the timestamp bits.
-    // Not cryptographically random, but unique enough for bookmarks.
-    let hi = (ts >> 32) as u32;
-    let lo = ts as u32;
-    format!("{hi:08x}-{lo:08x}")
+    format!("{ts:016x}-{seq:04x}")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::next_bookmark_id;
+
+    /// The counter makes ids unique even when the clock does not move —
+    /// regressions here would collide primary keys on bulk creation.
+    #[test]
+    fn bookmark_ids_are_unique() {
+        let ids: HashSet<String> = (0..10_000).map(|_| next_bookmark_id()).collect();
+        assert_eq!(ids.len(), 10_000);
+    }
 }

@@ -23,10 +23,6 @@ pub struct AppDataInitResult {
     pub feed_count: u32,
 }
 
-/// Directories used by the pre-SQLite file-based storage layout. Removed
-/// best-effort after the database is up so no orphaned data lingers.
-const LEGACY_DIRS: &[&str] = &["scripts", "cache", "bookshelf", "progress", "bookmarks", "auth"];
-
 pub struct AppDataActor {
     registry_addr: Address<RegistryActor>,
     login_addr: Address<LoginActor>,
@@ -121,9 +117,6 @@ impl AppDataActor {
             }
         });
 
-        // Best-effort removal of the legacy file-based storage layout.
-        tokio::spawn(remove_legacy_dirs(std::path::PathBuf::from(path.clone())));
-
         tracing::info!(
             feed_count = registry_result.feed_count,
             "app data directory initialized"
@@ -138,21 +131,6 @@ impl AppDataActor {
         Ok(AppDataInitResult {
             feed_count: registry_result.feed_count,
         })
-    }
-}
-
-/// Delete the pre-SQLite storage directories; a missing directory is not an
-/// error, anything else is logged and ignored (they are only stale data).
-async fn remove_legacy_dirs(base: std::path::PathBuf) {
-    for dir in LEGACY_DIRS {
-        let path = base.join(dir);
-        match tokio::fs::remove_dir_all(&path).await {
-            Ok(()) => tracing::info!(dir, "removed legacy storage directory"),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => {
-                tracing::warn!(dir, error = %e, "failed to remove legacy storage directory")
-            }
-        }
     }
 }
 
@@ -240,10 +218,6 @@ mod tests {
         assert_eq!(result.feed_count, 0);
         // Everything lives in one database file now.
         assert!(dir.path().join("langhuan.db").is_file());
-        // The legacy layout is gone (it never existed here — removal is
-        // best-effort, so this only asserts no stray directories appear).
-        assert!(!dir.path().join("scripts").exists());
-        assert!(!dir.path().join("bookshelf").exists());
 
         // Re-initializing with the same directory — as happens when Android
         // recreates the activity and the new Flutter engine re-runs the Dart
