@@ -366,10 +366,14 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   }
 
   ReaderSlot _slotFor(_FlatEntry entry) {
-    if (entry.loading) return ReaderSlotLoading(entry.chapterId);
+    final chapterTitle = _chapterTitleOf(entry.chapterId);
+    if (entry.loading) {
+      return ReaderSlotLoading(entry.chapterId, chapterTitle: chapterTitle);
+    }
     if (entry.errorMessage != null) {
       return ReaderSlotError(
         chapterId: entry.chapterId,
+        chapterTitle: chapterTitle,
         message: entry.errorMessage!,
       );
     }
@@ -377,8 +381,17 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     final page = entry.localPageIndex < pages.length
         ? pages[entry.localPageIndex]
         : null;
-    if (page == null) return ReaderSlotLoading(entry.chapterId);
+    if (page == null) {
+      return ReaderSlotLoading(entry.chapterId, chapterTitle: chapterTitle);
+    }
     return ReaderSlotPage(page);
+  }
+
+  String? _chapterTitleOf(String chapterId) {
+    for (final chapter in widget.chapters) {
+      if (chapter.id == chapterId) return chapter.title;
+    }
+    return null;
   }
 
   // ── Page turns (horizontal) ─────────────────────────────────────────────

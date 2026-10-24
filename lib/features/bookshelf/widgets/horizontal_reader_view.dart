@@ -23,15 +23,21 @@ class ReaderSlotPage extends ReaderSlot {
 }
 
 class ReaderSlotLoading extends ReaderSlot {
-  const ReaderSlotLoading(this.chapterId);
+  const ReaderSlotLoading(this.chapterId, {this.chapterTitle});
 
   final String chapterId;
+  final String? chapterTitle;
 }
 
 class ReaderSlotError extends ReaderSlot {
-  const ReaderSlotError({required this.chapterId, required this.message});
+  const ReaderSlotError({
+    required this.chapterId,
+    this.chapterTitle,
+    required this.message,
+  });
 
   final String chapterId;
+  final String? chapterTitle;
   final String message;
 }
 
@@ -387,14 +393,22 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
                     : null,
           ),
         );
-      case ReaderSlotLoading():
-        return const Center(
-          child: ChapterStatusBlock(kind: ChapterStatusBlockKind.loading),
+      case ReaderSlotLoading(:final chapterTitle):
+        return Center(
+          child: ChapterStatusBlock(
+            kind: ChapterStatusBlockKind.loading,
+            chapterTitle: chapterTitle,
+          ),
         );
-      case ReaderSlotError(:final chapterId, :final message):
+      case ReaderSlotError(
+        :final chapterId,
+        :final chapterTitle,
+        :final message,
+      ):
         return Center(
           child: ChapterStatusBlock(
             kind: ChapterStatusBlockKind.error,
+            chapterTitle: chapterTitle,
             message: message,
             onRetry:
                 widget.onRetryChapter != null

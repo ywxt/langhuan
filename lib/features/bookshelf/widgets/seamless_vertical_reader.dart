@@ -591,6 +591,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
           padding: const EdgeInsets.symmetric(vertical: 32),
           child: ChapterStatusBlock(
             kind: ChapterStatusBlockKind.error,
+            chapterTitle: _chapterTitleOf(chapterId),
             message: state.message,
             onRetry: () => widget.window.retry(chapterId),
           ),
@@ -601,12 +602,22 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
     return SliverToBoxAdapter(
       key: key,
       child: showLoading
-          ? const Padding(
-              padding: EdgeInsets.symmetric(vertical: 32),
-              child: Center(child: CircularProgressIndicator()),
+          ? Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: ChapterStatusBlock(
+                kind: ChapterStatusBlockKind.loading,
+                chapterTitle: _chapterTitleOf(chapterId),
+              ),
             )
           : const SizedBox.shrink(),
     );
+  }
+
+  String? _chapterTitleOf(String chapterId) {
+    for (final chapter in widget.chapters) {
+      if (chapter.id == chapterId) return chapter.title;
+    }
+    return null;
   }
 
   Widget _buildParagraphItem(String chapterId, ParagraphContent paragraph) {
