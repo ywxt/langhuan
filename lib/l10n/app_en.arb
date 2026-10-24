@@ -374,6 +374,9 @@
   "feedDeleteConfirm": "Delete",
   "@feedDeleteConfirm": { "description": "Confirm button in feed delete confirmation dialog" },
 
+  "feedDeleteCascadeWarning": "This also removes the feed's cached books, covers, reading progress, and bookmarks.",
+  "@feedDeleteCascadeWarning": { "description": "Warning below the feed delete dialog body about cascading data removal" },
+
   "feedDeleteSuccess": "{feedName} removed",
   "@feedDeleteSuccess": {
     "description": "Snackbar shown when feed deletion succeeds",
@@ -468,6 +471,30 @@
     }
   },
 
+  "addFeedBadgeNew": "New feed",
+  "@addFeedBadgeNew": { "description": "Shown when the previewed feed is not installed yet" },
+
+  "addFeedIsDowngrade": "Downgrading {from} \u2192 {to}",
+  "@addFeedIsDowngrade": {
+    "description": "Shown when installing a feed older than the installed version",
+    "placeholders": {
+      "from": { "type": "String" },
+      "to": { "type": "String" }
+    }
+  },
+
+  "addFeedIsSame": "Same version as installed",
+  "@addFeedIsSame": { "description": "Shown when the previewed version matches the installed one" },
+
+  "addFeedVersionUnknown": "Installed {from}; installing {to}",
+  "@addFeedVersionUnknown": {
+    "description": "Shown when either version is not valid SemVer, so no relation can be derived",
+    "placeholders": {
+      "from": { "type": "String" },
+      "to": { "type": "String" }
+    }
+  },
+
   "addFeedInstall": "Install",
   "@addFeedInstall": { "description": "Button label: confirm feed installation" },
 
@@ -508,5 +535,47 @@
   "@settingsCleanupNothingToClean": { "description": "Snackbar when cleanup removes nothing" },
 
   "settingsCleanupError": "Cleanup failed",
-  "@settingsCleanupError": { "description": "Snackbar when cleanup encounters an error" }
+  "@settingsCleanupError": { "description": "Snackbar when cleanup encounters an error" },
+
+  "settingsStorageDatabaseSize": "Database size",
+  "@settingsStorageDatabaseSize": { "description": "Storage stats row: total size of the database file" },
+
+  "settingsStorageCacheSize": "Cache size",
+  "@settingsStorageCacheSize": { "description": "Storage stats row: payload bytes in the cache tables" },
+
+  "settingsStorageBooks": "Books",
+  "@settingsStorageBooks": { "description": "Storage stats chip: cached book rows" },
+
+  "settingsStorageChapters": "Chapters",
+  "@settingsStorageChapters": { "description": "Storage stats chip: cached chapter contents" },
+
+  "settingsStorageCovers": "Covers",
+  "@settingsStorageCovers": { "description": "Storage stats chip: downloaded covers" },
+
+  "settingsStorageBookshelfCount": "On shelf",
+  "@settingsStorageBookshelfCount": { "description": "Storage stats chip: books on the bookshelf" },
+
+  "settingsClearCache": "Clear cache",
+  "@settingsClearCache": { "description": "Settings row: remove all cached chapters and covers" },
+
+  "settingsClearCacheDescription": "Remove all cached chapters and covers; bookshelf, progress, and bookmarks are kept",
+  "@settingsClearCacheDescription": { "description": "Subtitle for the clear cache row" },
+
+  "settingsClearCacheConfirmTitle": "Clear cache?",
+  "@settingsClearCacheConfirmTitle": { "description": "Dialog title for the clear cache confirmation" },
+
+  "settingsClearCacheConfirmMessage": "All cached chapters and covers will be removed and re-downloaded when needed.",
+  "@settingsClearCacheConfirmMessage": { "description": "Dialog body for the clear cache confirmation" },
+
+  "settingsClearCacheSuccess": "Cache cleared — {bytes} freed",
+  "@settingsClearCacheSuccess": {
+    "description": "Snackbar after the cache was cleared",
+    "placeholders": { "bytes": { "type": "String" } }
+  },
+
+  "settingsClearCacheNothing": "Cache is already empty",
+  "@settingsClearCacheNothing": { "description": "Snackbar when there was nothing in the cache" },
+
+  "settingsClearCacheError": "Failed to clear cache",
+  "@settingsClearCacheError": { "description": "Snackbar when clearing the cache fails" }
 }

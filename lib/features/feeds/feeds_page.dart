@@ -314,24 +314,40 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
   ) {
     return showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.feedDeleteConfirmTitle),
-        content: Text(l10n.feedDeleteConfirmMessage(feed.name)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.feedDeleteCancel),
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: Text(l10n.feedDeleteConfirmTitle),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l10n.feedDeleteConfirmMessage(feed.name)),
+              const SizedBox(height: LanghuanTheme.spaceSm),
+              Text(
+                l10n.feedDeleteCascadeWarning,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(dialogContext).colorScheme.error,
-              foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(l10n.feedDeleteCancel),
             ),
-            child: Text(l10n.feedDeleteConfirm),
-          ),
-        ],
-      ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.error,
+                foregroundColor: theme.colorScheme.onError,
+              ),
+              child: Text(l10n.feedDeleteConfirm),
+            ),
+          ],
+        );
+      },
     );
   }
 }

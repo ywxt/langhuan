@@ -752,6 +752,12 @@ abstract class AppLocalizations {
   /// **'Delete'**
   String get feedDeleteConfirm;
 
+  /// Warning below the feed delete dialog body about cascading data removal
+  ///
+  /// In en, this message translates to:
+  /// **'This also removes the feed\'s cached books, covers, reading progress, and bookmarks.'**
+  String get feedDeleteCascadeWarning;
+
   /// Snackbar shown when feed deletion succeeds
   ///
   /// In en, this message translates to:
@@ -908,6 +914,30 @@ abstract class AppLocalizations {
   /// **'Upgrading {from} → {to}'**
   String addFeedIsUpgrade(String from, String to);
 
+  /// Shown when the previewed feed is not installed yet
+  ///
+  /// In en, this message translates to:
+  /// **'New feed'**
+  String get addFeedBadgeNew;
+
+  /// Shown when installing a feed older than the installed version
+  ///
+  /// In en, this message translates to:
+  /// **'Downgrading {from} → {to}'**
+  String addFeedIsDowngrade(String from, String to);
+
+  /// Shown when the previewed version matches the installed one
+  ///
+  /// In en, this message translates to:
+  /// **'Same version as installed'**
+  String get addFeedIsSame;
+
+  /// Shown when either version is not valid SemVer, so no relation can be derived
+  ///
+  /// In en, this message translates to:
+  /// **'Installed {from}; installing {to}'**
+  String addFeedVersionUnknown(String from, String to);
+
   /// Button label: confirm feed installation
   ///
   /// In en, this message translates to:
@@ -985,6 +1015,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cleanup failed'**
   String get settingsCleanupError;
+
+  /// Storage stats row: total size of the database file
+  ///
+  /// In en, this message translates to:
+  /// **'Database size'**
+  String get settingsStorageDatabaseSize;
+
+  /// Storage stats row: payload bytes in the cache tables
+  ///
+  /// In en, this message translates to:
+  /// **'Cache size'**
+  String get settingsStorageCacheSize;
+
+  /// Storage stats chip: cached book rows
+  ///
+  /// In en, this message translates to:
+  /// **'Books'**
+  String get settingsStorageBooks;
+
+  /// Storage stats chip: cached chapter contents
+  ///
+  /// In en, this message translates to:
+  /// **'Chapters'**
+  String get settingsStorageChapters;
+
+  /// Storage stats chip: downloaded covers
+  ///
+  /// In en, this message translates to:
+  /// **'Covers'**
+  String get settingsStorageCovers;
+
+  /// Storage stats chip: books on the bookshelf
+  ///
+  /// In en, this message translates to:
+  /// **'On shelf'**
+  String get settingsStorageBookshelfCount;
+
+  /// Settings row: remove all cached chapters and covers
+  ///
+  /// In en, this message translates to:
+  /// **'Clear cache'**
+  String get settingsClearCache;
+
+  /// Subtitle for the clear cache row
+  ///
+  /// In en, this message translates to:
+  /// **'Remove all cached chapters and covers; bookshelf, progress, and bookmarks are kept'**
+  String get settingsClearCacheDescription;
+
+  /// Dialog title for the clear cache confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Clear cache?'**
+  String get settingsClearCacheConfirmTitle;
+
+  /// Dialog body for the clear cache confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'All cached chapters and covers will be removed and re-downloaded when needed.'**
+  String get settingsClearCacheConfirmMessage;
+
+  /// Snackbar after the cache was cleared
+  ///
+  /// In en, this message translates to:
+  /// **'Cache cleared — {bytes} freed'**
+  String settingsClearCacheSuccess(String bytes);
+
+  /// Snackbar when there was nothing in the cache
+  ///
+  /// In en, this message translates to:
+  /// **'Cache is already empty'**
+  String get settingsClearCacheNothing;
+
+  /// Snackbar when clearing the cache fails
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to clear cache'**
+  String get settingsClearCacheError;
 }
 
 class _AppLocalizationsDelegate

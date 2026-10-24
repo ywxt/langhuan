@@ -354,6 +354,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedDeleteConfirm => '刪除';
 
   @override
+  String get feedDeleteCascadeWarning => '這也會刪除該書源的快取書籍、封面、閱讀進度與書籤。';
+
+  @override
   String feedDeleteSuccess(String feedName) {
     return '已刪除 $feedName';
   }
@@ -438,6 +441,22 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get addFeedBadgeNew => '新書源';
+
+  @override
+  String addFeedIsDowngrade(String from, String to) {
+    return '降級 $from → $to';
+  }
+
+  @override
+  String get addFeedIsSame => '與已安裝版本相同';
+
+  @override
+  String addFeedVersionUnknown(String from, String to) {
+    return '已安裝 $from，將安裝 $to';
+  }
+
+  @override
   String get addFeedInstall => '安裝';
 
   @override
@@ -477,4 +496,45 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsCleanupError => '清理失敗';
+
+  @override
+  String get settingsStorageDatabaseSize => '資料庫大小';
+
+  @override
+  String get settingsStorageCacheSize => '快取大小';
+
+  @override
+  String get settingsStorageBooks => '書籍';
+
+  @override
+  String get settingsStorageChapters => '章節';
+
+  @override
+  String get settingsStorageCovers => '封面';
+
+  @override
+  String get settingsStorageBookshelfCount => '書架';
+
+  @override
+  String get settingsClearCache => '清除快取';
+
+  @override
+  String get settingsClearCacheDescription => '刪除所有已快取的章節與封面；書架、閱讀進度與書籤會保留';
+
+  @override
+  String get settingsClearCacheConfirmTitle => '清除快取？';
+
+  @override
+  String get settingsClearCacheConfirmMessage => '所有已快取的章節與封面都會被刪除，需要時會重新下載。';
+
+  @override
+  String settingsClearCacheSuccess(String bytes) {
+    return '已清除快取 — 釋放 $bytes';
+  }
+
+  @override
+  String get settingsClearCacheNothing => '快取已是空的';
+
+  @override
+  String get settingsClearCacheError => '清除快取失敗';
 }

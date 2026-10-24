@@ -5,8 +5,10 @@ import '../../l10n/app_localizations.dart';
 import '../../shared/app_service.dart';
 import '../../shared/constants.dart';
 import '../../shared/theme/app_theme.dart';
-import '../../src/rust/api/types.dart' show ChineseConversionMode;
+import '../../shared/utils/format_bytes.dart';
+import '../../src/rust/api/types.dart' show CacheStats, ChineseConversionMode;
 import '../bookshelf/reader_settings_provider.dart';
+import '../bookshelf/widgets/book_cover.dart' show coverProvider;
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -17,6 +19,31 @@ class SettingsPage extends ConsumerStatefulWidget {
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   bool _isCleaning = false;
+  bool _isClearing = false;
+
+  CacheStats? _stats;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    try {
+      final stats = await AppService.instance.cacheStats();
+      if (mounted) setState(() => _stats = stats);
+    } catch (_) {
+      // The database is not reachable yet (or at all) — the stats rows fall
+      // back to placeholders and the action rows still work.
+      if (mounted) setState(() => _stats = null);
+    }
+  }
+
+  String _statText(String Function(CacheStats) read) {
+    final stats = _stats;
+    return stats == null ? '—' : read(stats);
+  }
 
   Future<void> _cleanupCache() async {
     if (_isCleaning) return;
@@ -24,6 +51,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     try {
       final result = await AppService.instance.cleanupStaleData();
+      await _loadStats();
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
       final message = result.itemsRemoved > 0
@@ -40,6 +68,55 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ).showSnackBar(SnackBar(content: Text(l10n.settingsCleanupError)));
     } finally {
       if (mounted) setState(() => _isCleaning = false);
+    }
+  }
+
+  Future<void> _clearCache() async {
+    if (_isClearing) return;
+
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.settingsClearCacheConfirmTitle),
+        content: Text(l10n.settingsClearCacheConfirmMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              MaterialLocalizations.of(dialogContext).cancelButtonLabel,
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.settingsClearCache),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isClearing = true);
+
+    try {
+      final result = await AppService.instance.clearCache();
+      // Stored cover bytes are gone — make BookCover widgets re-read.
+      ref.invalidate(coverProvider);
+      await _loadStats();
+      if (!mounted) return;
+      final message = result.itemsRemoved > 0
+          ? l10n.settingsClearCacheSuccess(formatBytes(result.bytesFreed))
+          : l10n.settingsClearCacheNothing;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.settingsClearCacheError)),
+      );
+    } finally {
+      if (mounted) setState(() => _isClearing = false);
     }
   }
 
@@ -86,6 +163,30 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             _SettingsCard(
               children: [
                 _SettingsRow(
+                  icon: Icons.dataset_outlined,
+                  label: l10n.settingsStorageDatabaseSize,
+                  trailing: Text(
+                    _statText((s) => formatBytes(s.dbBytes)),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                const _SettingsDivider(),
+                _SettingsRow(
+                  icon: Icons.storage_outlined,
+                  label: l10n.settingsStorageCacheSize,
+                  trailing: Text(
+                    _statText((s) => formatBytes(s.cacheBytes)),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                const _SettingsDivider(),
+                _StatsChips(stats: _stats, l10n: l10n),
+                const _SettingsDivider(),
+                _SettingsRow(
                   icon: Icons.cleaning_services_outlined,
                   label: l10n.settingsCleanupCache,
                   subtitle: l10n.settingsCleanupCacheDescription,
@@ -103,6 +204,26 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           ),
                         ),
                   onTap: _isCleaning ? null : _cleanupCache,
+                ),
+                const _SettingsDivider(),
+                _SettingsRow(
+                  icon: Icons.delete_sweep_outlined,
+                  label: l10n.settingsClearCache,
+                  subtitle: l10n.settingsClearCacheDescription,
+                  trailing: _isClearing
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          Icons.chevron_right,
+                          size: 20,
+                          color: theme.colorScheme.onSurfaceVariant.withAlpha(
+                            120,
+                          ),
+                        ),
+                  onTap: _isClearing ? null : _clearCache,
                 ),
               ],
             ),
@@ -247,6 +368,8 @@ class _SettingsRow extends StatelessWidget {
 }
 
 class _SettingsDivider extends StatelessWidget {
+  const _SettingsDivider();
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -254,6 +377,57 @@ class _SettingsDivider extends StatelessWidget {
       child: Divider(
         height: 1,
         color: Theme.of(context).colorScheme.outlineVariant,
+      ),
+    );
+  }
+}
+
+/// Compact label/count chips summarizing what is stored.
+class _StatsChips extends StatelessWidget {
+  const _StatsChips({required this.stats, required this.l10n});
+
+  final CacheStats? stats;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    String count(int? value) => value?.toString() ?? '—';
+    final chips = <String>[
+      '${l10n.settingsStorageBooks} ${count(stats?.bookCount)}',
+      '${l10n.settingsStorageChapters} ${count(stats?.chapterCount)}',
+      '${l10n.settingsStorageCovers} ${count(stats?.coverCount)}',
+      '${l10n.settingsStorageBookshelfCount} ${count(stats?.bookshelfCount)}',
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: LanghuanTheme.spaceMd,
+        vertical: LanghuanTheme.spaceSm,
+      ),
+      child: Wrap(
+        spacing: LanghuanTheme.spaceSm,
+        runSpacing: LanghuanTheme.spaceXs,
+        children: [
+          for (final chip in chips)
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: LanghuanTheme.spaceSm,
+                vertical: LanghuanTheme.spaceXs,
+              ),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.secondaryContainer,
+                borderRadius: LanghuanTheme.borderRadiusSm,
+              ),
+              child: Text(
+                chip,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onSecondaryContainer,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../src/rust/api/types.dart' show VersionChange;
 import '../feed_service.dart';
 
 // ---------------------------------------------------------------------------
@@ -108,26 +109,14 @@ class FeedPreviewContent extends StatelessWidget {
               ),
             ],
           ),
-          // ── Upgrade banner ──
-          if (preview.currentVersion != null) ...[
-            const SizedBox(height: LanghuanTheme.spaceSm),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: LanghuanTheme.spaceSm,
-                vertical: LanghuanTheme.spaceXs,
-              ),
-              decoration: BoxDecoration(
-                color: colorScheme.tertiaryContainer,
-                borderRadius: LanghuanTheme.borderRadiusSm,
-              ),
-              child: Text(
-                l10n.addFeedIsUpgrade(preview.currentVersion!, preview.version),
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: colorScheme.onTertiaryContainer,
-                ),
-              ),
-            ),
-          ],
+          // ── Version change banner ──
+          const SizedBox(height: LanghuanTheme.spaceSm),
+          _VersionChangeBanner(
+            preview: preview,
+            colorScheme: colorScheme,
+            theme: theme.textTheme,
+            l10n: l10n,
+          ),
           if (preview.author != null) ...[
             const SizedBox(height: LanghuanTheme.spaceXs),
             Text(
@@ -205,6 +194,71 @@ class FeedPreviewContent extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Version change banner
+// ---------------------------------------------------------------------------
+
+/// Banner stating how the previewed version relates to the installed one.
+class _VersionChangeBanner extends StatelessWidget {
+  const _VersionChangeBanner({
+    required this.preview,
+    required this.colorScheme,
+    required this.theme,
+    required this.l10n,
+  });
+
+  final FeedPreviewModel preview;
+  final ColorScheme colorScheme;
+  final TextTheme theme;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    final from = preview.currentVersion ?? '';
+    final to = preview.version;
+
+    final (text, background, foreground) = switch (preview.versionChange) {
+      VersionChange.new_ => (
+        l10n.addFeedBadgeNew,
+        colorScheme.secondaryContainer,
+        colorScheme.onSecondaryContainer,
+      ),
+      VersionChange.upgrade => (
+        l10n.addFeedIsUpgrade(from, to),
+        colorScheme.tertiaryContainer,
+        colorScheme.onTertiaryContainer,
+      ),
+      VersionChange.downgrade => (
+        l10n.addFeedIsDowngrade(from, to),
+        colorScheme.errorContainer,
+        colorScheme.onErrorContainer,
+      ),
+      VersionChange.same => (
+        l10n.addFeedIsSame,
+        colorScheme.surfaceContainerHighest,
+        colorScheme.onSurfaceVariant,
+      ),
+      VersionChange.unknown => (
+        l10n.addFeedVersionUnknown(from, to),
+        colorScheme.surfaceContainerHighest,
+        colorScheme.onSurfaceVariant,
+      ),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: LanghuanTheme.spaceSm,
+        vertical: LanghuanTheme.spaceXs,
+      ),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: LanghuanTheme.borderRadiusSm,
+      ),
+      child: Text(text, style: theme.labelMedium?.copyWith(color: foreground)),
     );
   }
 }

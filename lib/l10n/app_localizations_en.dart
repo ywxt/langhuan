@@ -357,6 +357,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get feedDeleteConfirm => 'Delete';
 
   @override
+  String get feedDeleteCascadeWarning =>
+      'This also removes the feed\'s cached books, covers, reading progress, and bookmarks.';
+
+  @override
   String feedDeleteSuccess(String feedName) {
     return '$feedName removed';
   }
@@ -444,6 +448,22 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get addFeedBadgeNew => 'New feed';
+
+  @override
+  String addFeedIsDowngrade(String from, String to) {
+    return 'Downgrading $from → $to';
+  }
+
+  @override
+  String get addFeedIsSame => 'Same version as installed';
+
+  @override
+  String addFeedVersionUnknown(String from, String to) {
+    return 'Installed $from; installing $to';
+  }
+
+  @override
   String get addFeedInstall => 'Install';
 
   @override
@@ -485,4 +505,47 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsCleanupError => 'Cleanup failed';
+
+  @override
+  String get settingsStorageDatabaseSize => 'Database size';
+
+  @override
+  String get settingsStorageCacheSize => 'Cache size';
+
+  @override
+  String get settingsStorageBooks => 'Books';
+
+  @override
+  String get settingsStorageChapters => 'Chapters';
+
+  @override
+  String get settingsStorageCovers => 'Covers';
+
+  @override
+  String get settingsStorageBookshelfCount => 'On shelf';
+
+  @override
+  String get settingsClearCache => 'Clear cache';
+
+  @override
+  String get settingsClearCacheDescription =>
+      'Remove all cached chapters and covers; bookshelf, progress, and bookmarks are kept';
+
+  @override
+  String get settingsClearCacheConfirmTitle => 'Clear cache?';
+
+  @override
+  String get settingsClearCacheConfirmMessage =>
+      'All cached chapters and covers will be removed and re-downloaded when needed.';
+
+  @override
+  String settingsClearCacheSuccess(String bytes) {
+    return 'Cache cleared — $bytes freed';
+  }
+
+  @override
+  String get settingsClearCacheNothing => 'Cache is already empty';
+
+  @override
+  String get settingsClearCacheError => 'Failed to clear cache';
 }
