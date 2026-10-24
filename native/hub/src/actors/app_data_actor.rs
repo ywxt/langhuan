@@ -6,7 +6,7 @@ use crate::api::types::BridgeError;
 use super::bookshelf_actor::BookshelfActor;
 use super::login_actor::LoginActor;
 use super::reading_progress_actor::ReadingProgressActor;
-use super::registry_actor::RegistryActor;
+use super::registry_actor::{ListFeeds, RegistryActor};
 use super::bookmark_actor::BookmarkActor;
 
 pub struct InitializeAppDataDirectory {
@@ -50,8 +50,18 @@ impl AppDataActor {
     async fn set_data_directory(&mut self, path: String) -> Result<AppDataInitResult, BridgeError> {
         tracing::info!(path = %path, "initializing app data directory");
 
-        if self.app_data_dir.is_some() {
-            tracing::warn!("app data directory already set — ignoring");
+        if let Some(dir) = &self.app_data_dir {
+            if *dir == path {
+                // A new Flutter engine (activity recreation after a config
+                // change) re-runs the Dart bootstrap and re-sends the same
+                // app-data path. The actor tree survives the engine swap and
+                // is already bound to this directory, so succeed idempotently
+                // with the registry's current feed count.
+                tracing::debug!("app data directory already initialized — reporting live feed count");
+                let feed_count = self.registry_addr.send(ListFeeds).await?.len() as u32;
+                return Ok(AppDataInitResult { feed_count });
+            }
+            tracing::warn!("app data directory already set to another path — ignoring");
             return Err(BridgeError::from(
                 t!("error.app_data_reload_not_supported").to_string(),
             ));
@@ -175,6 +185,25 @@ mod tests {
         assert!(dir.path().join("bookshelf").is_dir());
         assert!(dir.path().join("progress").is_dir());
         assert!(dir.path().join("bookmarks").is_dir());
+
+        // Re-initializing with the same directory — as happens when Android
+        // recreates the activity and the new Flutter engine re-runs the Dart
+        // bootstrap — must succeed idempotently, reporting the registry's
+        // live feed count.
+        let result = actor
+            .set_data_directory(dir.path().to_string_lossy().into_owned())
+            .await;
+        let result = result.map_err(|e| io::Error::other(e.message))?;
+        assert_eq!(result.feed_count, 0);
+
+        // A different directory still cannot be loaded at runtime.
+        let other = tempfile::tempdir()?;
+        assert!(
+            actor
+                .set_data_directory(other.path().to_string_lossy().into_owned())
+                .await
+                .is_err()
+        );
         Ok(())
     }
 
