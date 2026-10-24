@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use langhuan::db::repo;
+use langhuan::db::repo::{ProgressRepo, ProgressRow};
 use langhuan::db::Db;
 use messages::prelude::{Actor, Context, Handler};
 
@@ -59,16 +59,10 @@ impl Handler<GetReadingProgress> for ReadingProgressActor {
         let db = self.db()?.clone();
         let (feed_id, book_id) = (msg.feed_id, msg.book_id);
         let progress = db
-            .call(move |conn| repo::progress::get(conn, &feed_id, &book_id))
+            .call(move |conn| conn.get_progress(&feed_id, &book_id))
             .await?;
 
-        Ok(progress.map(|item| ReadingProgressItem {
-            feed_id: item.feed_id,
-            book_id: item.book_id,
-            chapter_id: item.chapter_id,
-            paragraph_id: ParagraphId::from_stored(item.paragraph_id),
-            updated_at_ms: item.updated_at_ms,
-        }))
+        Ok(progress.map(Into::into))
     }
 }
 
@@ -80,8 +74,7 @@ impl Handler<SetReadingProgress> for ReadingProgressActor {
         let db = self.db()?.clone();
         let updated_at_ms = msg.updated_at_ms;
         db.write(move |conn| {
-            repo::progress::set(
-                conn,
+            conn.set_progress(
                 &msg.feed_id,
                 &msg.book_id,
                 &msg.chapter_id,
@@ -91,5 +84,18 @@ impl Handler<SetReadingProgress> for ReadingProgressActor {
         })
         .await
         .map_err(BridgeError::from)
+    }
+}
+
+/// Map a stored progress row to its bridge representation.
+impl From<ProgressRow> for ReadingProgressItem {
+    fn from(row: ProgressRow) -> Self {
+        ReadingProgressItem {
+            feed_id: row.feed_id,
+            book_id: row.book_id,
+            chapter_id: row.chapter_id,
+            paragraph_id: ParagraphId::from_stored(row.paragraph_id),
+            updated_at_ms: row.updated_at_ms,
+        }
     }
 }

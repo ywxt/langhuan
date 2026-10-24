@@ -2,23 +2,15 @@
 
 use super::types::{BridgeError, CacheStats, CleanupResult, CoverData};
 use crate::actors::hub_db;
-use langhuan::db::repo;
+use langhuan::db::maintenance::MaintenanceOutcome;
+use langhuan::db::repo::{CacheRepo, CacheStats as RepoCacheStats};
 use langhuan::db::Db;
 
 /// Snapshot of database and cache statistics.
 pub async fn cache_stats() -> Result<CacheStats, BridgeError> {
     let db = hub_db()?;
     let stats = langhuan::db::maintenance::cache_stats(&db).await?;
-    Ok(CacheStats {
-        cache_bytes: stats.cache_bytes,
-        db_bytes: stats.db_bytes,
-        book_count: stats.book_count,
-        cover_count: stats.cover_count,
-        chapter_count: stats.chapter_count,
-        chapter_list_count: stats.chapter_list_count,
-        bookshelf_count: stats.bookshelf_count,
-        feed_count: stats.feed_count,
-    })
+    Ok(stats.into())
 }
 
 /// Run the full maintenance pass now (stale cleanup, script-history pruning,
@@ -34,12 +26,7 @@ pub async fn cleanup_stale_data() -> Result<CleanupResult, BridgeError> {
         books_evicted = outcome.books_evicted,
         "manual maintenance complete"
     );
-    Ok(CleanupResult {
-        skipped: outcome.skipped,
-        items_removed: outcome.items_removed,
-        bytes_freed: outcome.bytes_freed,
-        books_evicted: outcome.books_evicted,
-    })
+    Ok(outcome.into())
 }
 
 /// Clear all cache payloads: chapter content, chapter lists, and covers.
@@ -65,7 +52,35 @@ pub async fn get_cover(
 ) -> Result<Option<CoverData>, BridgeError> {
     let db: Db = hub_db()?;
     let cover = db
-        .call(move |conn| repo::cache::get_cover_bytes(conn, &feed_id, &book_id))
+        .call(move |conn| conn.get_cover_bytes(&feed_id, &book_id))
         .await?;
     Ok(cover.map(|(mime_type, bytes)| CoverData { mime_type, bytes }))
+}
+
+/// Map the storage-layer stats onto the bridge type.
+impl From<RepoCacheStats> for CacheStats {
+    fn from(stats: RepoCacheStats) -> Self {
+        CacheStats {
+            cache_bytes: stats.cache_bytes,
+            db_bytes: stats.db_bytes,
+            book_count: stats.book_count,
+            cover_count: stats.cover_count,
+            chapter_count: stats.chapter_count,
+            chapter_list_count: stats.chapter_list_count,
+            bookshelf_count: stats.bookshelf_count,
+            feed_count: stats.feed_count,
+        }
+    }
+}
+
+/// Map a maintenance outcome onto the bridge type.
+impl From<MaintenanceOutcome> for CleanupResult {
+    fn from(outcome: MaintenanceOutcome) -> Self {
+        CleanupResult {
+            skipped: outcome.skipped,
+            items_removed: outcome.items_removed,
+            bytes_freed: outcome.bytes_freed,
+            books_evicted: outcome.books_evicted,
+        }
+    }
 }

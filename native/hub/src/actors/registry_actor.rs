@@ -12,7 +12,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use langhuan::cache::CachedFeed;
-use langhuan::db::repo;
+use langhuan::db::repo::{FeedRow, FeedsRepo};
 use langhuan::db::Db;
 use langhuan::script::lua::LuaFeed;
 use langhuan::script::runtime::ScriptEngine;
@@ -148,7 +148,7 @@ impl RegistryActor {
         }
 
         let rows = db
-            .call(|conn| repo::feeds::list_feeds_with_scripts(conn))
+            .call(|conn| conn.list_feeds_with_scripts())
             .await
             .map_err(|e| localize_error(&e))?;
 
@@ -207,7 +207,7 @@ impl RegistryActor {
         let Some(db) = &self.db else {
             return vec![];
         };
-        let rows = match db.call(|conn| repo::feeds::list_feeds(conn)).await {
+        let rows = match db.call(|conn| conn.list_feeds()).await {
             Ok(rows) => rows,
             Err(e) => {
                 tracing::warn!(error = %e, "failed to list feeds from database");
@@ -217,10 +217,7 @@ impl RegistryActor {
         rows.into_iter()
             .map(|row| FeedMetaItem {
                 error: self.load_errors.get(&row.id).cloned(),
-                id: row.id,
-                name: row.name,
-                version: row.version,
-                author: row.author,
+                ..row.into()
             })
             .collect()
     }
@@ -252,7 +249,7 @@ impl RegistryActor {
             None => None,
             Some(db) => {
                 let id = meta.id.clone();
-                db.call(move |conn| Ok(repo::feeds::get_feed(conn, &id)?.map(|row| row.version)))
+                db.call(move |conn| Ok(conn.get_feed(&id)?.map(|row| row.version)))
                     .await?
             }
         };
@@ -286,16 +283,14 @@ impl RegistryActor {
     fn push_pending(&mut self, feed_id: String, mut install: PendingInstall) {
         if !self.pending_installs.contains_key(&feed_id)
             && self.pending_installs.len() >= PENDING_INSTALLS_CAP
-        {
-            if let Some(oldest) = self
+            && let Some(oldest) = self
                 .pending_installs
                 .iter()
                 .min_by_key(|(_, pending)| pending.seq)
                 .map(|(id, _)| id.clone())
-            {
-                tracing::debug!(feed_id = %oldest, "evicting stale pending preview");
-                self.pending_installs.remove(&oldest);
-            }
+        {
+            tracing::debug!(feed_id = %oldest, "evicting stale pending preview");
+            self.pending_installs.remove(&oldest);
         }
         self.pending_seq += 1;
         install.seq = self.pending_seq;
@@ -314,7 +309,7 @@ impl RegistryActor {
         let (meta, _) = langhuan::script::meta::parse_meta(&pending.content)?;
         let feed = self.engine.load_feed(&pending.content).await?;
 
-        let content_hash = hash_hex(&pending.content);
+        let content_hash = langhuan::hash::sha256_hex(pending.content.as_bytes());
         let now = langhuan::db::now_ms();
         db.write({
             let meta = meta.clone();
@@ -322,22 +317,9 @@ impl RegistryActor {
             let source_url = pending.source_url;
             let content_hash = content_hash.clone();
             move |conn| {
-                repo::feeds::upsert_feed(
-                    conn,
-                    &meta,
-                    source_url.as_deref(),
-                    &content_hash,
-                    now,
-                )?;
-                repo::feeds::upsert_script(
-                    conn,
-                    &meta.id,
-                    &meta.version,
-                    &content_hash,
-                    &content,
-                    now,
-                )?;
-                repo::feeds::prune_scripts(conn, &meta.id, SCRIPT_HISTORY_KEEP)?;
+                conn.upsert_feed(&meta, source_url.as_deref(), &content_hash, now)?;
+                conn.upsert_script(&meta.id, &meta.version, &content_hash, &content, now)?;
+                conn.prune_scripts(&meta.id, SCRIPT_HISTORY_KEEP)?;
                 Ok(())
             }
         })
@@ -358,7 +340,7 @@ impl RegistryActor {
         let removed = db
             .write({
                 let feed_id = feed_id.clone();
-                move |conn| repo::feeds::delete_feed(conn, &feed_id)
+                move |conn| conn.delete_feed(&feed_id)
             })
             .await?;
         if !removed {
@@ -389,16 +371,20 @@ fn classify_version_change(current: Option<&str>, new: &str) -> VersionChange {
     }
 }
 
-/// SHA-256 of the script content, hex-encoded.
-fn hash_hex(content: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(content.as_bytes());
-    let mut hex = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        use std::fmt::Write as _;
-        let _ = write!(hex, "{byte:02x}");
+/// Map a stored feed row to its bridge representation.
+///
+/// The `error` field (script failed to compile) is actor state and is
+/// overwritten by the caller after conversion.
+impl From<FeedRow> for FeedMetaItem {
+    fn from(row: FeedRow) -> Self {
+        FeedMetaItem {
+            id: row.id,
+            name: row.name,
+            version: row.version,
+            author: row.author,
+            error: None,
+        }
     }
-    hex
 }
 
 // ---------------------------------------------------------------------------
@@ -536,8 +522,8 @@ mod tests {
             schema_version: 1,
         };
         db.write(move |conn| {
-            repo::feeds::upsert_feed(conn, &meta, None, "hash", 1)?;
-            repo::feeds::upsert_script(conn, "f1", "1.0.0", "hash", "-- not lua", 1)
+            conn.upsert_feed(&meta, None, "hash", 1)?;
+            conn.upsert_script("f1", "1.0.0", "hash", "-- not lua", 1)
         })
         .await?;
 

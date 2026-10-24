@@ -15,11 +15,10 @@
 //!
 //! [`Db::write`] is the only transaction boundary: the closure runs inside
 //! `BEGIN … COMMIT`, and any error early-returns through `?`, dropping the
-//! transaction and rolling it back. Repo functions are plain synchronous
-//! functions over `&Connection`, so composing several of them atomically is
-//! just calling them sequentially inside one `write` closure. Nested
-//! transactions are structurally impossible (closures are synchronous and
-//! cannot await).
+//! transaction and rolling it back. Repo methods are trait extensions on
+//! `&Connection`, so composing several of them atomically is just calling
+//! them sequentially inside one `write` closure. Nested transactions are
+//! structurally impossible (closures are synchronous and cannot await).
 //!
 //! [`Db::call`] runs a closure without an explicit transaction — for
 //! single-statement reads (and `last_used_at_ms` touches) this avoids the
@@ -108,24 +107,6 @@ impl Db {
         .await
     }
 
-    /// Run a closure inside a read snapshot transaction.
-    ///
-    /// Escape hatch for multi-statement reads that must observe a consistent
-    /// snapshot; normal reads should use [`Db::call`].
-    pub async fn read_tx<T, F>(&self, f: F) -> Result<T>
-    where
-        F: FnOnce(&Connection) -> Result<T> + Send + 'static,
-        T: Send + 'static,
-    {
-        self.run(move |conn| {
-            let tx = conn.unchecked_transaction()?;
-            let result = f(&tx)?;
-            tx.commit()?;
-            Ok(result)
-        })
-        .await
-    }
-
     /// Transport for closures to the dedicated database thread.
     ///
     /// Maps the two error layers: a closure error (`Error::Error`) is
@@ -194,6 +175,7 @@ pub(crate) fn schema_for_tests(conn: &mut Connection) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::repo::MetaRepo;
 
     #[tokio::test]
     async fn open_in_memory_runs_migrations() {
@@ -240,23 +222,21 @@ mod tests {
     #[tokio::test]
     async fn write_rolls_back_on_error() {
         let db = Db::open_in_memory().await.expect("open");
-        db.write(|conn| {
-            Ok(repo::meta::set(conn, "k", "v")?)
-        })
-        .await
-        .expect("seed");
+        db.write(|conn| conn.set_meta("k", "v"))
+            .await
+            .expect("seed");
 
         // A failing closure must roll back everything it did.
         let result: Result<()> = db
             .write(|conn| {
-                repo::meta::set(conn, "k", "changed")?;
+                conn.set_meta("k", "changed")?;
                 Err(Error::database("boom"))
             })
             .await;
         assert!(result.is_err());
 
         let value = db
-            .call(|conn| Ok(repo::meta::get(conn, "k")?))
+            .call(|conn| conn.get_meta("k"))
             .await
             .expect("read");
         assert_eq!(value.as_deref(), Some("v"));
@@ -267,12 +247,12 @@ mod tests {
         let db = Db::open_in_memory().await.expect("open");
         let clone = db.clone();
 
-        db.write(|conn| Ok(repo::meta::set(conn, "shared", "1")?))
+        db.write(|conn| conn.set_meta("shared", "1"))
             .await
             .expect("write via original");
 
         let value = clone
-            .call(|conn| Ok(repo::meta::get(conn, "shared")?))
+            .call(|conn| conn.get_meta("shared"))
             .await
             .expect("read via clone");
         assert_eq!(value.as_deref(), Some("1"));

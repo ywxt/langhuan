@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use langhuan::cache::download_cover;
-use langhuan::db::repo;
+use langhuan::db::repo::{BookshelfRepo, ShelfItem};
 use langhuan::db::Db;
 use messages::prelude::{Actor, Context, Handler};
 
@@ -62,7 +62,7 @@ impl BookshelfActor {
         let spawn_url = msg.cover_url.clone();
         let (feed_id, book_id) = (msg.feed_id.clone(), msg.source_book_id.clone());
 
-        let outcome = db
+        let added = db
             .write({
                 let BookshelfAdd {
                     feed_id,
@@ -73,8 +73,7 @@ impl BookshelfActor {
                     description,
                 } = msg;
                 move |conn| {
-                    repo::bookshelf::add_book(
-                        conn,
+                    conn.add_book(
                         &feed_id,
                         &source_book_id,
                         &title,
@@ -87,13 +86,14 @@ impl BookshelfActor {
             })
             .await?;
 
-        if outcome.spawn_cover {
-            if let Some(url) = spawn_url {
-                tokio::spawn(download_cover(db, feed_id, book_id, url));
-            }
+        // Whether the download actually runs is decided by the claim inside
+        // `download_cover` (single-flight, failure backoff, drift repair) —
+        // spawning here is always safe.
+        if let Some(url) = spawn_url {
+            tokio::spawn(download_cover(db, feed_id, book_id, url));
         }
 
-        Ok(if outcome.added {
+        Ok(if added {
             BookshelfAddOutcome::Added
         } else {
             BookshelfAddOutcome::AlreadyExists
@@ -107,7 +107,7 @@ impl BookshelfActor {
             .write({
                 let feed_id = msg.feed_id;
                 let book_id = msg.source_book_id;
-                move |conn| repo::bookshelf::remove_book(conn, &feed_id, &book_id)
+                move |conn| conn.remove_book(&feed_id, &book_id)
             })
             .await?;
 
@@ -121,23 +121,25 @@ impl BookshelfActor {
     async fn list(&mut self) -> Result<Vec<BookshelfListItem>, BridgeError> {
         tracing::debug!("bookshelf list");
         let db = self.db()?.clone();
-        let items = db
-            .call(|conn| repo::bookshelf::list(conn))
-            .await?;
+        let items = db.call(|conn| conn.shelf_items()).await?;
 
-        Ok(items
-            .into_iter()
-            .map(|item| BookshelfListItem {
-                feed_id: item.feed_id,
-                source_book_id: item.book_id,
-                title: item.title,
-                author: item.author,
-                cover_url: item.cover_url,
-                description_snapshot: item.description,
-                has_cover: item.has_cover,
-                added_at_unix_ms: item.added_at_ms,
-            })
-            .collect())
+        Ok(items.into_iter().map(Into::into).collect())
+    }
+}
+
+/// Map a stored shelf row to its bridge representation.
+impl From<ShelfItem> for BookshelfListItem {
+    fn from(item: ShelfItem) -> Self {
+        BookshelfListItem {
+            feed_id: item.feed_id,
+            source_book_id: item.book_id,
+            title: item.title,
+            author: item.author,
+            cover_url: item.cover_url,
+            description_snapshot: item.description,
+            has_cover: item.has_cover,
+            added_at_unix_ms: item.added_at_ms,
+        }
     }
 }
 
@@ -192,6 +194,7 @@ mod tests {
     use std::error::Error;
 
     use langhuan::db::Db;
+    use langhuan::db::repo::FeedsRepo;
     use langhuan::feed::FeedMeta;
     use messages::prelude::Context;
 
@@ -215,10 +218,8 @@ mod tests {
     #[tokio::test]
     async fn add_list_remove_roundtrip() -> TestResult {
         let db = Db::open_in_memory().await?;
-        db.write(move |conn| {
-            langhuan::db::repo::feeds::upsert_feed(conn, &meta("f1"), None, "h", 1)
-        })
-        .await?;
+        db.write(move |conn| conn.upsert_feed(&meta("f1"), None, "h", 1))
+            .await?;
 
         let context: Context<BookshelfActor> = Context::new();
         let _addr = context.address();

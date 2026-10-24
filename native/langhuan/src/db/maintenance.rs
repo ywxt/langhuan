@@ -5,7 +5,9 @@
 //! by the manual settings action (`force = true`).
 
 use super::now_ms;
-use super::repo;
+use super::repo::{
+    CacheStats, MaintenanceRepo, MetaRepo,
+};
 use super::Db;
 use crate::error::Result;
 
@@ -58,7 +60,7 @@ pub async fn run_maintenance(db: &Db, force: bool) -> Result<MaintenanceOutcome>
             Ok(if force {
                 true
             } else {
-                let last = repo::meta::get_i64(conn, META_LAST_CLEANUP, 0)?;
+                let last = conn.get_meta_i64(META_LAST_CLEANUP, 0)?;
                 now - last >= CLEANUP_THROTTLE_MS
             })
         })
@@ -71,27 +73,25 @@ pub async fn run_maintenance(db: &Db, force: bool) -> Result<MaintenanceOutcome>
     }
 
     let mut outcome = MaintenanceOutcome::default();
-    let size_before = db
-        .call(|conn| repo::maintenance::cache_total_bytes(conn))
-        .await?;
+    let size_before = db.call(|conn| conn.cache_total_bytes()).await?;
 
     // 1. Stale cleanup (one transaction).
     let cutoff = now - STALE_MAX_AGE_MS;
     let removed = db
-        .write(move |conn| repo::maintenance::stale_cleanup(conn, cutoff))
+        .write(move |conn| conn.stale_cleanup(cutoff))
         .await?;
     outcome.items_removed += removed.items_removed;
 
     // 2. Script history prune (one transaction).
     let pruned = db
-        .write(|conn| repo::maintenance::prune_all_scripts(conn, SCRIPT_HISTORY_KEEP))
+        .write(|conn| conn.prune_all_scripts(SCRIPT_HISTORY_KEEP))
         .await?;
     outcome.items_removed += pruned;
 
     // 3. LRU eviction, chunked.
     loop {
         let evicted = db
-            .call(|conn| repo::maintenance::evict_oldest_unprotected(conn, MAX_CACHE_BYTES, EVICT_CHUNK))
+            .call(|conn| conn.evict_oldest_unprotected(MAX_CACHE_BYTES, EVICT_CHUNK))
             .await?;
         outcome.books_evicted += evicted;
         if evicted == 0 {
@@ -99,20 +99,17 @@ pub async fn run_maintenance(db: &Db, force: bool) -> Result<MaintenanceOutcome>
         }
     }
 
-    let size_after = db
-        .call(|conn| repo::maintenance::cache_total_bytes(conn))
-        .await?;
+    let size_after = db.call(|conn| conn.cache_total_bytes()).await?;
     outcome.bytes_freed = (size_before - size_after).max(0);
 
     // 4. Give freed pages back to the OS.
     if outcome.bytes_freed > 0 || outcome.items_removed > 0 {
-        db.call(|conn| repo::maintenance::incremental_vacuum(conn))
-            .await?;
+        db.call(|conn| conn.incremental_vacuum()).await?;
     }
 
     // 5. Record the run (unthrottled writes are fine — one tiny upsert).
     let stamp = now.to_string();
-    db.write(move |conn| repo::meta::set(conn, META_LAST_CLEANUP, &stamp))
+    db.write(move |conn| conn.set_meta(META_LAST_CLEANUP, &stamp))
         .await?;
 
     if outcome.bytes_freed > 0 || outcome.items_removed > 0 {
@@ -132,30 +129,25 @@ pub async fn run_maintenance(db: &Db, force: bool) -> Result<MaintenanceOutcome>
 ///
 /// Returns `(rows removed, bytes freed)`.
 pub async fn clear_cache(db: &Db) -> Result<(u64, i64)> {
-    let size_before = db
-        .call(|conn| repo::maintenance::cache_total_bytes(conn))
-        .await?;
+    let size_before = db.call(|conn| conn.cache_total_bytes()).await?;
 
-    let report = db.write(|conn| repo::maintenance::clear_cache(conn)).await?;
+    let report = db.write(|conn| conn.clear_cache()).await?;
 
-    let size_after = db
-        .call(|conn| repo::maintenance::cache_total_bytes(conn))
-        .await?;
-    db.call(|conn| repo::maintenance::incremental_vacuum(conn))
-        .await?;
+    let size_after = db.call(|conn| conn.cache_total_bytes()).await?;
+    db.call(|conn| conn.incremental_vacuum()).await?;
 
     Ok((report.items_removed, (size_before - size_after).max(0)))
 }
 
 /// Cache statistics for the settings screen.
-pub async fn cache_stats(db: &Db) -> Result<repo::maintenance::CacheStats> {
-    db.call(|conn| repo::maintenance::stats(conn)).await
+pub async fn cache_stats(db: &Db) -> Result<CacheStats> {
+    db.call(|conn| conn.cache_stats()).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::repo::{bookshelf, cache as cache_repo, feeds as feeds_repo};
+    use crate::db::repo::{BookshelfRepo, CacheRepo, FeedsRepo};
     use crate::feed::FeedMeta;
 
     fn meta(id: &str, version: &str) -> FeedMeta {
@@ -174,17 +166,9 @@ mod tests {
     #[tokio::test]
     async fn throttle_skips_within_24h_and_force_overrides() {
         let db = Db::open_in_memory().await.expect("open");
-        db.write(|conn| {
-            Ok(feeds_repo::upsert_feed(
-                conn,
-                &meta("f1", "1.0.0"),
-                None,
-                "h",
-                now_ms(),
-            )?)
-        })
-        .await
-        .expect("seed feed");
+        db.write(|conn| conn.upsert_feed(&meta("f1", "1.0.0"), None, "h", now_ms()))
+            .await
+            .expect("seed feed");
 
         // First run executes (no previous run).
         let out = run_maintenance(&db, false).await.expect("run 1");
@@ -203,17 +187,15 @@ mod tests {
     async fn maintenance_removes_stale_unshelved_books() {
         let db = Db::open_in_memory().await.expect("open");
         let now = now_ms();
-        db.write(move |conn| {
-            Ok(feeds_repo::upsert_feed(conn, &meta("f1", "1.0.0"), None, "h", now)?)
-        })
-        .await
-        .expect("seed feed");
+        db.write(move |conn| conn.upsert_feed(&meta("f1", "1.0.0"), None, "h", now))
+            .await
+            .expect("seed feed");
 
         let old = now - STALE_MAX_AGE_MS - 1000;
         db.write(move |conn| {
-            cache_repo::ensure_book(conn, "f1", "old", old)?;
-            cache_repo::ensure_book(conn, "f1", "kept", old)?;
-            bookshelf::add_book(conn, "f1", "kept", "Kept", "A", None, None, old)
+            conn.ensure_book("f1", "old", old)?;
+            conn.ensure_book("f1", "kept", old)?;
+            conn.add_book("f1", "kept", "Kept", "A", None, None, old)
         })
         .await
         .expect("seed");
@@ -234,16 +216,14 @@ mod tests {
     async fn clear_cache_frees_payloads() {
         let db = Db::open_in_memory().await.expect("open");
         let now = now_ms();
-        db.write(move |conn| {
-            Ok(feeds_repo::upsert_feed(conn, &meta("f1", "1.0.0"), None, "h", now)?)
-        })
-        .await
-        .expect("seed feed");
+        db.write(move |conn| conn.upsert_feed(&meta("f1", "1.0.0"), None, "h", now))
+            .await
+            .expect("seed feed");
 
         db.write(move |conn| {
-            cache_repo::ensure_book(conn, "f1", "b1", now)?;
-            bookshelf::add_book(conn, "f1", "b1", "T", "A", None, None, now)?;
-            cache_repo::set_cover(conn, "f1", "b1", "image/png", &[9; 128], now)
+            conn.ensure_book("f1", "b1", now)?;
+            conn.add_book("f1", "b1", "T", "A", None, None, now)?;
+            conn.set_cover("f1", "b1", "image/png", &[9; 128], now)
         })
         .await
         .expect("seed");

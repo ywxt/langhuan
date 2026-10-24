@@ -13,62 +13,80 @@ pub struct ProgressRow {
     pub updated_at_ms: i64,
 }
 
-pub fn get(conn: &Connection, feed_id: &str, book_id: &str) -> Result<Option<ProgressRow>> {
-    super::maybe_row(
-        conn,
-        "SELECT feed_id, book_id, chapter_id, paragraph_id, updated_at_ms \
-         FROM reading_progress WHERE feed_id = ?1 AND book_id = ?2",
-        &[&feed_id, &book_id],
-        |row| {
-            Ok(ProgressRow {
-                feed_id: row.get(0)?,
-                book_id: row.get(1)?,
-                chapter_id: row.get(2)?,
-                paragraph_id: row.get(3)?,
-                updated_at_ms: row.get(4)?,
-            })
-        },
-    )
+/// Reading-progress operations, as methods on [`Connection`].
+pub trait ProgressRepo {
+    fn get_progress(&self, feed_id: &str, book_id: &str) -> Result<Option<ProgressRow>>;
+
+    fn set_progress(
+        &self,
+        feed_id: &str,
+        book_id: &str,
+        chapter_id: &str,
+        paragraph_id: &str,
+        now_ms: i64,
+    ) -> Result<()>;
+
+    /// Delete progress rows older than `cutoff_ms` for books that are not on
+    /// the bookshelf. Returns the number of rows removed.
+    fn remove_stale_progress(&self, cutoff_ms: i64) -> Result<u64>;
 }
 
-pub fn set(
-    conn: &Connection,
-    feed_id: &str,
-    book_id: &str,
-    chapter_id: &str,
-    paragraph_id: &str,
-    now_ms: i64,
-) -> Result<()> {
-    conn.prepare_cached(
-        "INSERT INTO reading_progress (feed_id, book_id, chapter_id, paragraph_id, updated_at_ms) \
-         VALUES (?1, ?2, ?3, ?4, ?5) \
-         ON CONFLICT(feed_id, book_id) DO UPDATE SET \
-             chapter_id = excluded.chapter_id, \
-             paragraph_id = excluded.paragraph_id, \
-             updated_at_ms = excluded.updated_at_ms",
-    )?
-    .execute(tokio_rusqlite::params![
-        feed_id,
-        book_id,
-        chapter_id,
-        paragraph_id,
-        now_ms
-    ])?;
-    Ok(())
-}
+impl ProgressRepo for Connection {
+    fn get_progress(&self, feed_id: &str, book_id: &str) -> Result<Option<ProgressRow>> {
+        super::maybe_row(
+            self,
+            "SELECT feed_id, book_id, chapter_id, paragraph_id, updated_at_ms \
+             FROM reading_progress WHERE feed_id = ?1 AND book_id = ?2",
+            &[&feed_id, &book_id],
+            |row| {
+                Ok(ProgressRow {
+                    feed_id: row.get(0)?,
+                    book_id: row.get(1)?,
+                    chapter_id: row.get(2)?,
+                    paragraph_id: row.get(3)?,
+                    updated_at_ms: row.get(4)?,
+                })
+            },
+        )
+    }
 
-/// Delete progress rows older than `cutoff_ms` for books that are not on the
-/// bookshelf. Returns the number of rows removed.
-pub fn remove_stale(conn: &Connection, cutoff_ms: i64) -> Result<u64> {
-    let removed = conn
-        .prepare_cached(
-            "DELETE FROM reading_progress WHERE updated_at_ms < ?1 \
-             AND NOT EXISTS ( \
-                 SELECT 1 FROM bookshelf s \
-                 WHERE s.feed_id = reading_progress.feed_id AND s.book_id = reading_progress.book_id)",
+    fn set_progress(
+        &self,
+        feed_id: &str,
+        book_id: &str,
+        chapter_id: &str,
+        paragraph_id: &str,
+        now_ms: i64,
+    ) -> Result<()> {
+        self.prepare_cached(
+            "INSERT INTO reading_progress (feed_id, book_id, chapter_id, paragraph_id, updated_at_ms) \
+             VALUES (?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT(feed_id, book_id) DO UPDATE SET \
+                 chapter_id = excluded.chapter_id, \
+                 paragraph_id = excluded.paragraph_id, \
+                 updated_at_ms = excluded.updated_at_ms",
         )?
-        .execute([cutoff_ms])?;
-    Ok(removed as u64)
+        .execute(tokio_rusqlite::params![
+            feed_id,
+            book_id,
+            chapter_id,
+            paragraph_id,
+            now_ms
+        ])?;
+        Ok(())
+    }
+
+    fn remove_stale_progress(&self, cutoff_ms: i64) -> Result<u64> {
+        let removed = self
+            .prepare_cached(
+                "DELETE FROM reading_progress WHERE updated_at_ms < ?1 \
+                 AND NOT EXISTS ( \
+                     SELECT 1 FROM bookshelf s \
+                     WHERE s.feed_id = reading_progress.feed_id AND s.book_id = reading_progress.book_id)",
+            )?
+            .execute([cutoff_ms])?;
+        Ok(removed as u64)
+    }
 }
 
 #[cfg(test)]
@@ -93,14 +111,14 @@ mod tests {
     #[test]
     fn set_get_overwrites() {
         let conn = conn();
-        set(&conn, "f1", "b1", "c1", "p1", 100).unwrap();
-        set(&conn, "f1", "b1", "c2", "p9", 200).unwrap();
+        conn.set_progress("f1", "b1", "c1", "p1", 100).unwrap();
+        conn.set_progress("f1", "b1", "c2", "p9", 200).unwrap();
 
-        let row = get(&conn, "f1", "b1").unwrap().expect("row");
+        let row = conn.get_progress("f1", "b1").unwrap().expect("row");
         assert_eq!(row.chapter_id, "c2");
         assert_eq!(row.paragraph_id, "p9");
         assert_eq!(row.updated_at_ms, 200);
-        assert!(get(&conn, "f1", "b2").unwrap().is_none());
+        assert!(conn.get_progress("f1", "b2").unwrap().is_none());
     }
 
     #[test]
@@ -108,17 +126,17 @@ mod tests {
         let conn = conn();
         conn.execute_batch("INSERT INTO bookshelf VALUES ('f1', 'b1', 1);")
             .unwrap();
-        set(&conn, "f1", "b1", "c", "p", 100).unwrap(); // old but protected
-        set(&conn, "f1", "b2", "c", "p", 100).unwrap(); // old, unprotected
-        set(&conn, "f1", "b3", "c", "p", 10_000).unwrap(); // fresh
-        // b3 has no books row — set() would violate nothing (FK is on feeds),
-        // but b3 was never inserted into books above; insert for realism:
-        // (feeds FK only, so this passes.)
+        conn.set_progress("f1", "b1", "c", "p", 100).unwrap(); // old but protected
+        conn.set_progress("f1", "b2", "c", "p", 100).unwrap(); // old, unprotected
+        conn.set_progress("f1", "b3", "c", "p", 10_000).unwrap(); // fresh
+        // b3 has no books row — set_progress would violate nothing (FK is on
+        // feeds), but b3 was never inserted into books above; insert for
+        // realism: (feeds FK only, so this passes.)
 
-        let removed = remove_stale(&conn, 1000).unwrap();
+        let removed = conn.remove_stale_progress(1000).unwrap();
         assert_eq!(removed, 1);
-        assert!(get(&conn, "f1", "b1").unwrap().is_some());
-        assert!(get(&conn, "f1", "b2").unwrap().is_none());
-        assert!(get(&conn, "f1", "b3").unwrap().is_some());
+        assert!(conn.get_progress("f1", "b1").unwrap().is_some());
+        assert!(conn.get_progress("f1", "b2").unwrap().is_none());
+        assert!(conn.get_progress("f1", "b3").unwrap().is_some());
     }
 }

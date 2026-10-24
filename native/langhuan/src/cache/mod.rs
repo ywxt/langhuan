@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_stream::stream;
 use tokio_stream::StreamExt;
 
-use crate::db::repo;
+use crate::db::repo::{CacheRepo, CoverState};
 use crate::db::Db;
 use crate::error::Result;
 use crate::feed::{
@@ -114,8 +114,9 @@ const MAX_COVER_BYTES: usize = 5 * 1024 * 1024;
 ///
 /// **Covers**: `cover_url` is always the *remote* URL; downloaded bytes live
 /// in the `covers` table and are fetched via `getCover`. Downloads run in
-/// background tasks guarded by the `cover_state` machine (see
-/// [`repo::cache`]).
+/// background tasks; [`CacheRepo::claim_cover_download`] is the single
+/// decision point for whether a download is due (single-flight, failure
+/// backoff, drift repair).
 pub struct CachedFeed<F: Feed> {
     inner: Arc<F>,
     db: Db,
@@ -142,7 +143,7 @@ impl<F: Feed> CachedFeed<F> {
         let feed_id = self.inner.meta().id.clone();
         let (bid, cid) = (book_id.to_owned(), chapter_id.to_owned());
         self.db
-            .write(move |conn| repo::cache::delete_paragraphs(conn, &feed_id, &bid, &cid))
+            .write(move |conn| conn.delete_paragraphs(&feed_id, &bid, &cid))
             .await
     }
 
@@ -151,7 +152,7 @@ impl<F: Feed> CachedFeed<F> {
         let feed_id = self.inner.meta().id.clone();
         let bid = book_id.to_owned();
         self.db
-            .write(move |conn| repo::cache::delete_chapter_list(conn, &feed_id, &bid))
+            .write(move |conn| conn.delete_chapter_list(&feed_id, &bid))
             .await
     }
 
@@ -172,17 +173,15 @@ impl<F: Feed> CachedFeed<F> {
             cache_get: {
                 let (db, fid, b, c) = (db.clone(), feed_id.clone(), bid.clone(), cid.clone());
                 db.call(move |conn| {
-                    repo::cache::get_paragraphs(conn, &fid, &b, &c, crate::db::now_ms())
+                    conn.get_paragraphs(&fid, &b, &c, crate::db::now_ms())
                 })
                 .await
             },
             cache_clear: {
                 let (db, fid, b, c) = (db.clone(), feed_id.clone(), bid.clone(), cid.clone());
-                db.write(move |conn| {
-                    repo::cache::delete_paragraphs(conn, &fid, &b, &c)
-                })
-                .await
-                .map(|_| ())
+                db.write(move |conn| conn.delete_paragraphs(&fid, &b, &c))
+                    .await
+                    .map(|_| ())
             },
             inner_stream: {
                 inner.paragraphs(&bid, &cid)
@@ -190,8 +189,7 @@ impl<F: Feed> CachedFeed<F> {
             cache_set(collected): {
                 let (db, fid, b, c) = (db.clone(), feed_id.clone(), bid.clone(), cid.clone());
                 db.write(move |conn| {
-                    repo::cache::set_paragraphs(
-                        conn,
+                    conn.set_paragraphs(
                         &fid,
                         &b,
                         &c,
@@ -217,17 +215,15 @@ impl<F: Feed> CachedFeed<F> {
             cache_get: {
                 let (db, fid, b) = (db.clone(), feed_id.clone(), bid.clone());
                 db.call(move |conn| {
-                    repo::cache::get_chapter_list(conn, &fid, &b, crate::db::now_ms())
+                    conn.get_chapter_list(&fid, &b, crate::db::now_ms())
                 })
                 .await
             },
             cache_clear: {
                 let (db, fid, b) = (db.clone(), feed_id.clone(), bid.clone());
-                db.write(move |conn| {
-                    repo::cache::delete_chapter_list(conn, &fid, &b)
-                })
-                .await
-                .map(|_| ())
+                db.write(move |conn| conn.delete_chapter_list(&fid, &b))
+                    .await
+                    .map(|_| ())
             },
             inner_stream: {
                 inner.chapters(&bid)
@@ -235,8 +231,7 @@ impl<F: Feed> CachedFeed<F> {
             cache_set(collected): {
                 let (db, fid, b) = (db.clone(), feed_id.clone(), bid.clone());
                 db.write(move |conn| {
-                    repo::cache::set_chapter_list(
-                        conn,
+                    conn.set_chapter_list(
                         &fid,
                         &b,
                         &collected,
@@ -252,11 +247,15 @@ impl<F: Feed> CachedFeed<F> {
     /// Cache-first book info with an optional forced refresh.
     ///
     /// - **Cache hit** (a row that was truly fetched, not a search-result
-    ///   placeholder): serve it, repairing cover drift in passing. The
-    ///   returned `cover_url` is always the remote URL.
-    /// - **Cache miss / forced**: fetch from the inner feed, persist the row,
-    ///   and spawn a background cover download when the state machine asks
-    ///   for one.
+    ///   placeholder): serve it. The returned `cover_url` is always the
+    ///   remote URL.
+    /// - **Cache miss / forced**: fetch from the inner feed and persist the
+    ///   row.
+    ///
+    /// Whenever a `cover_url` is known, a background download task is
+    /// spawned; whether a download is *due* at all (single-flight, failure
+    /// backoff, drift repair) is decided by the claim inside
+    /// [`download_cover`].
     pub async fn book_info_with_options(
         &self,
         book_id: &str,
@@ -271,26 +270,20 @@ impl<F: Feed> CachedFeed<F> {
                 .call({
                     let (fid, b) = (feed_id.clone(), bid.clone());
                     move |conn| {
-                        Ok(repo::cache::get_cached_book_for_hit(
-                            conn,
-                            &fid,
-                            &b,
-                            crate::db::now_ms(),
-                        )?
-                        .filter(|(row, _)| row.is_fetched()))
+                        Ok(conn
+                            .get_book_and_touch(&fid, &b, crate::db::now_ms())?
+                            .filter(|row| row.is_fetched()))
                     }
                 })
                 .await;
 
             match hit {
-                Ok(Some((row, spawn_cover))) => {
+                Ok(Some(row)) => {
                     tracing::info!(feed_id = %feed_id, "book info cache hit");
-                    if spawn_cover {
-                        if let Some(url) = row.cover_url.clone() {
-                            spawn_cover_download(db.clone(), feed_id, bid, url);
-                        }
+                    if let Some(url) = row.cover_url.clone() {
+                        spawn_cover_download(db.clone(), feed_id, bid, url);
                     }
-                    return Ok(row.into_book_info());
+                    return Ok(row.into());
                 }
                 Ok(None) => {
                     tracing::debug!(feed_id = %feed_id, "book info cache miss");
@@ -305,30 +298,28 @@ impl<F: Feed> CachedFeed<F> {
         // Fetch from the inner feed (source of truth).
         let info = self.inner.book_info(&bid).await?;
 
-        // Persist; a write failure degrades to "uncached", never fails the call.
-        let spawn_cover = db
-            .call({
+        // Persist; a write failure degrades to "uncached", never fails the
+        // call.
+        let cached = db
+            .write({
                 let (fid, info) = (feed_id.clone(), info.clone());
-                move |conn| repo::cache::upsert_fetched_book(conn, &fid, &info, crate::db::now_ms())
+                move |conn| conn.upsert_fetched_book(&fid, &info, crate::db::now_ms())
             })
             .await;
-        match spawn_cover {
-            Ok(true) => {
-                if let Some(url) = info.cover_url.clone() {
-                    spawn_cover_download(db, feed_id, bid, url);
-                }
-            }
-            Ok(false) => {}
-            Err(e) => {
-                tracing::warn!(feed_id = %feed_id, error = %e, "failed to cache book info");
-            }
+        if let Err(e) = cached {
+            tracing::warn!(feed_id = %feed_id, error = %e, "failed to cache book info");
+        }
+
+        if let Some(url) = info.cover_url.clone() {
+            spawn_cover_download(db, feed_id, bid, url);
         }
 
         Ok(info)
     }
 }
 
-/// Spawn the single-flight cover download task for a book.
+/// Spawn the cover download task for a book; [`download_cover`] claims the
+/// download slot first and exits early when nothing is due.
 fn spawn_cover_download(db: Db, feed_id: String, book_id: String, url: String) {
     tokio::spawn(async move {
         download_cover(db, feed_id, book_id, url).await;
@@ -339,7 +330,9 @@ fn spawn_cover_download(db: Db, feed_id: String, book_id: String, url: String) {
 async fn mark_cover_failed(db: &Db, feed_id: &str, book_id: &str) {
     let (fid, bid) = (feed_id.to_owned(), book_id.to_owned());
     let _ = db
-        .write(move |conn| repo::cache::mark_cover(conn, &fid, &bid, "failed", crate::db::now_ms()))
+        .write(move |conn| {
+            conn.mark_cover(&fid, &bid, CoverState::Failed, crate::db::now_ms())
+        })
         .await;
 }
 
@@ -358,7 +351,7 @@ pub async fn download_cover(db: Db, feed_id: String, book_id: String, url: Strin
     let claimed = db
         .call({
             let (fid, bid) = (feed_id.clone(), book_id.clone());
-            move |conn| repo::cache::claim_cover_download(conn, &fid, &bid, crate::db::now_ms())
+            move |conn| conn.claim_cover_download(&fid, &bid, crate::db::now_ms())
         })
         .await
         .unwrap_or(false);
@@ -381,19 +374,19 @@ pub async fn download_cover(db: Db, feed_id: String, book_id: String, url: Strin
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .map(|v| v.split(';').next().unwrap_or(v).trim().to_owned());
-    if let Some(ct) = &content_type {
-        if !ct.starts_with("image/") {
-            tracing::debug!(feed_id = %feed_id, book_id = %book_id, content_type = %ct, "cover rejected: not an image");
-            mark_cover_failed(&db, &feed_id, &book_id).await;
-            return;
-        }
+    if let Some(ct) = &content_type
+        && !ct.starts_with("image/")
+    {
+        tracing::debug!(feed_id = %feed_id, book_id = %book_id, content_type = %ct, "cover rejected: not an image");
+        mark_cover_failed(&db, &feed_id, &book_id).await;
+        return;
     }
-    if let Some(len) = resp.content_length() {
-        if len as usize > MAX_COVER_BYTES {
-            tracing::debug!(feed_id = %feed_id, book_id = %book_id, length = len, "cover rejected: too large");
-            mark_cover_failed(&db, &feed_id, &book_id).await;
-            return;
-        }
+    if let Some(len) = resp.content_length()
+        && len as usize > MAX_COVER_BYTES
+    {
+        tracing::debug!(feed_id = %feed_id, book_id = %book_id, length = len, "cover rejected: too large");
+        mark_cover_failed(&db, &feed_id, &book_id).await;
+        return;
     }
 
     // Stream the body with a hard cap so a lying server cannot exhaust memory.
@@ -430,7 +423,7 @@ pub async fn download_cover(db: Db, feed_id: String, book_id: String, url: Strin
     let result = db
         .write({
             let (fid, bid, mime, bytes) = (feed_id.clone(), book_id.clone(), mime, buf);
-            move |conn| repo::cache::set_cover(conn, &fid, &bid, &mime, &bytes, crate::db::now_ms())
+            move |conn| conn.set_cover(&fid, &bid, &mime, &bytes, crate::db::now_ms())
         })
         .await;
     match result {
@@ -500,7 +493,8 @@ impl<F: Feed + FeedAuthFlow> FeedAuthFlow for CachedFeed<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::db::repo::cache::BookRow;
+    use crate::db::repo::BookRow;
+    use crate::model::BookInfo;
 
     #[test]
     fn book_row_maps_to_book_info() {
@@ -513,7 +507,7 @@ mod tests {
             cover_url: Some("https://cover".to_owned()),
             info_fetched_at_ms: 42,
         };
-        let info = row.into_book_info();
+        let info = BookInfo::from(row);
         assert_eq!(info.id, "b1");
         assert_eq!(info.title, "T");
         assert_eq!(info.cover_url.as_deref(), Some("https://cover"));

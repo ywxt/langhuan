@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use langhuan::db::repo;
+use langhuan::db::repo::{BookmarkRow, BookmarksRepo};
 use langhuan::db::Db;
 use messages::prelude::{Actor, Context, Handler};
 
@@ -69,7 +69,7 @@ impl Handler<AddBookmark> for BookmarkActor {
 
     async fn handle(&mut self, msg: AddBookmark, _: &Context<Self>) -> Self::Result {
         let db = self.db()?.clone();
-        let row = repo::bookmarks::BookmarkRow {
+        let row = BookmarkRow {
             id: uuid(),
             feed_id: msg.feed_id,
             book_id: msg.book_id,
@@ -83,11 +83,11 @@ impl Handler<AddBookmark> for BookmarkActor {
 
         db.write({
             let row = row.clone();
-            move |conn| repo::bookmarks::add(conn, &row)
+            move |conn| conn.add_bookmark(&row)
         })
         .await?;
 
-        Ok(into_item(row))
+        Ok(row.into())
     }
 }
 
@@ -98,7 +98,7 @@ impl Handler<RemoveBookmark> for BookmarkActor {
     async fn handle(&mut self, msg: RemoveBookmark, _: &Context<Self>) -> Self::Result {
         let db = self.db()?.clone();
         let id = msg.id;
-        db.write(move |conn| repo::bookmarks::remove(conn, &id))
+        db.write(move |conn| conn.remove_bookmark(&id))
             .await
             .map_err(BridgeError::from)
     }
@@ -112,25 +112,27 @@ impl Handler<ListBookmarks> for BookmarkActor {
         let db = self.db()?.clone();
         let (feed_id, book_id) = (msg.feed_id, msg.book_id);
         let items = db
-            .call(move |conn| repo::bookmarks::list(conn, &feed_id, &book_id))
+            .call(move |conn| conn.list_bookmarks(&feed_id, &book_id))
             .await?;
 
-        Ok(items.into_iter().map(into_item).collect())
+        Ok(items.into_iter().map(Into::into).collect())
     }
 }
 
 /// Map a stored bookmark row to its bridge representation.
-fn into_item(row: repo::bookmarks::BookmarkRow) -> BookmarkItem {
-    BookmarkItem {
-        id: row.id,
-        feed_id: row.feed_id,
-        book_id: row.book_id,
-        chapter_id: row.chapter_id,
-        paragraph_id: ParagraphId::from_stored(row.paragraph_id),
-        paragraph_name: row.paragraph_name,
-        paragraph_preview: row.paragraph_preview,
-        label: row.label,
-        created_at_ms: row.created_at_ms,
+impl From<BookmarkRow> for BookmarkItem {
+    fn from(row: BookmarkRow) -> Self {
+        BookmarkItem {
+            id: row.id,
+            feed_id: row.feed_id,
+            book_id: row.book_id,
+            chapter_id: row.chapter_id,
+            paragraph_id: ParagraphId::from_stored(row.paragraph_id),
+            paragraph_name: row.paragraph_name,
+            paragraph_preview: row.paragraph_preview,
+            label: row.label,
+            created_at_ms: row.created_at_ms,
+        }
     }
 }
 

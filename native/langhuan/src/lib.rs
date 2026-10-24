@@ -2,6 +2,7 @@ pub mod cache;
 pub mod db;
 pub mod error;
 pub mod feed;
+pub mod hash;
 pub mod transform;
 pub mod http;
 pub mod model;
