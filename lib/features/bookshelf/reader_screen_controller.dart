@@ -212,6 +212,10 @@ class ReaderScreenController extends ChangeNotifier {
     required ParagraphContent paragraph,
     required Rect globalRect,
   }) {
+    // Selection actions must not sit underneath the reader chrome. This is
+    // especially important in horizontal mode, where the first paragraph's
+    // action toolbar occupies the same vertical band as the top controls.
+    _showControls = false;
     _selection = ParagraphSelection(
       chapterId: chapterId,
       paragraphId: paragraphId,

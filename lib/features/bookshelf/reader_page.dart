@@ -208,18 +208,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                     ),
                   ),
                 ),
-                if (_screenController.selection != null)
-                  ReaderSelectionOverlay(
-                    selection: _screenController.selection!,
-                    theme: readerTheme,
-                    l10n: l10n,
-                    onAddBookmark: () {
-                      final sel = _screenController.selection;
-                      if (sel == null) return;
-                      _actions.addBookmark(sel);
-                      _clearSelection();
-                    },
-                  ),
                 ReaderTopOverlay(
                   showControls: _screenController.showControls,
                   theme: readerTheme,
@@ -256,6 +244,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                   onOpenInterface: _actions.openInterfaceSheet,
                   onOpenSettings: _actions.openSettingsSheet,
                 ),
+                if (_screenController.selection != null)
+                  ReaderSelectionOverlay(
+                    selection: _screenController.selection!,
+                    theme: readerTheme,
+                    l10n: l10n,
+                    onAddBookmark: () {
+                      final sel = _screenController.selection;
+                      if (sel == null) return;
+                      _actions.addBookmark(sel);
+                      _clearSelection();
+                    },
+                  ),
               ],
             ),
           ),

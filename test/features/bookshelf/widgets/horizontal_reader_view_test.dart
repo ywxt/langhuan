@@ -6,11 +6,7 @@ import 'package:langhuan/features/bookshelf/widgets/page_breaker.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
 import 'package:langhuan/src/rust/api/types.dart';
 
-PageContent _page(
-  String id,
-  String text, {
-  String chapterId = 'c1',
-}) {
+PageContent _page(String id, String text, {String chapterId = 'c1'}) {
   return PageContent(
     chapterId: chapterId,
     items: [
@@ -33,6 +29,13 @@ Widget _host({
   VoidCallback? onPrev,
   VoidCallback? onToggle,
   void Function(String chapterId)? onRetryChapter,
+  void Function(
+    String chapterId,
+    String paragraphId,
+    ParagraphContent paragraph,
+    Rect rect,
+  )?
+  onParagraphLongPress,
 }) {
   return MaterialApp(
     localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -52,6 +55,7 @@ Widget _host({
           onPrevPage: onPrev ?? () {},
           onToggleControls: onToggle ?? () {},
           onRetryChapter: onRetryChapter,
+          onParagraphLongPress: onParagraphLongPress,
         ),
       ),
     ),
@@ -103,9 +107,12 @@ void main() {
     testWidgets('middle third toggles the controls', (tester) async {
       var toggles = 0;
       await tester.pumpWidget(
-        _host(current: ReaderSlotPage(_page('p1', 'page one')), onToggle: () {
-          toggles++;
-        }),
+        _host(
+          current: ReaderSlotPage(_page('p1', 'page one')),
+          onToggle: () {
+            toggles++;
+          },
+        ),
       );
 
       await tester.tapAt(const Offset(350, 300));
@@ -148,7 +155,9 @@ void main() {
   });
 
   group('swipe', () {
-    testWidgets('drag left past the threshold settles onto next', (tester) async {
+    testWidgets('drag left past the threshold settles onto next', (
+      tester,
+    ) async {
       var nextCalls = 0;
       await tester.pumpWidget(
         _host(
@@ -167,7 +176,9 @@ void main() {
       expect(nextCalls, 1);
     });
 
-    testWidgets('drag right past the threshold settles onto prev', (tester) async {
+    testWidgets('drag right past the threshold settles onto prev', (
+      tester,
+    ) async {
       var prevCalls = 0;
       await tester.pumpWidget(
         _host(
@@ -249,10 +260,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        _host(
-          current: ReaderSlotPage(_page('p1', 'page one')),
-          isLast: true,
-        ),
+        _host(current: ReaderSlotPage(_page('p1', 'page one')), isLast: true),
       );
 
       await tester.drag(
@@ -261,10 +269,65 @@ void main() {
       );
       await tester.pump();
 
-      expect(
-        find.text("You've reached the end of the book"),
-        findsOneWidget,
-      );
+      expect(find.text("You've reached the end of the book"), findsOneWidget);
     });
+  });
+
+  group('paragraph selection', () {
+    testWidgets(
+      'long-press reports the pressed paragraph rect, not the whole page',
+      (tester) async {
+        Rect? reported;
+        String? reportedParagraphId;
+        await tester.pumpWidget(
+          _host(
+            current: ReaderSlotPage(
+              PageContent(
+                chapterId: 'c1',
+                items: [
+                  PageItem(
+                    source: ParagraphContent_Text(
+                      id: const ParagraphId.id('a'),
+                      content: 'first paragraph line',
+                    ),
+                    paragraphIndex: 0,
+                    paragraphId: 'a',
+                  ),
+                  PageItem(
+                    source: ParagraphContent_Text(
+                      id: const ParagraphId.id('b'),
+                      content: 'second paragraph line',
+                    ),
+                    paragraphIndex: 1,
+                    paragraphId: 'b',
+                  ),
+                  PageItem(
+                    source: ParagraphContent_Text(
+                      id: const ParagraphId.id('c'),
+                      content: 'third paragraph line',
+                    ),
+                    paragraphIndex: 2,
+                    paragraphId: 'c',
+                  ),
+                ],
+              ),
+            ),
+            onParagraphLongPress: (chapterId, paragraphId, paragraph, rect) {
+              reported = rect;
+              reportedParagraphId = paragraphId;
+            },
+          ),
+        );
+
+        final secondRect = tester.getRect(find.text('second paragraph line'));
+        await tester.longPressAt(secondRect.center);
+        await tester.pump();
+
+        expect(reportedParagraphId, 'b');
+        expect(reported, isNotNull);
+        expect(reported!.top, closeTo(secondRect.top, 1));
+        expect(reported!.height, closeTo(secondRect.height, 1));
+      },
+    );
   });
 }
