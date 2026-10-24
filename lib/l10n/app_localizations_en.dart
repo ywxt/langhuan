@@ -327,13 +327,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get feedAuthPageTitle => 'Feed Login';
 
   @override
-  String get feedAuthDone => 'Done';
+  String get feedAuthDone => 'Verify';
+
+  @override
+  String get feedAuthInstructions =>
+      'Sign in on this page. Login will be detected automatically, or tap Verify when finished.';
+
+  @override
+  String get feedAuthVerifying => 'Verifying login…';
 
   @override
   String get feedAuthNotSupported => 'This feed does not support login.';
 
   @override
-  String get feedAuthUpdated => 'Login data updated';
+  String get feedAuthUpdated => 'Login verified';
 
   @override
   String get feedAuthLoggedOut => 'Logged out';

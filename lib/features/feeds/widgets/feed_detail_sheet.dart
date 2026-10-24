@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/meta_row.dart';
 import '../../../src/rust/api/types.dart';
+import '../feed_providers.dart';
 import '../feed_service.dart';
 
 /// Opens a modal bottom sheet showing feed metadata.
@@ -27,16 +29,16 @@ class FeedDetailSheet extends StatelessWidget {
   }
 }
 
-class _FeedDetailContent extends StatefulWidget {
+class _FeedDetailContent extends ConsumerStatefulWidget {
   const _FeedDetailContent({required this.feed});
 
   final FeedMetaItem feed;
 
   @override
-  State<_FeedDetailContent> createState() => _FeedDetailContentState();
+  ConsumerState<_FeedDetailContent> createState() => _FeedDetailContentState();
 }
 
-class _FeedDetailContentState extends State<_FeedDetailContent> {
+class _FeedDetailContentState extends ConsumerState<_FeedDetailContent> {
   bool _loadingAuth = false;
   bool _authSupported = false;
   FeedAuthStatusModel _authStatus = FeedAuthStatusModel.unsupported;
@@ -51,13 +53,20 @@ class _FeedDetailContentState extends State<_FeedDetailContent> {
     setState(() {
       _loadingAuth = true;
     });
+    var supported = false;
     try {
-      final supported = await FeedService.instance.isFeedAuthSupported(
+      supported = await FeedService.instance.isFeedAuthSupported(
         widget.feed.id,
       );
       FeedAuthStatusModel status = FeedAuthStatusModel.unsupported;
       if (supported) {
-        status = await FeedService.instance.getFeedAuthStatus(widget.feed.id);
+        try {
+          status = await FeedService.instance.getFeedAuthStatus(widget.feed.id);
+        } catch (_) {
+          // A failed status probe (for example while offline) must not hide
+          // the login action for an auth-capable feed.
+          status = FeedAuthStatusModel.loggedOut;
+        }
       }
       if (!mounted) return;
       setState(() {
@@ -67,7 +76,7 @@ class _FeedDetailContentState extends State<_FeedDetailContent> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _authSupported = false;
+        _authSupported = supported;
         _authStatus = FeedAuthStatusModel.unsupported;
       });
     } finally {
@@ -81,12 +90,14 @@ class _FeedDetailContentState extends State<_FeedDetailContent> {
 
   Future<void> _openLoginFlow() async {
     final navigator = GoRouter.of(context);
-    Navigator.of(context).pop();
     final result = await navigator.pushNamed<bool>(
       'feed-auth',
       queryParameters: {'feedId': widget.feed.id},
     );
     if (result == true && mounted) {
+      ref.invalidate(feedAuthStatusProvider(widget.feed.id));
+      await _loadAuthStatus();
+      if (!mounted) return;
       final l10n = AppLocalizations.of(context);
       ScaffoldMessenger.of(
         context,
@@ -98,6 +109,7 @@ class _FeedDetailContentState extends State<_FeedDetailContent> {
     try {
       await FeedService.instance.clearFeedAuth(widget.feed.id);
       if (!mounted) return;
+      ref.invalidate(feedAuthStatusProvider(widget.feed.id));
       await _loadAuthStatus();
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
@@ -222,7 +234,11 @@ class _FeedDetailContentState extends State<_FeedDetailContent> {
                   ),
                   const SizedBox(width: LanghuanTheme.spaceSm),
                   OutlinedButton.icon(
-                    onPressed: _loadingAuth ? null : _logout,
+                    onPressed:
+                        _loadingAuth ||
+                            _authStatus == FeedAuthStatusModel.loggedOut
+                        ? null
+                        : _logout,
                     icon: const Icon(Icons.logout),
                     label: Text(l10n.feedAuthLogout),
                   ),

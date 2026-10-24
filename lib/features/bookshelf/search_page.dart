@@ -195,8 +195,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     AppLocalizations l10n,
   ) {
     if (searchState.hasError) {
-      final showAuth = selectedFeed != null &&
-          isAuthRequiredError(searchState.error);
+      final showAuth =
+          selectedFeed != null && isAuthRequiredError(searchState.error);
 
       return Column(
         children: [
@@ -207,8 +207,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               onRetry: selectedFeed == null
                   ? null
                   : () => ref
-                      .read(searchProvider.notifier)
-                      .retry(feedId: selectedFeed.id),
+                        .read(searchProvider.notifier)
+                        .retry(feedId: selectedFeed.id),
               retryLabel: l10n.searchRetry,
             ),
           ),
@@ -230,11 +230,16 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                   ),
                   const SizedBox(width: LanghuanTheme.spaceSm),
                   FilledButton.icon(
-                    onPressed: () {
-                      context.pushNamed(
+                    onPressed: () async {
+                      final loggedIn = await context.pushNamed<bool>(
                         'feed-auth',
                         queryParameters: {'feedId': selectedFeed.id},
                       );
+                      if (loggedIn == true && context.mounted) {
+                        ref
+                            .read(searchProvider.notifier)
+                            .retry(feedId: selectedFeed.id);
+                      }
                     },
                     icon: const Icon(Icons.login),
                     label: Text(l10n.searchAuthAction),

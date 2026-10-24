@@ -594,9 +594,10 @@ impl FeedAuthFlow for LuaFeed {
             });
         }
 
-        Err(crate::error::Error::auth_status_not_supported(
-            &self.meta.id,
-        ))
+        // A status endpoint is optional. Successfully parsed, stored auth is
+        // considered logged in when the feed cannot actively probe it. Feed
+        // authors that need expiry detection can provide `login.status`.
+        Ok(AuthStatus::LoggedIn)
     }
 }
 
@@ -938,7 +939,7 @@ return {{
 
     fn make_login_script_no_status(base_url: &str) -> String {
         format!(
-            "{header}\nreturn {{\n{stubs}\n    login = {{\n        entry         = function() return {{ url = meta.base_url .. \"/login\" }} end,\n        parse         = function(page) return {{ token = page.current_url }} end,\n        patch_request = function(ctx, req, auth) return req end,\n    }},\n}}\n",
+            "{header}\nreturn {{\n{stubs}\n    login = {{\n        entry         = function() return {{ url = meta.base_url .. \"/login\" }} end,\n        parse         = function(page) return {{\n            token = page.current_url,\n            html = page.response,\n            session = page.cookies[1] and page.cookies[1].value or nil,\n        }} end,\n        patch_request = function(ctx, req, auth) return req end,\n    }},\n}}\n",
             header = make_header(base_url),
             stubs = AUTH_STUBS,
         )
@@ -951,6 +952,17 @@ return {{
             header = make_header(base_url),
             stubs = AUTH_STUBS,
             status_val = status_val,
+        )
+    }
+
+    fn make_login_script_with_auth_patch(base_url: &str) -> String {
+        format!(
+            "{header}\nreturn {{\n{stubs}\n    login = {{\n        entry = function() return {{ url = meta.base_url .. \"/login\" }} end,\n        parse = function(page) return {{ token = \"unused\" }} end,\n        patch_request = function(ctx, req, auth)\n            req.headers = req.headers or {{}}\n            req.headers[\"Authorization\"] = \"Bearer \" .. auth.token\n            req.headers[\"X-Auth-Operation\"] = ctx.operation\n            return req\n        end,\n    }},\n}}\n",
+            header = make_header(base_url),
+            stubs = AUTH_STUBS.replace(
+                "url = meta.base_url .. \"/\" } end, parse = function(r) return { items = {}, next_cursor = nil } end",
+                "url = meta.base_url .. \"/protected\" } end, parse = function(r) return { items = {}, next_cursor = nil } end",
+            ),
         )
     }
 
@@ -983,10 +995,10 @@ return {{
         assert_eq!(status, AuthStatus::LoggedOut);
     }
 
-    /// With stored `auth_info` but no `status` handler, `auth_status` must
-    /// return an `AuthStatusNotSupported` error.
+    /// With stored `auth_info` but no `status` handler, the parsed payload is
+    /// the source of truth and the feed is considered logged in.
     #[tokio::test]
-    async fn auth_status_not_supported_without_status_handler() {
+    async fn auth_status_logged_in_without_status_handler() {
         let feed = ScriptEngine::new()
             .load_feed(&make_login_script_no_status("http://localhost"))
             .await
@@ -994,19 +1006,8 @@ return {{
         let support = feed.supports_auth().expect("login block present");
         feed.set_auth_info(&support, Some(serde_json::json!({"token": "abc"})))
             .expect("set_auth_info ok");
-        let err = feed
-            .auth_status(&support)
-            .await
-            .expect_err("should return error when status handler absent");
-        assert!(
-            matches!(
-                err,
-                crate::error::Error::Script(
-                    crate::error::ScriptError::AuthStatusNotSupported { .. }
-                )
-            ),
-            "expected AuthStatusNotSupported, got: {err:?}",
-        );
+        let status = feed.auth_status(&support).await.expect("auth_status ok");
+        assert_eq!(status, AuthStatus::LoggedIn);
     }
 
     /// When the `status.parse` handler returns `true`, `auth_status` must
@@ -1067,6 +1068,34 @@ return {{
         assert_eq!(entry.url, "http://example.com/login");
     }
 
+    /// Stored auth must be passed through `patch_request` for normal feed
+    /// operations, including the operation context used by conditional auth.
+    #[tokio::test]
+    async fn auth_payload_patches_outbound_feed_requests() {
+        let mut server = mockito::Server::new_async().await;
+        let request = server
+            .mock("GET", "/protected")
+            .match_header("authorization", "Bearer secret-token")
+            .match_header("x-auth-operation", "search")
+            .with_status(200)
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let feed = ScriptEngine::new()
+            .load_feed(&make_login_script_with_auth_patch(&server.url()))
+            .await
+            .expect("load");
+        let support = feed.supports_auth().expect("login block present");
+        feed.set_auth_info(&support, Some(serde_json::json!({"token": "secret-token"})))
+            .expect("set auth");
+
+        let results = feed.search("query").collect::<Vec<_>>().await;
+        assert!(results.is_empty());
+        request.assert_async().await;
+    }
+
     /// `parse_auth` must pass the page context to Lua and return the parsed
     /// `AuthInfo` map.
     #[tokio::test]
@@ -1078,14 +1107,31 @@ return {{
         let support = feed.supports_auth().expect("login block present");
         let page = AuthPageContext {
             current_url: "http://localhost/callback?code=XYZ".to_owned(),
-            response: Default::default(),
+            response: "<html data-user='alice'></html>".into(),
             response_headers: vec![],
-            cookies: vec![],
+            cookies: vec![crate::feed::CookieEntry {
+                name: "session".to_owned(),
+                value: "cookie-secret".to_owned(),
+                domain: Some("localhost".to_owned()),
+                path: Some("/".to_owned()),
+                expires: None,
+                secure: None,
+                http_only: Some(true),
+                same_site: None,
+            }],
         };
         let auth_info = feed.parse_auth(&support, &page).expect("parse_auth ok");
         assert_eq!(
             auth_info.get("token").and_then(|v| v.as_str()),
             Some("http://localhost/callback?code=XYZ"),
+        );
+        assert_eq!(
+            auth_info.get("html").and_then(|v| v.as_str()),
+            Some("<html data-user='alice'></html>"),
+        );
+        assert_eq!(
+            auth_info.get("session").and_then(|v| v.as_str()),
+            Some("cookie-secret"),
         );
     }
 }

@@ -701,8 +701,20 @@ abstract class AppLocalizations {
   /// Feed auth submit button label
   ///
   /// In en, this message translates to:
-  /// **'Done'**
+  /// **'Verify'**
   String get feedAuthDone;
+
+  /// Instructions shown above the feed login WebView
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in on this page. Login will be detected automatically, or tap Verify when finished.'**
+  String get feedAuthInstructions;
+
+  /// Status shown while feed auth is extracted and verified
+  ///
+  /// In en, this message translates to:
+  /// **'Verifying login…'**
+  String get feedAuthVerifying;
 
   /// Feed auth page message when auth is unsupported
   ///
@@ -713,7 +725,7 @@ abstract class AppLocalizations {
   /// Snackbar after successful auth page submit
   ///
   /// In en, this message translates to:
-  /// **'Login data updated'**
+  /// **'Login verified'**
   String get feedAuthUpdated;
 
   /// Snackbar after feed auth clear

@@ -423,6 +423,18 @@ Called after the WebView loads a page. Extracts authentication data from the pag
 
 Returns: any JSON-serializable Lua table. This becomes the `auth_info`, which is persisted to disk and passed to `patch_request` on every subsequent HTTP request.
 
+Successful main-frame response headers are not exposed by every WebView
+platform, so `response_headers` may be empty. Prefer extracting login state
+from `response`, `current_url`, and `cookies`.
+
+`parse` may be called automatically after a WebView navigation as well as when
+the user presses the completion action. It must reject pages that do not
+represent a completed login (for example with
+`err.auth_required("Login has not completed")`).
+The runtime installs the returned value as a candidate, verifies it through
+`login.status` when present, and only then persists it. A failed candidate does
+not overwrite the previously stored session.
+
 ### `login.patch_request(context, request, auth)`
 
 Called automatically on every outbound HTTP request when the user is logged in. Use it to inject authentication headers, cookies, or tokens.
@@ -456,7 +468,7 @@ Returns: a (possibly modified) [`HttpRequest`](#httprequest) table.
 
 ### `login.status` (optional)
 
-An optional handler pair for checking whether the current auth session is still valid. If omitted, auth status checks are not supported for this source.
+An optional handler pair for checking whether the current auth session is still valid. If omitted, a successfully parsed and stored auth payload is considered logged in; expiry cannot be detected proactively.
 
 #### `login.status.request()`
 

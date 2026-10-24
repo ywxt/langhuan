@@ -136,6 +136,14 @@ local login_handlers = {
             end
         end
 
+        -- `parse` can be called automatically while the user is still moving
+        -- through the login flow. Reject incomplete pages instead of returning
+        -- an empty auth table. Replace this condition with the source's real
+        -- success signal (account element, callback URL, session cookie, etc.).
+        if token == nil and header_token == nil and session_id == nil then
+            err.auth_required("Login has not completed")
+        end
+
         -- Return any JSON-serializable table. Rust will persist it.
         return {
             token = token,

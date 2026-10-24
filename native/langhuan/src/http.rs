@@ -189,7 +189,11 @@ pub struct HttpRequest {
     /// - An array of pairs: `{ {"Content-Type", "application/json"} }`
     ///
     /// Both forms are accepted and normalised to `Vec<(String, String)>`.
-    #[serde(default, deserialize_with = "deserialize_headers")]
+    #[serde(
+        default,
+        serialize_with = "serialize_headers",
+        deserialize_with = "deserialize_headers"
+    )]
     pub headers: Vec<(String, String)>,
     /// An optional request body (for POST/PUT), as raw bytes.
     #[serde(default)]
@@ -198,6 +202,27 @@ pub struct HttpRequest {
 
 fn default_method() -> String {
     "GET".to_owned()
+}
+
+/// Serialize request headers as a map. This is important for the Lua auth
+/// hook: feeds naturally patch headers with
+/// `request.headers["Authorization"] = ...`. Serializing the Rust vector as
+/// an array would create a mixed Lua table, whose string keys are lost when it
+/// is deserialized through the sequence representation.
+fn serialize_headers<S>(
+    headers: &[(String, String)],
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::ser::SerializeMap;
+
+    let mut map = serializer.serialize_map(Some(headers.len()))?;
+    for (name, value) in headers {
+        map.serialize_entry(name, value)?;
+    }
+    map.end()
 }
 
 /// Deserialize HTTP headers from either a map or an array of pairs.

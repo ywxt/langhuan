@@ -183,11 +183,46 @@ impl LoginActor {
         };
         let auth_info = feed.parse_auth(&support, &page)?;
         let db = self.db()?.clone();
-        let (id, info) = (msg.feed_id.clone(), auth_info.clone());
-        db.write(move |conn| conn.set_auth(&id, &info, langhuan::db::now_ms()))
+
+        // Treat parsed auth as a candidate until the feed has verified it.
+        // This keeps a failed login attempt from replacing a previously valid
+        // session in memory or on disk.
+        let id = msg.feed_id.clone();
+        let stored_auth = db
+            .call({
+                let id = id.clone();
+                move |conn| conn.get_auth(&id)
+            })
             .await?;
-        feed.set_auth_info(&support, Some(auth_info))
-            .map_err(BridgeError::from)
+        feed.set_auth_info(&support, Some(auth_info.clone()))
+            .map_err(BridgeError::from)?;
+
+        let verification = feed.auth_status(&support).await;
+        match verification {
+            Ok(FeedAuthStatus::LoggedIn) => {}
+            Ok(FeedAuthStatus::Expired | FeedAuthStatus::LoggedOut) => {
+                feed.set_auth_info(&support, stored_auth.clone())
+                    .map_err(BridgeError::from)?;
+                return Err(BridgeError::from(
+                    t!("error.auth_verification_failed").to_string(),
+                ));
+            }
+            Err(error) => {
+                feed.set_auth_info(&support, stored_auth.clone())
+                    .map_err(BridgeError::from)?;
+                return Err(BridgeError::from(error));
+            }
+        }
+
+        if let Err(error) = db
+            .write(move |conn| conn.set_auth(&id, &auth_info, langhuan::db::now_ms()))
+            .await
+        {
+            feed.set_auth_info(&support, stored_auth)
+                .map_err(BridgeError::from)?;
+            return Err(error.into());
+        }
+        Ok(())
     }
 
     async fn do_auth_status(&mut self, feed_id: &str) -> Result<AuthStatus, BridgeError> {

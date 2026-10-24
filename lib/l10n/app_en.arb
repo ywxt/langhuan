@@ -342,13 +342,19 @@
   "feedAuthPageTitle": "Feed Login",
   "@feedAuthPageTitle": { "description": "Feed auth webview page title" },
 
-  "feedAuthDone": "Done",
+  "feedAuthDone": "Verify",
   "@feedAuthDone": { "description": "Feed auth submit button label" },
+
+  "feedAuthInstructions": "Sign in on this page. Login will be detected automatically, or tap Verify when finished.",
+  "@feedAuthInstructions": { "description": "Instructions shown above the feed login WebView" },
+
+  "feedAuthVerifying": "Verifying login…",
+  "@feedAuthVerifying": { "description": "Status shown while feed auth is extracted and verified" },
 
   "feedAuthNotSupported": "This feed does not support login.",
   "@feedAuthNotSupported": { "description": "Feed auth page message when auth is unsupported" },
 
-  "feedAuthUpdated": "Login data updated",
+  "feedAuthUpdated": "Login verified",
   "@feedAuthUpdated": { "description": "Snackbar after successful auth page submit" },
 
   "feedAuthLoggedOut": "Logged out",

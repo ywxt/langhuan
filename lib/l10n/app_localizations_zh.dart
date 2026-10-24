@@ -325,13 +325,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedAuthPageTitle => '書源登錄';
 
   @override
-  String get feedAuthDone => '完成';
+  String get feedAuthDone => '驗證登錄';
+
+  @override
+  String get feedAuthInstructions => '請在此網頁完成登錄。成功後會自動驗證，也可點擊「驗證登錄」。';
+
+  @override
+  String get feedAuthVerifying => '正在驗證登錄…';
 
   @override
   String get feedAuthNotSupported => '此書源不支持登錄。';
 
   @override
-  String get feedAuthUpdated => '登錄信息已更新';
+  String get feedAuthUpdated => '登錄驗證成功';
 
   @override
   String get feedAuthLoggedOut => '已登出';
