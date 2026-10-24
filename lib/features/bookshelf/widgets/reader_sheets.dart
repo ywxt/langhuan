@@ -4,11 +4,11 @@ import 'package:file_picker/file_picker.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../src/rust/api/types.dart';
 import '../../feeds/feed_service.dart';
 import '../bookmark_provider.dart';
 import '../reader_settings_provider.dart';
 import '../reading_progress_provider.dart';
+import 'chinese_conversion_picker.dart';
 
 Future<void> showReaderInterfaceSheet(BuildContext context) async {
   final l10n = AppLocalizations.of(context);
@@ -190,14 +190,6 @@ Future<void> showReaderSettingsSheet(BuildContext context) async {
         final settings = ref.watch(readerSettingsProvider);
         final notifier = ref.read(readerSettingsProvider.notifier);
 
-        String conversionLabel(ChineseConversionMode mode) {
-          return switch (mode) {
-            ChineseConversionMode.none => l10n.chineseConversionNone,
-            ChineseConversionMode.s2T => l10n.chineseConversionS2t,
-            ChineseConversionMode.t2S => l10n.chineseConversionT2s,
-          };
-        }
-
         return SingleChildScrollView(
           padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
           child: Column(
@@ -214,18 +206,21 @@ Future<void> showReaderSettingsSheet(BuildContext context) async {
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
               const SizedBox(height: LanghuanTheme.spaceSm),
-              SegmentedButton<ChineseConversionMode>(
-                segments: [
-                  for (final mode in ChineseConversionMode.values)
-                    ButtonSegment(
-                      value: mode,
-                      label: Text(conversionLabel(mode)),
-                    ),
-                ],
-                selected: {settings.chineseConversion},
-                onSelectionChanged: (set) {
-                  notifier.setChineseConversion(set.first);
-                },
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.translate),
+                  label: Text(
+                    chineseConversionLabel(l10n, settings.chineseConversion),
+                  ),
+                  onPressed: () async {
+                    final mode = await showChineseConversionPicker(
+                      context,
+                      selected: settings.chineseConversion,
+                    );
+                    if (mode != null) notifier.setChineseConversion(mode);
+                  },
+                ),
               ),
             ],
           ),

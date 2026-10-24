@@ -277,13 +277,19 @@
   "chineseConversionT2s": "Traditional \u2192 Simplified",
   "@chineseConversionT2s": { "description": "Chinese conversion mode: traditional to simplified" },
 
+  "chineseConversionS2tw": "Simplified \u2192 Taiwan Traditional",
+  "@chineseConversionS2tw": { "description": "Chinese conversion mode: simplified to Taiwan traditional" },
+
+  "chineseConversionS2hk": "Simplified \u2192 Hong Kong Traditional",
+  "@chineseConversionS2hk": { "description": "Chinese conversion mode: simplified to Hong Kong traditional" },
+
   "feedsTitle": "Feeds",
   "@feedsTitle": { "description": "Feeds page title" },
 
   "feedsSearchHint": "Search feeds…",
   "@feedsSearchHint": { "description": "Local filter search bar hint on feeds page" },
 
-  "feedsEmpty": "No feeds loaded.\nPlease add scripts to the scripts folder.",
+  "feedsEmpty": "No feeds yet.\nAdd a feed to get started.",
   "@feedsEmpty": { "description": "Feeds empty state message" },
 
   "feedsNoMatch": "No feeds matching \"{keyword}\"",

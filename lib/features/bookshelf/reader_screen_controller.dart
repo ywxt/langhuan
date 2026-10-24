@@ -153,6 +153,12 @@ class ReaderScreenController extends ChangeNotifier {
     _notify();
   }
 
+  void hideControls() {
+    if (!_showControls) return;
+    _showControls = false;
+    _notify();
+  }
+
   void jumpToChapter(String chapterId, {String paragraphId = ''}) {
     _readerController.jumpTo(chapterId: chapterId, paragraphId: paragraphId);
   }

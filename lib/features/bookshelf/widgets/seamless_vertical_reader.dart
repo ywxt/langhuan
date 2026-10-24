@@ -129,6 +129,12 @@ class SeamlessVerticalReader extends StatefulWidget {
 class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   ScrollController? _controller;
 
+  /// A stable zero point immediately before the current anchor chapter.
+  /// Keeping the inset in its own center sliver means a TOC jump starts the
+  /// target chapter below the requested top padding instead of reusing the
+  /// previous chapter's scroll offset.
+  static const _centerKey = ValueKey('vertical-anchor-inset');
+
   /// Stable sliver key per chapter — GlobalKeys so the probe can reach each
   /// sliver's render object.
   final Map<String, GlobalKey> _sliverKeys = {};
@@ -357,6 +363,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
     String? activeChapter;
     String? activeParagraph;
     var activeOffset = 0.0;
+    var activeTop = double.infinity;
     final visible = <String>{};
 
     for (final chapterId in widget.window.windowChapterIds) {
@@ -375,11 +382,18 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
             bottom > viewportTop + 1.0 && top < viewportBottom - 1.0;
         if (intersectsViewport) {
           visible.add(chapterId);
-          if (activeChapter == null) {
+          // Reverse-growth slivers enumerate children from the visual bottom
+          // upward, so iteration order cannot identify the first visible
+          // paragraph. Compare screen coordinates instead.
+          if (top < activeTop) {
             final index = sliverObject.indexOf(child);
             if (index >= 0 && index < paragraphs.length) {
+              final paragraphIndex = _isBeforeAnchor(chapterId)
+                  ? paragraphs.length - 1 - index
+                  : index;
+              activeTop = top;
               activeChapter = chapterId;
-              activeParagraph = paragraphs[index].id.toStringValue();
+              activeParagraph = paragraphs[paragraphIndex].id.toStringValue();
               activeOffset = (viewportTop - top).clamp(0.0, child.size.height);
             }
           }
@@ -433,6 +447,12 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
     return -1;
   }
 
+  bool _isBeforeAnchor(String chapterId) {
+    final chapterIndex = _chapterIndex(chapterId);
+    final anchorIndex = _chapterIndex(widget.window.anchorChapterId);
+    return chapterIndex >= 0 && anchorIndex >= 0 && chapterIndex < anchorIndex;
+  }
+
   GlobalKey _sliverKeyOf(String chapterId) =>
       _sliverKeys.putIfAbsent(chapterId, GlobalKey.new);
 
@@ -476,18 +496,23 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   Widget build(BuildContext context) {
     final window = widget.window;
     final chapterIds = window.windowChapterIds;
-    final anchorKey = _sliverKeyOf(window.anchorChapterId);
-
-    final topEdgeLoading =
-        chapterIds.isNotEmpty &&
-        window.stateOf(chapterIds.first) is ChapterLoading;
-    final bottomEdgeLoading =
-        chapterIds.isNotEmpty &&
-        window.stateOf(chapterIds.last) is ChapterLoading;
     final atBookEnd =
         !window.hasChapterBelow &&
         chapterIds.isNotEmpty &&
         window.stateOf(chapterIds.last) is ChapterLoaded;
+
+    // Only one loading indicator is useful. Prefer the anchor (notably after
+    // a TOC jump); otherwise show the loading edge the reader is approaching.
+    String? loadingIndicatorChapterId;
+    if (window.stateOf(window.anchorChapterId) is ChapterLoading) {
+      loadingIndicatorChapterId = window.anchorChapterId;
+    } else if (chapterIds.isNotEmpty &&
+        window.stateOf(chapterIds.last) is ChapterLoading) {
+      loadingIndicatorChapterId = chapterIds.last;
+    } else if (chapterIds.isNotEmpty &&
+        window.stateOf(chapterIds.first) is ChapterLoading) {
+      loadingIndicatorChapterId = chapterIds.first;
+    }
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -496,17 +521,24 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
         onNotification: _onScrollNotification,
         child: CustomScrollView(
           controller: _controller,
-          center: anchorKey,
+          center: _centerKey,
           slivers: [
             SliverToBoxAdapter(
               key: _topInsetKey,
               child: SizedBox(height: widget.contentPadding.top),
             ),
-            if (topEdgeLoading) const SliverToBoxAdapter(child: _EdgeSpinner()),
             for (final chapterId in chapterIds)
-              _buildChapterSliver(chapterId),
-            if (bottomEdgeLoading && !atBookEnd)
-              const SliverToBoxAdapter(child: _EdgeSpinner()),
+              ...[
+                if (chapterId == window.anchorChapterId)
+                  SliverToBoxAdapter(
+                    key: _centerKey,
+                    child: SizedBox(height: widget.contentPadding.top),
+                  ),
+                _buildChapterSliver(
+                  chapterId,
+                  showLoading: chapterId == loadingIndicatorChapterId,
+                ),
+              ],
             if (atBookEnd)
               const SliverToBoxAdapter(child: _EndOfBookMark()),
             SliverToBoxAdapter(
@@ -522,7 +554,10 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   static const _topInsetKey = ValueKey('vertical-top-inset');
   static const _bottomInsetKey = ValueKey('vertical-bottom-inset');
 
-  Widget _buildChapterSliver(String chapterId) {
+  Widget _buildChapterSliver(
+    String chapterId, {
+    required bool showLoading,
+  }) {
     final state = widget.window.stateOf(chapterId);
     final key = _sliverKeyOf(chapterId);
 
@@ -534,7 +569,16 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
       return SliverList(
         key: key,
         delegate: SliverChildBuilderDelegate(
-          (context, index) => _buildParagraphItem(chapterId, paragraphs[index]),
+          (context, index) {
+            // Slivers before [CustomScrollView.center] use reverse growth:
+            // child zero is placed closest to the center (the visual bottom).
+            // Reverse their data index so paragraphs still read top-to-bottom
+            // and the preceding chapter's title stays at its beginning.
+            final paragraphIndex = _isBeforeAnchor(chapterId)
+                ? paragraphs.length - 1 - index
+                : index;
+            return _buildParagraphItem(chapterId, paragraphs[paragraphIndex]);
+          },
           childCount: paragraphs.length,
         ),
       );
@@ -556,10 +600,12 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
 
     return SliverToBoxAdapter(
       key: key,
-      child: const Padding(
-        padding: EdgeInsets.symmetric(vertical: 32),
-        child: Center(child: CircularProgressIndicator()),
-      ),
+      child: showLoading
+          ? const Padding(
+              padding: EdgeInsets.symmetric(vertical: 32),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          : const SizedBox.shrink(),
     );
   }
 
@@ -595,24 +641,6 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
                     rect,
                   )
                   : null,
-        ),
-      ),
-    );
-  }
-}
-
-class _EdgeSpinner extends StatelessWidget {
-  const _EdgeSpinner();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 16),
-      child: Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2.5),
         ),
       ),
     );

@@ -578,6 +578,18 @@ abstract class AppLocalizations {
   /// **'Traditional → Simplified'**
   String get chineseConversionT2s;
 
+  /// Chinese conversion mode: simplified to Taiwan traditional
+  ///
+  /// In en, this message translates to:
+  /// **'Simplified → Taiwan Traditional'**
+  String get chineseConversionS2tw;
+
+  /// Chinese conversion mode: simplified to Hong Kong traditional
+  ///
+  /// In en, this message translates to:
+  /// **'Simplified → Hong Kong Traditional'**
+  String get chineseConversionS2hk;
+
   /// Feeds page title
   ///
   /// In en, this message translates to:
@@ -593,7 +605,7 @@ abstract class AppLocalizations {
   /// Feeds empty state message
   ///
   /// In en, this message translates to:
-  /// **'No feeds loaded.\nPlease add scripts to the scripts folder.'**
+  /// **'No feeds yet.\nAdd a feed to get started.'**
   String get feedsEmpty;
 
   /// Feeds local filter no match message

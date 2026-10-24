@@ -89,10 +89,12 @@
   "chineseConversionNone": "不轉換",
   "chineseConversionS2t": "簡體轉繁體",
   "chineseConversionT2s": "繁體轉簡體",
+  "chineseConversionS2tw": "簡體 → 臺灣正體",
+  "chineseConversionS2hk": "簡體 → 香港繁體",
 
   "feedsTitle": "書源",
   "feedsSearchHint": "搜索書源…",
-  "feedsEmpty": "暫無書源\n請將腳本文件放入 scripts 文件夾",
+  "feedsEmpty": "暫無書源\n請添加書源以開始使用",
   "feedsNoMatch": "未找到匹配的書源「{keyword}」",
   "feedsLoadError": "加載書源失敗",
   "feedsRetry": "重試",

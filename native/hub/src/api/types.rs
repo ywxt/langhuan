@@ -277,6 +277,10 @@ pub enum ChineseConversionMode {
     S2t,
     /// Traditional Chinese → Simplified Chinese.
     T2s,
+    /// Simplified Chinese → Taiwan traditional, including local vocabulary.
+    S2tw,
+    /// Simplified Chinese → Hong Kong traditional.
+    S2hk,
 }
 
 pub struct BookInfo {

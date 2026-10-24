@@ -6,9 +6,10 @@ import '../../shared/app_service.dart';
 import '../../shared/constants.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/format_bytes.dart';
-import '../../src/rust/api/types.dart' show CacheStats, ChineseConversionMode;
+import '../../src/rust/api/types.dart' show CacheStats;
 import '../bookshelf/reader_settings_provider.dart';
 import '../bookshelf/widgets/book_cover.dart' show coverProvider;
+import '../bookshelf/widgets/chinese_conversion_picker.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -441,42 +442,25 @@ class _ChineseConversionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final chineseConversion = ref.watch(
       readerSettingsProvider.select((s) => s.chineseConversion),
     );
     final notifier = ref.read(readerSettingsProvider.notifier);
 
-    String conversionLabel(ChineseConversionMode mode) {
-      return switch (mode) {
-        ChineseConversionMode.none => l10n.chineseConversionNone,
-        ChineseConversionMode.s2T => l10n.chineseConversionS2t,
-        ChineseConversionMode.t2S => l10n.chineseConversionT2s,
-      };
-    }
-
     return _SettingsRow(
       icon: Icons.translate,
       label: l10n.settingsChineseConversion,
-      subtitle: l10n.settingsChineseConversionDescription,
-      trailing: DropdownButton<ChineseConversionMode>(
-        value: chineseConversion,
-        underline: const SizedBox.shrink(),
-        isDense: true,
-        style: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-        items: [
-          for (final mode in ChineseConversionMode.values)
-            DropdownMenuItem(
-              value: mode,
-              child: Text(conversionLabel(mode)),
-            ),
-        ],
-        onChanged: (mode) {
-          if (mode != null) notifier.setChineseConversion(mode);
-        },
-      ),
+      subtitle:
+          '${l10n.settingsChineseConversionDescription}\n'
+          '${chineseConversionLabel(l10n, chineseConversion)}',
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () async {
+        final mode = await showChineseConversionPicker(
+          context,
+          selected: chineseConversion,
+        );
+        if (mode != null) notifier.setChineseConversion(mode);
+      },
     );
   }
 }

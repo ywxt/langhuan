@@ -265,14 +265,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chineseConversionT2s => 'Traditional → Simplified';
 
   @override
+  String get chineseConversionS2tw => 'Simplified → Taiwan Traditional';
+
+  @override
+  String get chineseConversionS2hk => 'Simplified → Hong Kong Traditional';
+
+  @override
   String get feedsTitle => 'Feeds';
 
   @override
   String get feedsSearchHint => 'Search feeds…';
 
   @override
-  String get feedsEmpty =>
-      'No feeds loaded.\nPlease add scripts to the scripts folder.';
+  String get feedsEmpty => 'No feeds yet.\nAdd a feed to get started.';
 
   @override
   String feedsNoMatch(String keyword) {

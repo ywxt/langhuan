@@ -64,7 +64,10 @@ class ReaderPageActions {
       context: contextOf(),
       ref: ref,
       chapters: screenController.chapters,
-      onJumpToChapter: jumpToChapter,
+      onJumpToChapter: (chapterId) {
+        screenController.hideControls();
+        jumpToChapter(chapterId);
+      },
     );
   }
 

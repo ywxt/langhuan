@@ -263,13 +263,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chineseConversionT2s => '繁體轉簡體';
 
   @override
+  String get chineseConversionS2tw => '簡體 → 臺灣正體';
+
+  @override
+  String get chineseConversionS2hk => '簡體 → 香港繁體';
+
+  @override
   String get feedsTitle => '書源';
 
   @override
   String get feedsSearchHint => '搜索書源…';
 
   @override
-  String get feedsEmpty => '暫無書源\n請將腳本文件放入 scripts 文件夾';
+  String get feedsEmpty => '暫無書源\n請添加書源以開始使用';
 
   @override
   String feedsNoMatch(String keyword) {

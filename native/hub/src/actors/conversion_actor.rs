@@ -64,6 +64,8 @@ impl Handler<SetConversionMode> for ConversionActor {
             ChineseConversionMode::None => ConversionMode::None,
             ChineseConversionMode::S2t => ConversionMode::S2t,
             ChineseConversionMode::T2s => ConversionMode::T2s,
+            ChineseConversionMode::S2tw => ConversionMode::S2tw,
+            ChineseConversionMode::S2hk => ConversionMode::S2hk,
         };
         tracing::info!(mode = ?self.mode, "conversion mode updated");
     }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -245,5 +247,168 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text("You've reached the end of the book"), findsOneWidget);
+  });
+
+  testWidgets('mid-session jump lands on the anchor chapter start', (
+    tester,
+  ) async {
+    final window = ReaderChapterWindow(
+      chapters: _chapters(8),
+      anchorChapterId: 'c1',
+      loader: _loader,
+    );
+    await tester.pumpWidget(_host(window: window));
+    await _pumpLoaded(tester);
+
+    // Scroll deep into the anchor so the current offset is far from 0.
+    await tester.drag(
+      find.byType(CustomScrollView),
+      const Offset(0, -1200),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Jump exactly like ChapterContentManager._onJumpCommand does:
+    // reset the window around the target, then rebuild with a fresh
+    // scroll-target token.
+    window.jumpTo('c5');
+    await tester.pumpWidget(
+      _host(
+        window: window,
+        target: const ReaderScrollTarget(
+          token: 2,
+          chapterId: 'c5',
+          paragraphId: '',
+        ),
+      ),
+    );
+    await _pumpLoaded(tester);
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(
+      find.text('c5 paragraph 0'),
+      findsOneWidget,
+      reason: 'the anchor chapter must be built',
+    );
+    final render =
+        find.text('c5 paragraph 0').evaluate().single.findRenderObject()
+            as RenderBox;
+    final top = render.localToGlobal(Offset.zero).dy;
+    expect(
+      top,
+      closeTo(32, 2.0),
+      reason:
+          'after a TOC jump the anchor chapter starts at the viewport top '
+          '(contentPadding.top = 32), got $top',
+    );
+  });
+
+  testWidgets('mid-session jump shows one loading indicator, on the anchor', (
+    tester,
+  ) async {
+    // Gate every chapter load so the loading state is observable.
+    final gates = <String, Completer<void>>{};
+    Future<List<ParagraphContent>> gatedLoader(
+      String chapterId, {
+      bool forceRefresh = false,
+    }) {
+      final gate = gates.putIfAbsent(chapterId, Completer.new);
+      return gate.future.then((_) => _tallParagraphs(chapterId));
+    }
+
+    final window = ReaderChapterWindow(
+      chapters: _chapters(8),
+      anchorChapterId: 'c1',
+      loader: gatedLoader,
+    );
+    await tester.pumpWidget(_host(window: window));
+    // Let the initial window (c0, c1, c2) reach its loading state.
+    await tester.pump(const Duration(milliseconds: 50));
+    gates['c0']!.complete();
+    gates['c1']!.complete();
+    gates['c2']!.complete();
+    await _pumpLoaded(tester);
+
+    // Jump to an uncached chapter — its window (c4, c5, c6) is all loading.
+    window.jumpTo('c5');
+    await tester.pumpWidget(
+      _host(
+        window: window,
+        target: const ReaderScrollTarget(
+          token: 2,
+          chapterId: 'c5',
+          paragraphId: '',
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(
+      find.byType(CircularProgressIndicator),
+      findsOneWidget,
+      reason:
+          'only the anchor chapter may show a spinner while loading; '
+          'neighbours load quietly and edge spinners must not stack',
+    );
+
+    // Releasing the anchor lets the reader show content at the viewport top.
+    gates['c5']!.complete();
+    await _pumpLoaded(tester);
+    expect(find.text('c5 paragraph 0'), findsOneWidget);
+    final render =
+        find.text('c5 paragraph 0').evaluate().single.findRenderObject()
+            as RenderBox;
+    expect(render.localToGlobal(Offset.zero).dy, closeTo(32, 2.0));
+  });
+
+  testWidgets('chapter above the anchor keeps title before its body', (
+    tester,
+  ) async {
+    Future<List<ParagraphContent>> titledLoader(
+      String chapterId, {
+      bool forceRefresh = false,
+    }) async => [
+      ParagraphContent_Title(
+        id: ParagraphId.id('${chapterId}_title'),
+        text: '$chapterId title',
+      ),
+      ParagraphContent_Text(
+        id: ParagraphId.id('${chapterId}_body_0'),
+        content: '$chapterId body 0',
+      ),
+      ParagraphContent_Text(
+        id: ParagraphId.id('${chapterId}_body_1'),
+        content: '$chapterId body 1',
+      ),
+    ];
+
+    final positions = <(String, String, double)>[];
+    final window = ReaderChapterWindow(
+      chapters: _chapters(3),
+      anchorChapterId: 'c1',
+      loader: titledLoader,
+    );
+    await tester.pumpWidget(
+      _host(
+        window: window,
+        onPosition: (c, p, o) => positions.add((c, p, o)),
+      ),
+    );
+    await _pumpLoaded(tester);
+
+    // Reveal the reverse-growth region above the center/anchor.
+    await tester.drag(
+      find.byType(CustomScrollView),
+      const Offset(0, 400),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final titleTop = tester.getTopLeft(find.text('c0 title')).dy;
+    final firstBodyTop = tester.getTopLeft(find.text('c0 body 0')).dy;
+    final lastBodyTop = tester.getTopLeft(find.text('c0 body 1')).dy;
+
+    expect(titleTop, lessThan(firstBodyTop));
+    expect(firstBodyTop, lessThan(lastBodyTop));
+    expect(positions.last.$1, 'c0');
+    expect(positions.last.$2, 'c0_title');
   });
 }
