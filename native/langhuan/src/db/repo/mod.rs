@@ -20,8 +20,8 @@
 //! can be imported together without ambiguity.
 
 pub mod auth;
-pub mod bookshelf;
 pub mod bookmarks;
+pub mod bookshelf;
 pub mod cache;
 pub mod feeds;
 pub mod maintenance;
@@ -29,8 +29,8 @@ pub mod meta;
 pub mod progress;
 
 pub use auth::AuthRepo;
-pub use bookshelf::{BookshelfRepo, ShelfItem};
 pub use bookmarks::{BookmarkRow, BookmarksRepo};
+pub use bookshelf::{BookshelfRepo, ShelfItem};
 pub use cache::{BookRow, CacheRepo, CoverState};
 pub use feeds::{FeedRow, FeedsRepo, ScriptRow};
 pub use maintenance::{CacheStats, MaintenanceRepo, RemovalReport};
@@ -45,12 +45,8 @@ use crate::error::{Error, Result};
 ///
 /// Corrupt payloads surface as `Error::Persistence(Database)` so callers can
 /// clear the broken row and fall back to a fresh fetch.
-pub(super) fn decode_json<T: serde::de::DeserializeOwned>(
-    what: &str,
-    json: &str,
-) -> Result<T> {
-    serde_json::from_str(json)
-        .map_err(|e| Error::database(format!("corrupt {what} payload: {e}")))
+pub(super) fn decode_json<T: serde::de::DeserializeOwned>(what: &str, json: &str) -> Result<T> {
+    serde_json::from_str(json).map_err(|e| Error::database(format!("corrupt {what} payload: {e}")))
 }
 
 /// Run a `SELECT` that maps zero-or-one row into `Option<T>`.

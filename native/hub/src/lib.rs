@@ -55,11 +55,7 @@ pub(crate) fn localize_error(e: &langhuan::error::Error) -> String {
             ScriptError::AuthStatusNotSupported { feed_id } => {
                 t!("error.auth_status_not_supported", feed_id = feed_id).to_string()
             }
-            ScriptError::DuplicateId {
-                feed_id,
-                kind,
-                id,
-            } => t!(
+            ScriptError::DuplicateId { feed_id, kind, id } => t!(
                 "error.duplicate_id",
                 feed_id = feed_id,
                 kind = kind,

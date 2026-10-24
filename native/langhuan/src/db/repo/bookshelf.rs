@@ -74,7 +74,15 @@ impl BookshelfRepo for Connection {
         cover_url: Option<&str>,
         now_ms: i64,
     ) -> Result<bool> {
-        self.upsert_snapshot(feed_id, book_id, title, author, description, cover_url, now_ms)?;
+        self.upsert_snapshot(
+            feed_id,
+            book_id,
+            title,
+            author,
+            description,
+            cover_url,
+            now_ms,
+        )?;
 
         let inserted = self
             .prepare_cached(
@@ -146,8 +154,10 @@ mod tests {
     fn conn() -> Connection {
         let conn = Connection::open_in_memory().expect("open");
         conn.execute_batch(SCHEMA).expect("schema");
-        conn.execute_batch("INSERT INTO feeds VALUES ('f1', 'Feed', '1.0', NULL, NULL, 'h', 1, 1);")
-            .expect("seed");
+        conn.execute_batch(
+            "INSERT INTO feeds VALUES ('f1', 'Feed', '1.0', NULL, NULL, 'h', 1, 1);",
+        )
+        .expect("seed");
         conn
     }
 
@@ -155,9 +165,19 @@ mod tests {
     fn add_is_idempotent_and_lists_newest_first() {
         let conn = conn();
         let now = now_ms();
-        assert!(conn.add_book("f1", "b1", "One", "A", None, Some("u1"), now).unwrap());
-        assert!(!conn.add_book("f1", "b1", "One", "A", None, Some("u1"), now + 5).unwrap());
-        assert!(conn.add_book("f1", "b2", "Two", "B", None, None, now + 10).unwrap());
+        assert!(
+            conn.add_book("f1", "b1", "One", "A", None, Some("u1"), now)
+                .unwrap()
+        );
+        assert!(
+            !conn
+                .add_book("f1", "b1", "One", "A", None, Some("u1"), now + 5)
+                .unwrap()
+        );
+        assert!(
+            conn.add_book("f1", "b2", "Two", "B", None, None, now + 10)
+                .unwrap()
+        );
 
         let items = conn.shelf_items().unwrap();
         assert_eq!(items.len(), 2);
@@ -173,7 +193,8 @@ mod tests {
     fn remove_then_list() {
         let conn = conn();
         let now = now_ms();
-        conn.add_book("f1", "b1", "One", "A", None, None, now).unwrap();
+        conn.add_book("f1", "b1", "One", "A", None, None, now)
+            .unwrap();
         assert!(conn.remove_book("f1", "b1").unwrap());
         assert!(!conn.remove_book("f1", "b1").unwrap());
         assert!(conn.shelf_items().unwrap().is_empty());

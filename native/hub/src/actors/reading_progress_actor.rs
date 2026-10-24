@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use langhuan::db::repo::{ProgressRepo, ProgressRow};
 use langhuan::db::Db;
+use langhuan::db::repo::{ProgressRepo, ProgressRow};
 use messages::prelude::{Actor, Context, Handler};
 
 use crate::api::types::{BridgeError, ParagraphId, ReadingProgressItem};

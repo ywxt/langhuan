@@ -215,7 +215,9 @@ fn default_method() -> String {
 /// ```
 ///
 /// This custom deserializer accepts both forms.
-fn deserialize_headers<'de, D>(deserializer: D) -> std::result::Result<Vec<(String, String)>, D::Error>
+fn deserialize_headers<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<(String, String)>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -397,7 +399,7 @@ fn domain_allowed(url: &str, access_domains: &HashSet<String>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{shared_client, HttpBody};
+    use super::{HttpBody, shared_client};
 
     #[test]
     fn http_body_to_string_roundtrip() {

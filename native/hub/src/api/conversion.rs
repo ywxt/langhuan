@@ -8,9 +8,7 @@ pub use super::types::{BridgeError, ChineseConversionMode};
 /// This affects all subsequent paragraph streams opened via
 /// [`open_paragraphs_stream`](super::feed_stream::open_paragraphs_stream).
 /// Already-open streams are not retroactively changed.
-pub async fn set_chinese_conversion_mode(
-    mode: ChineseConversionMode,
-) -> Result<(), BridgeError> {
+pub async fn set_chinese_conversion_mode(mode: ChineseConversionMode) -> Result<(), BridgeError> {
     addresses()?
         .conversion
         .clone()

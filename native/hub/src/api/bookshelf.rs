@@ -47,9 +47,5 @@ pub async fn bookshelf_remove(
 }
 
 pub async fn bookshelf_list() -> Result<Vec<BookshelfListItem>, BridgeError> {
-    addresses()?
-        .bookshelf
-        .clone()
-        .send(BookshelfList)
-        .await?
+    addresses()?.bookshelf.clone().send(BookshelfList).await?
 }

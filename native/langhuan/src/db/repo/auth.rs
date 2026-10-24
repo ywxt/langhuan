@@ -66,8 +66,10 @@ mod tests {
              CREATE TABLE auth (feed_id TEXT PRIMARY KEY REFERENCES feeds(id) ON DELETE CASCADE, cookies_json TEXT NOT NULL, updated_at_ms INTEGER NOT NULL) WITHOUT ROWID;",
         )
         .expect("schema");
-        conn.execute_batch("INSERT INTO feeds VALUES ('f1', 'Feed', '1.0', NULL, NULL, 'h', 1, 1);")
-            .expect("seed");
+        conn.execute_batch(
+            "INSERT INTO feeds VALUES ('f1', 'Feed', '1.0', NULL, NULL, 'h', 1, 1);",
+        )
+        .expect("seed");
         conn
     }
 

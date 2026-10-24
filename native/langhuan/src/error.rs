@@ -375,9 +375,8 @@ mod tests {
 
     #[test]
     fn extract_expected_error_unwraps_callback_error() {
-        let inner = mlua::Error::RuntimeError(
-            "@langhuan_expected:cf_challenge:cloudflare blocked".into(),
-        );
+        let inner =
+            mlua::Error::RuntimeError("@langhuan_expected:cf_challenge:cloudflare blocked".into());
         let lua_err = mlua::Error::CallbackError {
             traceback: String::new(),
             cause: inner.into(),
@@ -391,19 +390,20 @@ mod tests {
 
     #[test]
     fn extract_expected_error_unknown_code() {
-        let lua_err =
-            mlua::Error::RuntimeError("@langhuan_expected:custom_code:details".into());
+        let lua_err = mlua::Error::RuntimeError("@langhuan_expected:custom_code:details".into());
         let result = extract_expected_error(&lua_err);
         assert_eq!(
             result,
-            Some((ExpectedErrorCode::Unknown("custom_code".into()), "details".into()))
+            Some((
+                ExpectedErrorCode::Unknown("custom_code".into()),
+                "details".into()
+            ))
         );
     }
 
     #[test]
     fn from_mlua_error_routes_expected() {
-        let lua_err =
-            mlua::Error::RuntimeError("@langhuan_expected:rate_limited:slow down".into());
+        let lua_err = mlua::Error::RuntimeError("@langhuan_expected:rate_limited:slow down".into());
         let err: Error = lua_err.into();
         assert!(matches!(
             err,

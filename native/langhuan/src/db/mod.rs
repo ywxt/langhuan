@@ -132,7 +132,11 @@ impl Db {
 /// database file and only make sense for file-backed databases; in-memory
 /// databases cannot use WAL.
 fn apply_pragmas(conn: &mut Connection, in_memory: bool) -> Result<()> {
-    let wal = if in_memory { "" } else { "PRAGMA journal_mode=WAL;" };
+    let wal = if in_memory {
+        ""
+    } else {
+        "PRAGMA journal_mode=WAL;"
+    };
     let vacuum = if in_memory {
         ""
     } else {
@@ -181,18 +185,14 @@ mod tests {
     async fn open_in_memory_runs_migrations() {
         let db = Db::open_in_memory().await.expect("open in-memory db");
         let version: i64 = db
-            .call(|conn| {
-                Ok(conn.query_row("PRAGMA user_version", [], |row| row.get(0))?)
-            })
+            .call(|conn| Ok(conn.query_row("PRAGMA user_version", [], |row| row.get(0))?))
             .await
             .expect("read user_version");
         assert_eq!(version, schema::CURRENT_VERSION);
 
         // Re-opening must not fail or duplicate migrations.
         let version_again: i64 = db
-            .call(|conn| {
-                Ok(conn.query_row("PRAGMA user_version", [], |row| row.get(0))?)
-            })
+            .call(|conn| Ok(conn.query_row("PRAGMA user_version", [], |row| row.get(0))?))
             .await
             .expect("read user_version again");
         assert_eq!(version_again, schema::CURRENT_VERSION);
@@ -206,8 +206,7 @@ mod tests {
 
         let (mode, fk): (String, i64) = db
             .call(|conn| {
-                let mode: String =
-                    conn.query_row("PRAGMA journal_mode", [], |row| row.get(0))?;
+                let mode: String = conn.query_row("PRAGMA journal_mode", [], |row| row.get(0))?;
                 let fk: i64 = conn.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
                 Ok((mode, fk))
             })
@@ -235,10 +234,7 @@ mod tests {
             .await;
         assert!(result.is_err());
 
-        let value = db
-            .call(|conn| conn.get_meta("k"))
-            .await
-            .expect("read");
+        let value = db.call(|conn| conn.get_meta("k")).await.expect("read");
         assert_eq!(value.as_deref(), Some("v"));
     }
 

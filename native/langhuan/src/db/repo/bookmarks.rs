@@ -92,8 +92,10 @@ mod tests {
     fn conn() -> Connection {
         let conn = Connection::open_in_memory().expect("open");
         conn.execute_batch(SCHEMA).expect("schema");
-        conn.execute_batch("INSERT INTO feeds VALUES ('f1', 'Feed', '1.0', NULL, NULL, 'h', 1, 1);")
-            .expect("seed");
+        conn.execute_batch(
+            "INSERT INTO feeds VALUES ('f1', 'Feed', '1.0', NULL, NULL, 'h', 1, 1);",
+        )
+        .expect("seed");
         conn
     }
 

@@ -177,8 +177,14 @@ mod tests {
     #[test]
     fn versions_are_strictly_increasing() {
         for pair in MIGRATIONS.windows(2) {
-            assert!(pair[0].version < pair[1].version, "migrations must be ordered");
+            assert!(
+                pair[0].version < pair[1].version,
+                "migrations must be ordered"
+            );
         }
-        assert_eq!(MIGRATIONS.last().expect("at least one").version, CURRENT_VERSION);
+        assert_eq!(
+            MIGRATIONS.last().expect("at least one").version,
+            CURRENT_VERSION
+        );
     }
 }

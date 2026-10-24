@@ -2,9 +2,9 @@
 
 use super::types::{BridgeError, CacheStats, CleanupResult, CoverData};
 use crate::actors::hub_db;
+use langhuan::db::Db;
 use langhuan::db::maintenance::MaintenanceOutcome;
 use langhuan::db::repo::{CacheRepo, CacheStats as RepoCacheStats};
-use langhuan::db::Db;
 
 /// Snapshot of database and cache statistics.
 pub async fn cache_stats() -> Result<CacheStats, BridgeError> {
@@ -46,10 +46,7 @@ pub async fn clear_cache() -> Result<CleanupResult, BridgeError> {
 }
 
 /// Read the downloaded cover for a book, if one is stored.
-pub async fn get_cover(
-    feed_id: String,
-    book_id: String,
-) -> Result<Option<CoverData>, BridgeError> {
+pub async fn get_cover(feed_id: String, book_id: String) -> Result<Option<CoverData>, BridgeError> {
     let db: Db = hub_db()?;
     let cover = db
         .call(move |conn| conn.get_cover_bytes(&feed_id, &book_id))

@@ -12,8 +12,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use langhuan::cache::CachedFeed;
-use langhuan::db::repo::{FeedRow, FeedsRepo};
 use langhuan::db::Db;
+use langhuan::db::repo::{FeedRow, FeedsRepo};
 use langhuan::script::lua::LuaFeed;
 use langhuan::script::runtime::ScriptEngine;
 use messages::prelude::{Actor, Context, Handler};
@@ -360,10 +360,7 @@ fn classify_version_change(current: Option<&str>, new: &str) -> VersionChange {
     let Some(current) = current else {
         return VersionChange::New;
     };
-    match (
-        semver::Version::parse(current),
-        semver::Version::parse(new),
-    ) {
+    match (semver::Version::parse(current), semver::Version::parse(new)) {
         (Ok(current), Ok(new)) if new > current => VersionChange::Upgrade,
         (Ok(current), Ok(new)) if new < current => VersionChange::Downgrade,
         (Ok(_), Ok(_)) => VersionChange::Same,
@@ -399,10 +396,7 @@ impl Handler<GetFeed> for RegistryActor {
         let db = self.db.as_ref().ok_or(ResolveError::DirNotSet)?;
 
         if let Some(feed) = self.feeds.get(&msg.feed_id) {
-            return Ok(Arc::new(CachedFeed::new(
-                Arc::clone(feed),
-                db.clone(),
-            )));
+            return Ok(Arc::new(CachedFeed::new(Arc::clone(feed), db.clone())));
         }
 
         if self.load_errors.contains_key(&msg.feed_id) {

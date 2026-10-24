@@ -8,8 +8,8 @@
 
 use std::sync::OnceLock;
 
-use ferrous_opencc::config::BuiltinConfig;
 use ferrous_opencc::OpenCC;
+use ferrous_opencc::config::BuiltinConfig;
 
 use crate::model::Paragraph;
 

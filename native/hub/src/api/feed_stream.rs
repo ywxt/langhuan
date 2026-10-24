@@ -1,7 +1,7 @@
+use crate::actors::addresses;
 use crate::actors::feed_actor::{
     GetBookInfo, OpenChaptersStream, OpenParagraphsStream, OpenSearchStream, PullStream,
 };
-use crate::actors::addresses;
 
 use super::types::BookInfo;
 pub use super::types::{BridgeError, ChapterItem, ParagraphContent, SearchResultItem};
@@ -75,7 +75,11 @@ pub async fn open_chapters_stream(
     let stream = addresses()?
         .feed
         .clone()
-        .send(OpenChaptersStream { feed_id, book_id, force_refresh })
+        .send(OpenChaptersStream {
+            feed_id,
+            book_id,
+            force_refresh,
+        })
         .await??;
     Ok(FeedChaptersStream(stream))
 }
@@ -101,10 +105,18 @@ pub async fn open_paragraphs_stream(
 }
 
 /// Fetch book info (single value, not a stream).
-pub async fn book_info(feed_id: String, book_id: String, force_refresh: bool) -> Result<BookInfo, BridgeError> {
+pub async fn book_info(
+    feed_id: String,
+    book_id: String,
+    force_refresh: bool,
+) -> Result<BookInfo, BridgeError> {
     addresses()?
         .feed
         .clone()
-        .send(GetBookInfo { feed_id, book_id, force_refresh })
+        .send(GetBookInfo {
+            feed_id,
+            book_id,
+            force_refresh,
+        })
         .await?
 }

@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use langhuan::cache::CachedFeed;
-use langhuan::db::repo::AuthRepo;
 use langhuan::db::Db;
+use langhuan::db::repo::AuthRepo;
 use langhuan::feed::{
     AuthPageContext, AuthStatus as FeedAuthStatus, CookieEntry as FeedCookieEntry, FeedAuthFlow,
 };

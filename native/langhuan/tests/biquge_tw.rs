@@ -195,7 +195,9 @@ async fn search_returns_results() {
             "cover_url should be extracted from .book-cover img"
         );
         assert!(
-            item.description.as_deref().is_some_and(|d| !d.trim().is_empty()),
+            item.description
+                .as_deref()
+                .is_some_and(|d| !d.trim().is_empty()),
             "description should be extracted from .book-intro: {item:?}"
         );
     }
@@ -203,7 +205,10 @@ async fn search_returns_results() {
     let by_id = |id: &str| items.iter().find(|i| i.id == id).unwrap();
     assert_eq!(by_id("12345").author, "測試作者甲");
     assert_eq!(by_id("67890").author, "測試作者乙");
-    assert_eq!(by_id("12345").description.as_deref(), Some("這是第一本書的簡介。"));
+    assert_eq!(
+        by_id("12345").description.as_deref(),
+        Some("這是第一本書的簡介。")
+    );
 }
 
 #[tokio::test]

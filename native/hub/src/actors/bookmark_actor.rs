@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use langhuan::db::repo::{BookmarkRow, BookmarksRepo};
 use langhuan::db::Db;
+use langhuan::db::repo::{BookmarkRow, BookmarksRepo};
 use messages::prelude::{Actor, Context, Handler};
 
 use crate::api::types::{BookmarkItem, BridgeError, ParagraphId};

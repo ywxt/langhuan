@@ -1,8 +1,5 @@
 use async_trait::async_trait;
-use messages::{
-    actor::Actor,
-    prelude::Context,
-};
+use messages::{actor::Actor, prelude::Context};
 
 /// Message sent from the FRB API layer to update the locale.
 pub struct SetLocale {

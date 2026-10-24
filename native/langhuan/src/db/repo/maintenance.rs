@@ -182,7 +182,9 @@ impl MaintenanceRepo for Connection {
     fn clear_cache(&self) -> Result<RemovalReport> {
         let mut removed = 0u64;
         removed += self.prepare_cached("DELETE FROM chapters")?.execute([])? as u64;
-        removed += self.prepare_cached("DELETE FROM chapter_lists")?.execute([])? as u64;
+        removed += self
+            .prepare_cached("DELETE FROM chapter_lists")?
+            .execute([])? as u64;
         removed += self.prepare_cached("DELETE FROM covers")?.execute([])? as u64;
         self.prepare_cached(
             "UPDATE books SET cover_state = 'none', cover_fetched_at_ms = 0 \
@@ -301,10 +303,11 @@ mod tests {
         let s = conn.cache_stats().expect("stats");
         assert_eq!(s.chapter_count, 4); // shelved + fresh survive
         assert_eq!(s.book_count, 2);
-        assert!(conn
-            .get_progress("f1", "old-plain")
-            .expect("progress")
-            .is_none());
+        assert!(
+            conn.get_progress("f1", "old-plain")
+                .expect("progress")
+                .is_none()
+        );
     }
 
     #[test]
@@ -322,23 +325,23 @@ mod tests {
 
         // Cap below the total size → eviction needed.
         let cap = 3 * 100; // roughly one book's payload
-        let first = conn
-            .evict_oldest_unprotected(cap, 1)
-            .expect("evict");
+        let first = conn.evict_oldest_unprotected(cap, 1).expect("evict");
         assert_eq!(first, 1); // one chunk of one book
 
         // The shelved book (oldest by last_used) must never be evicted; the
         // oldest *unprotected* book goes first.
         let s = conn.cache_stats().expect("stats");
         assert_eq!(s.book_count, 3);
-        assert!(conn
-            .get_paragraphs("f1", "oldest", "c0", now)
-            .expect("get")
-            .is_none());
-        assert!(conn
-            .get_paragraphs("f1", "shelved", "c0", now)
-            .expect("get")
-            .is_some());
+        assert!(
+            conn.get_paragraphs("f1", "oldest", "c0", now)
+                .expect("get")
+                .is_none()
+        );
+        assert!(
+            conn.get_paragraphs("f1", "shelved", "c0", now)
+                .expect("get")
+                .is_some()
+        );
     }
 
     #[test]

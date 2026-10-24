@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_stream::stream;
 use tokio_stream::StreamExt;
 
-use crate::db::repo::{CacheRepo, CoverState};
 use crate::db::Db;
+use crate::db::repo::{CacheRepo, CoverState};
 use crate::error::Result;
 use crate::feed::{
     AuthEntry, AuthInfo, AuthPageContext, AuthStatus, Feed, FeedAuthFlow, FeedMeta, FeedStream,
@@ -330,9 +330,7 @@ fn spawn_cover_download(db: Db, feed_id: String, book_id: String, url: String) {
 async fn mark_cover_failed(db: &Db, feed_id: &str, book_id: &str) {
     let (fid, bid) = (feed_id.to_owned(), book_id.to_owned());
     let _ = db
-        .write(move |conn| {
-            conn.mark_cover(&fid, &bid, CoverState::Failed, crate::db::now_ms())
-        })
+        .write(move |conn| conn.mark_cover(&fid, &bid, CoverState::Failed, crate::db::now_ms()))
         .await;
 }
 

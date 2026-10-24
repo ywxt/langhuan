@@ -24,10 +24,10 @@
 //! when the stored `cover_url` changes, so a download for the new URL can
 //! claim again.
 
+use tokio_rusqlite::rusqlite::Connection;
 use tokio_rusqlite::rusqlite::types::{
     FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef,
 };
-use tokio_rusqlite::rusqlite::Connection;
 
 use crate::error::{Error, Result};
 use crate::model::{BookInfo, ChapterInfo, Paragraph};
@@ -142,7 +142,9 @@ impl From<BookRow> for BookInfo {
 const BOOK_COLUMNS: &str =
     "feed_id, book_id, title, author, description, cover_url, info_fetched_at_ms";
 
-fn map_book_row(row: &tokio_rusqlite::rusqlite::Row<'_>) -> tokio_rusqlite::rusqlite::Result<BookRow> {
+fn map_book_row(
+    row: &tokio_rusqlite::rusqlite::Row<'_>,
+) -> tokio_rusqlite::rusqlite::Result<BookRow> {
     Ok(BookRow {
         feed_id: row.get(0)?,
         book_id: row.get(1)?,
@@ -455,15 +457,15 @@ impl CacheRepo for Connection {
     }
 
     fn claim_cover_download(&self, feed_id: &str, book_id: &str, now_ms: i64) -> Result<bool> {
-        let claimed = self
-            .prepare_cached(CLAIM_COVER_DOWNLOAD)?
-            .execute(tokio_rusqlite::params![
-                feed_id,
-                book_id,
-                now_ms,
-                COVER_INFLIGHT_RETRY_MS,
-                COVER_FAILED_RETRY_MS,
-            ])?;
+        let claimed =
+            self.prepare_cached(CLAIM_COVER_DOWNLOAD)?
+                .execute(tokio_rusqlite::params![
+                    feed_id,
+                    book_id,
+                    now_ms,
+                    COVER_INFLIGHT_RETRY_MS,
+                    COVER_FAILED_RETRY_MS,
+                ])?;
         Ok(claimed > 0)
     }
 
@@ -484,12 +486,7 @@ impl CacheRepo for Connection {
             "SELECT chapters_json, cached_at_ms FROM chapter_lists \
              WHERE feed_id = ?1 AND book_id = ?2",
             &[&feed_id, &book_id],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, i64>(1)?,
-                ))
-            },
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
         )?;
         match cached {
             Some((json, cached_at)) if now_ms - cached_at <= CHAPTER_LIST_TTL_MS => {
@@ -548,8 +545,8 @@ impl CacheRepo for Connection {
         )?;
         match json {
             Some(json) => {
-                let paragraphs: Vec<Paragraph> =
-                    decode_json("chapter paragraphs", &json).inspect_err(|_| {
+                let paragraphs: Vec<Paragraph> = decode_json("chapter paragraphs", &json)
+                    .inspect_err(|_| {
                         // Drop the broken row so the next call re-fetches.
                         let _ = self.delete_paragraphs(feed_id, book_id, chapter_id);
                     })?;
@@ -578,11 +575,7 @@ impl CacheRepo for Connection {
                  paragraphs_json = excluded.paragraphs_json, cached_at_ms = excluded.cached_at_ms",
         )?
         .execute(tokio_rusqlite::params![
-            feed_id,
-            book_id,
-            chapter_id,
-            json,
-            now_ms
+            feed_id, book_id, chapter_id, json, now_ms
         ])?;
         self.touch_book(feed_id, book_id, now_ms)?;
         Ok(())
@@ -613,8 +606,10 @@ mod tests {
     fn conn() -> Connection {
         let conn = Connection::open_in_memory().expect("open");
         conn.execute_batch(SCHEMA).expect("schema");
-        conn.execute_batch("INSERT INTO feeds VALUES ('f1', 'Feed', '1.0', NULL, NULL, 'h', 1, 1);")
-            .expect("seed feed");
+        conn.execute_batch(
+            "INSERT INTO feeds VALUES ('f1', 'Feed', '1.0', NULL, NULL, 'h', 1, 1);",
+        )
+        .expect("seed feed");
         conn
     }
 
@@ -798,7 +793,10 @@ mod tests {
         // …and a later snapshot must NOT clobber it.
         conn.upsert_snapshot("f1", "b1", "Stale", "B", None, None, now + 20)
             .unwrap();
-        let row = conn.get_book_and_touch("f1", "b1", now + 30).unwrap().unwrap();
+        let row = conn
+            .get_book_and_touch("f1", "b1", now + 30)
+            .unwrap()
+            .unwrap();
         assert_eq!(row.title, "Book b1");
         assert!(row.is_fetched());
     }
@@ -811,7 +809,8 @@ mod tests {
             id: "c1".to_owned(),
             title: "One".to_owned(),
         }];
-        conn.set_chapter_list("f1", "b1", &chapters, now).expect("set");
+        conn.set_chapter_list("f1", "b1", &chapters, now)
+            .expect("set");
 
         let fresh = conn
             .get_chapter_list("f1", "b1", now + 1000)
@@ -849,9 +848,10 @@ mod tests {
         assert_eq!(loaded.len(), 2);
 
         conn.delete_paragraphs("f1", "b1", "c1").expect("delete");
-        assert!(conn
-            .get_paragraphs("f1", "b1", "c1", now + 2)
-            .expect("get")
-            .is_none());
+        assert!(
+            conn.get_paragraphs("f1", "b1", "c1", now + 2)
+                .expect("get")
+                .is_none()
+        );
     }
 }

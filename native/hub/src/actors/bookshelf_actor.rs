@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use langhuan::cache::download_cover;
-use langhuan::db::repo::{BookshelfRepo, ShelfItem};
 use langhuan::db::Db;
+use langhuan::db::repo::{BookshelfRepo, ShelfItem};
 use messages::prelude::{Actor, Context, Handler};
 
 use crate::api::types::{
@@ -100,7 +100,10 @@ impl BookshelfActor {
         })
     }
 
-    async fn remove(&mut self, msg: BookshelfRemove) -> Result<BookshelfRemoveOutcome, BridgeError> {
+    async fn remove(
+        &mut self,
+        msg: BookshelfRemove,
+    ) -> Result<BookshelfRemoveOutcome, BridgeError> {
         tracing::debug!(feed_id = %msg.feed_id, source_book_id = %msg.source_book_id, "bookshelf remove");
         let db = self.db()?.clone();
         let removed = db
@@ -223,12 +226,13 @@ mod tests {
         let context: Context<BookshelfActor> = Context::new();
         let _addr = context.address();
         let mut actor = BookshelfActor::new();
-        actor.handle(
-            InitializeAppDataDirectory { db: db.clone() },
-            &Context::new(),
-        )
-        .await
-        .map_err(std::io::Error::other)?;
+        actor
+            .handle(
+                InitializeAppDataDirectory { db: db.clone() },
+                &Context::new(),
+            )
+            .await
+            .map_err(std::io::Error::other)?;
 
         // Add two books (second is a duplicate add).
         let added = actor

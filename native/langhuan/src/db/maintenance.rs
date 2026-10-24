@@ -4,11 +4,9 @@
 //! startup pass (throttled to once per 24 h via `meta.last_cleanup_ms`) and
 //! by the manual settings action (`force = true`).
 
-use super::now_ms;
-use super::repo::{
-    CacheStats, MaintenanceRepo, MetaRepo,
-};
 use super::Db;
+use super::now_ms;
+use super::repo::{CacheStats, MaintenanceRepo, MetaRepo};
 use crate::error::Result;
 
 /// Cache payloads are capped at 512 MiB; older, unshelved books are evicted
@@ -77,9 +75,7 @@ pub async fn run_maintenance(db: &Db, force: bool) -> Result<MaintenanceOutcome>
 
     // 1. Stale cleanup (one transaction).
     let cutoff = now - STALE_MAX_AGE_MS;
-    let removed = db
-        .write(move |conn| conn.stale_cleanup(cutoff))
-        .await?;
+    let removed = db.write(move |conn| conn.stale_cleanup(cutoff)).await?;
     outcome.items_removed += removed.items_removed;
 
     // 2. Script history prune (one transaction).

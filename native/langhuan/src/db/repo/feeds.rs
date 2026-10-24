@@ -131,7 +131,13 @@ impl FeedsRepo for Connection {
                  script = excluded.script, \
                  installed_at_ms = excluded.installed_at_ms",
         )?
-        .execute(tokio_rusqlite::params![feed_id, version, content_hash, script, now_ms])?;
+        .execute(tokio_rusqlite::params![
+            feed_id,
+            version,
+            content_hash,
+            script,
+            now_ms
+        ])?;
         Ok(())
     }
 
@@ -176,10 +182,7 @@ impl FeedsRepo for Connection {
         )?;
         let rows = stmt
             .query_map([], |row| {
-                Ok((
-                    map_feed_row(row)?,
-                    row.get::<_, Option<String>>(8)?,
-                ))
+                Ok((map_feed_row(row)?, row.get::<_, Option<String>>(8)?))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
@@ -222,7 +225,9 @@ impl FeedsRepo for Connection {
     }
 }
 
-fn map_feed_row(row: &tokio_rusqlite::rusqlite::Row<'_>) -> tokio_rusqlite::rusqlite::Result<FeedRow> {
+fn map_feed_row(
+    row: &tokio_rusqlite::rusqlite::Row<'_>,
+) -> tokio_rusqlite::rusqlite::Result<FeedRow> {
     Ok(FeedRow {
         id: row.get(0)?,
         name: row.get(1)?,

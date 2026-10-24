@@ -156,7 +156,7 @@ fn create_sandbox_lua() -> Result<Lua> {
         | StdLib::OS;
 
     let lua = Lua::new_with(safe_libs, mlua::LuaOptions::default())?;
-    
+
     lua.set_memory_limit(MEMORY_LIMIT)?;
 
     // -- Restrict `base` library functions that can execute code or access the filesystem ---
@@ -241,9 +241,6 @@ mod tests {
             .expect_err("infinite loop should be interrupted");
 
         let msg = err.to_string();
-        assert!(
-            msg.contains("timed out"),
-            "unexpected error: {msg}"
-        );
+        assert!(msg.contains("timed out"), "unexpected error: {msg}");
     }
 }

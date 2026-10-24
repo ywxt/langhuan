@@ -87,9 +87,7 @@ impl From<langhuan::error::Error> for BridgeError {
                     ExpectedErrorCode::CfChallenge => ScriptExpectedReason::CfChallenge,
                     ExpectedErrorCode::RateLimited => ScriptExpectedReason::RateLimited,
                     ExpectedErrorCode::ContentNotFound => ScriptExpectedReason::ContentNotFound,
-                    ExpectedErrorCode::SourceUnavailable => {
-                        ScriptExpectedReason::SourceUnavailable
-                    }
+                    ExpectedErrorCode::SourceUnavailable => ScriptExpectedReason::SourceUnavailable,
                     ExpectedErrorCode::Unknown(_) => ScriptExpectedReason::Other,
                 };
                 ErrorKind::ScriptExpected { reason }
@@ -260,9 +258,19 @@ impl From<langhuan::model::ParagraphId> for ParagraphId {
 }
 
 pub enum ParagraphContent {
-    Title { id: ParagraphId, text: String },
-    Text { id: ParagraphId, content: String },
-    Image { id: ParagraphId, url: String, alt: Option<String> },
+    Title {
+        id: ParagraphId,
+        text: String,
+    },
+    Text {
+        id: ParagraphId,
+        content: String,
+    },
+    Image {
+        id: ParagraphId,
+        url: String,
+        alt: Option<String>,
+    },
 }
 
 // ---------------------------------------------------------------------------

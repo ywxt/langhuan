@@ -73,14 +73,11 @@ pub(crate) fn set_hub_db(db: langhuan::db::Db) -> Result<(), ()> {
 
 /// The global database handle, once the app-data directory is initialized.
 pub(crate) fn hub_db() -> Result<langhuan::db::Db, crate::api::types::BridgeError> {
-    HUB_DB
-        .get()
-        .cloned()
-        .ok_or_else(|| {
-            crate::api::types::BridgeError::from(
-                rust_i18n::t!("error.app_data_dir_not_set").to_string(),
-            )
-        })
+    HUB_DB.get().cloned().ok_or_else(|| {
+        crate::api::types::BridgeError::from(
+            rust_i18n::t!("error.app_data_dir_not_set").to_string(),
+        )
+    })
 }
 
 /// Creates and spawns the actors in the async system.

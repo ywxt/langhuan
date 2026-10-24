@@ -5,11 +5,7 @@ use crate::actors::{
 };
 
 pub async fn list_feeds() -> Result<Vec<FeedMetaItem>, BridgeError> {
-    let items = addresses()?
-        .registry
-        .clone()
-        .send(ListFeeds)
-        .await?;
+    let items = addresses()?.registry.clone().send(ListFeeds).await?;
     Ok(items)
 }
 

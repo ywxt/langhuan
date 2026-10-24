@@ -6,11 +6,11 @@ use messages::prelude::{Actor, Address, Context, Handler};
 
 use crate::api::types::BridgeError;
 
+use super::bookmark_actor::BookmarkActor;
 use super::bookshelf_actor::BookshelfActor;
 use super::login_actor::LoginActor;
 use super::reading_progress_actor::ReadingProgressActor;
 use super::registry_actor::{ListFeeds, RegistryActor};
-use super::bookmark_actor::BookmarkActor;
 
 /// Hands a clone of the application database to a storage actor. Sent by the
 /// [`AppDataActor`] after it opened the database successfully.
@@ -63,7 +63,9 @@ impl AppDataActor {
                 // engine swap and are already bound to this directory, so
                 // succeed idempotently with the registry's current feed
                 // count.
-                tracing::debug!("app data directory already initialized — reporting live feed count");
+                tracing::debug!(
+                    "app data directory already initialized — reporting live feed count"
+                );
                 let feed_count = self.registry_addr.send(ListFeeds).await?.len() as u32;
                 return Ok(AppDataInitResult { feed_count });
             }
@@ -157,8 +159,8 @@ mod tests {
     use messages::prelude::Context;
     use tokio::spawn;
 
-    use super::super::bookshelf_actor::BookshelfActor;
     use super::super::bookmark_actor::BookmarkActor;
+    use super::super::bookshelf_actor::BookshelfActor;
     use super::super::login_actor::LoginActor;
     use super::super::reading_progress_actor::ReadingProgressActor;
     use super::super::registry_actor::RegistryActor;
@@ -166,9 +168,7 @@ mod tests {
 
     type TestResult = Result<(), Box<dyn Error>>;
 
-    async fn spawn_actor_tree(
-        dir: &std::path::Path,
-    ) -> AppDataActor {
+    async fn spawn_actor_tree(dir: &std::path::Path) -> AppDataActor {
         let registry_context: Context<RegistryActor> = Context::new();
         let registry_addr = registry_context.address();
         let bookshelf_context: Context<BookshelfActor> = Context::new();
