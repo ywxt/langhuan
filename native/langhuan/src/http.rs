@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use bytes::Bytes;
 use reqwest::Client;
@@ -45,6 +45,20 @@ pub fn new_client() -> Client {
         .tls_backend_preconfigured(tls)
         .build()
         .expect("failed to build HTTP client")
+}
+
+/// The app-wide client for cookie-free downloads (covers, feed scripts).
+///
+/// Building a [`Client`] sets up a TLS config and a connection pool, so
+/// callers that make occasional cookie-free downloads share this single
+/// instance instead of constructing (and throwing away) their own. Callers
+/// that need isolation — the script engine, which owns one client per
+/// engine — keep building theirs with [`new_client`].
+static SHARED_CLIENT: LazyLock<Client> = LazyLock::new(new_client);
+
+/// Borrow the shared cookie-free HTTP client; see [`SHARED_CLIENT`].
+pub fn shared_client() -> &'static Client {
+    &SHARED_CLIENT
 }
 
 // ---------------------------------------------------------------------------
@@ -383,7 +397,7 @@ fn domain_allowed(url: &str, access_domains: &HashSet<String>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::HttpBody;
+    use super::{shared_client, HttpBody};
 
     #[test]
     fn http_body_to_string_roundtrip() {
@@ -402,5 +416,12 @@ mod tests {
     fn http_body_from_str_works() {
         let body: HttpBody = "abc".parse().expect("infallible parse should succeed");
         assert_eq!(body.as_str().expect("valid utf-8"), "abc");
+    }
+
+    #[test]
+    fn shared_client_returns_one_instance() {
+        // The shared client must hand out the same instance on every call so
+        // all cookie-free callers reuse one connection pool.
+        assert!(std::ptr::eq(shared_client(), shared_client()));
     }
 }
