@@ -1,0 +1,262 @@
+//! Async maintenance orchestration over [`Db`].
+//!
+//! [`run_maintenance`] is the single entry point used both by the automatic
+//! startup pass (throttled to once per 24 h via `meta.last_cleanup_ms`) and
+//! by the manual settings action (`force = true`).
+
+use super::now_ms;
+use super::repo;
+use super::Db;
+use crate::error::Result;
+
+/// Cache payloads are capped at 512 MiB; older, unshelved books are evicted
+/// beyond that.
+pub const MAX_CACHE_BYTES: i64 = 512 * 1024 * 1024;
+
+/// Unshelved cache data older than 15 days is removed.
+pub const STALE_MAX_AGE_MS: i64 = 15 * 24 * 60 * 60 * 1000;
+
+/// Script versions kept per feed (newest first, active always kept).
+pub const SCRIPT_HISTORY_KEEP: usize = 3;
+
+/// How many books one eviction step deletes.
+const EVICT_CHUNK: usize = 32;
+
+/// The automatic startup cleanup runs at most this often.
+const CLEANUP_THROTTLE_MS: i64 = 24 * 60 * 60 * 1000;
+
+const META_LAST_CLEANUP: &str = "last_cleanup_ms";
+
+/// Summary of one maintenance run.
+#[derive(Debug, Clone, Default)]
+pub struct MaintenanceOutcome {
+    /// `true` when the run was skipped by the 24 h throttle.
+    pub skipped: bool,
+    /// Rows deleted (cache rows, stale progress, pruned script versions).
+    pub items_removed: u64,
+    /// Cache payload bytes removed.
+    pub bytes_freed: i64,
+    /// Book rows evicted by the size cap.
+    pub books_evicted: u64,
+}
+
+/// Run the full maintenance pass.
+///
+/// 1. Remove stale cache data and progress (unshelved, older than 15 days).
+/// 2. Prune script histories to [`SCRIPT_HISTORY_KEEP`] versions.
+/// 3. Evict least-recently-used unshelved books until under
+///    [`MAX_CACHE_BYTES`], in chunks so the database thread stays responsive.
+/// 4. `incremental_vacuum` when the pass freed space.
+///
+/// With `force = false` the pass is skipped when the last one ran less than
+/// 24 h ago. The `last_cleanup_ms` timestamp is updated on every run.
+pub async fn run_maintenance(db: &Db, force: bool) -> Result<MaintenanceOutcome> {
+    let now = now_ms();
+
+    let due = db
+        .call(move |conn| {
+            Ok(if force {
+                true
+            } else {
+                let last = repo::meta::get_i64(conn, META_LAST_CLEANUP, 0)?;
+                now - last >= CLEANUP_THROTTLE_MS
+            })
+        })
+        .await?;
+    if !due {
+        return Ok(MaintenanceOutcome {
+            skipped: true,
+            ..MaintenanceOutcome::default()
+        });
+    }
+
+    let mut outcome = MaintenanceOutcome::default();
+    let size_before = db
+        .call(|conn| repo::maintenance::cache_total_bytes(conn))
+        .await?;
+
+    // 1. Stale cleanup (one transaction).
+    let cutoff = now - STALE_MAX_AGE_MS;
+    let removed = db
+        .write(move |conn| repo::maintenance::stale_cleanup(conn, cutoff))
+        .await?;
+    outcome.items_removed += removed.items_removed;
+
+    // 2. Script history prune (one transaction).
+    let pruned = db
+        .write(|conn| repo::maintenance::prune_all_scripts(conn, SCRIPT_HISTORY_KEEP))
+        .await?;
+    outcome.items_removed += pruned;
+
+    // 3. LRU eviction, chunked.
+    loop {
+        let evicted = db
+            .call(|conn| repo::maintenance::evict_oldest_unprotected(conn, MAX_CACHE_BYTES, EVICT_CHUNK))
+            .await?;
+        outcome.books_evicted += evicted;
+        if evicted == 0 {
+            break;
+        }
+    }
+
+    let size_after = db
+        .call(|conn| repo::maintenance::cache_total_bytes(conn))
+        .await?;
+    outcome.bytes_freed = (size_before - size_after).max(0);
+
+    // 4. Give freed pages back to the OS.
+    if outcome.bytes_freed > 0 || outcome.items_removed > 0 {
+        db.call(|conn| repo::maintenance::incremental_vacuum(conn))
+            .await?;
+    }
+
+    // 5. Record the run (unthrottled writes are fine — one tiny upsert).
+    let stamp = now.to_string();
+    db.write(move |conn| repo::meta::set(conn, META_LAST_CLEANUP, &stamp))
+        .await?;
+
+    if outcome.bytes_freed > 0 || outcome.items_removed > 0 {
+        tracing::info!(
+            items = outcome.items_removed,
+            bytes = outcome.bytes_freed,
+            evicted = outcome.books_evicted,
+            "database maintenance completed"
+        );
+    }
+    Ok(outcome)
+}
+
+/// Clear all cache payloads (settings action). Keeps the bookshelf, progress,
+/// bookmarks, and book rows; resets cover state so covers re-download on
+/// demand.
+///
+/// Returns `(rows removed, bytes freed)`.
+pub async fn clear_cache(db: &Db) -> Result<(u64, i64)> {
+    let size_before = db
+        .call(|conn| repo::maintenance::cache_total_bytes(conn))
+        .await?;
+
+    let report = db.write(|conn| repo::maintenance::clear_cache(conn)).await?;
+
+    let size_after = db
+        .call(|conn| repo::maintenance::cache_total_bytes(conn))
+        .await?;
+    db.call(|conn| repo::maintenance::incremental_vacuum(conn))
+        .await?;
+
+    Ok((report.items_removed, (size_before - size_after).max(0)))
+}
+
+/// Cache statistics for the settings screen.
+pub async fn cache_stats(db: &Db) -> Result<repo::maintenance::CacheStats> {
+    db.call(|conn| repo::maintenance::stats(conn)).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::repo::{bookshelf, cache as cache_repo, feeds as feeds_repo};
+    use crate::feed::FeedMeta;
+
+    fn meta(id: &str, version: &str) -> FeedMeta {
+        FeedMeta {
+            id: id.to_owned(),
+            name: format!("Feed {id}"),
+            version: version.to_owned(),
+            author: None,
+            description: None,
+            base_url: "https://example.com".to_owned(),
+            access_domains: Default::default(),
+            schema_version: 1,
+        }
+    }
+
+    #[tokio::test]
+    async fn throttle_skips_within_24h_and_force_overrides() {
+        let db = Db::open_in_memory().await.expect("open");
+        db.write(|conn| {
+            Ok(feeds_repo::upsert_feed(
+                conn,
+                &meta("f1", "1.0.0"),
+                None,
+                "h",
+                now_ms(),
+            )?)
+        })
+        .await
+        .expect("seed feed");
+
+        // First run executes (no previous run).
+        let out = run_maintenance(&db, false).await.expect("run 1");
+        assert!(!out.skipped);
+
+        // Second run is throttled.
+        let out = run_maintenance(&db, false).await.expect("run 2");
+        assert!(out.skipped);
+
+        // Force overrides the throttle.
+        let out = run_maintenance(&db, true).await.expect("run 3");
+        assert!(!out.skipped);
+    }
+
+    #[tokio::test]
+    async fn maintenance_removes_stale_unshelved_books() {
+        let db = Db::open_in_memory().await.expect("open");
+        let now = now_ms();
+        db.write(move |conn| {
+            Ok(feeds_repo::upsert_feed(conn, &meta("f1", "1.0.0"), None, "h", now)?)
+        })
+        .await
+        .expect("seed feed");
+
+        let old = now - STALE_MAX_AGE_MS - 1000;
+        db.write(move |conn| {
+            cache_repo::ensure_book(conn, "f1", "old", old)?;
+            cache_repo::ensure_book(conn, "f1", "kept", old)?;
+            bookshelf::add_book(conn, "f1", "kept", "Kept", "A", None, None, old)
+        })
+        .await
+        .expect("seed");
+
+        // The stale book is removed by the stale-cleanup step (not by LRU
+        // eviction — nothing exceeds the size cap).
+        let out = run_maintenance(&db, true).await.expect("run");
+        assert!(!out.skipped);
+        assert_eq!(out.books_evicted, 0);
+        assert!(out.items_removed >= 1);
+
+        let stats = cache_stats(&db).await.expect("stats");
+        assert_eq!(stats.book_count, 1); // only the shelved one
+        assert_eq!(stats.bookshelf_count, 1);
+    }
+
+    #[tokio::test]
+    async fn clear_cache_frees_payloads() {
+        let db = Db::open_in_memory().await.expect("open");
+        let now = now_ms();
+        db.write(move |conn| {
+            Ok(feeds_repo::upsert_feed(conn, &meta("f1", "1.0.0"), None, "h", now)?)
+        })
+        .await
+        .expect("seed feed");
+
+        db.write(move |conn| {
+            cache_repo::ensure_book(conn, "f1", "b1", now)?;
+            bookshelf::add_book(conn, "f1", "b1", "T", "A", None, None, now)?;
+            cache_repo::set_cover(conn, "f1", "b1", "image/png", &[9; 128], now)
+        })
+        .await
+        .expect("seed");
+
+        let before = cache_stats(&db).await.expect("stats");
+        assert!(before.cache_bytes >= 128);
+
+        let (removed, freed) = clear_cache(&db).await.expect("clear");
+        assert_eq!(removed, 1);
+        assert!(freed >= 128);
+
+        let after = cache_stats(&db).await.expect("stats");
+        assert_eq!(after.cache_bytes, 0);
+        assert_eq!(after.bookshelf_count, 1);
+    }
+}

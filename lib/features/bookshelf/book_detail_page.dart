@@ -352,9 +352,16 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
       return;
     }
 
-    final outcome = await ref
-        .read(bookshelfProvider.notifier)
-        .add(feedId: widget.feedId, sourceBookId: widget.bookId);
+    // Snapshot the currently displayed info so the shelf renders instantly.
+    final book = ref.read(bookInfoProvider).book;
+    final outcome = await ref.read(bookshelfProvider.notifier).add(
+      feedId: widget.feedId,
+      sourceBookId: widget.bookId,
+      title: book?.title ?? widget.bookId,
+      author: book?.author ?? '',
+      coverUrl: book?.coverUrl,
+      description: book?.description,
+    );
 
     if (!context.mounted) return;
     final text = outcome is BookshelfOperationOutcomeError

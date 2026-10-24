@@ -32,6 +32,15 @@ use tokio::sync::OnceCell;
 /// Global actor addresses, initialised once by [`create_actors`].
 static ACTOR_ADDRESSES: OnceCell<ActorAddresses> = OnceCell::const_new();
 
+/// Global handle to the application database, set once the app-data
+/// directory has been initialized.
+///
+/// The api layer (covers, cache stats, maintenance) reads through this
+/// handle instead of round-tripping through an actor, since these are
+/// one-shot queries over cloned [`Db`] handles — the actor tree keeps the
+/// mutable state.
+static HUB_DB: OnceCell<langhuan::db::Db> = OnceCell::const_new();
+
 /// Holds addresses for every actor in the system.
 pub(crate) struct ActorAddresses {
     pub registry: Address<RegistryActor>,
@@ -54,6 +63,24 @@ pub(crate) fn addresses() -> Result<&'static ActorAddresses, crate::api::types::
             "actors not yet initialised — call create_actors() first".to_owned(),
         )
     })
+}
+
+/// Publish the global database handle (called by the app-data actor after a
+/// successful initialization). Fails when a database is already published.
+pub(crate) fn set_hub_db(db: langhuan::db::Db) -> Result<(), ()> {
+    HUB_DB.set(db).map_err(|_| ())
+}
+
+/// The global database handle, once the app-data directory is initialized.
+pub(crate) fn hub_db() -> Result<langhuan::db::Db, crate::api::types::BridgeError> {
+    HUB_DB
+        .get()
+        .cloned()
+        .ok_or_else(|| {
+            crate::api::types::BridgeError::from(
+                rust_i18n::t!("error.app_data_dir_not_set").to_string(),
+            )
+        })
 }
 
 /// Creates and spawns the actors in the async system.
@@ -97,7 +124,7 @@ pub async fn create_actors() {
     let bookmark_context = Context::new();
     let bookmark_addr = bookmark_context.address();
 
-    let registry_actor = RegistryActor::new(registry_addr.clone(), engine);
+    let registry_actor = RegistryActor::new(engine);
     let login_actor = LoginActor::new(registry_addr.clone());
     let app_data_actor = AppDataActor::new(
         registry_addr.clone(),
@@ -130,7 +157,7 @@ pub async fn create_actors() {
     let feed_actor = FeedActor::new(registry_addr.clone(), conversion_addr.clone());
     spawn(feed_context.run(feed_actor));
 
-    let bookshelf_actor = BookshelfActor::new(registry_addr.clone());
+    let bookshelf_actor = BookshelfActor::new();
     spawn(bookshelf_context.run(bookshelf_actor));
 
     if ACTOR_ADDRESSES

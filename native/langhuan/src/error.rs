@@ -1,87 +1,6 @@
 use std::collections::HashSet;
 
 // ---------------------------------------------------------------------------
-// Auxiliary types (unchanged)
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StorageKind {
-    Bookshelf,
-    ReadingProgress,
-    ChapterCache,
-    Auth,
-    Bookmark,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StorageOperation {
-    Read,
-    Write,
-    CreateDir,
-    RemoveFile,
-    RemoveDir,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FormatKind {
-    Bookshelf,
-    ReadingProgress,
-    ChapterCache,
-    Auth,
-    Bookmark,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FormatOperation {
-    Serialize,
-    Deserialize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CacheSchemaMismatchError {
-    pub feed_id: String,
-    pub book_id: String,
-    pub chapter_id: String,
-    pub cached_version: u32,
-    pub expected_version: u32,
-}
-
-impl std::fmt::Display for CacheSchemaMismatchError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}/{}/{}: cached={}, expected={}",
-            self.feed_id, self.book_id, self.chapter_id, self.cached_version, self.expected_version
-        )
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CacheKeyMismatchError {
-    pub expected_feed_id: String,
-    pub expected_book_id: String,
-    pub expected_chapter_id: String,
-    pub actual_feed_id: String,
-    pub actual_book_id: String,
-    pub actual_chapter_id: String,
-}
-
-impl std::fmt::Display for CacheKeyMismatchError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "expected {}/{}/{} but found {}/{}/{}",
-            self.expected_feed_id,
-            self.expected_book_id,
-            self.expected_chapter_id,
-            self.actual_feed_id,
-            self.actual_book_id,
-            self.actual_chapter_id
-        )
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Expected error codes (Lua → Rust structured errors)
 // ---------------------------------------------------------------------------
 
@@ -201,75 +120,28 @@ pub enum ScriptError {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-error: RegistryError — registry management
+// Sub-error: RegistryError — feed registry management
 // ---------------------------------------------------------------------------
 
-/// Errors related to the script registry (`registry.json`).
+/// Errors related to the feed registry (the `feeds` table).
 #[derive(Debug, thiserror::Error)]
 pub enum RegistryError {
-    /// The `registry.json` file could not be found or read.
-    #[error("registry not found: {0}")]
-    NotFound(std::io::Error),
-
-    /// The `registry.json` file could not be parsed.
-    #[error("registry parse error: {message}")]
-    Parse { message: String },
-
-    /// A write to the registry directory or script file failed.
-    #[error("registry write error: {0}")]
-    Write(String),
-
-    /// The requested feed ID was not found in the registry.
+    /// The requested feed ID is not registered.
     #[error("feed not found: {id}")]
     FeedNotFound { id: String },
-
-    /// The registry contains duplicate feed IDs.
-    #[error("duplicate feed id in registry: {id}")]
-    DuplicateFeedId { id: String },
-
-    /// The `registry.json` schema version is newer than this application
-    /// supports.
-    #[error(
-        "registry schema version {file_version} is newer than supported version {supported_version}"
-    )]
-    SchemaTooNew {
-        file_version: u32,
-        supported_version: u32,
-    },
 }
 
 // ---------------------------------------------------------------------------
-// Sub-error: PersistenceError — local storage / serialization / cache
+// Sub-error: PersistenceError — local storage
 // ---------------------------------------------------------------------------
 
-/// Errors related to local file persistence (bookshelf, progress, cache).
+/// Errors related to the SQLite persistence layer.
 #[derive(Debug, thiserror::Error)]
 pub enum PersistenceError {
-    /// A local storage I/O operation failed.
-    #[error("storage error in {kind:?} during {operation:?}: {message}")]
-    Storage {
-        kind: StorageKind,
-        operation: StorageOperation,
-        message: String,
-    },
-
-    /// Serializing or deserializing a JSON-backed data file failed.
-    #[error("format error in {kind:?} during {operation:?}: {message}")]
-    Format {
-        kind: FormatKind,
-        operation: FormatOperation,
-        message: String,
-    },
-
-    /// The chapter cache file schema version does not match the current code.
-    #[error("chapter cache schema mismatch: {details}")]
-    CacheSchemaMismatch {
-        details: Box<CacheSchemaMismatchError>,
-    },
-
-    /// The content of a chapter cache file does not match the expected key.
-    #[error("chapter cache key mismatch: {details}")]
-    CacheKeyMismatch { details: Box<CacheKeyMismatchError> },
+    /// A database operation failed (SQL error, corrupt payload, or the
+    /// connection was closed).
+    #[error("database error: {message}")]
+    Database { message: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -287,7 +159,7 @@ pub enum Error {
     #[error(transparent)]
     Registry(#[from] RegistryError),
 
-    /// Local persistence (storage / format / cache) error.
+    /// Local persistence (SQLite) error.
     #[error(transparent)]
     Persistence(#[from] PersistenceError),
 
@@ -334,6 +206,15 @@ impl From<mlua::Error> for Error {
             return Error::Script(ScriptError::Expected { code, message });
         }
         Error::Script(ScriptError::Lua(e))
+    }
+}
+
+// Transitive From: rusqlite::Error → Error::Persistence
+// Every SQL failure surfaces as `PersistenceError::Database`; callers never
+// need to import rusqlite types themselves.
+impl From<tokio_rusqlite::rusqlite::Error> for Error {
+    fn from(e: tokio_rusqlite::rusqlite::Error) -> Self {
+        Error::database(e.to_string())
     }
 }
 
@@ -391,82 +272,14 @@ impl Error {
     }
 
     #[inline]
-    pub fn registry_not_found(e: std::io::Error) -> Self {
-        RegistryError::NotFound(e).into()
-    }
-
-    #[inline]
-    pub fn registry_parse(message: impl Into<String>) -> Self {
-        RegistryError::Parse {
-            message: message.into(),
-        }
-        .into()
-    }
-
-    #[inline]
-    pub fn registry_write(message: impl Into<String>) -> Self {
-        RegistryError::Write(message.into()).into()
-    }
-
-    #[inline]
     pub fn feed_not_found(id: impl Into<String>) -> Self {
         RegistryError::FeedNotFound { id: id.into() }.into()
     }
 
     #[inline]
-    pub fn duplicate_feed_id(id: impl Into<String>) -> Self {
-        RegistryError::DuplicateFeedId { id: id.into() }.into()
-    }
-
-    #[inline]
-    pub fn registry_schema_too_new(file_version: u32, supported_version: u32) -> Self {
-        RegistryError::SchemaTooNew {
-            file_version,
-            supported_version,
-        }
-        .into()
-    }
-
-    #[inline]
-    pub fn storage(
-        kind: StorageKind,
-        operation: StorageOperation,
-        message: impl Into<String>,
-    ) -> Self {
-        PersistenceError::Storage {
-            kind,
-            operation,
+    pub fn database(message: impl Into<String>) -> Self {
+        PersistenceError::Database {
             message: message.into(),
-        }
-        .into()
-    }
-
-    #[inline]
-    pub fn format(
-        kind: FormatKind,
-        operation: FormatOperation,
-        message: impl Into<String>,
-    ) -> Self {
-        PersistenceError::Format {
-            kind,
-            operation,
-            message: message.into(),
-        }
-        .into()
-    }
-
-    #[inline]
-    pub fn cache_schema_mismatch(details: CacheSchemaMismatchError) -> Self {
-        PersistenceError::CacheSchemaMismatch {
-            details: Box::new(details),
-        }
-        .into()
-    }
-
-    #[inline]
-    pub fn cache_key_mismatch(details: CacheKeyMismatchError) -> Self {
-        PersistenceError::CacheKeyMismatch {
-            details: Box::new(details),
         }
         .into()
     }
@@ -556,7 +369,8 @@ mod tests {
     #[test]
     fn extract_expected_error_returns_none_for_plain_runtime() {
         let lua_err = mlua::Error::RuntimeError("some random error".into());
-        assert!(extract_expected_error(&lua_err).is_none());
+        let result = extract_expected_error(&lua_err);
+        assert!(result.is_none());
     }
 
     #[test]
@@ -634,6 +448,12 @@ mod tests {
             message: "login".into(),
         }
         .into();
+        assert!(!err.is_retryable());
+    }
+
+    #[test]
+    fn database_error_not_retryable() {
+        let err = Error::database("locked");
         assert!(!err.is_retryable());
     }
 }

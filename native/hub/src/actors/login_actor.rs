@@ -1,9 +1,9 @@
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use langhuan::auth::AuthStore;
 use langhuan::cache::CachedFeed;
+use langhuan::db::repo;
+use langhuan::db::Db;
 use langhuan::feed::{
     AuthPageContext, AuthStatus as FeedAuthStatus, CookieEntry as FeedCookieEntry, FeedAuthFlow,
 };
@@ -50,8 +50,7 @@ pub struct FeedAuthClearMsg {
 
 pub struct LoginActor {
     registry_addr: Address<RegistryActor>,
-    auth_dir: Option<PathBuf>,
-    auth_store: Option<AuthStore>,
+    db: Option<Db>,
 }
 
 impl Actor for LoginActor {}
@@ -60,31 +59,17 @@ impl LoginActor {
     pub fn new(registry_addr: Address<RegistryActor>) -> Self {
         Self {
             registry_addr,
-            auth_dir: None,
-            auth_store: None,
+            db: None,
         }
     }
 
-    async fn initialize_app_data_directory(&mut self, path: &str) -> Result<(), String> {
-        tracing::info!(path = %path, "initializing login actor storage");
-        if self.auth_dir.is_some() {
+    async fn initialize_app_data_directory(&mut self, db: Db) -> Result<(), String> {
+        tracing::info!("initializing login actor storage");
+        if self.db.is_some() {
             return Err(t!("error.registry_reload_not_supported").to_string());
         }
 
-        let base_dir = Path::new(path);
-        let auth_dir = base_dir.join("auth");
-
-        tokio::fs::create_dir_all(&auth_dir)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        self.auth_store = Some(
-            AuthStore::open(auth_dir.clone())
-                .await
-                .map_err(|e| localize_error(&e))?,
-        );
-        self.auth_dir = Some(auth_dir);
-
+        self.db = Some(db);
         self.hydrate_all_feeds().await?;
         tracing::info!("login actor storage initialized");
         Ok(())
@@ -119,12 +104,13 @@ impl LoginActor {
         }
     }
 
-    fn auth_store_mut(&mut self) -> Result<&mut AuthStore, BridgeError> {
-        self.auth_store
-            .as_mut()
+    fn db(&self) -> Result<&Db, BridgeError> {
+        self.db
+            .as_ref()
             .ok_or_else(|| BridgeError::from(t!("error.app_data_dir_not_set").to_string()))
     }
 
+    /// Push the stored auth payload (if any) into a compiled feed.
     async fn hydrate_feed_auth(
         &self,
         feed_id: &str,
@@ -134,12 +120,13 @@ impl LoginActor {
             return Ok(());
         };
 
-        let auth_store = self
-            .auth_store
+        let db = self
+            .db
             .as_ref()
             .ok_or_else(|| t!("error.app_data_dir_not_set").to_string())?;
-        let auth_info = auth_store
-            .get_auth_info(feed_id)
+        let id = feed_id.to_owned();
+        let auth_info = db
+            .call(move |conn| repo::auth::get(conn, &id))
             .await
             .map_err(|e| localize_error(&e))?;
         feed.set_auth_info(&support, auth_info)
@@ -195,8 +182,10 @@ impl LoginActor {
                 .collect(),
         };
         let auth_info = feed.parse_auth(&support, &page)?;
-        let store = self.auth_store_mut()?;
-        store.set_auth_info(&msg.feed_id, auth_info.clone()).await?;
+        let db = self.db()?.clone();
+        let (id, info) = (msg.feed_id.clone(), auth_info.clone());
+        db.write(move |conn| repo::auth::set(conn, &id, &info, langhuan::db::now_ms()))
+            .await?;
         feed.set_auth_info(&support, Some(auth_info))
             .map_err(BridgeError::from)
     }
@@ -222,8 +211,9 @@ impl LoginActor {
         let Some(support) = feed.supports_auth() else {
             return Ok(());
         };
-        let store = self.auth_store_mut()?;
-        store.clear_auth_info(feed_id).await?;
+        let db = self.db()?.clone();
+        let id = feed_id.to_owned();
+        db.write(move |conn| repo::auth::clear(conn, &id)).await?;
         feed.set_auth_info(&support, None)
             .map_err(BridgeError::from)
     }
@@ -238,7 +228,7 @@ impl Handler<InitializeAppDataDirectory> for LoginActor {
     type Result = Result<(), String>;
 
     async fn handle(&mut self, msg: InitializeAppDataDirectory, _: &Context<Self>) -> Self::Result {
-        self.initialize_app_data_directory(&msg.path).await
+        self.initialize_app_data_directory(msg.db).await
     }
 }
 

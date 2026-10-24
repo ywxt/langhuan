@@ -14,39 +14,18 @@ error.invalid_feed:
 error.script_parse:
   en: "Script parse error at line %{line}: %{message}"
   zh: "腳本解析錯誤（第 %{line} 行）：%{message}"
-error.registry_not_found:
-  en: "Registry not found: %{error}"
-  zh: "找不到書源目錄：%{error}"
-error.registry_parse:
-  en: "Registry parse error: %{message}"
-  zh: "書源目錄格式錯誤：%{message}"
 error.feed_not_found:
   en: "Feed not found: %{id}"
   zh: "找不到書源：%{id}"
-error.duplicate_feed_id:
-  en: "Duplicate feed ID: %{id}"
-  zh: "重複的書源 ID：%{id}"
+error.database:
+  en: "Database error: %{message}"
+  zh: "資料庫錯誤：%{message}"
+error.feed_script_missing:
+  en: "Feed '%{id}': no script stored for its active version"
+  zh: "書源「%{id}」：未存儲當前版本的腳本"
 error.domain_not_allowed:
   en: "Domain not allowed: %{url} (allowed: %{allowed})"
   zh: "域名未授權：%{url}（允許：%{allowed}）"
-error.registry_write:
-  en: "Failed to write registry: %{error}"
-  zh: "寫入書源目錄失敗：%{error}"
-error.storage:
-  en: "Failed to %{operation} %{target}: %{message}"
-  zh: "%{target}%{operation}失敗：%{message}"
-error.format:
-  en: "Failed to %{operation} %{target}: %{message}"
-  zh: "%{target}%{operation}失敗：%{message}"
-error.cache_schema_mismatch:
-  en: "Chapter cache schema mismatch for %{feed_id}/%{book_id}/%{chapter_id}: cached=%{cached_version}, expected=%{expected_version}"
-  zh: "章節緩存版本不匹配：%{feed_id}/%{book_id}/%{chapter_id}，緩存版本 %{cached_version}，期望版本 %{expected_version}"
-error.cache_key_mismatch:
-  en: "Chapter cache key mismatch for %{expected_feed_id}/%{expected_book_id}/%{expected_chapter_id}: found %{actual_feed_id}/%{actual_book_id}/%{actual_chapter_id}"
-  zh: "章節緩存鍵不匹配：期望 %{expected_feed_id}/%{expected_book_id}/%{expected_chapter_id}，實際為 %{actual_feed_id}/%{actual_book_id}/%{actual_chapter_id}"
-error.registry_schema_too_new:
-  en: "Registry schema version %{file_version} is newer than supported version %{supported_version}. Please update the app."
-  zh: "書源目錄架構版本 %{file_version} 高於支持的版本 %{supported_version}，請更新應用。"
 error.feed_schema_too_new:
   en: "Feed '%{feed_id}' requires schema version %{file_version}, but only version %{supported_version} is supported. Please update the app."
   zh: "書源「%{feed_id}」需要架構版本 %{file_version}，但僅支持版本 %{supported_version}，請更新應用。"
@@ -56,57 +35,6 @@ error.auth_status_not_supported:
 error.duplicate_id:
   en: "Feed '%{feed_id}': duplicate %{kind} id '%{id}'"
   zh: "書源「%{feed_id}」：重複的%{kind} ID「%{id}」"
-error_target.bookshelf:
-  en: "bookshelf storage"
-  zh: "書架存儲"
-error_target.reading_progress:
-  en: "reading progress storage"
-  zh: "閱讀進度存儲"
-error_target.chapter_cache:
-  en: "chapter cache"
-  zh: "章節緩存"
-error_target.auth:
-  en: "auth storage"
-  zh: "登錄信息存儲"
-error_target.bookmark:
-  en: "bookmark storage"
-  zh: "書籤存儲"
-error_target.bookshelf_file:
-  en: "bookshelf file"
-  zh: "書架文件"
-error_target.reading_progress_file:
-  en: "reading progress file"
-  zh: "閱讀進度文件"
-error_target.chapter_cache_file:
-  en: "chapter cache file"
-  zh: "章節緩存文件"
-error_target.auth_file:
-  en: "auth file"
-  zh: "登錄信息文件"
-error_target.bookmark_file:
-  en: "bookmark file"
-  zh: "書籤文件"
-error_operation.read:
-  en: "read"
-  zh: "讀取"
-error_operation.write:
-  en: "write"
-  zh: "寫入"
-error_operation.create_dir:
-  en: "create directory for"
-  zh: "創建目錄"
-error_operation.remove_file:
-  en: "remove file from"
-  zh: "刪除文件"
-error_operation.remove_dir:
-  en: "remove directory for"
-  zh: "刪除目錄"
-error_operation.serialize:
-  en: "serialize"
-  zh: "序列化"
-error_operation.deserialize:
-  en: "deserialize"
-  zh: "反序列化"
 error.file_read:
   en: "Failed to read file: %{error}"
   zh: "無法讀取文件：%{error}"

@@ -119,6 +119,21 @@ pub struct FeedMetaItem {
     pub error: Option<String>,
 }
 
+/// How the version of a previewed script relates to the installed one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VersionChange {
+    /// No installed version — this would be a new feed.
+    New,
+    /// Newer than the installed version.
+    Upgrade,
+    /// Older than the installed version.
+    Downgrade,
+    /// Identical to the installed version.
+    Same,
+    /// Either version string is not valid SemVer.
+    Unknown,
+}
+
 pub struct FeedPreviewInfo {
     pub id: String,
     pub name: String,
@@ -127,7 +142,10 @@ pub struct FeedPreviewInfo {
     pub description: Option<String>,
     pub base_url: String,
     pub access_domains: HashSet<String>,
+    /// Version of the currently installed script, if any.
     pub current_version: Option<String>,
+    /// Relation between `version` and `current_version`.
+    pub version_change: VersionChange,
     pub schema_version: u32,
 }
 
@@ -152,7 +170,45 @@ pub struct BookshelfListItem {
     pub author: String,
     pub cover_url: Option<String>,
     pub description_snapshot: Option<String>,
+    /// Whether downloaded cover bytes are available (via `getCover`).
+    pub has_cover: bool,
     pub added_at_unix_ms: i64,
+}
+
+// ---------------------------------------------------------------------------
+// Cache statistics & maintenance types
+// ---------------------------------------------------------------------------
+
+/// Snapshot of database and cache statistics for the settings screen.
+pub struct CacheStats {
+    /// Payload bytes in the cache tables (chapters + chapter lists + covers).
+    pub cache_bytes: i64,
+    /// Total size of the database file.
+    pub db_bytes: i64,
+    pub book_count: i64,
+    pub cover_count: i64,
+    pub chapter_count: i64,
+    pub chapter_list_count: i64,
+    pub bookshelf_count: i64,
+    pub feed_count: i64,
+}
+
+/// Outcome of a maintenance run or a full cache clear.
+pub struct CleanupResult {
+    /// `true` when the run was skipped by the 24 h throttle.
+    pub skipped: bool,
+    /// Rows removed (cache rows, stale progress, pruned script versions).
+    pub items_removed: u64,
+    /// Cache payload bytes freed.
+    pub bytes_freed: i64,
+    /// Book rows evicted by the 512 MiB size cap.
+    pub books_evicted: u64,
+}
+
+/// Downloaded cover bytes for a book, read from the database.
+pub struct CoverData {
+    pub mime_type: String,
+    pub bytes: Vec<u8>,
 }
 
 // ---------------------------------------------------------------------------

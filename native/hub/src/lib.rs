@@ -88,114 +88,14 @@ pub(crate) fn localize_error(e: &langhuan::error::Error) -> String {
             },
         },
         Error::Registry(inner) => match inner {
-            RegistryError::NotFound(e) => t!("error.registry_not_found", error = e).to_string(),
-            RegistryError::Parse { message } => {
-                t!("error.registry_parse", message = message).to_string()
-            }
-            RegistryError::Write(msg) => t!("error.registry_write", error = msg).to_string(),
             RegistryError::FeedNotFound { id } => t!("error.feed_not_found", id = id).to_string(),
-            RegistryError::DuplicateFeedId { id } => {
-                t!("error.duplicate_feed_id", id = id).to_string()
-            }
-            RegistryError::SchemaTooNew {
-                file_version,
-                supported_version,
-            } => t!(
-                "error.registry_schema_too_new",
-                file_version = file_version,
-                supported_version = supported_version
-            )
-            .to_string(),
         },
         Error::Persistence(inner) => match inner {
-            PersistenceError::Storage {
-                kind,
-                operation,
-                message,
-            } => t!(
-                "error.storage",
-                target = localize_storage_kind(*kind),
-                operation = localize_storage_operation(*operation),
-                message = message
-            )
-            .to_string(),
-            PersistenceError::Format {
-                kind,
-                operation,
-                message,
-            } => t!(
-                "error.format",
-                target = localize_format_kind(*kind),
-                operation = localize_format_operation(*operation),
-                message = message
-            )
-            .to_string(),
-            PersistenceError::CacheSchemaMismatch { details } => t!(
-                "error.cache_schema_mismatch",
-                feed_id = details.feed_id,
-                book_id = details.book_id,
-                chapter_id = details.chapter_id,
-                cached_version = details.cached_version,
-                expected_version = details.expected_version
-            )
-            .to_string(),
-            PersistenceError::CacheKeyMismatch { details } => t!(
-                "error.cache_key_mismatch",
-                expected_feed_id = details.expected_feed_id,
-                expected_book_id = details.expected_book_id,
-                expected_chapter_id = details.expected_chapter_id,
-                actual_feed_id = details.actual_feed_id,
-                actual_book_id = details.actual_book_id,
-                actual_chapter_id = details.actual_chapter_id,
-            )
-            .to_string(),
+            PersistenceError::Database { message } => {
+                t!("error.database", message = message).to_string()
+            }
         },
         Error::Http(inner) => t!("error.http", error = inner).to_string(),
-    }
-}
-
-fn localize_storage_kind(kind: langhuan::error::StorageKind) -> String {
-    use langhuan::error::StorageKind;
-
-    match kind {
-        StorageKind::Bookshelf => t!("error_target.bookshelf").to_string(),
-        StorageKind::ReadingProgress => t!("error_target.reading_progress").to_string(),
-        StorageKind::ChapterCache => t!("error_target.chapter_cache").to_string(),
-        StorageKind::Auth => t!("error_target.auth").to_string(),
-        StorageKind::Bookmark => t!("error_target.bookmark").to_string(),
-    }
-}
-
-fn localize_storage_operation(operation: langhuan::error::StorageOperation) -> String {
-    use langhuan::error::StorageOperation;
-
-    match operation {
-        StorageOperation::Read => t!("error_operation.read").to_string(),
-        StorageOperation::Write => t!("error_operation.write").to_string(),
-        StorageOperation::CreateDir => t!("error_operation.create_dir").to_string(),
-        StorageOperation::RemoveFile => t!("error_operation.remove_file").to_string(),
-        StorageOperation::RemoveDir => t!("error_operation.remove_dir").to_string(),
-    }
-}
-
-fn localize_format_kind(kind: langhuan::error::FormatKind) -> String {
-    use langhuan::error::FormatKind;
-
-    match kind {
-        FormatKind::Bookshelf => t!("error_target.bookshelf_file").to_string(),
-        FormatKind::ReadingProgress => t!("error_target.reading_progress_file").to_string(),
-        FormatKind::ChapterCache => t!("error_target.chapter_cache_file").to_string(),
-        FormatKind::Auth => t!("error_target.auth_file").to_string(),
-        FormatKind::Bookmark => t!("error_target.bookmark_file").to_string(),
-    }
-}
-
-fn localize_format_operation(operation: langhuan::error::FormatOperation) -> String {
-    use langhuan::error::FormatOperation;
-
-    match operation {
-        FormatOperation::Serialize => t!("error_operation.serialize").to_string(),
-        FormatOperation::Deserialize => t!("error_operation.deserialize").to_string(),
     }
 }
 

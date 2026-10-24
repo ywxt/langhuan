@@ -1,8 +1,10 @@
 import '../../src/rust/api/app_data.dart' as rust_app_data;
-import '../../src/rust/api/cleanup.dart' as rust_cleanup;
+import '../../src/rust/api/cache.dart' as rust_cache;
 import '../../src/rust/api/locale.dart' as rust_locale;
+import '../../src/rust/api/types.dart' show CacheStats, CleanupResult, CoverData;
 
-/// Service for non-feed Rust API calls (locale, app data directory, etc.).
+/// Service for non-feed Rust API calls (locale, app data directory, storage
+/// maintenance, etc.).
 class AppService {
   AppService._();
 
@@ -20,10 +22,32 @@ class AppService {
     return rust_locale.setLocale(locale: locale);
   }
 
-  /// Clean up stale cache and reading progress data (older than 15 days).
+  /// Run the full maintenance pass (stale cleanup, script-history pruning,
+  /// LRU eviction beyond the size cap).
   ///
-  /// Books on the bookshelf are preserved. Returns the number of items removed.
-  Future<int> cleanupStaleData() {
-    return rust_cleanup.cleanupStaleData();
+  /// Shelved books and their data are always preserved.
+  Future<CleanupResult> cleanupStaleData() {
+    return rust_cache.cleanupStaleData();
+  }
+
+  /// Snapshot of database and cache statistics.
+  Future<CacheStats> cacheStats() {
+    return rust_cache.cacheStats();
+  }
+
+  /// Clear all cache payloads (chapter content, chapter lists, covers).
+  ///
+  /// The bookshelf, reading progress, and bookmarks are untouched; covers
+  /// re-download on demand.
+  Future<CleanupResult> clearCache() {
+    return rust_cache.clearCache();
+  }
+
+  /// Read the downloaded cover for a book, if one is stored.
+  Future<CoverData?> getCover({
+    required String feedId,
+    required String bookId,
+  }) {
+    return rust_cache.getCover(feedId: feedId, bookId: bookId);
   }
 }

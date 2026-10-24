@@ -1,26 +1,31 @@
 use async_trait::async_trait;
-use langhuan::bookshelf::{
-    BookIdentity, BookshelfEntry, LocalBookshelf, LocalBookshelfAddOutcome,
-    LocalBookshelfRemoveOutcome,
-};
-use langhuan::feed::Feed;
-use messages::prelude::{Actor, Address, Context, Handler};
+use langhuan::cache::download_cover;
+use langhuan::db::repo;
+use langhuan::db::Db;
+use messages::prelude::{Actor, Context, Handler};
 
 use crate::api::types::{
     BookshelfAddOutcome, BookshelfListItem, BookshelfRemoveOutcome, BridgeError,
 };
 
 use super::app_data_actor::InitializeAppDataDirectory;
-use super::registry_actor::GetFeed;
-use super::registry_actor::RegistryActor;
 
 // ---------------------------------------------------------------------------
 // FRB-facing messages
 // ---------------------------------------------------------------------------
 
+/// Add a book to the shelf.
+///
+/// Carries a display snapshot (title/author/cover/description) taken from the
+/// search result or detail page the user is looking at, so the shelf renders
+/// instantly and independent of feed availability.
 pub struct BookshelfAdd {
     pub feed_id: String,
     pub source_book_id: String,
+    pub title: String,
+    pub author: String,
+    pub cover_url: Option<String>,
+    pub description: Option<String>,
 }
 
 pub struct BookshelfRemove {
@@ -30,159 +35,109 @@ pub struct BookshelfRemove {
 
 pub struct BookshelfList;
 
-/// Returns the set of `(feed_id, book_id)` pairs currently on the bookshelf.
-pub struct GetProtectedBooks;
-
 // ---------------------------------------------------------------------------
 // Actor
 // ---------------------------------------------------------------------------
 
 pub struct BookshelfActor {
-    registry_addr: Address<RegistryActor>,
-    shelf: Option<LocalBookshelf>,
+    db: Option<Db>,
 }
 
 impl Actor for BookshelfActor {}
 
 impl BookshelfActor {
-    pub fn new(registry_addr: Address<RegistryActor>) -> Self {
-        Self {
-            registry_addr,
-            shelf: None,
-        }
+    pub fn new() -> Self {
+        Self { db: None }
     }
 
-    async fn set_data_directory(&mut self, path: &std::path::Path) -> Result<(), String> {
-        let path = bookshelf_file(path);
-        tracing::info!(path = %path.display(), "initializing bookshelf actor storage");
-        if let Some(parent) = path.parent()
-            && let Err(e) = tokio::fs::create_dir_all(parent).await
-        {
-            let message = e.to_string();
-            tracing::error!(error = %message, "failed to create bookshelf directory");
-            self.shelf = None;
-            return Err(message);
-        }
-        match LocalBookshelf::open(path).await {
-            Ok(shelf) => {
-                self.shelf = Some(shelf);
-                tracing::info!("bookshelf actor storage initialized");
-                Ok(())
+    fn db(&self) -> Result<&Db, BridgeError> {
+        self.db
+            .as_ref()
+            .ok_or_else(|| BridgeError::from(t!("error.app_data_dir_not_set").to_string()))
+    }
+
+    async fn add(&mut self, msg: BookshelfAdd) -> Result<BookshelfAddOutcome, BridgeError> {
+        tracing::debug!(feed_id = %msg.feed_id, source_book_id = %msg.source_book_id, "bookshelf add");
+        let db = self.db()?.clone();
+        let spawn_url = msg.cover_url.clone();
+        let (feed_id, book_id) = (msg.feed_id.clone(), msg.source_book_id.clone());
+
+        let outcome = db
+            .write({
+                let BookshelfAdd {
+                    feed_id,
+                    source_book_id,
+                    title,
+                    author,
+                    cover_url,
+                    description,
+                } = msg;
+                move |conn| {
+                    repo::bookshelf::add_book(
+                        conn,
+                        &feed_id,
+                        &source_book_id,
+                        &title,
+                        &author,
+                        description.as_deref(),
+                        cover_url.as_deref(),
+                        langhuan::db::now_ms(),
+                    )
+                }
+            })
+            .await?;
+
+        if outcome.spawn_cover {
+            if let Some(url) = spawn_url {
+                tokio::spawn(download_cover(db, feed_id, book_id, url));
             }
-            Err(e) => {
-                let message = e.to_string();
-                tracing::error!(error = %message, "failed to initialize local bookshelf");
-                self.shelf = None;
-                Err(message)
-            }
         }
+
+        Ok(if outcome.added {
+            BookshelfAddOutcome::Added
+        } else {
+            BookshelfAddOutcome::AlreadyExists
+        })
     }
 
-    fn unavailable_message(&self) -> String {
-        t!("error.bookshelf_unavailable").to_string()
-    }
+    async fn remove(&mut self, msg: BookshelfRemove) -> Result<BookshelfRemoveOutcome, BridgeError> {
+        tracing::debug!(feed_id = %msg.feed_id, source_book_id = %msg.source_book_id, "bookshelf remove");
+        let db = self.db()?.clone();
+        let removed = db
+            .write({
+                let feed_id = msg.feed_id;
+                let book_id = msg.source_book_id;
+                move |conn| repo::bookshelf::remove_book(conn, &feed_id, &book_id)
+            })
+            .await?;
 
-    async fn add(&mut self, feed_id: String, source_book_id: String) -> Result<BookshelfAddOutcome, BridgeError> {
-        tracing::debug!(feed_id = %feed_id, source_book_id = %source_book_id, "bookshelf add");
-        let identity = BookIdentity {
-            feed_id,
-            source_book_id,
-        };
-        let entry = BookshelfEntry {
-            identity,
-            added_at_unix_ms: now_unix_ms(),
-        };
-
-        match self.shelf.as_mut() {
-            Some(shelf) => match shelf.add(entry).await {
-                Ok(LocalBookshelfAddOutcome::Added) => Ok(BookshelfAddOutcome::Added),
-                Ok(LocalBookshelfAddOutcome::AlreadyExists) => Ok(BookshelfAddOutcome::AlreadyExists),
-                Err(e) => Err(BridgeError::from(e.to_string())),
-            },
-            None => Err(BridgeError::from(self.unavailable_message())),
-        }
-    }
-
-    async fn remove(&mut self, feed_id: String, source_book_id: String) -> Result<BookshelfRemoveOutcome, BridgeError> {
-        tracing::debug!(feed_id = %feed_id, source_book_id = %source_book_id, "bookshelf remove");
-        let identity = BookIdentity {
-            feed_id,
-            source_book_id,
-        };
-
-        match self.shelf.as_mut() {
-            Some(shelf) => match shelf.remove(&identity).await {
-                Ok(LocalBookshelfRemoveOutcome::Removed) => Ok(BookshelfRemoveOutcome::Removed),
-                Ok(LocalBookshelfRemoveOutcome::NotFound) => Ok(BookshelfRemoveOutcome::NotFound),
-                Err(e) => Err(BridgeError::from(e.to_string())),
-            },
-            None => Err(BridgeError::from(self.unavailable_message())),
-        }
+        Ok(if removed {
+            BookshelfRemoveOutcome::Removed
+        } else {
+            BookshelfRemoveOutcome::NotFound
+        })
     }
 
     async fn list(&mut self) -> Result<Vec<BookshelfListItem>, BridgeError> {
         tracing::debug!("bookshelf list");
-        let shelf = self
-            .shelf
-            .as_ref()
-            .ok_or_else(|| BridgeError::from(self.unavailable_message()))?;
+        let db = self.db()?.clone();
+        let items = db
+            .call(|conn| repo::bookshelf::list(conn))
+            .await?;
 
-        let entries = shelf.entries().to_vec();
-        let mut items = Vec::with_capacity(entries.len());
-
-        for entry in entries {
-            let identity = entry.identity;
-            let (title, author, cover_url, description_snapshot) = match self
-                .registry_addr
-                .send(GetFeed {
-                    feed_id: identity.feed_id.clone(),
-                })
-                .await
-            {
-                Ok(Ok(feed)) => match feed.book_info(&identity.source_book_id).await {
-                    Ok(book) => (book.title, book.author, book.cover_url, book.description),
-                    Err(e) => {
-                        tracing::warn!(
-                            feed_id = %identity.feed_id,
-                            source_book_id = %identity.source_book_id,
-                            error = %e,
-                            "failed to resolve book_info while listing bookshelf"
-                        );
-                        (identity.source_book_id.clone(), String::new(), None, None)
-                    }
-                },
-                Ok(Err(e)) => {
-                    tracing::warn!(
-                        feed_id = %identity.feed_id,
-                        source_book_id = %identity.source_book_id,
-                        error = %e,
-                        "failed to resolve feed while listing bookshelf"
-                    );
-                    (identity.source_book_id.clone(), String::new(), None, None)
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        feed_id = %identity.feed_id,
-                        source_book_id = %identity.source_book_id,
-                        error = %e,
-                        "failed to request feed actor while listing bookshelf"
-                    );
-                    (identity.source_book_id.clone(), String::new(), None, None)
-                }
-            };
-
-            items.push(BookshelfListItem {
-                feed_id: identity.feed_id,
-                source_book_id: identity.source_book_id,
-                title,
-                author,
-                cover_url,
-                description_snapshot,
-                added_at_unix_ms: entry.added_at_unix_ms,
-            });
-        }
-
-        Ok(items)
+        Ok(items
+            .into_iter()
+            .map(|item| BookshelfListItem {
+                feed_id: item.feed_id,
+                source_book_id: item.book_id,
+                title: item.title,
+                author: item.author,
+                cover_url: item.cover_url,
+                description_snapshot: item.description,
+                has_cover: item.has_cover,
+                added_at_unix_ms: item.added_at_ms,
+            })
+            .collect())
     }
 }
 
@@ -199,8 +154,9 @@ impl Handler<InitializeAppDataDirectory> for BookshelfActor {
         message: InitializeAppDataDirectory,
         _: &Context<Self>,
     ) -> Self::Result {
-        self.set_data_directory(std::path::Path::new(&message.path))
-            .await
+        tracing::info!("initializing bookshelf actor storage");
+        self.db = Some(message.db);
+        Ok(())
     }
 }
 
@@ -209,7 +165,7 @@ impl Handler<BookshelfAdd> for BookshelfActor {
     type Result = Result<BookshelfAddOutcome, BridgeError>;
 
     async fn handle(&mut self, msg: BookshelfAdd, _: &Context<Self>) -> Self::Result {
-        self.add(msg.feed_id, msg.source_book_id).await
+        self.add(msg).await
     }
 }
 
@@ -218,7 +174,7 @@ impl Handler<BookshelfRemove> for BookshelfActor {
     type Result = Result<BookshelfRemoveOutcome, BridgeError>;
 
     async fn handle(&mut self, msg: BookshelfRemove, _: &Context<Self>) -> Self::Result {
-        self.remove(msg.feed_id, msg.source_book_id).await
+        self.remove(msg).await
     }
 }
 
@@ -231,71 +187,104 @@ impl Handler<BookshelfList> for BookshelfActor {
     }
 }
 
-#[async_trait]
-impl Handler<GetProtectedBooks> for BookshelfActor {
-    type Result = Result<std::collections::HashSet<(String, String)>, BridgeError>;
-
-    async fn handle(&mut self, _: GetProtectedBooks, _: &Context<Self>) -> Self::Result {
-        let shelf = self
-            .shelf
-            .as_ref()
-            .ok_or_else(|| BridgeError::from(self.unavailable_message()))?;
-
-        let set = shelf
-            .entries()
-            .iter()
-            .map(|e| {
-                (
-                    e.identity.feed_id.clone(),
-                    e.identity.source_book_id.clone(),
-                )
-            })
-            .collect();
-
-        Ok(set)
-    }
-}
-
-fn now_unix_ms() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(duration) => duration.as_millis() as i64,
-        Err(_) => 0,
-    }
-}
-
-fn bookshelf_file(base_dir: &std::path::Path) -> std::path::PathBuf {
-    base_dir.join("bookshelf").join("bookshelf.json")
-}
-
 #[cfg(test)]
 mod tests {
     use std::error::Error;
 
+    use langhuan::db::Db;
+    use langhuan::feed::FeedMeta;
     use messages::prelude::Context;
 
     use super::*;
 
     type TestResult = Result<(), Box<dyn Error>>;
 
+    fn meta(id: &str) -> FeedMeta {
+        FeedMeta {
+            id: id.to_owned(),
+            name: format!("Feed {id}"),
+            version: "1.0.0".to_owned(),
+            author: None,
+            description: None,
+            base_url: "https://example.com".to_owned(),
+            access_domains: Default::default(),
+            schema_version: 1,
+        }
+    }
+
     #[tokio::test]
-    async fn set_app_data_directory_writes_bookshelf_under_bookshelf_subdir() -> TestResult {
-        let dir = tempfile::tempdir()?;
+    async fn add_list_remove_roundtrip() -> TestResult {
+        let db = Db::open_in_memory().await?;
+        db.write(move |conn| {
+            langhuan::db::repo::feeds::upsert_feed(conn, &meta("f1"), None, "h", 1)
+        })
+        .await?;
 
-        let registry_context = Context::new();
-        let registry_address = registry_context.address();
+        let context: Context<BookshelfActor> = Context::new();
+        let _addr = context.address();
+        let mut actor = BookshelfActor::new();
+        actor.handle(
+            InitializeAppDataDirectory { db: db.clone() },
+            &Context::new(),
+        )
+        .await
+        .map_err(std::io::Error::other)?;
 
-        let bookshelf_context: Context<BookshelfActor> = Context::new();
-        let _bookshelf_address = bookshelf_context.address();
-        let mut actor = BookshelfActor::new(registry_address);
-
-        actor
-            .set_data_directory(dir.path())
+        // Add two books (second is a duplicate add).
+        let added = actor
+            .add(BookshelfAdd {
+                feed_id: "f1".to_owned(),
+                source_book_id: "b1".to_owned(),
+                title: "Book One".to_owned(),
+                author: "Author".to_owned(),
+                cover_url: None,
+                description: Some("Desc".to_owned()),
+            })
             .await
-            .map_err(std::io::Error::other)?;
+            .map_err(|e| std::io::Error::other(e.message))?;
+        assert!(matches!(added, BookshelfAddOutcome::Added));
 
-        assert!(dir.path().join("bookshelf").is_dir());
+        // Re-adding an existing book is a no-op for the outcome, but while
+        // the row is still a placeholder the newest snapshot wins.
+        let again = actor
+            .add(BookshelfAdd {
+                feed_id: "f1".to_owned(),
+                source_book_id: "b1".to_owned(),
+                title: "Book One".to_owned(),
+                author: "Author".to_owned(),
+                cover_url: None,
+                description: Some("Newer desc".to_owned()),
+            })
+            .await
+            .map_err(|e| std::io::Error::other(e.message))?;
+        assert!(matches!(again, BookshelfAddOutcome::AlreadyExists));
+
+        let items = actor
+            .list()
+            .await
+            .map_err(|e| std::io::Error::other(e.message))?;
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Book One");
+        assert_eq!(items[0].description_snapshot.as_deref(), Some("Newer desc"));
+        assert!(!items[0].has_cover);
+
+        let removed = actor
+            .remove(BookshelfRemove {
+                feed_id: "f1".to_owned(),
+                source_book_id: "b1".to_owned(),
+            })
+            .await
+            .map_err(|e| std::io::Error::other(e.message))?;
+        assert!(matches!(removed, BookshelfRemoveOutcome::Removed));
+
+        let missing = actor
+            .remove(BookshelfRemove {
+                feed_id: "f1".to_owned(),
+                source_book_id: "b1".to_owned(),
+            })
+            .await
+            .map_err(|e| std::io::Error::other(e.message))?;
+        assert!(matches!(missing, BookshelfRemoveOutcome::NotFound));
         Ok(())
     }
 }

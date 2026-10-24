@@ -214,11 +214,8 @@ impl Handler<GetBookInfo> for FeedActor {
     async fn handle(&mut self, msg: GetBookInfo, _: &Context<Self>) -> Self::Result {
         tracing::debug!(feed_id = %msg.feed_id, book_id = %msg.book_id, force_refresh = msg.force_refresh, "book info");
         let feed = self.resolve_feed(&msg.feed_id).await?;
-        if msg.force_refresh {
-            feed.clear_book_info_cache(&msg.book_id).await?;
-        }
         let info = feed
-            .book_info(&msg.book_id)
+            .book_info_with_options(&msg.book_id, msg.force_refresh)
             .await
             .map_err(BridgeError::from)?;
         Ok(BookInfo {

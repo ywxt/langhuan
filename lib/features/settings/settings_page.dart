@@ -23,11 +23,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     setState(() => _isCleaning = true);
 
     try {
-      final removed = await AppService.instance.cleanupStaleData();
+      final result = await AppService.instance.cleanupStaleData();
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      final message = removed > 0
-          ? l10n.settingsCleanupSuccess(removed)
+      final message = result.itemsRemoved > 0
+          ? l10n.settingsCleanupSuccess(result.itemsRemoved)
           : l10n.settingsCleanupNothingToClean;
       ScaffoldMessenger.of(
         context,

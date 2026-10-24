@@ -116,6 +116,10 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   Future<BookshelfOperationOutcome> add({
     required String feedId,
     required String sourceBookId,
+    required String title,
+    required String author,
+    String? coverUrl,
+    String? description,
   }) async {
     final bootstrap = ref.read(appDataDirectorySetProvider);
     if (!_isBootstrapReady(bootstrap)) {
@@ -133,6 +137,10 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
       final outcome = await FeedService.instance.addToBookshelf(
         feedId: feedId,
         sourceBookId: sourceBookId,
+        title: title,
+        author: author,
+        coverUrl: coverUrl,
+        description: description,
       );
       await load();
       return outcome;

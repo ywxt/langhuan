@@ -102,6 +102,7 @@ class FeedPreviewModel {
     required this.version,
     required this.baseUrl,
     required this.accessDomains,
+    required this.versionChange,
     this.author,
     this.description,
     this.currentVersion,
@@ -116,6 +117,9 @@ class FeedPreviewModel {
   final String baseUrl;
   final List<String> accessDomains;
   final String? currentVersion;
+
+  /// How [version] relates to the installed [currentVersion].
+  final VersionChange versionChange;
 }
 
 @immutable
@@ -126,6 +130,7 @@ class BookshelfItemModel {
     required this.title,
     required this.author,
     required this.addedAtUnixMs,
+    required this.hasCover,
     this.coverUrl,
     this.description,
   });
@@ -138,6 +143,9 @@ class BookshelfItemModel {
   final String? coverUrl;
   final String? description;
 
+  /// Whether downloaded cover bytes are available in the database.
+  final bool hasCover;
+
   String get stableId => '$feedId:$sourceBookId';
 
   factory BookshelfItemModel.fromRust(BookshelfListItem item) =>
@@ -149,6 +157,7 @@ class BookshelfItemModel {
         addedAtUnixMs: item.addedAtUnixMs,
         coverUrl: item.coverUrl,
         description: item.descriptionSnapshot,
+        hasCover: item.hasCover,
       );
 }
 
@@ -360,14 +369,27 @@ class FeedService {
   // Bookshelf
   // -------------------------------------------------------------------------
 
+  /// Add a book to the bookshelf.
+  ///
+  /// [title]/[author]/[coverUrl]/[description] form the display snapshot the
+  /// shelf renders from — taken from the search result or detail page the
+  /// user is looking at.
   Future<BookshelfOperationOutcome> addToBookshelf({
     required String feedId,
     required String sourceBookId,
+    required String title,
+    required String author,
+    String? coverUrl,
+    String? description,
   }) async {
     try {
       final outcome = await rust_bookshelf.bookshelfAdd(
         feedId: feedId,
         sourceBookId: sourceBookId,
+        title: title,
+        author: author,
+        coverUrl: coverUrl,
+        description: description,
       );
       return switch (outcome) {
         BookshelfAddOutcome.added => const BookshelfOperationOutcomeAdded(),
@@ -525,6 +547,7 @@ class FeedService {
       baseUrl: info.baseUrl,
       accessDomains: info.accessDomains.toList(growable: false),
       currentVersion: info.currentVersion,
+      versionChange: info.versionChange,
     );
   }
 
