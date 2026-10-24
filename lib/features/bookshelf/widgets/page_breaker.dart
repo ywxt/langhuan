@@ -46,6 +46,15 @@ class PageContent {
 
   int get firstParagraphIndex => items.isEmpty ? 0 : items.first.paragraphIndex;
   String get firstParagraphId => items.isEmpty ? '' : items.first.paragraphId;
+
+  /// Character offset of the page-leading character within its paragraph
+  /// (0 when the page starts at a paragraph boundary).
+  int get firstCharOffset {
+    final item = items.isEmpty ? null : items.first;
+    if (item == null) return 0;
+    if (item.source is ParagraphContent_Text) return item.startOffset ?? 0;
+    return 0;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -309,5 +318,34 @@ class PageBreaker {
       }
     }
     return (pages.length - 1).clamp(0, pages.length);
+  }
+
+  /// Finds the page a saved position should restore to.
+  ///
+  /// A paragraph can span pages, so the paragraph id alone cannot tell its
+  /// start page from its continuation page. [charOffset] is the character
+  /// offset of the page-leading character within the paragraph that was
+  /// reported when the position was saved. Matching goes:
+  ///
+  /// 1. exact: the page whose first item is (`paragraphId`, `charOffset`) —
+  ///    the very page the reader left (same layout);
+  /// 2. near: the first page whose first item is `paragraphId` with any
+  ///    offset — closest guess after a re-flow shifted the offsets;
+  /// 3. fallback: the first page containing `paragraphId` anywhere.
+  static int pageForPosition(
+    List<PageContent> pages,
+    String paragraphId,
+    int charOffset,
+  ) {
+    for (int i = 0; i < pages.length; i++) {
+      if (pages[i].firstParagraphId == paragraphId &&
+          pages[i].firstCharOffset == charOffset) {
+        return i;
+      }
+    }
+    for (int i = 0; i < pages.length; i++) {
+      if (pages[i].firstParagraphId == paragraphId) return i;
+    }
+    return pageForParagraph(pages, paragraphId);
   }
 }

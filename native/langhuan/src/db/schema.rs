@@ -14,9 +14,10 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: r#"
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: r#"
         -- Feed registry -----------------------------------------------------
         CREATE TABLE feeds (
             id              TEXT PRIMARY KEY,
@@ -146,10 +147,23 @@ const MIGRATIONS: &[Migration] = &[Migration {
             value TEXT NOT NULL
         ) WITHOUT ROWID;
     "#,
-}];
+    },
+    Migration {
+        version: 2,
+        sql: r#"
+        -- Horizontal-mode page-precise progress restore -----------------------
+        -- Character offset of the page-leading character within its paragraph.
+        -- In paged mode a paragraph can span pages; the paragraph id alone
+        -- cannot tell the paragraph's start page from its continuation page.
+        -- 0 means "the paragraph's start" (also the value for old rows).
+        ALTER TABLE reading_progress
+            ADD COLUMN paragraph_char_offset INTEGER NOT NULL DEFAULT 0;
+    "#,
+    },
+];
 
 /// The schema version this build understands (the last migration's version).
-pub(crate) const CURRENT_VERSION: i64 = 1;
+pub(crate) const CURRENT_VERSION: i64 = 2;
 
 /// Apply all pending migrations in order.
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {

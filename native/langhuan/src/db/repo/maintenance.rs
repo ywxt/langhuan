@@ -293,7 +293,7 @@ mod tests {
         seed_book(&conn, "fresh-plain", 100, 2, now);
         conn.add_book("f1", "old-shelved", "T", "A", None, None, now)
             .expect("shelf");
-        conn.set_progress("f1", "old-plain", "c", "p", old)
+        conn.set_progress("f1", "old-plain", "c", "p", 0, old)
             .expect("progress");
 
         let cutoff = now - 15 * 24 * 3600 * 1000;
@@ -354,7 +354,7 @@ mod tests {
             .expect("cover");
         conn.add_book("f1", "b1", "T", "A", None, None, now)
             .expect("shelf");
-        conn.set_progress("f1", "b1", "c1", "p1", now)
+        conn.set_progress("f1", "b1", "c1", "p1", 0, now)
             .expect("progress");
 
         let report = conn.clear_cache().expect("clear");

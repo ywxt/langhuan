@@ -9,6 +9,7 @@ class ReadingProgressState {
     this.activeChapterId = '',
     this.activeParagraphId = '',
     this.activeParagraphOffset = 0,
+    this.activeParagraphCharOffset = 0,
     this.progress,
     this.isLoading = false,
     this.isSaving = false,
@@ -20,6 +21,12 @@ class ReadingProgressState {
   final String activeChapterId;
   final String activeParagraphId;
   final double activeParagraphOffset;
+
+  /// Character offset of the page-leading character within the active
+  /// paragraph (horizontal mode); persisted so page-precise restore works
+  /// when a paragraph spans pages.
+  final int activeParagraphCharOffset;
+
   final ReadingProgressModel? progress;
   final bool isLoading;
   final bool isSaving;
@@ -31,6 +38,7 @@ class ReadingProgressState {
     String? activeChapterId,
     String? activeParagraphId,
     double? activeParagraphOffset,
+    int? activeParagraphCharOffset,
     ReadingProgressModel? Function()? progress,
     bool? isLoading,
     bool? isSaving,
@@ -43,6 +51,8 @@ class ReadingProgressState {
       activeParagraphId: activeParagraphId ?? this.activeParagraphId,
       activeParagraphOffset:
           activeParagraphOffset ?? this.activeParagraphOffset,
+      activeParagraphCharOffset:
+          activeParagraphCharOffset ?? this.activeParagraphCharOffset,
       progress: progress != null ? progress() : this.progress,
       isLoading: isLoading ?? this.isLoading,
       isSaving: isSaving ?? this.isSaving,
@@ -59,11 +69,13 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
     required String chapterId,
     required String paragraphId,
     double paragraphOffset = 0,
+    int paragraphCharOffset = 0,
   }) {
     state = state.copyWith(
       activeChapterId: chapterId,
       activeParagraphId: paragraphId,
       activeParagraphOffset: paragraphOffset,
+      activeParagraphCharOffset: paragraphCharOffset,
     );
   }
 
@@ -90,6 +102,7 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
       hydrateInitialPosition(
         chapterId: chapterId,
         paragraphId: paragraphId,
+        paragraphCharOffset: progress?.paragraphCharOffset ?? 0,
       );
       state = state.copyWith(
         progress: () => progress,
@@ -110,6 +123,7 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
       activeChapterId: chapterId,
       activeParagraphId: paragraphId,
       activeParagraphOffset: 0,
+      activeParagraphCharOffset: 0,
     );
   }
 
@@ -119,6 +133,10 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
 
   void setActiveOffset(double offset) {
     state = state.copyWith(activeParagraphOffset: offset);
+  }
+
+  void setActiveCharOffset(int charOffset) {
+    state = state.copyWith(activeParagraphCharOffset: charOffset);
   }
 
   Future<void> saveActive({int? updatedAtMs}) async {
@@ -137,6 +155,7 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
         bookId: state.bookId,
         chapterId: state.activeChapterId,
         paragraphId: state.activeParagraphId,
+        paragraphCharOffset: state.activeParagraphCharOffset,
         updatedAtMs: timestamp,
       );
 
@@ -146,6 +165,7 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
           bookId: state.bookId,
           chapterId: state.activeChapterId,
           paragraphId: state.activeParagraphId,
+          paragraphCharOffset: state.activeParagraphCharOffset,
           updatedAtMs: timestamp,
         ),
         isSaving: false,
@@ -161,12 +181,14 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
     required String bookId,
     required String chapterId,
     required String paragraphId,
+    int paragraphCharOffset = 0,
     int? updatedAtMs,
   }) async {
     state = state.copyWith(feedId: feedId, bookId: bookId);
     hydrateInitialPosition(
       chapterId: chapterId,
       paragraphId: paragraphId,
+      paragraphCharOffset: paragraphCharOffset,
     );
     await saveActive(updatedAtMs: updatedAtMs);
   }

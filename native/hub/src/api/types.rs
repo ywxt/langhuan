@@ -339,6 +339,9 @@ pub struct ReadingProgressItem {
     pub book_id: String,
     pub chapter_id: String,
     pub paragraph_id: ParagraphId,
+    /// Character offset of the page-leading character within the paragraph
+    /// (horizontal mode). 0 means the paragraph's start.
+    pub paragraph_char_offset: u32,
     pub updated_at_ms: i64,
 }
 

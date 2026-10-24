@@ -9,11 +9,17 @@ class ReaderPosition {
     required this.chapterId,
     required this.paragraphId,
     this.paragraphOffset = 0,
+    this.charOffset = 0,
   });
 
   final String chapterId;
   final String paragraphId;
   final double paragraphOffset;
+
+  /// Character offset of the page-leading character within the paragraph
+  /// (horizontal mode). Distinguishes a paragraph's start page from its
+  /// continuation page so progress can be restored page-precisely.
+  final int charOffset;
 
   // Backward-compatible alias for older call sites.
   double get offset => paragraphOffset;
@@ -37,20 +43,24 @@ class ReaderController extends ChangeNotifier {
   String? _pendingChapterId;
   String _pendingParagraphId = '';
   double _pendingParagraphOffset = 0;
+  int _pendingCharOffset = 0;
 
   String? get pendingChapterId => _pendingChapterId;
   String get pendingParagraphId => _pendingParagraphId;
   double get pendingParagraphOffset => _pendingParagraphOffset;
   double get pendingOffset => _pendingParagraphOffset;
+  int get pendingCharOffset => _pendingCharOffset;
 
   void jumpTo({
     required String chapterId,
     String paragraphId = '',
     double paragraphOffset = 0,
+    int charOffset = 0,
   }) {
     _pendingChapterId = chapterId;
     _pendingParagraphId = paragraphId;
     _pendingParagraphOffset = paragraphOffset;
+    _pendingCharOffset = charOffset;
     notifyListeners();
   }
 
@@ -58,6 +68,7 @@ class ReaderController extends ChangeNotifier {
     _pendingChapterId = null;
     _pendingParagraphId = '';
     _pendingParagraphOffset = 0;
+    _pendingCharOffset = 0;
   }
 
   // ─ Reload command (parent → content manager) ───────────────────────────
@@ -89,12 +100,14 @@ class ReaderController extends ChangeNotifier {
     required String chapterId,
     required String paragraphId,
     double paragraphOffset = 0,
+    int charOffset = 0,
   }) {
     onPositionChanged?.call(
       ReaderPosition(
         chapterId: chapterId,
         paragraphId: paragraphId,
         paragraphOffset: paragraphOffset,
+        charOffset: charOffset,
       ),
     );
   }

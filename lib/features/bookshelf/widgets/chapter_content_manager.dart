@@ -101,6 +101,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   String _activeChapterId = '';
   int _activeLocalPageIndex = 0;
   String _pendingJumpParagraphId = '';
+  int _pendingJumpCharOffset = 0;
 
   // Vertical scroll target (token distinguishes consecutive commands).
   int _scrollToken = 0;
@@ -108,6 +109,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
 
   String _lastReportedChapterId = '';
   String _lastReportedParagraphId = '';
+  int _lastReportedCharOffset = 0;
 
   @override
   void initState() {
@@ -117,11 +119,13 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
         widget.controller.pendingChapterId ??
         (widget.chapters.isNotEmpty ? widget.chapters.first.id : '');
     final pendingParagraphId = widget.controller.pendingParagraphId;
+    final pendingCharOffset = widget.controller.pendingCharOffset;
     widget.controller.consumeJump();
     widget.controller.addListener(_onControllerCommand);
 
     _activeChapterId = startId;
     _pendingJumpParagraphId = pendingParagraphId;
+    _pendingJumpCharOffset = pendingCharOffset;
     _verticalTarget = ReaderScrollTarget(
       token: ++_scrollToken,
       chapterId: startId,
@@ -169,14 +173,16 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     final targetId = widget.controller.pendingChapterId;
     if (targetId == null) return;
     final paragraphId = widget.controller.pendingParagraphId;
+    final charOffset = widget.controller.pendingCharOffset;
     widget.controller.consumeJump();
-    _onJumpCommand(targetId, paragraphId);
+    _onJumpCommand(targetId, paragraphId, charOffset);
   }
 
-  void _onJumpCommand(String chapterId, String paragraphId) {
+  void _onJumpCommand(String chapterId, String paragraphId, int charOffset) {
     _activeChapterId = chapterId;
     _activeLocalPageIndex = 0;
     _pendingJumpParagraphId = paragraphId;
+    _pendingJumpCharOffset = charOffset;
     _verticalTarget = ReaderScrollTarget(
       token: ++_scrollToken,
       chapterId: chapterId,
@@ -184,7 +190,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     );
 
     _window!.jumpTo(chapterId);
-    _reportPosition(chapterId, paragraphId, 0);
+    _reportPosition(chapterId, paragraphId, 0, charOffset);
 
     _resolveHorizontalPendingJump();
     setState(() {});
@@ -211,11 +217,13 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     if (_activeChapterId.isEmpty) return;
     final pages = _pagesFor(_activeChapterId);
     if (pages.isEmpty) return;
-    _activeLocalPageIndex = PageBreaker.pageForParagraph(
+    _activeLocalPageIndex = PageBreaker.pageForPosition(
       pages,
       _pendingJumpParagraphId,
+      _pendingJumpCharOffset,
     ).clamp(0, pages.length - 1);
     _pendingJumpParagraphId = '';
+    _pendingJumpCharOffset = 0;
   }
 
   /// Keep a couple of pages of runway at both ends of the flat list so page
@@ -305,11 +313,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
         final pages = _pagesFor(chapterId);
         for (var i = 0; i < pages.length; i++) {
           entries.add(
-            _FlatEntry(
-              chapterId: chapterId,
-              localPageIndex: i,
-              loading: false,
-            ),
+            _FlatEntry(chapterId: chapterId, localPageIndex: i, loading: false),
           );
         }
       } else if (state is ChapterLoadError) {
@@ -354,9 +358,11 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     if (sameChapterFirst >= 0) {
       // Page count shrank (reload) — clamp to the chapter's last page.
       var last = sameChapterFirst;
-      for (var i = sameChapterFirst + 1;
-          i < entries.length && entries[i].chapterId == _activeChapterId;
-          i++) {
+      for (
+        var i = sameChapterFirst + 1;
+        i < entries.length && entries[i].chapterId == _activeChapterId;
+        i++
+      ) {
         last = i;
       }
       return last;
@@ -430,24 +436,34 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
 
   void _reportCurrentHorizontalPosition() {
     var paragraphId = '';
+    var charOffset = 0;
     if (_activeLocalPageIndex >= 0) {
       final pages = _pagesFor(_activeChapterId);
       if (_activeLocalPageIndex < pages.length) {
-        paragraphId = pages[_activeLocalPageIndex].firstParagraphId;
+        final page = pages[_activeLocalPageIndex];
+        paragraphId = page.firstParagraphId;
+        charOffset = page.firstCharOffset;
       }
     }
-    _reportPosition(_activeChapterId, paragraphId, 0);
+    _reportPosition(_activeChapterId, paragraphId, 0, charOffset);
   }
 
   // ── Position reporting ──────────────────────────────────────────────────
 
-  void _reportPosition(String chapterId, String paragraphId, double offset) {
+  void _reportPosition(
+    String chapterId,
+    String paragraphId,
+    double offset, [
+    int charOffset = 0,
+  ]) {
     _lastReportedChapterId = chapterId;
     _lastReportedParagraphId = paragraphId;
+    _lastReportedCharOffset = charOffset;
     widget.controller.reportPosition(
       chapterId: chapterId,
       paragraphId: paragraphId,
       paragraphOffset: offset,
+      charOffset: charOffset,
     );
   }
 
@@ -521,8 +537,10 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
         ? _lastReportedChapterId
         : _activeChapterId;
     final paragraphId = _lastReportedParagraphId;
+    final charOffset = _lastReportedCharOffset;
     _activeChapterId = chapterId;
     _pendingJumpParagraphId = paragraphId;
+    _pendingJumpCharOffset = charOffset;
     _verticalTarget = ReaderScrollTarget(
       token: ++_scrollToken,
       chapterId: chapterId,
@@ -552,7 +570,11 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
         paragraphId: _lastReportedParagraphId,
       );
     } else {
+      // Switching into paged mode: the last reported char offset anchors the
+      // target page (0 when coming from vertical mode, which does not track
+      // character positions).
       _pendingJumpParagraphId = _lastReportedParagraphId;
+      _pendingJumpCharOffset = _lastReportedCharOffset;
       _ensureBreaker();
       _resolveHorizontalPendingJump();
     }

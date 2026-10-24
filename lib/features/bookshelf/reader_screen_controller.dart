@@ -89,18 +89,22 @@ class ReaderScreenController extends ChangeNotifier {
 
       final String startChapterId;
       final String startParagraphId;
+      final int startCharOffset;
       if (initialChapterId.isNotEmpty &&
           chapters.any((c) => c.id == initialChapterId)) {
         startChapterId = initialChapterId;
         startParagraphId = initialParagraphId;
+        startCharOffset = 0;
       } else {
         final reading = _ref.read(readingProgressProvider);
         startChapterId = reading.activeChapterId;
         startParagraphId = reading.activeParagraphId;
+        startCharOffset = reading.activeParagraphCharOffset;
       }
       _readerController.jumpTo(
         chapterId: startChapterId,
         paragraphId: startParagraphId,
+        charOffset: startCharOffset,
       );
 
       unawaited(
@@ -127,6 +131,7 @@ class ReaderScreenController extends ChangeNotifier {
       paragraphId: pos.paragraphId,
     );
     progressNotifier.setActiveOffset(pos.paragraphOffset);
+    progressNotifier.setActiveCharOffset(pos.charOffset);
 
     if (pos.paragraphId.trim().isEmpty) return;
 
@@ -134,6 +139,7 @@ class ReaderScreenController extends ChangeNotifier {
       chapterId: pos.chapterId,
       paragraphId: pos.paragraphId,
       paragraphOffset: pos.paragraphOffset,
+      charOffset: pos.charOffset,
     );
 
     if (_pendingProgress?.isNear(pending, _offsetEpsilon) ?? false) return;
@@ -266,6 +272,7 @@ class ReaderScreenController extends ChangeNotifier {
             bookId: bookId,
             chapterId: pending.chapterId,
             paragraphId: pending.paragraphId,
+            paragraphCharOffset: pending.charOffset,
           ),
     );
   }
@@ -289,15 +296,21 @@ class _PendingProgress {
     required this.chapterId,
     required this.paragraphId,
     required this.paragraphOffset,
+    this.charOffset = 0,
   });
 
   final String chapterId;
   final String paragraphId;
   final double paragraphOffset;
 
+  /// Character offset of the page-leading character within the paragraph
+  /// (horizontal mode).
+  final int charOffset;
+
   bool isNear(_PendingProgress other, double epsilon) {
     return chapterId == other.chapterId &&
         paragraphId == other.paragraphId &&
-        (paragraphOffset - other.paragraphOffset).abs() <= epsilon;
+        (paragraphOffset - other.paragraphOffset).abs() <= epsilon &&
+        charOffset == other.charOffset;
   }
 }

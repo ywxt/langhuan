@@ -163,6 +163,7 @@ class ReadingProgressModel {
     required this.bookId,
     required this.chapterId,
     required this.paragraphId,
+    this.paragraphCharOffset = 0,
     required this.updatedAtMs,
   });
 
@@ -170,6 +171,12 @@ class ReadingProgressModel {
   final String bookId;
   final String chapterId;
   final String paragraphId;
+
+  /// Character offset of the page-leading character within the paragraph
+  /// (horizontal mode). Lets restore land on the exact page when a paragraph
+  /// spans two pages; 0 means the paragraph's start.
+  final int paragraphCharOffset;
+
   final int updatedAtMs;
 
   factory ReadingProgressModel.fromRust(ReadingProgressItem item) =>
@@ -178,6 +185,7 @@ class ReadingProgressModel {
         bookId: item.bookId,
         chapterId: item.chapterId,
         paragraphId: item.paragraphId.toStringValue(),
+        paragraphCharOffset: item.paragraphCharOffset,
         updatedAtMs: item.updatedAtMs,
       );
 }
@@ -445,6 +453,7 @@ class FeedService {
     required String bookId,
     required String chapterId,
     required String paragraphId,
+    int paragraphCharOffset = 0,
     required int updatedAtMs,
   }) {
     return rust_progress.setReadingProgress(
@@ -452,6 +461,7 @@ class FeedService {
       bookId: bookId,
       chapterId: chapterId,
       paragraphId: paragraphIdFromString(paragraphId),
+      paragraphCharOffset: paragraphCharOffset,
       updatedAtMs: updatedAtMs,
     );
   }

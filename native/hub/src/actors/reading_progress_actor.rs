@@ -19,6 +19,7 @@ pub struct SetReadingProgress {
     pub book_id: String,
     pub chapter_id: String,
     pub paragraph_id: String,
+    pub paragraph_char_offset: u32,
     pub updated_at_ms: i64,
 }
 
@@ -79,6 +80,7 @@ impl Handler<SetReadingProgress> for ReadingProgressActor {
                 &msg.book_id,
                 &msg.chapter_id,
                 &msg.paragraph_id,
+                msg.paragraph_char_offset,
                 updated_at_ms,
             )
         })
@@ -95,6 +97,7 @@ impl From<ProgressRow> for ReadingProgressItem {
             book_id: row.book_id,
             chapter_id: row.chapter_id,
             paragraph_id: ParagraphId::from_stored(row.paragraph_id),
+            paragraph_char_offset: row.paragraph_char_offset,
             updated_at_ms: row.updated_at_ms,
         }
     }
