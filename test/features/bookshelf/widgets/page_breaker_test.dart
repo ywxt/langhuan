@@ -28,16 +28,11 @@ void main() {
   test('pageForPosition restores the exact continuation page', () {
     // Paragraph p1 spans three pages (offsets 0 / 240 / 480); p2 and p3 are
     // short and share page 3, where only p2 leads.
-    final text = (String id) => ParagraphContent_Text(
-          id: ParagraphId.id(id),
-          content: 'x',
-        );
-    final item = (
-      String id,
-      int? start,
-    ) =>
-        PageItem(
-          source: text(id),
+    PageItem item(String id, int? start) => PageItem(
+          source: ParagraphContent_Text(
+            id: ParagraphId.id(id),
+            content: 'x',
+          ),
           paragraphIndex: 0,
           paragraphId: id,
           startOffset: start,
