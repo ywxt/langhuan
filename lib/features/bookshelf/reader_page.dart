@@ -8,6 +8,7 @@ import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/loading.dart';
 import '../../src/rust/api/types.dart';
+import '../feeds/feed_providers.dart';
 import 'reader_screen_controller.dart';
 import 'reader_settings_provider.dart';
 import 'reading_progress_provider.dart';
@@ -234,6 +235,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                 Positioned.fill(
                   child: RepaintBoundary(
                     child: ChapterContentManager(
+                      feedService: ref.read(feedServiceProvider),
                       feedId: widget.feedId,
                       bookId: widget.bookId,
                       chapters: _screenController.chapters,

@@ -28,6 +28,7 @@ import 'seamless_vertical_reader.dart';
 class ChapterContentManager extends StatefulWidget {
   const ChapterContentManager({
     super.key,
+    required this.feedService,
     required this.feedId,
     required this.bookId,
     required this.chapters,
@@ -46,6 +47,9 @@ class ChapterContentManager extends StatefulWidget {
     this.selectedParagraphId,
   });
 
+  /// Chapter paragraph source. Injected so tests can supply a fake and the
+  /// widget never reaches for the app-wide singleton.
+  final FeedService feedService;
   final String feedId;
   final String bookId;
   final List<ChapterInfoModel> chapters;
@@ -153,7 +157,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     String chapterId, {
     bool forceRefresh = false,
   }) {
-    return FeedService.instance
+    return widget.feedService
         .paragraphs(
           feedId: widget.feedId,
           bookId: widget.bookId,
