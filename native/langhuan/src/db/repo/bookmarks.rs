@@ -1,6 +1,6 @@
 //! `bookmarks` — user-created bookmarks, newest first.
 
-use tokio_rusqlite::rusqlite::Connection;
+use super::Repo;
 
 use crate::error::Result;
 
@@ -17,20 +17,9 @@ pub struct BookmarkRow {
     pub created_at_ms: i64,
 }
 
-/// Bookmark operations, as methods on [`Connection`].
-pub trait BookmarksRepo {
-    fn add_bookmark(&self, row: &BookmarkRow) -> Result<()>;
-
-    /// Delete a bookmark by id. Returns `false` when it did not exist.
-    fn remove_bookmark(&self, id: &str) -> Result<bool>;
-
-    /// All bookmarks for one book, newest first.
-    fn list_bookmarks(&self, feed_id: &str, book_id: &str) -> Result<Vec<BookmarkRow>>;
-}
-
-impl BookmarksRepo for Connection {
-    fn add_bookmark(&self, row: &BookmarkRow) -> Result<()> {
-        self.prepare_cached(
+impl Repo<'_> {
+    pub fn add_bookmark(&self, row: &BookmarkRow) -> Result<()> {
+        self.conn.prepare_cached(
             "INSERT INTO bookmarks (id, feed_id, book_id, chapter_id, paragraph_id, paragraph_name, paragraph_preview, label, created_at_ms) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         )?
@@ -48,15 +37,18 @@ impl BookmarksRepo for Connection {
         Ok(())
     }
 
-    fn remove_bookmark(&self, id: &str) -> Result<bool> {
+    /// Delete a bookmark by id. Returns `false` when it did not exist.
+    pub fn remove_bookmark(&self, id: &str) -> Result<bool> {
         let deleted = self
+            .conn
             .prepare_cached("DELETE FROM bookmarks WHERE id = ?1")?
             .execute([id])?;
         Ok(deleted > 0)
     }
 
-    fn list_bookmarks(&self, feed_id: &str, book_id: &str) -> Result<Vec<BookmarkRow>> {
-        let mut stmt = self.prepare_cached(
+    /// All bookmarks for one book, newest first.
+    pub fn list_bookmarks(&self, feed_id: &str, book_id: &str) -> Result<Vec<BookmarkRow>> {
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, feed_id, book_id, chapter_id, paragraph_id, paragraph_name, paragraph_preview, label, created_at_ms \
              FROM bookmarks WHERE feed_id = ?1 AND book_id = ?2 \
              ORDER BY created_at_ms DESC, id",
@@ -104,7 +96,7 @@ mod tests {
     fn add_list_remove() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
         conn.add_bookmark(&row("bm1", now)).unwrap();
         conn.add_bookmark(&row("bm2", now + 10)).unwrap();

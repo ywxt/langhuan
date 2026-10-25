@@ -3,7 +3,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use langhuan::cache::CachedFeed;
 use langhuan::db::Db;
-use langhuan::db::repo::AuthRepo;
 use langhuan::feed::{
     AuthPageContext, AuthStatus as FeedAuthStatus, CookieEntry as FeedCookieEntry, FeedAuthFlow,
 };
@@ -126,7 +125,7 @@ impl LoginActor {
             .ok_or_else(|| t!("error.app_data_dir_not_set").to_string())?;
         let id = feed_id.to_owned();
         let auth_info = db
-            .call(move |conn| conn.get_auth(&id))
+            .call(move |repo| repo.get_auth(&id))
             .await
             .map_err(|e| localize_error(&e))?;
         feed.set_auth_info(&support, auth_info)
@@ -191,7 +190,7 @@ impl LoginActor {
         let stored_auth = db
             .call({
                 let id = id.clone();
-                move |conn| conn.get_auth(&id)
+                move |repo| repo.get_auth(&id)
             })
             .await?;
         feed.set_auth_info(&support, Some(auth_info.clone()))
@@ -215,7 +214,7 @@ impl LoginActor {
         }
 
         if let Err(error) = db
-            .write(move |conn| conn.set_auth(&id, &auth_info, langhuan::db::now_ms()))
+            .write(move |repo| repo.set_auth(&id, &auth_info, langhuan::db::now_ms()))
             .await
         {
             feed.set_auth_info(&support, stored_auth)
@@ -248,7 +247,7 @@ impl LoginActor {
         };
         let db = self.db()?.clone();
         let id = feed_id.to_owned();
-        db.write(move |conn| conn.clear_auth(&id)).await?;
+        db.write(move |repo| repo.clear_auth(&id)).await?;
         feed.set_auth_info(&support, None)
             .map_err(BridgeError::from)
     }

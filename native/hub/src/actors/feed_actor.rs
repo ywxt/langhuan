@@ -472,7 +472,6 @@ mod tests {
     use std::error::Error;
 
     use langhuan::db::Db;
-    use langhuan::db::repo::FeedsRepo;
     use langhuan::feed::FeedMeta;
     use langhuan::script::runtime::ScriptEngine;
     use messages::prelude::Context;
@@ -609,9 +608,9 @@ return {
     ) -> Result<(), Box<dyn Error>> {
         let feed_meta = meta(id, name, base_url);
         let feed_id = id.to_owned();
-        db.write(move |conn| {
-            conn.upsert_feed(&feed_meta, None, "hash", 1)?;
-            conn.upsert_script(&feed_id, "1.0.0", "hash", &script, 1)
+        db.write(move |repo| {
+            repo.upsert_feed(&feed_meta, None, "hash", 1)?;
+            repo.upsert_script(&feed_id, "1.0.0", "hash", &script, 1)
         })
         .await?;
         Ok(())

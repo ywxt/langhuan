@@ -4,7 +4,7 @@ use async_stream::stream;
 use tokio_stream::StreamExt;
 
 use crate::db::Db;
-use crate::db::repo::{CacheRepo, CoverState};
+use crate::db::repo::CoverState;
 use crate::error::Result;
 use crate::feed::{
     AuthEntry, AuthInfo, AuthPageContext, AuthStatus, Feed, FeedAuthFlow, FeedMeta, FeedStream,
@@ -143,7 +143,7 @@ impl<F: Feed> CachedFeed<F> {
         let feed_id = self.inner.meta().id.clone();
         let (bid, cid) = (book_id.to_owned(), chapter_id.to_owned());
         self.db
-            .write(move |conn| conn.delete_paragraphs(&feed_id, &bid, &cid))
+            .write(move |repo| repo.delete_paragraphs(&feed_id, &bid, &cid))
             .await
     }
 
@@ -152,7 +152,7 @@ impl<F: Feed> CachedFeed<F> {
         let feed_id = self.inner.meta().id.clone();
         let bid = book_id.to_owned();
         self.db
-            .write(move |conn| conn.delete_chapter_list(&feed_id, &bid))
+            .write(move |repo| repo.delete_chapter_list(&feed_id, &bid))
             .await
     }
 
@@ -172,14 +172,14 @@ impl<F: Feed> CachedFeed<F> {
             "chapter paragraphs",
             cache_get: {
                 let (db, fid, b, c) = (db.clone(), feed_id.clone(), bid.clone(), cid.clone());
-                db.call(move |conn| {
-                    conn.get_paragraphs(&fid, &b, &c, crate::db::now_ms())
+                db.call(move |repo| {
+                    repo.get_paragraphs(&fid, &b, &c, crate::db::now_ms())
                 })
                 .await
             },
             cache_clear: {
                 let (db, fid, b, c) = (db.clone(), feed_id.clone(), bid.clone(), cid.clone());
-                db.write(move |conn| conn.delete_paragraphs(&fid, &b, &c))
+                db.write(move |repo| repo.delete_paragraphs(&fid, &b, &c))
                     .await
                     .map(|_| ())
             },
@@ -188,8 +188,8 @@ impl<F: Feed> CachedFeed<F> {
             },
             cache_set(collected): {
                 let (db, fid, b, c) = (db.clone(), feed_id.clone(), bid.clone(), cid.clone());
-                db.write(move |conn| {
-                    conn.set_paragraphs(
+                db.write(move |repo| {
+                    repo.set_paragraphs(
                         &fid,
                         &b,
                         &c,
@@ -214,14 +214,14 @@ impl<F: Feed> CachedFeed<F> {
             "chapter list",
             cache_get: {
                 let (db, fid, b) = (db.clone(), feed_id.clone(), bid.clone());
-                db.call(move |conn| {
-                    conn.get_chapter_list(&fid, &b, crate::db::now_ms())
+                db.call(move |repo| {
+                    repo.get_chapter_list(&fid, &b, crate::db::now_ms())
                 })
                 .await
             },
             cache_clear: {
                 let (db, fid, b) = (db.clone(), feed_id.clone(), bid.clone());
-                db.write(move |conn| conn.delete_chapter_list(&fid, &b))
+                db.write(move |repo| repo.delete_chapter_list(&fid, &b))
                     .await
                     .map(|_| ())
             },
@@ -230,8 +230,8 @@ impl<F: Feed> CachedFeed<F> {
             },
             cache_set(collected): {
                 let (db, fid, b) = (db.clone(), feed_id.clone(), bid.clone());
-                db.write(move |conn| {
-                    conn.set_chapter_list(
+                db.write(move |repo| {
+                    repo.set_chapter_list(
                         &fid,
                         &b,
                         &collected,
@@ -303,7 +303,7 @@ impl<F: Feed> CachedFeed<F> {
         let cached = db
             .write({
                 let (fid, info) = (feed_id.clone(), info.clone());
-                move |conn| conn.upsert_fetched_book(&fid, &info, crate::db::now_ms())
+                move |repo| repo.upsert_fetched_book(&fid, &info, crate::db::now_ms())
             })
             .await;
         if let Err(e) = cached {
@@ -330,7 +330,7 @@ fn spawn_cover_download(db: Db, feed_id: String, book_id: String, url: String) {
 async fn mark_cover_failed(db: &Db, feed_id: &str, book_id: &str) {
     let (fid, bid) = (feed_id.to_owned(), book_id.to_owned());
     let _ = db
-        .write(move |conn| conn.mark_cover(&fid, &bid, CoverState::Failed, crate::db::now_ms()))
+        .write(move |repo| repo.mark_cover(&fid, &bid, CoverState::Failed, crate::db::now_ms()))
         .await;
 }
 
@@ -349,7 +349,7 @@ pub async fn download_cover(db: Db, feed_id: String, book_id: String, url: Strin
     let claimed = db
         .call({
             let (fid, bid) = (feed_id.clone(), book_id.clone());
-            move |conn| conn.claim_cover_download(&fid, &bid, crate::db::now_ms())
+            move |repo| repo.claim_cover_download(&fid, &bid, crate::db::now_ms())
         })
         .await
         .unwrap_or(false);
@@ -421,7 +421,7 @@ pub async fn download_cover(db: Db, feed_id: String, book_id: String, url: Strin
     let result = db
         .write({
             let (fid, bid, mime, bytes) = (feed_id.clone(), book_id.clone(), mime, buf);
-            move |conn| conn.set_cover(&fid, &bid, &mime, &bytes, crate::db::now_ms())
+            move |repo| repo.set_cover(&fid, &bid, &mime, &bytes, crate::db::now_ms())
         })
         .await;
     match result {

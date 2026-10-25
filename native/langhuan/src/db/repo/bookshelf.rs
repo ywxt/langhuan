@@ -2,11 +2,9 @@
 
 use std::collections::HashSet;
 
-use tokio_rusqlite::rusqlite::Connection;
+use super::Repo;
 
 use crate::error::Result;
-
-use super::cache::CacheRepo;
 
 /// A bookshelf list item: the shelf row joined with the book's metadata.
 #[derive(Debug, Clone)]
@@ -21,8 +19,7 @@ pub struct ShelfItem {
     pub last_seen_chapters: i64,
 }
 
-/// Bookshelf operations, as methods on [`Connection`].
-pub trait BookshelfRepo {
+impl Repo<'_> {
     /// Add a book to the shelf, seeding a placeholder `books` row (from the
     /// search-result snapshot) when none exists yet.
     ///
@@ -32,47 +29,9 @@ pub trait BookshelfRepo {
     ///
     /// Whether a cover download should run is *not* the repo's business:
     /// callers spawn one whenever the snapshot carries a `cover_url` and
-    /// [`CacheRepo::claim_cover_download`] decides whether it is due.
+    /// [`Repo::claim_cover_download`] decides whether it is due.
     #[allow(clippy::too_many_arguments)]
-    fn add_book(
-        &self,
-        feed_id: &str,
-        book_id: &str,
-        title: &str,
-        author: &str,
-        description: Option<&str>,
-        cover_url: Option<&str>,
-        now_ms: i64,
-    ) -> Result<bool>;
-
-    /// Remove a book from the shelf and delete all of its data.
-    ///
-    /// Runs atomically in the caller's transaction: the `bookshelf` entry,
-    /// the `books` row (schema-cascading chapters, chapter lists, and
-    /// covers), reading progress, and bookmarks. Returns `false` when it
-    /// was not shelved.
-    fn remove_book(&self, feed_id: &str, book_id: &str) -> Result<bool>;
-
-    /// List the shelf, newest first, joined with cached metadata.
-    ///
-    /// A shelved book always has a `books` row (enforced by the FK), so the
-    /// inner join can never drop entries.
-    fn shelf_items(&self) -> Result<Vec<ShelfItem>>;
-
-    /// Record the chapter count the user has last seen for a shelved book
-    /// (detail page or reader list load). No-op when the book is not shelved.
-    fn set_last_seen_chapters(&self, feed_id: &str, book_id: &str, count: i64) -> Result<()>;
-
-    /// Is this book currently shelved?
-    fn is_shelved(&self, feed_id: &str, book_id: &str) -> Result<bool>;
-
-    /// All shelved `(feed_id, book_id)` pairs — the set of books protected
-    /// from cache eviction and stale cleanup.
-    fn protected_pairs(&self) -> Result<HashSet<(String, String)>>;
-}
-
-impl BookshelfRepo for Connection {
-    fn add_book(
+    pub fn add_book(
         &self,
         feed_id: &str,
         book_id: &str,
@@ -92,7 +51,7 @@ impl BookshelfRepo for Connection {
             now_ms,
         )?;
 
-        let inserted = self
+        let inserted = self.conn
             .prepare_cached(
                 "INSERT OR IGNORE INTO bookshelf (feed_id, book_id, added_at_ms) VALUES (?1, ?2, ?3)",
             )?
@@ -100,8 +59,15 @@ impl BookshelfRepo for Connection {
         Ok(inserted > 0)
     }
 
-    fn remove_book(&self, feed_id: &str, book_id: &str) -> Result<bool> {
+    /// Remove a book from the shelf and delete all of its data.
+    ///
+    /// Runs atomically in the caller's transaction: the `bookshelf` entry,
+    /// the `books` row (schema-cascading chapters, chapter lists, and
+    /// covers), reading progress, and bookmarks. Returns `false` when it
+    /// was not shelved.
+    pub fn remove_book(&self, feed_id: &str, book_id: &str) -> Result<bool> {
         let removed = self
+            .conn
             .prepare_cached("DELETE FROM bookshelf WHERE feed_id = ?1 AND book_id = ?2")?
             .execute([feed_id, book_id])?;
         if removed == 0 {
@@ -109,17 +75,24 @@ impl BookshelfRepo for Connection {
         }
         // Deleting the `books` row schema-cascades chapters, chapter lists,
         // and covers; progress and bookmarks only cascade from `feeds`.
-        self.prepare_cached("DELETE FROM books WHERE feed_id = ?1 AND book_id = ?2")?
+        self.conn
+            .prepare_cached("DELETE FROM books WHERE feed_id = ?1 AND book_id = ?2")?
             .execute([feed_id, book_id])?;
-        self.prepare_cached("DELETE FROM reading_progress WHERE feed_id = ?1 AND book_id = ?2")?
+        self.conn
+            .prepare_cached("DELETE FROM reading_progress WHERE feed_id = ?1 AND book_id = ?2")?
             .execute([feed_id, book_id])?;
-        self.prepare_cached("DELETE FROM bookmarks WHERE feed_id = ?1 AND book_id = ?2")?
+        self.conn
+            .prepare_cached("DELETE FROM bookmarks WHERE feed_id = ?1 AND book_id = ?2")?
             .execute([feed_id, book_id])?;
         Ok(true)
     }
 
-    fn shelf_items(&self) -> Result<Vec<ShelfItem>> {
-        let mut stmt = self.prepare_cached(
+    /// List the shelf, newest first, joined with cached metadata.
+    ///
+    /// A shelved book always has a `books` row (enforced by the FK), so the
+    /// inner join can never drop entries.
+    pub fn shelf_items(&self) -> Result<Vec<ShelfItem>> {
+        let mut stmt = self.conn.prepare_cached(
             "SELECT s.feed_id, s.book_id, b.title, b.author, b.description, b.cover_url, s.added_at_ms, s.last_seen_chapters \
              FROM bookshelf s \
              JOIN books b ON b.feed_id = s.feed_id AND b.book_id = s.book_id \
@@ -142,16 +115,21 @@ impl BookshelfRepo for Connection {
         Ok(items)
     }
 
-    fn set_last_seen_chapters(&self, feed_id: &str, book_id: &str, count: i64) -> Result<()> {
-        self.prepare_cached(
-            "UPDATE bookshelf SET last_seen_chapters = ?3 WHERE feed_id = ?1 AND book_id = ?2",
-        )?
-        .execute(tokio_rusqlite::params![feed_id, book_id, count])?;
+    /// Record the chapter count the user has last seen for a shelved book
+    /// (detail page or reader list load). No-op when the book is not shelved.
+    pub fn set_last_seen_chapters(&self, feed_id: &str, book_id: &str, count: i64) -> Result<()> {
+        self.conn
+            .prepare_cached(
+                "UPDATE bookshelf SET last_seen_chapters = ?3 WHERE feed_id = ?1 AND book_id = ?2",
+            )?
+            .execute(tokio_rusqlite::params![feed_id, book_id, count])?;
         Ok(())
     }
 
-    fn is_shelved(&self, feed_id: &str, book_id: &str) -> Result<bool> {
+    /// Is this book currently shelved?
+    pub fn is_shelved(&self, feed_id: &str, book_id: &str) -> Result<bool> {
         let found = self
+            .conn
             .prepare_cached(
                 "SELECT EXISTS(SELECT 1 FROM bookshelf WHERE feed_id = ?1 AND book_id = ?2)",
             )?
@@ -159,8 +137,12 @@ impl BookshelfRepo for Connection {
         Ok(found == 1)
     }
 
-    fn protected_pairs(&self) -> Result<HashSet<(String, String)>> {
-        let mut stmt = self.prepare_cached("SELECT feed_id, book_id FROM bookshelf")?;
+    /// All shelved `(feed_id, book_id)` pairs — the set of books protected
+    /// from cache eviction and stale cleanup.
+    pub fn protected_pairs(&self) -> Result<HashSet<(String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT feed_id, book_id FROM bookshelf")?;
         let pairs = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<std::result::Result<HashSet<_>, _>>()?;
@@ -170,7 +152,6 @@ impl BookshelfRepo for Connection {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::db::now_ms;
     use crate::db::repo::test_support::TestDb;
 
@@ -178,7 +159,7 @@ mod tests {
     fn add_is_idempotent_and_lists_newest_first() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
         assert!(
             conn.add_book("f1", "b1", "One", "A", None, Some("u1"), now)
@@ -208,7 +189,7 @@ mod tests {
     fn last_seen_chapters_defaults_and_updates() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         assert!(
             conn.add_book("f1", "b1", "One", "A", None, None, now_ms())
                 .unwrap()
@@ -234,7 +215,7 @@ mod tests {
     fn remove_then_list() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
         conn.add_book("f1", "b1", "One", "A", None, None, now)
             .unwrap();
@@ -247,11 +228,11 @@ mod tests {
     fn remove_deletes_book_data() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
         conn.add_book("f1", "b1", "One", "A", None, None, now)
             .unwrap();
-        conn.execute_batch(
+        conn.conn().execute_batch(
             "INSERT INTO chapters VALUES ('f1', 'b1', 'c1', '[]', 1); \
              INSERT INTO chapter_lists VALUES ('f1', 'b1', '[]', 1); \
              INSERT INTO covers VALUES ('f1', 'b1', 'image/png', x'00', 1); \
@@ -262,7 +243,11 @@ mod tests {
 
         assert!(conn.remove_book("f1", "b1").unwrap());
 
-        let count = |sql: &str| conn.query_row(sql, [], |row| row.get::<_, i64>(0)).unwrap();
+        let count = |sql: &str| {
+            conn.conn()
+                .query_row(sql, [], |row| row.get::<_, i64>(0))
+                .unwrap()
+        };
         assert_eq!(count("SELECT COUNT(*) FROM bookshelf"), 0);
         assert_eq!(count("SELECT COUNT(*) FROM books"), 0);
         assert_eq!(count("SELECT COUNT(*) FROM chapters"), 0);

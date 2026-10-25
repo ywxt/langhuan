@@ -24,7 +24,7 @@
 //! when the stored `cover_url` changes, so a download for the new URL can
 //! claim again.
 
-use tokio_rusqlite::rusqlite::Connection;
+use super::Repo;
 use tokio_rusqlite::rusqlite::types::{
     FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef,
 };
@@ -212,131 +212,30 @@ const CLAIM_COVER_DOWNLOAD: &str = "\
 // Repo trait
 // ---------------------------------------------------------------------------
 
-/// Content-cache operations, as methods on [`Connection`].
-pub trait CacheRepo {
+impl Repo<'_> {
     /// Ensure a `books` row exists (minimal placeholder) so cache tables
     /// have something to reference.
-    fn ensure_book(&self, feed_id: &str, book_id: &str, now_ms: i64) -> Result<()>;
+    pub fn ensure_book(&self, feed_id: &str, book_id: &str, now_ms: i64) -> Result<()> {
+        self.conn
+            .prepare_cached(
+                "INSERT OR IGNORE INTO books (feed_id, book_id, title, author, last_used_at_ms) \
+             VALUES (?1, ?2, ?2, '', ?3)",
+            )?
+            .execute(tokio_rusqlite::params![feed_id, book_id, now_ms])?;
+        Ok(())
+    }
 
     /// Read the cached book row and refresh `last_used_at_ms`.
     ///
     /// Returns `None` when no row exists.
-    fn get_book_and_touch(
-        &self,
-        feed_id: &str,
-        book_id: &str,
-        now_ms: i64,
-    ) -> Result<Option<BookRow>>;
-
-    /// Refresh `last_used_at_ms` for LRU accounting.
-    fn touch_book(&self, feed_id: &str, book_id: &str, now_ms: i64) -> Result<()>;
-
-    /// Persist a freshly fetched [`BookInfo`] (see [`UPSERT_FETCHED_BOOK`]).
-    fn upsert_fetched_book(&self, feed_id: &str, info: &BookInfo, now_ms: i64) -> Result<()>;
-
-    /// Overwrite the display fields of a placeholder row from a
-    /// search-result snapshot. Only rows with `info_fetched_at_ms = 0` are
-    /// touched — fetched data always wins over a search snapshot.
-    #[allow(clippy::too_many_arguments)]
-    fn upsert_snapshot(
-        &self,
-        feed_id: &str,
-        book_id: &str,
-        title: &str,
-        author: &str,
-        description: Option<&str>,
-        cover_url: Option<&str>,
-        now_ms: i64,
-    ) -> Result<()>;
-
-    /// Read the stored cover bytes for a book, with the recorded MIME type.
-    fn get_cover_bytes(&self, feed_id: &str, book_id: &str) -> Result<Option<(String, Vec<u8>)>>;
-
-    /// Store downloaded cover bytes and mark the state `downloaded`.
-    fn set_cover(
-        &self,
-        feed_id: &str,
-        book_id: &str,
-        mime: &str,
-        bytes: &[u8],
-        now_ms: i64,
-    ) -> Result<()>;
-
-    /// Set the cover state and its timestamp (e.g. `failed`).
-    fn mark_cover(
-        &self,
-        feed_id: &str,
-        book_id: &str,
-        state: CoverState,
-        now_ms: i64,
-    ) -> Result<()>;
-
-    /// Atomically claim the cover download slot (see
-    /// [`CLAIM_COVER_DOWNLOAD`]). Returns `false` when another download is
-    /// in flight, the cover is already stored, or the failure backoff has
-    /// not elapsed — the caller must skip.
-    fn claim_cover_download(&self, feed_id: &str, book_id: &str, now_ms: i64) -> Result<bool>;
-
-    /// Drop the stored cover bytes (the `books` row and its state remain).
-    fn delete_cover(&self, feed_id: &str, book_id: &str) -> Result<()>;
-
-    /// Read the cached chapter list, if present and not older than the TTL.
-    fn get_chapter_list(
-        &self,
-        feed_id: &str,
-        book_id: &str,
-        now_ms: i64,
-    ) -> Result<Option<Vec<ChapterInfo>>>;
-
-    fn set_chapter_list(
-        &self,
-        feed_id: &str,
-        book_id: &str,
-        chapters: &[ChapterInfo],
-        now_ms: i64,
-    ) -> Result<()>;
-
-    fn delete_chapter_list(&self, feed_id: &str, book_id: &str) -> Result<()>;
-
-    /// Read cached chapter paragraphs and refresh `last_used_at_ms`.
-    fn get_paragraphs(
-        &self,
-        feed_id: &str,
-        book_id: &str,
-        chapter_id: &str,
-        now_ms: i64,
-    ) -> Result<Option<Vec<Paragraph>>>;
-
-    fn set_paragraphs(
-        &self,
-        feed_id: &str,
-        book_id: &str,
-        chapter_id: &str,
-        paragraphs: &[Paragraph],
-        now_ms: i64,
-    ) -> Result<()>;
-
-    fn delete_paragraphs(&self, feed_id: &str, book_id: &str, chapter_id: &str) -> Result<()>;
-}
-
-impl CacheRepo for Connection {
-    fn ensure_book(&self, feed_id: &str, book_id: &str, now_ms: i64) -> Result<()> {
-        self.prepare_cached(
-            "INSERT OR IGNORE INTO books (feed_id, book_id, title, author, last_used_at_ms) \
-             VALUES (?1, ?2, ?2, '', ?3)",
-        )?
-        .execute(tokio_rusqlite::params![feed_id, book_id, now_ms])?;
-        Ok(())
-    }
-
-    fn get_book_and_touch(
+    pub fn get_book_and_touch(
         &self,
         feed_id: &str,
         book_id: &str,
         now_ms: i64,
     ) -> Result<Option<BookRow>> {
         let row = super::maybe_row(
-            self,
+            self.conn,
             &format!("SELECT {BOOK_COLUMNS} FROM books WHERE feed_id = ?1 AND book_id = ?2"),
             &[&feed_id, &book_id],
             map_book_row,
@@ -347,18 +246,23 @@ impl CacheRepo for Connection {
         Ok(row)
     }
 
-    fn touch_book(&self, feed_id: &str, book_id: &str, now_ms: i64) -> Result<()> {
-        self.prepare_cached(
-            "UPDATE books SET last_used_at_ms = ?3 WHERE feed_id = ?1 AND book_id = ?2",
-        )?
-        .execute(tokio_rusqlite::params![feed_id, book_id, now_ms])?;
+    /// Refresh `last_used_at_ms` for LRU accounting.
+    pub fn touch_book(&self, feed_id: &str, book_id: &str, now_ms: i64) -> Result<()> {
+        self.conn
+            .prepare_cached(
+                "UPDATE books SET last_used_at_ms = ?3 WHERE feed_id = ?1 AND book_id = ?2",
+            )?
+            .execute(tokio_rusqlite::params![feed_id, book_id, now_ms])?;
         Ok(())
     }
 
-    fn upsert_fetched_book(&self, feed_id: &str, info: &BookInfo, now_ms: i64) -> Result<()> {
-        self.prepare_cached(DELETE_STALE_COVER)?
+    /// Persist a freshly fetched [`BookInfo`] (see [`UPSERT_FETCHED_BOOK`]).
+    pub fn upsert_fetched_book(&self, feed_id: &str, info: &BookInfo, now_ms: i64) -> Result<()> {
+        self.conn
+            .prepare_cached(DELETE_STALE_COVER)?
             .execute(tokio_rusqlite::params![feed_id, info.id, info.cover_url])?;
-        self.prepare_cached(UPSERT_FETCHED_BOOK)?
+        self.conn
+            .prepare_cached(UPSERT_FETCHED_BOOK)?
             .execute(tokio_rusqlite::params![
                 feed_id,
                 info.id,
@@ -371,7 +275,11 @@ impl CacheRepo for Connection {
         Ok(())
     }
 
-    fn upsert_snapshot(
+    /// Overwrite the display fields of a placeholder row from a
+    /// search-result snapshot. Only rows with `info_fetched_at_ms = 0` are
+    /// touched — fetched data always wins over a search snapshot.
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_snapshot(
         &self,
         feed_id: &str,
         book_id: &str,
@@ -381,9 +289,10 @@ impl CacheRepo for Connection {
         cover_url: Option<&str>,
         now_ms: i64,
     ) -> Result<()> {
-        self.prepare_cached(DELETE_STALE_COVER)?
+        self.conn
+            .prepare_cached(DELETE_STALE_COVER)?
             .execute(tokio_rusqlite::params![feed_id, book_id, cover_url])?;
-        self.prepare_cached(
+        self.conn.prepare_cached(
             "INSERT INTO books (feed_id, book_id, title, author, description, cover_url, cover_state, cover_fetched_at_ms, info_fetched_at_ms, last_used_at_ms) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'none', 0, 0, ?7) \
              ON CONFLICT(feed_id, book_id) DO UPDATE SET \
@@ -409,16 +318,22 @@ impl CacheRepo for Connection {
         Ok(())
     }
 
-    fn get_cover_bytes(&self, feed_id: &str, book_id: &str) -> Result<Option<(String, Vec<u8>)>> {
+    /// Read the stored cover bytes for a book, with the recorded MIME type.
+    pub fn get_cover_bytes(
+        &self,
+        feed_id: &str,
+        book_id: &str,
+    ) -> Result<Option<(String, Vec<u8>)>> {
         super::maybe_row(
-            self,
+            self.conn,
             "SELECT mime, bytes FROM covers WHERE feed_id = ?1 AND book_id = ?2",
             &[&feed_id, &book_id],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
         )
     }
 
-    fn set_cover(
+    /// Store downloaded cover bytes and mark the state `downloaded`.
+    pub fn set_cover(
         &self,
         feed_id: &str,
         book_id: &str,
@@ -426,39 +341,47 @@ impl CacheRepo for Connection {
         bytes: &[u8],
         now_ms: i64,
     ) -> Result<()> {
-        self.prepare_cached(
+        self.conn.prepare_cached(
             "INSERT INTO covers (feed_id, book_id, mime, bytes, fetched_at_ms) \
              VALUES (?1, ?2, ?3, ?4, ?5) \
              ON CONFLICT(feed_id, book_id) DO UPDATE SET \
                  mime = excluded.mime, bytes = excluded.bytes, fetched_at_ms = excluded.fetched_at_ms",
         )?
         .execute(tokio_rusqlite::params![feed_id, book_id, mime, bytes, now_ms])?;
-        self.prepare_cached(
-            "UPDATE books SET cover_state = 'downloaded', cover_fetched_at_ms = ?3 \
+        self.conn
+            .prepare_cached(
+                "UPDATE books SET cover_state = 'downloaded', cover_fetched_at_ms = ?3 \
              WHERE feed_id = ?1 AND book_id = ?2",
-        )?
-        .execute(tokio_rusqlite::params![feed_id, book_id, now_ms])?;
+            )?
+            .execute(tokio_rusqlite::params![feed_id, book_id, now_ms])?;
         Ok(())
     }
 
-    fn mark_cover(
+    /// Set the cover state and its timestamp (e.g. `failed`).
+    pub fn mark_cover(
         &self,
         feed_id: &str,
         book_id: &str,
         state: CoverState,
         now_ms: i64,
     ) -> Result<()> {
-        self.prepare_cached(
-            "UPDATE books SET cover_state = ?3, cover_fetched_at_ms = ?4 \
+        self.conn
+            .prepare_cached(
+                "UPDATE books SET cover_state = ?3, cover_fetched_at_ms = ?4 \
              WHERE feed_id = ?1 AND book_id = ?2",
-        )?
-        .execute(tokio_rusqlite::params![feed_id, book_id, state, now_ms])?;
+            )?
+            .execute(tokio_rusqlite::params![feed_id, book_id, state, now_ms])?;
         Ok(())
     }
 
-    fn claim_cover_download(&self, feed_id: &str, book_id: &str, now_ms: i64) -> Result<bool> {
+    /// Atomically claim the cover download slot (see
+    /// [`CLAIM_COVER_DOWNLOAD`]). Returns `false` when another download is
+    /// in flight, the cover is already stored, or the failure backoff has
+    /// not elapsed — the caller must skip.
+    pub fn claim_cover_download(&self, feed_id: &str, book_id: &str, now_ms: i64) -> Result<bool> {
         let claimed =
-            self.prepare_cached(CLAIM_COVER_DOWNLOAD)?
+            self.conn
+                .prepare_cached(CLAIM_COVER_DOWNLOAD)?
                 .execute(tokio_rusqlite::params![
                     feed_id,
                     book_id,
@@ -469,20 +392,23 @@ impl CacheRepo for Connection {
         Ok(claimed > 0)
     }
 
-    fn delete_cover(&self, feed_id: &str, book_id: &str) -> Result<()> {
-        self.prepare_cached("DELETE FROM covers WHERE feed_id = ?1 AND book_id = ?2")?
+    /// Drop the stored cover bytes (the `books` row and its state remain).
+    pub fn delete_cover(&self, feed_id: &str, book_id: &str) -> Result<()> {
+        self.conn
+            .prepare_cached("DELETE FROM covers WHERE feed_id = ?1 AND book_id = ?2")?
             .execute([feed_id, book_id])?;
         Ok(())
     }
 
-    fn get_chapter_list(
+    /// Read the cached chapter list, if present and not older than the TTL.
+    pub fn get_chapter_list(
         &self,
         feed_id: &str,
         book_id: &str,
         now_ms: i64,
     ) -> Result<Option<Vec<ChapterInfo>>> {
         let cached = super::maybe_row(
-            self,
+            self.conn,
             "SELECT chapters_json, cached_at_ms FROM chapter_lists \
              WHERE feed_id = ?1 AND book_id = ?2",
             &[&feed_id, &book_id],
@@ -502,7 +428,7 @@ impl CacheRepo for Connection {
         }
     }
 
-    fn set_chapter_list(
+    pub fn set_chapter_list(
         &self,
         feed_id: &str,
         book_id: &str,
@@ -512,24 +438,27 @@ impl CacheRepo for Connection {
         self.ensure_book(feed_id, book_id, now_ms)?;
         let json = serde_json::to_string(chapters)
             .map_err(|e| Error::database(format!("serialize chapter list: {e}")))?;
-        self.prepare_cached(
-            "INSERT INTO chapter_lists (feed_id, book_id, chapters_json, cached_at_ms) \
+        self.conn
+            .prepare_cached(
+                "INSERT INTO chapter_lists (feed_id, book_id, chapters_json, cached_at_ms) \
              VALUES (?1, ?2, ?3, ?4) \
              ON CONFLICT(feed_id, book_id) DO UPDATE SET \
                  chapters_json = excluded.chapters_json, cached_at_ms = excluded.cached_at_ms",
-        )?
-        .execute(tokio_rusqlite::params![feed_id, book_id, json, now_ms])?;
+            )?
+            .execute(tokio_rusqlite::params![feed_id, book_id, json, now_ms])?;
         self.touch_book(feed_id, book_id, now_ms)?;
         Ok(())
     }
 
-    fn delete_chapter_list(&self, feed_id: &str, book_id: &str) -> Result<()> {
-        self.prepare_cached("DELETE FROM chapter_lists WHERE feed_id = ?1 AND book_id = ?2")?
+    pub fn delete_chapter_list(&self, feed_id: &str, book_id: &str) -> Result<()> {
+        self.conn
+            .prepare_cached("DELETE FROM chapter_lists WHERE feed_id = ?1 AND book_id = ?2")?
             .execute([feed_id, book_id])?;
         Ok(())
     }
 
-    fn get_paragraphs(
+    /// Read cached chapter paragraphs and refresh `last_used_at_ms`.
+    pub fn get_paragraphs(
         &self,
         feed_id: &str,
         book_id: &str,
@@ -537,7 +466,7 @@ impl CacheRepo for Connection {
         now_ms: i64,
     ) -> Result<Option<Vec<Paragraph>>> {
         let json = super::maybe_row(
-            self,
+            self.conn,
             "SELECT paragraphs_json FROM chapters \
              WHERE feed_id = ?1 AND book_id = ?2 AND chapter_id = ?3",
             &[&feed_id, &book_id, &chapter_id],
@@ -557,7 +486,7 @@ impl CacheRepo for Connection {
         }
     }
 
-    fn set_paragraphs(
+    pub fn set_paragraphs(
         &self,
         feed_id: &str,
         book_id: &str,
@@ -568,7 +497,7 @@ impl CacheRepo for Connection {
         self.ensure_book(feed_id, book_id, now_ms)?;
         let json = serde_json::to_string(paragraphs)
             .map_err(|e| Error::database(format!("serialize paragraphs: {e}")))?;
-        self.prepare_cached(
+        self.conn.prepare_cached(
             "INSERT INTO chapters (feed_id, book_id, chapter_id, paragraphs_json, cached_at_ms) \
              VALUES (?1, ?2, ?3, ?4, ?5) \
              ON CONFLICT(feed_id, book_id, chapter_id) DO UPDATE SET \
@@ -581,11 +510,12 @@ impl CacheRepo for Connection {
         Ok(())
     }
 
-    fn delete_paragraphs(&self, feed_id: &str, book_id: &str, chapter_id: &str) -> Result<()> {
-        self.prepare_cached(
-            "DELETE FROM chapters WHERE feed_id = ?1 AND book_id = ?2 AND chapter_id = ?3",
-        )?
-        .execute(tokio_rusqlite::params![feed_id, book_id, chapter_id])?;
+    pub fn delete_paragraphs(&self, feed_id: &str, book_id: &str, chapter_id: &str) -> Result<()> {
+        self.conn
+            .prepare_cached(
+                "DELETE FROM chapters WHERE feed_id = ?1 AND book_id = ?2 AND chapter_id = ?3",
+            )?
+            .execute(tokio_rusqlite::params![feed_id, book_id, chapter_id])?;
         Ok(())
     }
 }
@@ -622,20 +552,21 @@ mod tests {
 
     /// Read `books.cover_state` directly as a [`CoverState`] (exercises the
     /// `FromSql` impl).
-    fn state(conn: &Connection, book_id: &str) -> CoverState {
-        conn.query_row(
-            "SELECT cover_state FROM books WHERE feed_id = 'f1' AND book_id = ?1",
-            [book_id],
-            |row| row.get(0),
-        )
-        .expect("read cover_state")
+    fn state(conn: &Repo<'_>, book_id: &str) -> CoverState {
+        conn.conn()
+            .query_row(
+                "SELECT cover_state FROM books WHERE feed_id = 'f1' AND book_id = ?1",
+                [book_id],
+                |row| row.get(0),
+            )
+            .expect("read cover_state")
     }
 
     #[test]
     fn fetched_book_roundtrip() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
         conn.upsert_fetched_book("f1", &info("b1", Some("https://c")), now)
             .expect("upsert");
@@ -646,14 +577,14 @@ mod tests {
         assert_eq!(row.title, "Book b1");
         assert!(row.is_fetched());
         assert_eq!(row.cover_url.as_deref(), Some("https://c"));
-        assert_eq!(state(conn, "b1"), CoverState::None);
+        assert_eq!(state(&conn, "b1"), CoverState::None);
     }
 
     #[test]
     fn claim_decides_whether_a_download_is_due() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
 
         // Fresh row with a cover URL → due.
@@ -662,17 +593,17 @@ mod tests {
         assert!(conn.claim_cover_download("f1", "b1", now).unwrap());
         // Claimed → pending; a second claim is single-flighted away.
         assert!(!conn.claim_cover_download("f1", "b1", now + 1000).unwrap());
-        assert_eq!(state(conn, "b1"), CoverState::Pending);
+        assert_eq!(state(&conn, "b1"), CoverState::Pending);
 
         // Completed download → not due again…
         conn.set_cover("f1", "b1", "image/jpeg", b"junk", now + 2000)
             .unwrap();
-        assert_eq!(state(conn, "b1"), CoverState::Downloaded);
+        assert_eq!(state(&conn, "b1"), CoverState::Downloaded);
         assert!(!conn.claim_cover_download("f1", "b1", now + 3000).unwrap());
         // …not even after a re-fetch with the same URL.
         conn.upsert_fetched_book("f1", &info("b1", Some("u1")), now + 4000)
             .unwrap();
-        assert_eq!(state(conn, "b1"), CoverState::Downloaded);
+        assert_eq!(state(&conn, "b1"), CoverState::Downloaded);
         assert!(!conn.claim_cover_download("f1", "b1", now + 5000).unwrap());
 
         // A failed download is not retried within the backoff window…
@@ -690,19 +621,19 @@ mod tests {
     fn url_change_resets_state_and_drops_bytes() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
 
         conn.upsert_fetched_book("f1", &info("b1", Some("u1")), now)
             .unwrap();
         conn.set_cover("f1", "b1", "image/jpeg", b"junk", now + 1000)
             .unwrap();
-        assert_eq!(state(conn, "b1"), CoverState::Downloaded);
+        assert_eq!(state(&conn, "b1"), CoverState::Downloaded);
 
         // A different URL resets the state and removes the stale bytes.
         conn.upsert_fetched_book("f1", &info("b1", Some("u2")), now + 2000)
             .unwrap();
-        assert_eq!(state(conn, "b1"), CoverState::None);
+        assert_eq!(state(&conn, "b1"), CoverState::None);
         assert_eq!(conn.get_cover_bytes("f1", "b1").unwrap(), None);
         assert!(conn.claim_cover_download("f1", "b1", now + 3000).unwrap());
 
@@ -711,7 +642,7 @@ mod tests {
             .unwrap();
         conn.upsert_fetched_book("f1", &info("b1", None), now + 5000)
             .unwrap();
-        assert_eq!(state(conn, "b1"), CoverState::None);
+        assert_eq!(state(&conn, "b1"), CoverState::None);
         assert_eq!(conn.get_cover_bytes("f1", "b1").unwrap(), None);
         // No URL → nothing to download.
         assert!(!conn.claim_cover_download("f1", "b1", now + 6000).unwrap());
@@ -721,7 +652,7 @@ mod tests {
     fn claim_repairs_downloaded_state_without_bytes() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
         conn.upsert_fetched_book("f1", &info("b1", Some("u1")), now)
             .unwrap();
@@ -729,7 +660,7 @@ mod tests {
             .unwrap();
 
         // Simulate drift: the covers row disappears behind the state's back.
-        conn.execute("DELETE FROM covers", []).unwrap();
+        conn.conn().execute("DELETE FROM covers", []).unwrap();
         assert!(conn.claim_cover_download("f1", "b1", now + 2000).unwrap());
     }
 
@@ -737,7 +668,7 @@ mod tests {
     fn stale_pending_is_retried_after_inflight_window() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
         conn.upsert_fetched_book("f1", &info("b1", Some("u1")), now)
             .unwrap();
@@ -757,7 +688,7 @@ mod tests {
     fn cover_state_sql_roundtrip() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
         for wanted in [
             CoverState::None,
@@ -768,7 +699,7 @@ mod tests {
             conn.upsert_fetched_book("f1", &info("b1", Some("u")), now)
                 .unwrap();
             conn.mark_cover("f1", "b1", wanted, now).unwrap();
-            assert_eq!(state(conn, "b1"), wanted);
+            assert_eq!(state(&conn, "b1"), wanted);
         }
     }
 
@@ -776,7 +707,7 @@ mod tests {
     fn snapshot_only_refreshes_placeholders() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
 
         conn.upsert_snapshot("f1", "b1", "Snap", "A", Some("d"), Some("u1"), now)
@@ -803,7 +734,7 @@ mod tests {
     fn chapter_list_ttl() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
         let chapters = vec![ChapterInfo {
             id: "c1".to_owned(),
@@ -838,7 +769,7 @@ mod tests {
     fn paragraphs_roundtrip_and_delete() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
         conn.set_paragraphs("f1", "b1", "c1", &paragraphs(), now)
             .expect("set");

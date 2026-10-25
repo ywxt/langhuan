@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use langhuan::db::Db;
-use langhuan::db::repo::{ProgressRepo, ProgressRow};
+use langhuan::db::repo::ProgressRow;
 use messages::prelude::{Actor, Context, Handler};
 
 use crate::api::types::{BridgeError, ParagraphId, ReadingProgressItem};
@@ -60,7 +60,7 @@ impl Handler<GetReadingProgress> for ReadingProgressActor {
         let db = self.db()?.clone();
         let (feed_id, book_id) = (msg.feed_id, msg.book_id);
         let progress = db
-            .call(move |conn| conn.get_progress(&feed_id, &book_id))
+            .call(move |repo| repo.get_progress(&feed_id, &book_id))
             .await?;
 
         Ok(progress.map(Into::into))
@@ -74,8 +74,8 @@ impl Handler<SetReadingProgress> for ReadingProgressActor {
     async fn handle(&mut self, msg: SetReadingProgress, _: &Context<Self>) -> Self::Result {
         let db = self.db()?.clone();
         let updated_at_ms = msg.updated_at_ms;
-        db.write(move |conn| {
-            conn.set_progress(
+        db.write(move |repo| {
+            repo.set_progress(
                 &msg.feed_id,
                 &msg.book_id,
                 &msg.chapter_id,

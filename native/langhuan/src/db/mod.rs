@@ -15,10 +15,11 @@
 //!
 //! [`Db::write`] is the only transaction boundary: the closure runs inside
 //! `BEGIN … COMMIT`, and any error early-returns through `?`, dropping the
-//! transaction and rolling it back. Repo methods are trait extensions on
-//! `&Connection`, so composing several of them atomically is just calling
-//! them sequentially inside one `write` closure. Nested transactions are
-//! structurally impossible (closures are synchronous and cannot await).
+//! transaction and rolling it back. Repo methods live on the [`Repo`]
+//! wrapper the closure receives, so composing several of them atomically is
+//! just calling them sequentially inside one `write` closure. Nested
+//! transactions are structurally impossible (closures are synchronous and
+//! cannot await).
 //!
 //! [`Db::call`] runs a closure without an explicit transaction — for
 //! single-statement reads (and `last_used_at_ms` touches) this avoids the
@@ -27,6 +28,8 @@
 use std::path::Path;
 
 use tokio_rusqlite::rusqlite::Connection;
+
+use repo::Repo;
 
 use crate::error::{Error, Result};
 
@@ -82,25 +85,26 @@ impl Db {
     /// auto-commits.
     pub async fn call<T, F>(&self, f: F) -> Result<T>
     where
-        F: FnOnce(&Connection) -> Result<T> + Send + 'static,
+        F: FnOnce(&Repo<'_>) -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
-        self.run(move |conn| f(conn)).await
+        self.run(move |conn| f(&Repo::new(conn))).await
     }
 
     /// Run a closure inside a transaction.
     ///
-    /// The closure receives a `&Connection` (a `Transaction` deref-coerced to
-    /// one). If it returns `Err`, the transaction rolls back and the error
-    /// propagates; otherwise it commits and the closure's value is returned.
+    /// The closure receives a [`Repo`] over the transaction (which
+    /// deref-coerces to the connection). If it returns `Err`, the
+    /// transaction rolls back and the error propagates; otherwise it
+    /// commits and the closure's value is returned.
     pub async fn write<T, F>(&self, f: F) -> Result<T>
     where
-        F: FnOnce(&Connection) -> Result<T> + Send + 'static,
+        F: FnOnce(&Repo<'_>) -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
         self.run(move |conn| {
             let tx = conn.transaction()?;
-            let result = f(&tx)?;
+            let result = f(&Repo::new(&tx))?;
             tx.commit()?;
             Ok(result)
         })
@@ -179,20 +183,27 @@ pub(crate) fn schema_for_tests(conn: &mut Connection) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::repo::MetaRepo;
 
     #[tokio::test]
     async fn open_in_memory_runs_migrations() {
         let db = Db::open_in_memory().await.expect("open in-memory db");
         let version: i64 = db
-            .call(|conn| Ok(conn.query_row("PRAGMA user_version", [], |row| row.get(0))?))
+            .call(|conn| {
+                Ok(conn
+                    .conn()
+                    .query_row("PRAGMA user_version", [], |row| row.get(0))?)
+            })
             .await
             .expect("read user_version");
         assert_eq!(version, schema::CURRENT_VERSION);
 
         // Re-opening must not fail or duplicate migrations.
         let version_again: i64 = db
-            .call(|conn| Ok(conn.query_row("PRAGMA user_version", [], |row| row.get(0))?))
+            .call(|conn| {
+                Ok(conn
+                    .conn()
+                    .query_row("PRAGMA user_version", [], |row| row.get(0))?)
+            })
             .await
             .expect("read user_version again");
         assert_eq!(version_again, schema::CURRENT_VERSION);
@@ -206,8 +217,12 @@ mod tests {
 
         let (mode, fk): (String, i64) = db
             .call(|conn| {
-                let mode: String = conn.query_row("PRAGMA journal_mode", [], |row| row.get(0))?;
-                let fk: i64 = conn.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
+                let mode: String = conn
+                    .conn()
+                    .query_row("PRAGMA journal_mode", [], |row| row.get(0))?;
+                let fk: i64 = conn
+                    .conn()
+                    .query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
                 Ok((mode, fk))
             })
             .await

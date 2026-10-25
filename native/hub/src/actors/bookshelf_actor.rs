@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use langhuan::cache::download_cover;
 use langhuan::db::Db;
-use langhuan::db::repo::{BookshelfRepo, ShelfItem};
+use langhuan::db::repo::ShelfItem;
 use messages::prelude::{Actor, Context, Handler};
 
 use crate::api::types::{
@@ -117,7 +117,7 @@ impl BookshelfActor {
             .write({
                 let feed_id = msg.feed_id;
                 let book_id = msg.source_book_id;
-                move |conn| conn.remove_book(&feed_id, &book_id)
+                move |repo| repo.remove_book(&feed_id, &book_id)
             })
             .await?;
 
@@ -131,7 +131,7 @@ impl BookshelfActor {
     async fn list(&mut self) -> Result<Vec<BookshelfListItem>, BridgeError> {
         tracing::debug!("bookshelf list");
         let db = self.db()?.clone();
-        let items = db.call(|conn| conn.shelf_items()).await?;
+        let items = db.call(|repo| repo.shelf_items()).await?;
 
         Ok(items.into_iter().map(Into::into).collect())
     }
@@ -217,7 +217,7 @@ impl Handler<BookshelfMarkSeen> for BookshelfActor {
                 source_book_id,
                 chapter_count,
             } = msg;
-            move |conn| conn.set_last_seen_chapters(&feed_id, &source_book_id, chapter_count)
+            move |repo| repo.set_last_seen_chapters(&feed_id, &source_book_id, chapter_count)
         })
         .await?;
         Ok(())
@@ -229,7 +229,6 @@ mod tests {
     use std::error::Error;
 
     use langhuan::db::Db;
-    use langhuan::db::repo::FeedsRepo;
     use langhuan::feed::FeedMeta;
     use messages::prelude::Context;
 
@@ -253,7 +252,7 @@ mod tests {
     #[tokio::test]
     async fn add_list_remove_roundtrip() -> TestResult {
         let db = Db::open_in_memory().await?;
-        db.write(move |conn| conn.upsert_feed(&meta("f1"), None, "h", 1))
+        db.write(move |repo| repo.upsert_feed(&meta("f1"), None, "h", 1))
             .await?;
 
         let context: Context<BookshelfActor> = Context::new();

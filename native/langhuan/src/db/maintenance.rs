@@ -6,7 +6,7 @@
 
 use super::Db;
 use super::now_ms;
-use super::repo::{CacheStats, MaintenanceRepo, MetaRepo};
+use super::repo::CacheStats;
 use crate::error::Result;
 
 /// Cache payloads are capped at 512 MiB; older, unshelved books are evicted
@@ -146,7 +146,6 @@ pub async fn cache_stats(db: &Db) -> Result<CacheStats> {
 mod tests {
     use super::*;
     use crate::db::repo::test_support::feed_meta;
-    use crate::db::repo::{BookshelfRepo, CacheRepo, FeedsRepo};
 
     #[tokio::test]
     async fn throttle_skips_within_24h_and_force_overrides() {
@@ -211,23 +210,23 @@ mod tests {
         // (chapter lists, chapter content, covers) — exactly the state the
         // real database was in before the incident.
         db.write(move |conn| {
-            conn.execute(
+            conn.conn().execute(
                 "UPDATE books SET last_used_at_ms = ?1, info_fetched_at_ms = ?1 \
                  WHERE book_id IN ('b1','b2','b3','b4','old-plain')",
                 params![stale],
             )?;
             for id in ["b1", "b2", "b3", "b4", "old-plain"] {
-                conn.execute(
+                conn.conn().execute(
                     "INSERT INTO chapter_lists (feed_id, book_id, chapters_json, cached_at_ms) \
                      VALUES ('biquge-tw', ?1, '[]', ?2)",
                     params![id, stale],
                 )?;
-                conn.execute(
+                conn.conn().execute(
                     "INSERT INTO chapters (feed_id, book_id, chapter_id, paragraphs_json, cached_at_ms) \
                      VALUES ('biquge-tw', ?1, 'c0', '[]', ?2)",
                     params![id, stale],
                 )?;
-                conn.execute(
+                conn.conn().execute(
                     "INSERT INTO covers (feed_id, book_id, mime, bytes, fetched_at_ms) \
                      VALUES ('biquge-tw', ?1, 'image/jpeg', X'00', ?2)",
                     params![id, stale],
@@ -266,7 +265,7 @@ mod tests {
         // The stale unshelved book must be gone — proving the cleanup ran.
         let plain: i64 = db
             .call(|conn| {
-                Ok(conn.query_row(
+                Ok(conn.conn().query_row(
                     "SELECT COUNT(*) FROM books WHERE book_id = 'old-plain'",
                     [],
                     |r| r.get(0),
@@ -279,7 +278,7 @@ mod tests {
         // And the four stale shelved books must keep their `books` rows.
         let kept: i64 = db
             .call(|conn| {
-                Ok(conn.query_row(
+                Ok(conn.conn().query_row(
                     "SELECT COUNT(*) FROM books WHERE book_id IN ('b1','b2','b3','b4')",
                     [],
                     |r| r.get(0),

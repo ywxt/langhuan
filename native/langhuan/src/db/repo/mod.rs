@@ -1,13 +1,12 @@
 //! Hand-written repositories over the SQLite schema.
 //!
-//! Each module defines a trait (e.g. [`cache::CacheRepo`]) implemented for
-//! [`Connection`], so repo functions read as connection methods:
+//! Every module adds inherent methods to [`Repo`], a wrapper over the
+//! SQLite connection, so repo functions read as repository methods:
 //!
 //! ```
-//! # use langhuan::db::repo::MetaRepo;
-//! # use tokio_rusqlite::rusqlite::Connection;
-//! fn example(conn: &Connection) -> langhuan::error::Result<()> {
-//!     conn.set_meta("key", "value")
+//! # use langhuan::db::repo::Repo;
+//! fn example(repo: &Repo<'_>) -> langhuan::error::Result<()> {
+//!     repo.set_meta("key", "value")
 //! }
 //! ```
 //!
@@ -16,8 +15,9 @@
 //! the closure. SQL is written as `const` strings; there is no dynamic query
 //! construction anywhere.
 //!
-//! Method names are unique across the repo traits, so any subset of traits
-//! can be imported together without ambiguity.
+//! Method names are unique across the modules, so the wrapper carries one
+//! flat, greppable API surface and any subset of modules can be used
+//! together without ambiguity.
 
 pub mod auth;
 pub mod bookmarks;
@@ -30,18 +30,38 @@ pub mod progress;
 #[cfg(test)]
 pub(crate) mod test_support;
 
-pub use auth::AuthRepo;
-pub use bookmarks::{BookmarkRow, BookmarksRepo};
-pub use bookshelf::{BookshelfRepo, ShelfItem};
-pub use cache::{BookRow, CacheRepo, CoverState};
-pub use feeds::{FeedRow, FeedsRepo, ScriptRow};
-pub use maintenance::{CacheStats, MaintenanceRepo, RemovalReport};
-pub use meta::MetaRepo;
-pub use progress::{ProgressRepo, ProgressRow};
+pub use bookmarks::BookmarkRow;
+pub use bookshelf::ShelfItem;
+pub use cache::{BookRow, CoverState};
+pub use feeds::{FeedRow, ScriptRow};
+pub use maintenance::{CacheStats, RemovalReport};
+pub use progress::ProgressRow;
 
 use tokio_rusqlite::rusqlite::Connection;
 
 use crate::error::{Error, Result};
+
+/// The repository API over one SQLite connection.
+///
+/// [`Db::write`](crate::db::Db::write) and
+/// [`Db::call`](crate::db::Db::call) hand closures a `&Repo`, so callers
+/// see the typed API instead of the raw connection;
+/// [`conn`](Self::conn) is the escape hatch for the rare raw-SQL need
+/// (schema introspection, PRAGMAs).
+pub struct Repo<'a> {
+    conn: &'a Connection,
+}
+
+impl<'a> Repo<'a> {
+    pub fn new(conn: &'a Connection) -> Self {
+        Self { conn }
+    }
+
+    /// The underlying connection (PRAGMAs, schema introspection, raw SQL).
+    pub fn conn(&self) -> &Connection {
+        self.conn
+    }
+}
 
 /// Deserialize a JSON payload stored in the database.
 ///

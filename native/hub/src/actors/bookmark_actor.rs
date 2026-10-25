@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use langhuan::db::Db;
-use langhuan::db::repo::{BookmarkRow, BookmarksRepo};
+use langhuan::db::repo::BookmarkRow;
 use messages::prelude::{Actor, Context, Handler};
 
 use crate::api::types::{BookmarkItem, BridgeError, ParagraphId};
@@ -83,7 +83,7 @@ impl Handler<AddBookmark> for BookmarkActor {
 
         db.write({
             let row = row.clone();
-            move |conn| conn.add_bookmark(&row)
+            move |repo| repo.add_bookmark(&row)
         })
         .await?;
 
@@ -98,7 +98,7 @@ impl Handler<RemoveBookmark> for BookmarkActor {
     async fn handle(&mut self, msg: RemoveBookmark, _: &Context<Self>) -> Self::Result {
         let db = self.db()?.clone();
         let id = msg.id;
-        db.write(move |conn| conn.remove_bookmark(&id))
+        db.write(move |repo| repo.remove_bookmark(&id))
             .await
             .map_err(BridgeError::from)
     }
@@ -112,7 +112,7 @@ impl Handler<ListBookmarks> for BookmarkActor {
         let db = self.db()?.clone();
         let (feed_id, book_id) = (msg.feed_id, msg.book_id);
         let items = db
-            .call(move |conn| conn.list_bookmarks(&feed_id, &book_id))
+            .call(move |repo| repo.list_bookmarks(&feed_id, &book_id))
             .await?;
 
         Ok(items.into_iter().map(Into::into).collect())

@@ -96,12 +96,7 @@ impl BookshelfUpdatesStream {
 pub async fn open_bookshelf_updates_stream() -> Result<BookshelfUpdatesStream, BridgeError> {
     // Snapshot the shelf before spawning: each result below is paired with
     // the last-seen count from this same snapshot.
-    let items = hub_db()?
-        .call(|conn| {
-            use langhuan::db::repo::BookshelfRepo;
-            conn.shelf_items()
-        })
-        .await?;
+    let items = hub_db()?.call(|repo| repo.shelf_items()).await?;
 
     let mut feed_addr = addresses()?.feed.clone();
     let db = hub_db()?;
@@ -154,9 +149,8 @@ pub async fn open_bookshelf_updates_stream() -> Result<BookshelfUpdatesStream, B
                     // Never seen: adopt the fresh count as the baseline.
                     let (feed_id, book_id) = (item.feed_id.clone(), item.book_id.clone());
                     let _ = db
-                        .write(move |conn| {
-                            use langhuan::db::repo::BookshelfRepo;
-                            conn.set_last_seen_chapters(&feed_id, &book_id, fresh_count)
+                        .write(move |repo| {
+                            repo.set_last_seen_chapters(&feed_id, &book_id, fresh_count)
                         })
                         .await;
                     result.new_chapters = 0;

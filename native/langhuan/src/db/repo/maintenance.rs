@@ -4,7 +4,7 @@
 //! "Unprotected" books are those without a `bookshelf` row — only their data
 //! may be cleaned up or evicted. Shelved books are always preserved.
 
-use tokio_rusqlite::rusqlite::Connection;
+use super::Repo;
 
 use crate::error::Result;
 
@@ -29,64 +29,14 @@ pub struct RemovalReport {
     pub items_removed: u64,
 }
 
-/// Maintenance operations, as methods on [`Connection`].
-pub trait MaintenanceRepo {
+impl Repo<'_> {
     /// Total payload bytes held by the cache tables (`covers`, `chapters`,
     /// `chapter_lists`).
     ///
     /// `length()` on `TEXT` counts characters, so payloads are cast to
     /// `BLOB` first to count bytes.
-    fn cache_total_bytes(&self) -> Result<i64>;
-
-    fn cache_stats(&self) -> Result<CacheStats>;
-
-    /// Delete cache rows and user data for unprotected books that have not
-    /// been used within `cutoff_ms`: chapter content, chapter lists,
-    /// covers, book rows, reading progress, and bookmarks.
-    ///
-    /// Returns the number of removed rows. `bytes_freed` is measured by the
-    /// caller via [`MaintenanceRepo::cache_total_bytes`] before/after.
-    fn stale_cleanup(&self, cutoff_ms: i64) -> Result<RemovalReport>;
-
-    /// Evict books to bring the cache under `cap_bytes`.
-    ///
-    /// Deletes up to `chunk` unprotected books (oldest `last_used_at_ms`
-    /// first) per call; the caller loops until the cap is met or nothing is
-    /// left to evict. Chunking keeps each database-thread visit short so
-    /// normal reads can interleave.
-    ///
-    /// Returns the number of book rows evicted this call.
-    fn evict_oldest_unprotected(&self, cap_bytes: i64, chunk: usize) -> Result<u64>;
-
-    /// Clear all cache payloads: chapter content, chapter lists, and covers.
-    ///
-    /// Bookshelf entries, reading progress, bookmarks, and book rows
-    /// themselves are kept (shelved books need their `books` rows; the rows
-    /// are tiny and are removed by stale cleanup once unshelved).
-    /// `cover_state` is reset so the next access re-downloads covers on
-    /// demand.
-    ///
-    /// Returns the number of removed rows.
-    fn clear_cache(&self) -> Result<RemovalReport>;
-
-    /// Prune every feed's script history to the newest `keep` versions.
-    ///
-    /// The active version (`feeds.version`) is always kept — by the install
-    /// invariant it always has the newest `installed_at_ms`, but it is
-    /// excluded from deletion explicitly as a safety net.
-    ///
-    /// Returns the number of history rows pruned.
-    fn prune_all_scripts(&self, keep: usize) -> Result<u64>;
-
-    /// Return freed pages to the OS. Only meaningful with
-    /// `auto_vacuum=INCREMENTAL`; a no-op otherwise. Cheap when nothing is
-    /// free.
-    fn incremental_vacuum(&self) -> Result<()>;
-}
-
-impl MaintenanceRepo for Connection {
-    fn cache_total_bytes(&self) -> Result<i64> {
-        let total = self.query_row(
+    pub fn cache_total_bytes(&self) -> Result<i64> {
+        let total = self.conn.query_row(
             "SELECT \
                 (SELECT COALESCE(SUM(length(CAST(paragraphs_json AS BLOB))), 0) FROM chapters) + \
                 (SELECT COALESCE(SUM(length(CAST(chapters_json AS BLOB))), 0) FROM chapter_lists) + \
@@ -97,8 +47,8 @@ impl MaintenanceRepo for Connection {
         Ok(total)
     }
 
-    fn cache_stats(&self) -> Result<CacheStats> {
-        let stats = self.query_row(
+    pub fn cache_stats(&self) -> Result<CacheStats> {
+        let stats = self.conn.query_row(
             "SELECT \
                 (SELECT COALESCE(SUM(length(CAST(paragraphs_json AS BLOB))), 0) FROM chapters) + \
                 (SELECT COALESCE(SUM(length(CAST(chapters_json AS BLOB))), 0) FROM chapter_lists) + \
@@ -127,7 +77,13 @@ impl MaintenanceRepo for Connection {
         Ok(stats)
     }
 
-    fn stale_cleanup(&self, cutoff_ms: i64) -> Result<RemovalReport> {
+    /// Delete cache rows and user data for unprotected books that have not
+    /// been used within `cutoff_ms`: chapter content, chapter lists,
+    /// covers, book rows, reading progress, and bookmarks.
+    ///
+    /// Returns the number of removed rows. `bytes_freed` is measured by the
+    /// caller via [`MaintenanceRepo::cache_total_bytes`] before/after.
+    pub fn stale_cleanup(&self, cutoff_ms: i64) -> Result<RemovalReport> {
         const DELETES: &[&str] = &[
             // Chapter content
             "DELETE FROM chapters WHERE cached_at_ms < ?1 AND NOT EXISTS ( \
@@ -157,19 +113,28 @@ impl MaintenanceRepo for Connection {
 
         let mut removed = 0u64;
         for sql in DELETES {
-            removed += self.prepare_cached(sql)?.execute([cutoff_ms])? as u64;
+            removed += self.conn.prepare_cached(sql)?.execute([cutoff_ms])? as u64;
         }
         Ok(RemovalReport {
             items_removed: removed,
         })
     }
 
-    fn evict_oldest_unprotected(&self, cap_bytes: i64, chunk: usize) -> Result<u64> {
+    /// Evict books to bring the cache under `cap_bytes`.
+    ///
+    /// Deletes up to `chunk` unprotected books (oldest `last_used_at_ms`
+    /// first) per call; the caller loops until the cap is met or nothing is
+    /// left to evict. Chunking keeps each database-thread visit short so
+    /// normal reads can interleave.
+    ///
+    /// Returns the number of book rows evicted this call.
+    pub fn evict_oldest_unprotected(&self, cap_bytes: i64, chunk: usize) -> Result<u64> {
         let total = self.cache_total_bytes()?;
         if total <= cap_bytes {
             return Ok(0);
         }
         let evicted = self
+            .conn
             .prepare_cached(
                 "DELETE FROM books WHERE (feed_id, book_id) IN ( \
                      SELECT b.feed_id, b.book_id FROM books b \
@@ -183,25 +148,50 @@ impl MaintenanceRepo for Connection {
         Ok(evicted as u64)
     }
 
-    fn clear_cache(&self) -> Result<RemovalReport> {
+    /// Clear all cache payloads: chapter content, chapter lists, and covers.
+    ///
+    /// Bookshelf entries, reading progress, bookmarks, and book rows
+    /// themselves are kept (shelved books need their `books` rows; the rows
+    /// are tiny and are removed by stale cleanup once unshelved).
+    /// `cover_state` is reset so the next access re-downloads covers on
+    /// demand.
+    ///
+    /// Returns the number of removed rows.
+    pub fn clear_cache(&self) -> Result<RemovalReport> {
         let mut removed = 0u64;
-        removed += self.prepare_cached("DELETE FROM chapters")?.execute([])? as u64;
         removed += self
+            .conn
+            .prepare_cached("DELETE FROM chapters")?
+            .execute([])? as u64;
+        removed += self
+            .conn
             .prepare_cached("DELETE FROM chapter_lists")?
             .execute([])? as u64;
-        removed += self.prepare_cached("DELETE FROM covers")?.execute([])? as u64;
-        self.prepare_cached(
-            "UPDATE books SET cover_state = 'none', cover_fetched_at_ms = 0 \
+        removed += self
+            .conn
+            .prepare_cached("DELETE FROM covers")?
+            .execute([])? as u64;
+        self.conn
+            .prepare_cached(
+                "UPDATE books SET cover_state = 'none', cover_fetched_at_ms = 0 \
              WHERE cover_state != 'none'",
-        )?
-        .execute([])?;
+            )?
+            .execute([])?;
         Ok(RemovalReport {
             items_removed: removed,
         })
     }
 
-    fn prune_all_scripts(&self, keep: usize) -> Result<u64> {
+    /// Prune every feed's script history to the newest `keep` versions.
+    ///
+    /// The active version (`feeds.version`) is always kept — by the install
+    /// invariant it always has the newest `installed_at_ms`, but it is
+    /// excluded from deletion explicitly as a safety net.
+    ///
+    /// Returns the number of history rows pruned.
+    pub fn prune_all_scripts(&self, keep: usize) -> Result<u64> {
         let pruned = self
+            .conn
             .prepare_cached(
                 "DELETE FROM feed_scripts WHERE (feed_id, version) NOT IN ( \
                      SELECT feed_id, version FROM ( \
@@ -218,8 +208,11 @@ impl MaintenanceRepo for Connection {
         Ok(pruned as u64)
     }
 
-    fn incremental_vacuum(&self) -> Result<()> {
-        self.execute_batch("PRAGMA incremental_vacuum;")?;
+    /// Return freed pages to the OS. Only meaningful with
+    /// `auto_vacuum=INCREMENTAL`; a no-op otherwise. Cheap when nothing is
+    /// free.
+    pub fn incremental_vacuum(&self) -> Result<()> {
+        self.conn.execute_batch("PRAGMA incremental_vacuum;")?;
         Ok(())
     }
 }
@@ -228,13 +221,11 @@ impl MaintenanceRepo for Connection {
 mod tests {
     use super::*;
     use crate::db::now_ms;
+    use crate::db::repo::BookmarkRow;
     use crate::db::repo::test_support::{TestDb, feed_meta};
-    use crate::db::repo::{
-        BookmarkRow, BookmarksRepo, BookshelfRepo, CacheRepo, FeedsRepo, ProgressRepo,
-    };
 
     /// Seed a book with `n` cached chapters of `bytes_each` payload bytes.
-    fn seed_book(conn: &Connection, book_id: &str, bytes_each: usize, n: usize, at_ms: i64) {
+    fn seed_book(conn: &Repo<'_>, book_id: &str, bytes_each: usize, n: usize, at_ms: i64) {
         conn.ensure_book("f1", book_id, at_ms).expect("ensure book");
         let paragraphs = vec![crate::model::Paragraph::Text {
             id: crate::model::ParagraphId::Index(0),
@@ -250,9 +241,9 @@ mod tests {
     fn stats_counts_seeded_data() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
-        seed_book(conn, "b1", 100, 3, now);
+        seed_book(&conn, "b1", 100, 3, now);
         conn.set_cover("f1", "b1", "image/png", &[7; 50], now)
             .expect("cover");
         conn.add_book("f1", "b1", "T", "A", None, None, now)
@@ -270,7 +261,7 @@ mod tests {
     }
 
     /// Seed a bookmark for book `book_id`, created at `at_ms`.
-    fn bookmark(conn: &Connection, id: &str, book_id: &str, at_ms: i64) {
+    fn bookmark(conn: &Repo<'_>, id: &str, book_id: &str, at_ms: i64) {
         conn.add_bookmark(&BookmarkRow {
             id: id.to_owned(),
             feed_id: "f1".to_owned(),
@@ -289,19 +280,19 @@ mod tests {
     fn stale_cleanup_protects_shelf_and_drops_old() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
 
         let old = now - 16 * 24 * 3600 * 1000;
-        seed_book(conn, "old-plain", 100, 2, old);
-        seed_book(conn, "old-shelved", 100, 2, old);
-        seed_book(conn, "fresh-plain", 100, 2, now);
+        seed_book(&conn, "old-plain", 100, 2, old);
+        seed_book(&conn, "old-shelved", 100, 2, old);
+        seed_book(&conn, "fresh-plain", 100, 2, now);
         conn.add_book("f1", "old-shelved", "T", "A", None, None, now)
             .expect("shelf");
         conn.set_progress("f1", "old-plain", "c", "p", 0, old)
             .expect("progress");
-        bookmark(conn, "k1", "old-plain", old);
-        bookmark(conn, "k2", "old-shelved", old);
+        bookmark(&conn, "k1", "old-plain", old);
+        bookmark(&conn, "k2", "old-shelved", old);
 
         let cutoff = now - 15 * 24 * 3600 * 1000;
         let report = conn.stale_cleanup(cutoff).expect("cleanup");
@@ -334,13 +325,13 @@ mod tests {
     fn eviction_oldest_first_and_chunked() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
 
-        seed_book(conn, "oldest", 100, 1, now - 3000);
-        seed_book(conn, "middle", 100, 1, now - 2000);
-        seed_book(conn, "newest", 100, 1, now - 1000);
-        seed_book(conn, "shelved", 100, 1, now - 5000);
+        seed_book(&conn, "oldest", 100, 1, now - 3000);
+        seed_book(&conn, "middle", 100, 1, now - 2000);
+        seed_book(&conn, "newest", 100, 1, now - 1000);
+        seed_book(&conn, "shelved", 100, 1, now - 5000);
         conn.add_book("f1", "shelved", "T", "A", None, None, now)
             .expect("shelf");
 
@@ -369,9 +360,9 @@ mod tests {
     fn clear_cache_wipes_payloads_keeps_rows_and_resets_state() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
-        seed_book(conn, "b1", 100, 2, now);
+        seed_book(&conn, "b1", 100, 2, now);
         conn.set_cover("f1", "b1", "image/png", &[1; 10], now)
             .expect("cover");
         conn.add_book("f1", "b1", "T", "A", None, None, now)
@@ -409,7 +400,7 @@ mod tests {
     fn prune_all_scripts_keeps_active_and_limit() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         let now = now_ms();
 
         // f1: the active version is the newest — plain top-3 pruning.

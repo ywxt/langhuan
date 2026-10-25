@@ -1,22 +1,13 @@
 //! `auth` — one auth payload per feed, stored as JSON.
 
-use tokio_rusqlite::rusqlite::Connection;
+use super::Repo;
 
 use crate::error::Result;
 
-/// Auth-payload operations, as methods on [`Connection`].
-pub trait AuthRepo {
-    fn get_auth(&self, feed_id: &str) -> Result<Option<serde_json::Value>>;
-
-    fn set_auth(&self, feed_id: &str, value: &serde_json::Value, now_ms: i64) -> Result<()>;
-
-    fn clear_auth(&self, feed_id: &str) -> Result<()>;
-}
-
-impl AuthRepo for Connection {
-    fn get_auth(&self, feed_id: &str) -> Result<Option<serde_json::Value>> {
+impl Repo<'_> {
+    pub fn get_auth(&self, feed_id: &str) -> Result<Option<serde_json::Value>> {
         let json = super::maybe_row(
-            self,
+            self.conn,
             "SELECT cookies_json FROM auth WHERE feed_id = ?1",
             &[&feed_id],
             |row| row.get::<_, String>(0),
@@ -36,10 +27,10 @@ impl AuthRepo for Connection {
         }
     }
 
-    fn set_auth(&self, feed_id: &str, value: &serde_json::Value, now_ms: i64) -> Result<()> {
+    pub fn set_auth(&self, feed_id: &str, value: &serde_json::Value, now_ms: i64) -> Result<()> {
         let json = serde_json::to_string(value)
             .map_err(|e| crate::error::Error::database(format!("serialize auth payload: {e}")))?;
-        self.prepare_cached(
+        self.conn.prepare_cached(
             "INSERT INTO auth (feed_id, cookies_json, updated_at_ms) VALUES (?1, ?2, ?3) \
              ON CONFLICT(feed_id) DO UPDATE SET cookies_json = excluded.cookies_json, updated_at_ms = excluded.updated_at_ms",
         )?
@@ -47,8 +38,9 @@ impl AuthRepo for Connection {
         Ok(())
     }
 
-    fn clear_auth(&self, feed_id: &str) -> Result<()> {
-        self.prepare_cached("DELETE FROM auth WHERE feed_id = ?1")?
+    pub fn clear_auth(&self, feed_id: &str) -> Result<()> {
+        self.conn
+            .prepare_cached("DELETE FROM auth WHERE feed_id = ?1")?
             .execute([feed_id])?;
         Ok(())
     }
@@ -56,7 +48,6 @@ impl AuthRepo for Connection {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::db::now_ms;
     use crate::db::repo::test_support::TestDb;
 
@@ -64,7 +55,7 @@ mod tests {
     fn roundtrip_and_clear() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         assert!(conn.get_auth("f1").unwrap().is_none());
 
         let payload = serde_json::json!({"cookies": [{"name": "sid", "value": "abc"}]});

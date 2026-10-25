@@ -13,7 +13,7 @@ use async_trait::async_trait;
 
 use langhuan::cache::CachedFeed;
 use langhuan::db::Db;
-use langhuan::db::repo::{FeedRow, FeedsRepo};
+use langhuan::db::repo::FeedRow;
 use langhuan::script::lua::LuaFeed;
 use langhuan::script::runtime::ScriptEngine;
 use messages::prelude::{Actor, Context, Handler};
@@ -148,7 +148,7 @@ impl RegistryActor {
         }
 
         let rows = db
-            .call(|conn| conn.list_feeds_with_scripts())
+            .call(|repo| repo.list_feeds_with_scripts())
             .await
             .map_err(|e| localize_error(&e))?;
 
@@ -207,7 +207,7 @@ impl RegistryActor {
         let Some(db) = &self.db else {
             return vec![];
         };
-        let rows = match db.call(|conn| conn.list_feeds()).await {
+        let rows = match db.call(|repo| repo.list_feeds()).await {
             Ok(rows) => rows,
             Err(e) => {
                 tracing::warn!(error = %e, "failed to list feeds from database");
@@ -340,7 +340,7 @@ impl RegistryActor {
         let removed = db
             .write({
                 let feed_id = feed_id.clone();
-                move |conn| conn.delete_feed(&feed_id)
+                move |repo| repo.delete_feed(&feed_id)
             })
             .await?;
         if !removed {
@@ -515,9 +515,9 @@ mod tests {
             access_domains: Default::default(),
             schema_version: 1,
         };
-        db.write(move |conn| {
-            conn.upsert_feed(&meta, None, "hash", 1)?;
-            conn.upsert_script("f1", "1.0.0", "hash", "-- not lua", 1)
+        db.write(move |repo| {
+            repo.upsert_feed(&meta, None, "hash", 1)?;
+            repo.upsert_script("f1", "1.0.0", "hash", "-- not lua", 1)
         })
         .await?;
 

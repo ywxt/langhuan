@@ -11,7 +11,7 @@ use tokio_rusqlite::rusqlite::Connection;
 use crate::db::now_ms;
 use crate::feed::FeedMeta;
 
-use super::{BookshelfRepo, FeedsRepo};
+use super::Repo;
 
 /// An isolated in-memory database with the real production schema.
 pub struct TestDb {
@@ -25,14 +25,19 @@ impl TestDb {
         Self { conn }
     }
 
-    /// The connection with every repo trait in scope.
+    /// The repository view over the test connection.
+    pub fn repo(&self) -> Repo<'_> {
+        Repo::new(&self.conn)
+    }
+
+    /// The raw connection (schema-level assertions).
     pub fn conn(&self) -> &Connection {
         &self.conn
     }
 
     /// Register a feed (no script history — most tests only need the row).
     pub fn seed_feed(&self, id: &str) {
-        self.conn()
+        self.repo()
             .upsert_feed(&feed_meta(id, "1.0.0"), None, "hash", now_ms())
             .expect("seed feed");
     }
@@ -40,7 +45,7 @@ impl TestDb {
     /// Shelve a book; also seeds its placeholder `books` row. The feed must
     /// already exist (the `books` foreign key requires it).
     pub fn seed_shelf_item(&self, feed_id: &str, book_id: &str) {
-        self.conn()
+        self.repo()
             .add_book(feed_id, book_id, "Title", "Author", None, None, now_ms())
             .expect("seed shelf item");
     }

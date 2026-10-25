@@ -1,6 +1,6 @@
 //! `reading_progress` — one row per (feed, book).
 
-use tokio_rusqlite::rusqlite::Connection;
+use super::Repo;
 
 use crate::error::Result;
 
@@ -16,30 +16,10 @@ pub struct ProgressRow {
     pub updated_at_ms: i64,
 }
 
-/// Reading-progress operations, as methods on [`Connection`].
-pub trait ProgressRepo {
-    fn get_progress(&self, feed_id: &str, book_id: &str) -> Result<Option<ProgressRow>>;
-
-    #[allow(clippy::too_many_arguments)]
-    fn set_progress(
-        &self,
-        feed_id: &str,
-        book_id: &str,
-        chapter_id: &str,
-        paragraph_id: &str,
-        paragraph_char_offset: u32,
-        now_ms: i64,
-    ) -> Result<()>;
-
-    /// Delete progress rows older than `cutoff_ms` for books that are not on
-    /// the bookshelf. Returns the number of rows removed.
-    fn remove_stale_progress(&self, cutoff_ms: i64) -> Result<u64>;
-}
-
-impl ProgressRepo for Connection {
-    fn get_progress(&self, feed_id: &str, book_id: &str) -> Result<Option<ProgressRow>> {
+impl Repo<'_> {
+    pub fn get_progress(&self, feed_id: &str, book_id: &str) -> Result<Option<ProgressRow>> {
         super::maybe_row(
-            self,
+            self.conn,
             "SELECT feed_id, book_id, chapter_id, paragraph_id, paragraph_char_offset, updated_at_ms \
              FROM reading_progress WHERE feed_id = ?1 AND book_id = ?2",
             &[&feed_id, &book_id],
@@ -56,7 +36,8 @@ impl ProgressRepo for Connection {
         )
     }
 
-    fn set_progress(
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_progress(
         &self,
         feed_id: &str,
         book_id: &str,
@@ -65,7 +46,7 @@ impl ProgressRepo for Connection {
         paragraph_char_offset: u32,
         now_ms: i64,
     ) -> Result<()> {
-        self.prepare_cached(
+        self.conn.prepare_cached(
             "INSERT INTO reading_progress (feed_id, book_id, chapter_id, paragraph_id, paragraph_char_offset, updated_at_ms) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
              ON CONFLICT(feed_id, book_id) DO UPDATE SET \
@@ -85,8 +66,10 @@ impl ProgressRepo for Connection {
         Ok(())
     }
 
-    fn remove_stale_progress(&self, cutoff_ms: i64) -> Result<u64> {
-        let removed = self
+    /// Delete progress rows older than `cutoff_ms` for books that are not on
+    /// the bookshelf. Returns the number of rows removed.
+    pub fn remove_stale_progress(&self, cutoff_ms: i64) -> Result<u64> {
+        let removed = self.conn
             .prepare_cached(
                 "DELETE FROM reading_progress WHERE updated_at_ms < ?1 \
                  AND NOT EXISTS ( \
@@ -100,14 +83,13 @@ impl ProgressRepo for Connection {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::db::repo::test_support::TestDb;
 
     #[test]
     fn set_get_overwrites() {
         let db = TestDb::new();
         db.seed_feed("f1");
-        let conn = db.conn();
+        let conn = db.repo();
         conn.set_progress("f1", "b1", "c1", "p1", 0, 100).unwrap();
         conn.set_progress("f1", "b1", "c2", "p9", 240, 200).unwrap();
 
@@ -130,7 +112,7 @@ mod tests {
             )
             .unwrap();
 
-        let row = db.conn().get_progress("f1", "b1").unwrap().expect("row");
+        let row = db.repo().get_progress("f1", "b1").unwrap().expect("row");
         assert_eq!(row.paragraph_char_offset, 0);
     }
 
@@ -139,7 +121,7 @@ mod tests {
         let db = TestDb::new();
         db.seed_feed("f1");
         db.seed_shelf_item("f1", "b1");
-        let conn = db.conn();
+        let conn = db.repo();
         conn.set_progress("f1", "b1", "c", "p", 0, 100).unwrap(); // old but protected
         conn.set_progress("f1", "b2", "c", "p", 0, 100).unwrap(); // old, unprotected
         conn.set_progress("f1", "b3", "c", "p", 0, 10_000).unwrap(); // fresh
