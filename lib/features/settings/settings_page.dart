@@ -53,10 +53,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     } catch (_) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      showErrorSnack(
-        ScaffoldMessenger.of(context),
-        l10n.settingsCleanupError,
-      );
+      showErrorSnack(ScaffoldMessenger.of(context), l10n.settingsCleanupError);
     } finally {
       if (mounted) setState(() => _isCleaning = false);
     }
@@ -118,17 +115,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     return Scaffold(
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.symmetric(
-            horizontal: LanghuanTheme.spaceLg,
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Title ──────────────────────────────────────────────────
+            // ── Title — fixed page chrome; only the sections scroll. ──
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                0,
                 LanghuanTheme.spaceLg,
-                0,
+                LanghuanTheme.spaceLg,
+                LanghuanTheme.spaceLg,
                 LanghuanTheme.spaceLg,
               ),
               child: Text(
@@ -137,112 +132,123 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
             ),
 
-            // ── Reading section ──────────────────────────────────────
-            _SectionLabel(label: l10n.settingsReading),
-            const SizedBox(height: LanghuanTheme.spaceSm),
-            _SettingsCard(
-              children: [_ChineseConversionRow(ref: ref, l10n: l10n)],
-            ),
-
-            const SizedBox(height: LanghuanTheme.spaceLg),
-
-            // ── Storage section ────────────────────────────────────────
-            _SectionLabel(label: l10n.settingsStorage),
-            const SizedBox(height: LanghuanTheme.spaceSm),
-            _SettingsCard(
-              children: [
-                _SettingsRow(
-                  icon: Icons.dataset_outlined,
-                  label: l10n.settingsStorageDatabaseSize,
-                  trailing: Text(
-                    _statText(stats, (s) => formatBytes(s.dbBytes)),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: LanghuanTheme.spaceLg,
                 ),
-                const _SettingsDivider(),
-                _SettingsRow(
-                  icon: Icons.storage_outlined,
-                  label: l10n.settingsStorageCacheSize,
-                  trailing: Text(
-                    _statText(stats, (s) => formatBytes(s.cacheBytes)),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                children: [
+                  // ── Reading section ──────────────────────────────────
+                  _SectionLabel(label: l10n.settingsReading),
+                  const SizedBox(height: LanghuanTheme.spaceSm),
+                  _SettingsCard(
+                    children: [_ChineseConversionRow(ref: ref, l10n: l10n)],
                   ),
-                ),
-                const _SettingsDivider(),
-                _StatsChips(stats: stats, l10n: l10n),
-                const _SettingsDivider(),
-                _SettingsRow(
-                  icon: Icons.cleaning_services_outlined,
-                  label: l10n.settingsCleanupCache,
-                  subtitle: l10n.settingsCleanupCacheDescription,
-                  trailing: _isCleaning
-                      ? const LanghuanSpinner(size: 20)
-                      : Icon(
+
+                  const SizedBox(height: LanghuanTheme.spaceLg),
+
+                  // ── Storage section ────────────────────────────────────────
+                  _SectionLabel(label: l10n.settingsStorage),
+                  const SizedBox(height: LanghuanTheme.spaceSm),
+                  _SettingsCard(
+                    children: [
+                      _SettingsRow(
+                        icon: Icons.dataset_outlined,
+                        label: l10n.settingsStorageDatabaseSize,
+                        trailing: Text(
+                          _statText(stats, (s) => formatBytes(s.dbBytes)),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      const _SettingsDivider(),
+                      _SettingsRow(
+                        icon: Icons.storage_outlined,
+                        label: l10n.settingsStorageCacheSize,
+                        trailing: Text(
+                          _statText(stats, (s) => formatBytes(s.cacheBytes)),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      const _SettingsDivider(),
+                      _StatsChips(stats: stats, l10n: l10n),
+                      const _SettingsDivider(),
+                      _SettingsRow(
+                        icon: Icons.cleaning_services_outlined,
+                        label: l10n.settingsCleanupCache,
+                        subtitle: l10n.settingsCleanupCacheDescription,
+                        trailing: _isCleaning
+                            ? const LanghuanSpinner(size: 20)
+                            : Icon(
+                                Icons.chevron_right,
+                                size: 20,
+                                color: theme.colorScheme.onSurfaceVariant
+                                    .withAlpha(120),
+                              ),
+                        onTap: _isCleaning ? null : _cleanupCache,
+                      ),
+                      const _SettingsDivider(),
+                      _SettingsRow(
+                        icon: Icons.delete_sweep_outlined,
+                        label: l10n.settingsClearCache,
+                        subtitle: l10n.settingsClearCacheDescription,
+                        trailing: _isClearing
+                            ? const LanghuanSpinner(size: 20)
+                            : Icon(
+                                Icons.chevron_right,
+                                size: 20,
+                                color: theme.colorScheme.onSurfaceVariant
+                                    .withAlpha(120),
+                              ),
+                        onTap: _isClearing ? null : _clearCache,
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: LanghuanTheme.spaceLg),
+
+                  // ── About section ──────────────────────────────────────────
+                  _SectionLabel(label: l10n.settingsAbout),
+                  const SizedBox(height: LanghuanTheme.spaceSm),
+                  _SettingsCard(
+                    children: [
+                      _SettingsRow(
+                        icon: Icons.info_outline,
+                        label: l10n.settingsVersion,
+                        trailing: Text(
+                          AppConstants.appVersion,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      _SettingsDivider(),
+                      _SettingsRow(
+                        icon: Icons.description_outlined,
+                        label: l10n.settingsLicenses,
+                        trailing: Icon(
                           Icons.chevron_right,
                           size: 20,
                           color: theme.colorScheme.onSurfaceVariant.withAlpha(
                             120,
                           ),
                         ),
-                  onTap: _isCleaning ? null : _cleanupCache,
-                ),
-                const _SettingsDivider(),
-                _SettingsRow(
-                  icon: Icons.delete_sweep_outlined,
-                  label: l10n.settingsClearCache,
-                  subtitle: l10n.settingsClearCacheDescription,
-                  trailing: _isClearing ? const LanghuanSpinner(size: 20) : Icon(
-                          Icons.chevron_right,
-                          size: 20,
-                          color: theme.colorScheme.onSurfaceVariant.withAlpha(
-                            120,
-                          ),
+                        onTap: () => showLicensePage(
+                          context: context,
+                          applicationName: l10n.appName,
+                          applicationVersion: AppConstants.appVersion,
                         ),
-                  onTap: _isClearing ? null : _clearCache,
-                ),
-              ],
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: LanghuanTheme.space2xl),
+                ],
+              ),
             ),
-
-            const SizedBox(height: LanghuanTheme.spaceLg),
-
-            // ── About section ──────────────────────────────────────────
-            _SectionLabel(label: l10n.settingsAbout),
-            const SizedBox(height: LanghuanTheme.spaceSm),
-            _SettingsCard(
-              children: [
-                _SettingsRow(
-                  icon: Icons.info_outline,
-                  label: l10n.settingsVersion,
-                  trailing: Text(
-                    AppConstants.appVersion,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-                _SettingsDivider(),
-                _SettingsRow(
-                  icon: Icons.description_outlined,
-                  label: l10n.settingsLicenses,
-                  trailing: Icon(
-                    Icons.chevron_right,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant.withAlpha(120),
-                  ),
-                  onTap: () => showLicensePage(
-                    context: context,
-                    applicationName: l10n.appName,
-                    applicationVersion: AppConstants.appVersion,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: LanghuanTheme.space2xl),
           ],
         ),
       ),

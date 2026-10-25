@@ -84,67 +84,69 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
         child: const Icon(Icons.add),
       ),
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
             // ── Title ──────────────────────────────────────────────────
-            SliverPadding(
+            Padding(
               padding: const EdgeInsets.fromLTRB(
                 LanghuanTheme.spaceLg,
                 LanghuanTheme.spaceLg,
                 LanghuanTheme.spaceLg,
                 LanghuanTheme.spaceMd,
               ),
-              sliver: SliverToBoxAdapter(
-                child: Text(
-                  l10n.feedsTitle,
-                  style: theme.textTheme.headlineLarge,
-                ),
+              child: Text(
+                l10n.feedsTitle,
+                style: theme.textTheme.headlineLarge,
               ),
             ),
 
             // ── Search bar ─────────────────────────────────────────────
-            SliverPadding(
+            Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: LanghuanTheme.spaceLg,
               ),
-              sliver: SliverToBoxAdapter(
-                child: SearchBar(
-                  enabled: bootstrapReady,
-                  controller: _filterController,
-                  hintText: l10n.feedsSearchHint,
-                  leading: Icon(
-                    Icons.search,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  trailing: [
-                    if (_filterText.isNotEmpty)
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: bootstrapReady
-                            ? _filterController.clear
-                            : null,
-                      ),
-                  ],
+              child: SearchBar(
+                enabled: bootstrapReady,
+                controller: _filterController,
+                hintText: l10n.feedsSearchHint,
+                leading: Icon(
+                  Icons.search,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
+                trailing: [
+                  if (_filterText.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: bootstrapReady
+                          ? _filterController.clear
+                          : null,
+                    ),
+                ],
               ),
             ),
 
-            const SliverToBoxAdapter(
-              child: SizedBox(height: LanghuanTheme.spaceMd),
-            ),
+            const SizedBox(height: LanghuanTheme.spaceMd),
 
-            // ── Content ────────────────────────────────────────────────
-            _buildBody(
-              context,
-              feedState,
-              filtered,
-              theme,
-              l10n,
-              bootstrapReady,
-            ),
+            // ── Content — the only scrollable area, so the title and
+            // filter bar stay put while the feed list scrolls.
+            Expanded(
+              child: CustomScrollView(
+                slivers: [
+                  _buildBody(
+                    context,
+                    feedState,
+                    filtered,
+                    theme,
+                    l10n,
+                    bootstrapReady,
+                  ),
 
-            // Bottom padding for FAB
-            const SliverToBoxAdapter(child: SizedBox(height: 80)),
+                  // Bottom padding for FAB
+                  const SliverToBoxAdapter(child: SizedBox(height: 80)),
+                ],
+              ),
+            ),
           ],
         ),
       ),
