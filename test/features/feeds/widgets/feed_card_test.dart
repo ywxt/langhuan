@@ -19,7 +19,9 @@ const _feedA = FeedMetaItem(
 );
 
 void main() {
-  testWidgets('the switch pauses a feed through the notifier', (tester) async {
+  testWidgets('the status button pauses a feed through the notifier', (
+    tester,
+  ) async {
     final toggled = <(String, bool)>[];
     final service = FakeFeedService(
       listFeedsHandler: () async => [_feedA],
@@ -58,19 +60,19 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+    expect(find.byTooltip('Pause feed'), findsOneWidget);
+    expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
 
-    await tester.tap(find.byType(Switch));
+    await tester.tap(find.byTooltip('Pause feed'));
     await tester.pumpAndSettle();
 
     // The service was asked to pause, and the rebuilt card reflects it:
-    // switch off, content dimmed.
+    // The action changes to resume and the content is dimmed.
     expect(toggled, [('feed-a', false)]);
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
+    expect(find.byTooltip('Resume feed'), findsOneWidget);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     expect(
-      find.byWidgetPredicate(
-        (w) => w is Opacity && w.opacity == 0.55,
-      ),
+      find.byWidgetPredicate((w) => w is Opacity && w.opacity == 0.55),
       findsNWidgets(2),
       reason: 'avatar and text column dim while paused',
     );

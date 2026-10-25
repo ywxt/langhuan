@@ -446,6 +446,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedToggleError => '切換書源狀態失敗';
 
   @override
+  String get feedPause => '暫停書源';
+
+  @override
+  String get feedResume => '恢復書源';
+
+  @override
   String get feedsMenuImport => '導入書源';
 
   @override

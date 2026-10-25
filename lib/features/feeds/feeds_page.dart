@@ -328,35 +328,43 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
 
           return Padding(
             padding: const EdgeInsets.only(bottom: LanghuanTheme.spaceSm),
-            child: Dismissible(
-              key: ValueKey('feed-${feed.id}'),
-              direction: isBusy
-                  ? DismissDirection.none
-                  : DismissDirection.endToStart,
-              background: Container(
-                alignment: Alignment.centerRight,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: LanghuanTheme.spaceLg,
-                ),
-                decoration: BoxDecoration(
+            child: ClipRRect(
+              borderRadius: LanghuanTheme.borderRadiusMd,
+              child: Dismissible(
+                key: ValueKey('feed-${feed.id}'),
+                direction: isBusy
+                    ? DismissDirection.none
+                    : DismissDirection.endToStart,
+                background: ColoredBox(
                   color: theme.colorScheme.errorContainer,
-                  borderRadius: LanghuanTheme.borderRadiusMd,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: LanghuanTheme.spaceLg,
+                      ),
+                      child: Icon(
+                        Icons.delete_outline,
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
                 ),
-                child: Icon(
-                  Icons.delete_outline,
-                  color: theme.colorScheme.onErrorContainer,
+                confirmDismiss: (_) async {
+                  final confirmed =
+                      await _confirmDelete(context, feed, l10n) == true;
+                  if (confirmed && context.mounted) {
+                    final messenger = ScaffoldMessenger.of(context);
+                    _handleDeleteWithUndo(feed, l10n, messenger);
+                  }
+                  return false;
+                },
+                child: FeedCard(
+                  feed: feed,
+                  isDeleting: isDeleting,
+                  borderRadius: BorderRadius.zero,
                 ),
               ),
-              confirmDismiss: (_) async {
-                final confirmed =
-                    await _confirmDelete(context, feed, l10n) == true;
-                if (confirmed && context.mounted) {
-                  final messenger = ScaffoldMessenger.of(context);
-                  _handleDeleteWithUndo(feed, l10n, messenger);
-                }
-                return false;
-              },
-              child: FeedCard(feed: feed, isDeleting: isDeleting),
             ),
           );
         },

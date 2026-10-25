@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use langhuan::cache::download_cover;
-use langhuan::db::repo::ShelfItem;
 use langhuan::db::Db;
+use langhuan::db::repo::ShelfItem;
 use messages::prelude::{Actor, Context, Handler};
 
 use crate::api::types::{

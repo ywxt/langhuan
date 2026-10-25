@@ -148,6 +148,8 @@
   "feedDeleteSuccess": "已刪除 {feedName}",
   "feedDeleteError": "刪除書源失敗",
   "feedToggleError": "切換書源狀態失敗",
+  "feedPause": "暫停書源",
+  "feedResume": "恢復書源",
   "feedsMenuImport": "導入書源",
   "feedsMenuExport": "導出書源",
   "feedsExported": "書源已導出",

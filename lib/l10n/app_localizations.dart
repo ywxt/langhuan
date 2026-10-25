@@ -896,6 +896,18 @@ abstract class AppLocalizations {
   /// **'Failed to switch feed'**
   String get feedToggleError;
 
+  /// Tooltip for pausing an enabled feed
+  ///
+  /// In en, this message translates to:
+  /// **'Pause feed'**
+  String get feedPause;
+
+  /// Tooltip for resuming a paused feed
+  ///
+  /// In en, this message translates to:
+  /// **'Resume feed'**
+  String get feedResume;
+
   /// Menu item: import feeds from a file
   ///
   /// In en, this message translates to:

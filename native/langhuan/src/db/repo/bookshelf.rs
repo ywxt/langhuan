@@ -191,15 +191,19 @@ mod tests {
         db.seed_feed("f1");
         let conn = db.repo();
         let now = now_ms();
-        assert!(conn
-            .add_book("f1", "b1", "One", "A", None, Some("u1"), now)
-            .unwrap());
-        assert!(!conn
-            .add_book("f1", "b1", "One", "A", None, Some("u1"), now + 5)
-            .unwrap());
-        assert!(conn
-            .add_book("f1", "b2", "Two", "B", None, None, now + 10)
-            .unwrap());
+        assert!(
+            conn.add_book("f1", "b1", "One", "A", None, Some("u1"), now)
+                .unwrap()
+        );
+        assert!(
+            !conn
+                .add_book("f1", "b1", "One", "A", None, Some("u1"), now + 5)
+                .unwrap()
+        );
+        assert!(
+            conn.add_book("f1", "b2", "Two", "B", None, None, now + 10)
+                .unwrap()
+        );
 
         let items = conn.shelf_items().unwrap();
         assert_eq!(items.len(), 2);
@@ -216,9 +220,10 @@ mod tests {
         let db = TestDb::new();
         db.seed_feed("f1");
         let conn = db.repo();
-        assert!(conn
-            .add_book("f1", "b1", "One", "A", None, None, now_ms())
-            .unwrap());
+        assert!(
+            conn.add_book("f1", "b1", "One", "A", None, None, now_ms())
+                .unwrap()
+        );
 
         // Freshly shelved books have never been seen (-1).
         assert_eq!(conn.shelf_items().unwrap()[0].last_seen_chapters, -1);

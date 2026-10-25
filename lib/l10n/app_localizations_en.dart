@@ -450,6 +450,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get feedToggleError => 'Failed to switch feed';
 
   @override
+  String get feedPause => 'Pause feed';
+
+  @override
+  String get feedResume => 'Resume feed';
+
+  @override
   String get feedsMenuImport => 'Import feeds';
 
   @override

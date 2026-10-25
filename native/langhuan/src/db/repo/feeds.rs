@@ -190,8 +190,9 @@ impl Repo<'_> {
 
     /// Ids of all paused feeds (empty when everything is enabled).
     pub fn disabled_feed_ids(&self) -> Result<Vec<String>> {
-        let mut stmt =
-            self.conn.prepare_cached("SELECT id FROM feeds WHERE enabled = 0 ORDER BY id")?;
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT id FROM feeds WHERE enabled = 0 ORDER BY id")?;
         let ids = stmt
             .query_map([], |row| row.get(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -346,9 +347,6 @@ mod tests {
     #[test]
     fn set_feed_enabled_returns_false_when_missing() {
         let db = TestDb::new();
-        assert!(!db
-            .repo()
-            .set_feed_enabled("nope", false)
-            .expect("disable"));
+        assert!(!db.repo().set_feed_enabled("nope", false).expect("disable"));
     }
 }

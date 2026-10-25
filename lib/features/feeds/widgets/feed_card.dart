@@ -15,10 +15,16 @@ import 'feed_detail_sheet.dart';
 ///
 /// Avatar uses a 40px **circle** per the Wise design spec §4.3.
 class FeedCard extends ConsumerWidget {
-  const FeedCard({super.key, required this.feed, this.isDeleting = false});
+  const FeedCard({
+    super.key,
+    required this.feed,
+    this.isDeleting = false,
+    this.borderRadius = LanghuanTheme.borderRadiusMd,
+  });
 
   final FeedMetaItem feed;
   final bool isDeleting;
+  final BorderRadius borderRadius;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -31,9 +37,9 @@ class FeedCard extends ConsumerWidget {
 
     return Material(
       color: theme.colorScheme.surfaceContainer,
-      borderRadius: LanghuanTheme.borderRadiusMd,
+      borderRadius: borderRadius,
       child: InkWell(
-        borderRadius: LanghuanTheme.borderRadiusMd,
+        borderRadius: borderRadius,
         onTap: isDeleting ? null : () => showFeedDetailSheet(context, feed),
         child: Padding(
           padding: const EdgeInsets.all(LanghuanTheme.spaceMd),
@@ -69,33 +75,33 @@ class FeedCard extends ConsumerWidget {
                 child: Opacity(
                   opacity: contentOpacity,
                   child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      feed.name,
-                      style: theme.textTheme.titleMedium,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            feed.author != null
-                                ? 'v${feed.version} · ${feed.author}'
-                                : 'v${feed.version}',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        feed.name,
+                        style: theme.textTheme.titleMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              feed.author != null
+                                  ? 'v${feed.version} · ${feed.author}'
+                                  : 'v${feed.version}',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        _buildAuthBadge(authAsync, theme, l10n),
-                      ],
-                    ),
-                  ],
+                          _buildAuthBadge(authAsync, theme, l10n),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -107,9 +113,10 @@ class FeedCard extends ConsumerWidget {
                 // Pause/resume: paused feeds stay installed and searchable
                 // by explicit choice, but leave aggregated search and
                 // background update checks.
-                Switch(
-                  value: feed.enabled,
-                  onChanged: (value) => _handleToggle(context, ref, value),
+                _FeedEnabledButton(
+                  enabled: feed.enabled,
+                  onPressed: () => _handleToggle(context, ref, !feed.enabled),
+                  l10n: l10n,
                 ),
                 if (hasError)
                   Icon(
@@ -131,7 +138,11 @@ class FeedCard extends ConsumerWidget {
     );
   }
 
-  Future<void> _handleToggle(BuildContext context, WidgetRef ref, bool value) async {
+  Future<void> _handleToggle(
+    BuildContext context,
+    WidgetRef ref,
+    bool value,
+  ) async {
     final l10n = AppLocalizations.of(context);
     final error = await ref
         .read(feedListProvider.notifier)
@@ -202,6 +213,47 @@ class FeedCard extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _FeedEnabledButton extends StatelessWidget {
+  const _FeedEnabledButton({
+    required this.enabled,
+    required this.onPressed,
+    required this.l10n,
+  });
+
+  final bool enabled;
+  final VoidCallback onPressed;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final tooltip = enabled ? l10n.feedPause : l10n.feedResume;
+
+    return Semantics(
+      button: true,
+      toggled: enabled,
+      label: tooltip,
+      excludeSemantics: true,
+      child: IconButton.filledTonal(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: Icon(enabled ? Icons.pause_rounded : Icons.play_arrow_rounded),
+        style: IconButton.styleFrom(
+          minimumSize: const Size.square(40),
+          maximumSize: const Size.square(40),
+          padding: EdgeInsets.zero,
+          backgroundColor: enabled
+              ? colors.secondaryContainer
+              : colors.surfaceContainerHighest,
+          foregroundColor: enabled
+              ? colors.onSecondaryContainer
+              : colors.onSurfaceVariant,
+        ),
+      ),
     );
   }
 }

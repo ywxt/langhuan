@@ -8,9 +8,9 @@
 use serde::{Deserialize, Serialize};
 
 use super::types::{BridgeError, FeedImportEntry, FeedImportOutcome};
-use crate::actors::hub_db;
-use crate::actors::registry_actor::{classify_version_change, ImportFeedScript, ImportFeeds};
 use crate::actors::addresses;
+use crate::actors::hub_db;
+use crate::actors::registry_actor::{ImportFeedScript, ImportFeeds, classify_version_change};
 use langhuan::db::Db;
 
 /// Marker of the feed-export format.
@@ -101,7 +101,9 @@ fn parse_export_entries(json: &str) -> Result<Vec<FeedExportEntry>, BridgeError>
     let entries: Vec<FeedExportEntry> = serde_json::from_value(entries_value)
         .map_err(|e| BridgeError::from(format!("malformed feed export: {e}")))?;
     if entries.is_empty() {
-        return Err(BridgeError::from("feed export contains no feeds".to_owned()));
+        return Err(BridgeError::from(
+            "feed export contains no feeds".to_owned(),
+        ));
     }
     Ok(entries)
 }
@@ -271,7 +273,10 @@ mod tests {
         assert!(parse_export_entries("not json").is_err());
 
         // A bare array with one entry is accepted.
-        let bare = format!("[{{\"script\":{}}}]", serde_json::to_string(&script("f1", "1.0.0"))?);
+        let bare = format!(
+            "[{{\"script\":{}}}]",
+            serde_json::to_string(&script("f1", "1.0.0"))?
+        );
         assert_eq!(parse_export_entries(&bare)?.len(), 1);
         Ok(())
     }

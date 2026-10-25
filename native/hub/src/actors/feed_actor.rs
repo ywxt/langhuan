@@ -13,8 +13,8 @@ use langhuan::model::Paragraph;
 use langhuan::script::lua::LuaFeed;
 use langhuan::transform::TransformChain;
 use messages::prelude::{Actor, Address, Context, Handler};
-use tokio::sync::mpsc;
 use tokio::sync::Semaphore;
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 
@@ -865,11 +865,7 @@ return {
                 _ => None,
             })
             .collect();
-        assert_eq!(
-            sources,
-            ["feed-active"],
-            "only the active feed contributes"
-        );
+        assert_eq!(sources, ["feed-active"], "only the active feed contributes");
         assert_eq!(
             events.len(),
             1,

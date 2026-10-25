@@ -373,9 +373,7 @@ impl RegistryActor {
                 move |repo| repo.get_feed(&id)
             })
             .await?
-            .is_some_and(|row| {
-                row.version == meta.version && row.content_hash == content_hash
-            });
+            .is_some_and(|row| row.version == meta.version && row.content_hash == content_hash);
         if already_installed {
             return Ok(false);
         }
@@ -726,7 +724,10 @@ mod tests {
         assert!(actor.feeds.contains_key("f2"));
         let rows = db.call(|repo| repo.list_feeds()).await?;
         let f2_row = rows.iter().find(|row| row.id == "f2").expect("f2 row");
-        assert_eq!(f2_row.source_url.as_deref(), Some("https://example.com/src"));
+        assert_eq!(
+            f2_row.source_url.as_deref(),
+            Some("https://example.com/src")
+        );
 
         // Re-importing the same set: nothing new installs, both valid
         // entries skip, the broken one keeps failing.

@@ -139,131 +139,136 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                         sliver: SliverList.separated(
                           itemBuilder: (context, index) {
                             final item = visibleItems[index];
-                            return Dismissible(
-                              key: ValueKey('bookshelf-${item.stableId}'),
-                              direction: _pendingDeleteIds.isEmpty
-                                  ? DismissDirection.endToStart
-                                  : DismissDirection.none,
-                              background: Container(
-                                alignment: Alignment.centerRight,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: LanghuanTheme.spaceLg,
-                                ),
-                                decoration: BoxDecoration(
+                            return ClipRRect(
+                              borderRadius: LanghuanTheme.borderRadiusMd,
+                              child: Dismissible(
+                                key: ValueKey('bookshelf-${item.stableId}'),
+                                direction: _pendingDeleteIds.isEmpty
+                                    ? DismissDirection.endToStart
+                                    : DismissDirection.none,
+                                background: ColoredBox(
                                   color: theme.colorScheme.errorContainer,
-                                  borderRadius: LanghuanTheme.borderRadiusMd,
+                                  child: Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: LanghuanTheme.spaceLg,
+                                      ),
+                                      child: Icon(
+                                        Icons.delete_outline,
+                                        color:
+                                            theme.colorScheme.onErrorContainer,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                                child: Icon(
-                                  Icons.delete_outline,
-                                  color: theme.colorScheme.onErrorContainer,
-                                ),
-                              ),
-                              confirmDismiss: (_) async {
-                                final confirmed = await _confirmDelete(
-                                  context,
-                                  item,
-                                );
-                                if (confirmed && context.mounted) {
-                                  _handleDeleteWithUndo(
+                                confirmDismiss: (_) async {
+                                  final confirmed = await _confirmDelete(
+                                    context,
                                     item,
-                                    ScaffoldMessenger.of(context),
                                   );
-                                }
-                                return false;
-                              },
-                              child: Material(
-                                color: theme.colorScheme.surfaceContainer,
-                                borderRadius: LanghuanTheme.borderRadiusMd,
-                                child: ListTile(
-                                  onTap: () => _openReader(item),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: LanghuanTheme.spaceMd,
-                                    vertical: LanghuanTheme.spaceXs,
-                                  ),
-                                  leading: Hero(
-                                    tag: bookCoverHeroTag(
-                                      item.feedId,
-                                      item.sourceBookId,
+                                  if (confirmed && context.mounted) {
+                                    _handleDeleteWithUndo(
+                                      item,
+                                      ScaffoldMessenger.of(context),
+                                    );
+                                  }
+                                  return false;
+                                },
+                                child: Material(
+                                  color: theme.colorScheme.surfaceContainer,
+                                  child: ListTile(
+                                    onTap: () => _openReader(item),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: LanghuanTheme.spaceMd,
+                                      vertical: LanghuanTheme.spaceXs,
                                     ),
-                                    flightShuttleBuilder:
-                                        bookCoverFlightShuttleBuilder,
-                                    child: ClipRRect(
-                                      borderRadius:
-                                          LanghuanTheme.borderRadiusSm,
-                                      child: SizedBox(
-                                        width: 44,
-                                        height: 60,
-                                        child: BookCover(
-                                          feedId: item.feedId,
-                                          bookId: item.sourceBookId,
-                                          url: item.coverUrl,
-                                          placeholder:
-                                              const _SmallCoverPlaceholder(),
-                                        ),
+                                    leading: Hero(
+                                      tag: bookCoverHeroTag(
+                                        item.feedId,
+                                        item.sourceBookId,
                                       ),
-                                    ),
-                                  ),
-                                  title: BookTextHero(
-                                    tag: bookTitleHeroTag(
-                                      item.feedId,
-                                      item.sourceBookId,
-                                    ),
-                                    child: Text(
-                                      item.title,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.bodyLarge,
-                                    ),
-                                  ),
-                                  subtitle: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      BookTextHero(
-                                        tag: bookAuthorHeroTag(
-                                          item.feedId,
-                                          item.sourceBookId,
-                                        ),
-                                        child: Text(
-                                          item.author,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: theme.textTheme.bodyMedium
-                                              ?.copyWith(
-                                                color: theme
-                                                    .colorScheme
-                                                    .onSurfaceVariant,
-                                              ),
-                                        ),
-                                      ),
-                                      if (item.progressFraction
-                                          case final value?)
-                                        _ReadingProgress(
-                                          value: value,
-                                          label: l10n.bookshelfReadingProgress(
-                                            item.progressCurrentChapter!,
-                                            item.progressTotalChapters!,
-                                            (value * 100).round(),
+                                      flightShuttleBuilder:
+                                          bookCoverFlightShuttleBuilder,
+                                      child: ClipRRect(
+                                        borderRadius:
+                                            LanghuanTheme.borderRadiusSm,
+                                        child: SizedBox(
+                                          width: 44,
+                                          height: 60,
+                                          child: BookCover(
+                                            feedId: item.feedId,
+                                            bookId: item.sourceBookId,
+                                            url: item.coverUrl,
+                                            placeholder:
+                                                const _SmallCoverPlaceholder(),
                                           ),
                                         ),
-                                    ],
-                                  ),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _UpdateBadge(
-                                        count:
-                                            updates.newChaptersByBook[item
-                                                .stableId] ??
-                                            0,
-                                        l10n: l10n,
                                       ),
-                                      IconButton(
-                                        tooltip: l10n.bookshelfBookDetails,
-                                        icon: const Icon(Icons.info_outline),
-                                        onPressed: () => _openDetails(item),
+                                    ),
+                                    title: BookTextHero(
+                                      tag: bookTitleHeroTag(
+                                        item.feedId,
+                                        item.sourceBookId,
                                       ),
-                                    ],
+                                      child: Text(
+                                        item.title,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.bodyLarge,
+                                      ),
+                                    ),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        BookTextHero(
+                                          tag: bookAuthorHeroTag(
+                                            item.feedId,
+                                            item.sourceBookId,
+                                          ),
+                                          child: Text(
+                                            item.author,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                                  color: theme
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                          ),
+                                        ),
+                                        if (item.progressFraction
+                                            case final value?)
+                                          _ReadingProgress(
+                                            value: value,
+                                            label: l10n
+                                                .bookshelfReadingProgress(
+                                                  item.progressCurrentChapter!,
+                                                  item.progressTotalChapters!,
+                                                  (value * 100).round(),
+                                                ),
+                                          ),
+                                      ],
+                                    ),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        _UpdateBadge(
+                                          count:
+                                              updates.newChaptersByBook[item
+                                                  .stableId] ??
+                                              0,
+                                          l10n: l10n,
+                                        ),
+                                        IconButton(
+                                          tooltip: l10n.bookshelfBookDetails,
+                                          icon: const Icon(Icons.info_outline),
+                                          onPressed: () => _openDetails(item),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
