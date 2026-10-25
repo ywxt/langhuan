@@ -8,13 +8,14 @@ import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/loading.dart';
 import '../../src/rust/api/types.dart';
-import 'reader_page_actions.dart';
 import 'reader_screen_controller.dart';
 import 'reader_settings_provider.dart';
 import 'reading_progress_provider.dart';
 import 'widgets/chapter_content_manager.dart';
 import 'widgets/reader_controller.dart';
+import 'widgets/reader_feedback.dart';
 import 'widgets/reader_overlays.dart';
+import 'widgets/reader_sheets.dart';
 import 'widgets/reader_types.dart';
 
 class ReaderPage extends ConsumerStatefulWidget {
@@ -38,7 +39,6 @@ class ReaderPage extends ConsumerStatefulWidget {
 class _ReaderPageState extends ConsumerState<ReaderPage> {
   late final ReaderController _readerController;
   late final ReaderScreenController _screenController;
-  late final ReaderPageActions _actions;
 
   @override
   void initState() {
@@ -51,13 +51,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       bookId: widget.bookId,
       initialChapterId: widget.chapterId,
       initialParagraphId: widget.paragraphId,
-    );
-    _actions = ReaderPageActions(
-      ref: ref,
-      contextOf: () => context,
-      screenController: _screenController,
-      feedId: widget.feedId,
-      bookId: widget.bookId,
     );
     _screenController.addListener(_onScreenControllerChanged);
     _readerController.onPositionChanged = _screenController.onPositionChanged;
@@ -101,6 +94,63 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
   void _clearSelection() {
     _screenController.clearSelection();
+  }
+
+  // ── Sheet and navigation actions (formerly ReaderPageActions) ────────────
+
+  void _jumpToChapter(String chapterId, {String paragraphId = ''}) {
+    _screenController.jumpToChapter(chapterId, paragraphId: paragraphId);
+  }
+
+  Future<void> _addBookmark(ParagraphSelection selection) async {
+    final created = await _screenController.addBookmark(
+      chapterId: selection.chapterId,
+      paragraphId: selection.paragraphId,
+      paragraph: selection.paragraph,
+    );
+    if (!created) return;
+
+    if (!mounted) return;
+    showReaderToast(context, AppLocalizations.of(context).readerBookmarkAdded);
+  }
+
+  Future<void> _openBookmarkSheet() async {
+    await showReaderBookmarkSheet(
+      context: context,
+      ref: ref,
+      feedId: widget.feedId,
+      bookId: widget.bookId,
+      chapters: _screenController.chapters,
+      onJumpToParagraph: (chapterId, paragraphId) {
+        _jumpToChapter(chapterId, paragraphId: paragraphId);
+      },
+      onBookmarkRemoved: () {
+        showReaderToast(
+          context,
+          AppLocalizations.of(context).readerBookmarkRemoved,
+        );
+      },
+    );
+  }
+
+  Future<void> _openTocSheet() {
+    return showReaderTocSheet(
+      context: context,
+      ref: ref,
+      chapters: _screenController.chapters,
+      onJumpToChapter: (chapterId) {
+        _screenController.hideControls();
+        _jumpToChapter(chapterId);
+      },
+    );
+  }
+
+  Future<void> _openInterfaceSheet() {
+    return showReaderInterfaceSheet(context);
+  }
+
+  Future<void> _openSettingsSheet() {
+    return showReaderSettingsSheet(context);
   }
 
   @override
@@ -217,7 +267,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                   l10n: l10n,
                   isRefreshing: _screenController.isRefreshingChapter,
                   onBack: () => Navigator.of(context).pop(),
-                  onOpenBookmarks: _actions.openBookmarkSheet,
+                  onOpenBookmarks: _openBookmarkSheet,
                   onRefresh: () {
                     _screenController.refreshCurrentChapter(effectiveChapterId);
                   },
@@ -229,21 +279,21 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                   isSwitchingChapter: _screenController.isRefreshingChapter,
                   onPrevious: () {
                     if (currentIdx > 0) {
-                      _actions.jumpToChapter(
+                      _jumpToChapter(
                         _screenController.chapters[currentIdx - 1].id,
                       );
                     }
                   },
                   onNext: () {
                     if (currentIdx < _screenController.chapters.length - 1) {
-                      _actions.jumpToChapter(
+                      _jumpToChapter(
                         _screenController.chapters[currentIdx + 1].id,
                       );
                     }
                   },
-                  onOpenToc: _actions.openTocSheet,
-                  onOpenInterface: _actions.openInterfaceSheet,
-                  onOpenSettings: _actions.openSettingsSheet,
+                  onOpenToc: _openTocSheet,
+                  onOpenInterface: _openInterfaceSheet,
+                  onOpenSettings: _openSettingsSheet,
                 ),
                 if (_screenController.selection != null)
                   ReaderSelectionOverlay(
@@ -253,7 +303,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                     onAddBookmark: () {
                       final sel = _screenController.selection;
                       if (sel == null) return;
-                      _actions.addBookmark(sel);
+                      _addBookmark(sel);
                       _clearSelection();
                     },
                   ),
