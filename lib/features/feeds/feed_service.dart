@@ -340,6 +340,26 @@ class FeedService {
 
   static final FeedService instance = FeedService._();
 
+  /// The open/pull/cancel dance shared by every streaming API: FRB exposes
+  /// each stream as an opaque wrapper with `next()`/`cancel()`, which this
+  /// helper turns into a Dart stream that always cancels the Rust side.
+  static Stream<T> _pull<S, T>(
+    Future<S> Function() open,
+    Future<T?> Function(S stream) next,
+    void Function(S stream) cancel,
+  ) async* {
+    final stream = await open();
+    try {
+      while (true) {
+        final item = await next(stream);
+        if (item == null) break;
+        yield item;
+      }
+    } finally {
+      cancel(stream);
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Search
   // -------------------------------------------------------------------------
@@ -347,40 +367,23 @@ class FeedService {
   Stream<SearchResultModel> search({
     required String feedId,
     required String keyword,
-  }) async* {
-    final stream = await rust_stream.openSearchStream(
-      feedId: feedId,
-      keyword: keyword,
-    );
-    try {
-      while (true) {
-        final item = await stream.next();
-        if (item == null) break;
-        yield SearchResultModel.fromRust(item);
-      }
-    } finally {
-      stream.cancel();
-    }
+  }) {
+    return _pull(
+      () => rust_stream.openSearchStream(feedId: feedId, keyword: keyword),
+      (stream) => stream.next(),
+      (stream) => stream.cancel(),
+    ).map(SearchResultModel.fromRust);
   }
 
   /// Search every installed feed concurrently. Each event carries its
   /// source; a failing source yields an event with [error] set instead of
   /// ending the stream.
-  Stream<AggregatedSearchEventModel> searchAll({
-    required String keyword,
-  }) async* {
-    final stream = await rust_stream.openAggregatedSearchStream(
-      keyword: keyword,
-    );
-    try {
-      while (true) {
-        final event = await stream.next();
-        if (event == null) break;
-        yield AggregatedSearchEventModel.fromRust(event);
-      }
-    } finally {
-      stream.cancel();
-    }
+  Stream<AggregatedSearchEventModel> searchAll({required String keyword}) {
+    return _pull(
+      () => rust_stream.openAggregatedSearchStream(keyword: keyword),
+      (stream) => stream.next(),
+      (stream) => stream.cancel(),
+    ).map(AggregatedSearchEventModel.fromRust);
   }
 
   // -------------------------------------------------------------------------
@@ -391,21 +394,16 @@ class FeedService {
     required String feedId,
     required String bookId,
     bool forceRefresh = false,
-  }) async* {
-    final stream = await rust_stream.openChaptersStream(
-      feedId: feedId,
-      bookId: bookId,
-      forceRefresh: forceRefresh,
-    );
-    try {
-      while (true) {
-        final item = await stream.next();
-        if (item == null) break;
-        yield ChapterInfoModel.fromRust(item);
-      }
-    } finally {
-      stream.cancel();
-    }
+  }) {
+    return _pull(
+      () => rust_stream.openChaptersStream(
+        feedId: feedId,
+        bookId: bookId,
+        forceRefresh: forceRefresh,
+      ),
+      (stream) => stream.next(),
+      (stream) => stream.cancel(),
+    ).map(ChapterInfoModel.fromRust);
   }
 
   // -------------------------------------------------------------------------
@@ -434,22 +432,17 @@ class FeedService {
     required String bookId,
     required String chapterId,
     bool forceRefresh = false,
-  }) async* {
-    final stream = await rust_stream.openParagraphsStream(
-      feedId: feedId,
-      bookId: bookId,
-      chapterId: chapterId,
-      forceRefresh: forceRefresh,
+  }) {
+    return _pull(
+      () => rust_stream.openParagraphsStream(
+        feedId: feedId,
+        bookId: bookId,
+        chapterId: chapterId,
+        forceRefresh: forceRefresh,
+      ),
+      (stream) => stream.next(),
+      (stream) => stream.cancel(),
     );
-    try {
-      while (true) {
-        final item = await stream.next();
-        if (item == null) break;
-        yield item;
-      }
-    } finally {
-      stream.cancel();
-    }
   }
 
   // -------------------------------------------------------------------------
@@ -519,17 +512,12 @@ class FeedService {
 
   /// Check every shelved book for new chapters; emits one item per book as
   /// each check completes.
-  Stream<BookshelfUpdateModel> bookshelfUpdates() async* {
-    final stream = await rust_bookshelf.openBookshelfUpdatesStream();
-    try {
-      while (true) {
-        final item = await stream.next();
-        if (item == null) break;
-        yield BookshelfUpdateModel.fromRust(item);
-      }
-    } finally {
-      stream.cancel();
-    }
+  Stream<BookshelfUpdateModel> bookshelfUpdates() {
+    return _pull(
+      rust_bookshelf.openBookshelfUpdatesStream,
+      (stream) => stream.next(),
+      (stream) => stream.cancel(),
+    ).map(BookshelfUpdateModel.fromRust);
   }
 
   /// Record the chapter count the user has just seen, clearing the book's

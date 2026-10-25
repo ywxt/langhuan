@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../feeds/feed_providers.dart';
 import '../feeds/feed_service.dart';
 
 class ReadingProgressState {
@@ -93,7 +94,7 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
     );
 
     try {
-      final progress = await FeedService.instance.getReadingProgress(
+      final progress = await ref.read(feedServiceProvider).getReadingProgress(
         feedId: feedId,
         bookId: bookId,
       );
@@ -150,7 +151,7 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
     state = state.copyWith(isSaving: true, error: () => null);
 
     try {
-      await FeedService.instance.setReadingProgress(
+      await ref.read(feedServiceProvider).setReadingProgress(
         feedId: state.feedId,
         bookId: state.bookId,
         chapterId: state.activeChapterId,

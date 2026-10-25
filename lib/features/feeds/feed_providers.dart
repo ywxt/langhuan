@@ -5,6 +5,14 @@ import '../../src/rust/api/types.dart';
 import 'feed_service.dart';
 
 // ---------------------------------------------------------------------------
+// Service injection
+// ---------------------------------------------------------------------------
+
+/// The [FeedService] used by every provider. Overriding this in a
+/// ProviderScope is how unit tests substitute a fake service.
+final feedServiceProvider = Provider<FeedService>((ref) => FeedService.instance);
+
+// ---------------------------------------------------------------------------
 // Feed list state
 // ---------------------------------------------------------------------------
 
@@ -87,7 +95,7 @@ class FeedListNotifier extends Notifier<FeedListState> {
 
     state = const FeedListState(isLoading: true);
     try {
-      final items = await FeedService.instance.listFeeds();
+      final items = await ref.read(feedServiceProvider).listFeeds();
       state = FeedListState(items: List.unmodifiable(items));
     } catch (e) {
       state = FeedListState(error: e);
@@ -103,7 +111,7 @@ class FeedListNotifier extends Notifier<FeedListState> {
     state = state.copyWith(removingFeedId: () => feedId, error: () => null);
 
     try {
-      await FeedService.instance.removeFeed(feedId);
+      await ref.read(feedServiceProvider).removeFeed(feedId);
 
       final selected = ref.read(selectedFeedProvider);
       if (selected is FeedSelectionOne && selected.feed.id == feedId) {
@@ -177,7 +185,8 @@ final selectedFeedProvider =
 /// Returns `null` if auth is not supported by the feed.
 final feedAuthStatusProvider =
     FutureProvider.family<FeedAuthStatusModel?, String>((ref, feedId) async {
-      final supported = await FeedService.instance.isFeedAuthSupported(feedId);
+      final service = ref.watch(feedServiceProvider);
+      final supported = await service.isFeedAuthSupported(feedId);
       if (!supported) return null;
-      return FeedService.instance.getFeedAuthStatus(feedId);
+      return service.getFeedAuthStatus(feedId);
     });

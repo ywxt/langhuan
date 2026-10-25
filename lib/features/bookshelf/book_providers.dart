@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/rust/api/types.dart';
+import '../feeds/feed_providers.dart';
 import '../feeds/feed_service.dart';
 import 'bookshelf_provider.dart';
 
@@ -60,7 +61,8 @@ class ChaptersNotifier extends Notifier<ChaptersState> {
         : ChaptersState(feedId: feedId, bookId: bookId, isLoading: true);
 
     try {
-      final items = await FeedService.instance
+      final items = await ref
+          .read(feedServiceProvider)
           .chapters(feedId: feedId, bookId: bookId)
           .toList();
       if (runToken != _runToken) return;
@@ -71,7 +73,7 @@ class ChaptersNotifier extends Notifier<ChaptersState> {
       // the next update check clears its badge.
       if (items.isNotEmpty) {
         unawaited(
-          FeedService.instance.markBookshelfSeen(
+          ref.read(feedServiceProvider).markBookshelfSeen(
             feedId: feedId,
             sourceBookId: bookId,
             chapterCount: items.length,
@@ -143,7 +145,7 @@ class BookInfoNotifier extends Notifier<BookInfoState> {
         : BookInfoState(feedId: feedId, bookId: bookId, isLoading: true);
 
     try {
-      final book = await FeedService.instance.bookInfo(
+      final book = await ref.read(feedServiceProvider).bookInfo(
         feedId: feedId,
         bookId: bookId,
       );
@@ -236,7 +238,8 @@ class ChapterContentNotifier extends Notifier<ChapterContentState> {
     );
 
     try {
-      final items = await FeedService.instance
+      final items = await ref
+          .read(feedServiceProvider)
           .paragraphs(feedId: feedId, bookId: bookId, chapterId: chapterId)
           .toList();
       if (runToken != _runToken) return;

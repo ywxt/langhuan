@@ -46,7 +46,7 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
     });
 
     try {
-      final entry = await FeedService.instance.getFeedAuthEntry(widget.feedId);
+      final entry = await ref.read(feedServiceProvider).getFeedAuthEntry(widget.feedId);
       if (!mounted) return;
 
       if (entry == null) {
@@ -94,7 +94,7 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
       final url = await controller.getUrl();
       if (url != null) await _captureCookiesBestEffort(url);
 
-      await FeedService.instance.submitFeedAuthPage(
+      await ref.read(feedServiceProvider).submitFeedAuthPage(
         feedId: widget.feedId,
         currentUrl: currentUrl,
         response: html,

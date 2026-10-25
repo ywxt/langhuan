@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../rust_init.dart';
+import '../feeds/feed_providers.dart';
 import '../feeds/feed_service.dart';
 
 // ---------------------------------------------------------------------------
@@ -102,7 +103,7 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
 
     state = state.copyWith(isLoading: true, error: () => null);
     try {
-      final items = await FeedService.instance.listBookshelf();
+      final items = await ref.read(feedServiceProvider).listBookshelf();
       state = state.copyWith(items: items, isLoading: false, error: () => null);
     } catch (e) {
       state = state.copyWith(
@@ -134,7 +135,7 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     state = state.copyWith(activeItemId: () => itemId, error: () => null);
 
     try {
-      final outcome = await FeedService.instance.addToBookshelf(
+      final outcome = await ref.read(feedServiceProvider).addToBookshelf(
         feedId: feedId,
         sourceBookId: sourceBookId,
         title: title,
@@ -168,7 +169,7 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     state = state.copyWith(activeItemId: () => itemId, error: () => null);
 
     try {
-      final outcome = await FeedService.instance.removeFromBookshelf(
+      final outcome = await ref.read(feedServiceProvider).removeFromBookshelf(
         feedId: feedId,
         sourceBookId: sourceBookId,
       );
@@ -246,7 +247,7 @@ class BookshelfUpdatesNotifier extends Notifier<BookshelfUpdatesState> {
 
     try {
       await for (final update
-          in FeedService.instance.bookshelfUpdates()) {
+          in ref.read(feedServiceProvider).bookshelfUpdates()) {
         final id = '${update.feedId}:${update.sourceBookId}';
         if (update.error != null) {
           failed[id] = update.error!;

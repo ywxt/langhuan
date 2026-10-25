@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'feed_providers.dart';
 import 'feed_service.dart';
 
 // ---------------------------------------------------------------------------
@@ -100,7 +101,8 @@ class SearchNotifier extends Notifier<SearchState> {
     _lastFeedName = feedName;
     await _run(
       keyword: keyword,
-      stream: FeedService.instance
+      stream: ref
+          .read(feedServiceProvider)
           .search(feedId: feedId, keyword: keyword)
           .map(
             (item) => AggregatedSearchEventModel(
@@ -117,7 +119,7 @@ class SearchNotifier extends Notifier<SearchState> {
     _lastFeedName = null;
     await _run(
       keyword: keyword,
-      stream: FeedService.instance.searchAll(keyword: keyword),
+      stream: ref.read(feedServiceProvider).searchAll(keyword: keyword),
     );
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../feeds/feed_providers.dart';
 import '../feeds/feed_service.dart';
 
 class BookmarkState {
@@ -47,7 +48,7 @@ class BookmarkNotifier extends Notifier<BookmarkState> {
     );
 
     try {
-      final items = await FeedService.instance.listBookmarks(
+      final items = await ref.read(feedServiceProvider).listBookmarks(
         feedId: feedId,
         bookId: bookId,
       );
@@ -67,7 +68,7 @@ class BookmarkNotifier extends Notifier<BookmarkState> {
     String label = '',
   }) async {
     try {
-      final created = await FeedService.instance.addBookmark(
+      final created = await ref.read(feedServiceProvider).addBookmark(
         feedId: feedId,
         bookId: bookId,
         chapterId: chapterId,
@@ -87,7 +88,7 @@ class BookmarkNotifier extends Notifier<BookmarkState> {
 
   Future<void> remove(String id) async {
     try {
-      final removed = await FeedService.instance.removeBookmark(id: id);
+      final removed = await ref.read(feedServiceProvider).removeBookmark(id: id);
       if (!removed) return;
       final next = state.items.where((e) => e.id != id).toList(growable: false);
       state = state.copyWith(items: next, error: () => null);

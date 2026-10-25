@@ -50,7 +50,7 @@ class AddFeedNotifier extends Notifier<AddFeedState> {
   Future<void> previewFromUrl(String url) async {
     state = const AddFeedLoading();
     try {
-      final preview = await FeedService.instance.previewFromUrl(url);
+      final preview = await ref.read(feedServiceProvider).previewFromUrl(url);
       state = AddFeedPreview(preview: preview);
     } on FeedPreviewException catch (e) {
       state = AddFeedError(message: e.message);
@@ -61,7 +61,7 @@ class AddFeedNotifier extends Notifier<AddFeedState> {
   Future<void> previewFromFile(String path) async {
     state = const AddFeedLoading();
     try {
-      final preview = await FeedService.instance.previewFromFile(path);
+      final preview = await ref.read(feedServiceProvider).previewFromFile(path);
       state = AddFeedPreview(preview: preview);
     } on FeedPreviewException catch (e) {
       state = AddFeedError(message: e.message);
@@ -79,7 +79,7 @@ class AddFeedNotifier extends Notifier<AddFeedState> {
     state = const AddFeedInstalling();
 
     try {
-      await FeedService.instance.installFeed(current.preview.requestId);
+      await ref.read(feedServiceProvider).installFeed(current.preview.requestId);
       // Refresh the feed list so the newly installed feed appears.
       ref.read(feedListProvider.notifier).load();
       state = const AddFeedSuccess();

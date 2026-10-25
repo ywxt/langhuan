@@ -57,13 +57,13 @@ class _FeedDetailContentState extends ConsumerState<_FeedDetailContent> {
     });
     var supported = false;
     try {
-      supported = await FeedService.instance.isFeedAuthSupported(
+      supported = await ref.read(feedServiceProvider).isFeedAuthSupported(
         widget.feed.id,
       );
       FeedAuthStatusModel status = FeedAuthStatusModel.unsupported;
       if (supported) {
         try {
-          status = await FeedService.instance.getFeedAuthStatus(widget.feed.id);
+          status = await ref.read(feedServiceProvider).getFeedAuthStatus(widget.feed.id);
         } catch (_) {
           // A failed status probe (for example while offline) must not hide
           // the login action for an auth-capable feed.
@@ -110,7 +110,7 @@ class _FeedDetailContentState extends ConsumerState<_FeedDetailContent> {
 
   Future<void> _logout() async {
     try {
-      await FeedService.instance.clearFeedAuth(widget.feed.id);
+      await ref.read(feedServiceProvider).clearFeedAuth(widget.feed.id);
       if (!mounted) return;
       ref.invalidate(feedAuthStatusProvider(widget.feed.id));
       await _loadAuthStatus();
