@@ -160,10 +160,22 @@ const MIGRATIONS: &[Migration] = &[
             ADD COLUMN paragraph_char_offset INTEGER NOT NULL DEFAULT 0;
     "#,
     },
+    Migration {
+        version: 3,
+        sql: r#"
+        -- Bookshelf update detection -----------------------------------------
+        -- Chapter count the user has last seen (detail page or reader list
+        -- load). -1 = never seen; the first update check adopts the fresh
+        -- count as the baseline without showing a badge. Kept on the
+        -- bookshelf row so it survives cache eviction.
+        ALTER TABLE bookshelf
+            ADD COLUMN last_seen_chapters INTEGER NOT NULL DEFAULT -1;
+    "#,
+    },
 ];
 
 /// The schema version this build understands (the last migration's version).
-pub(crate) const CURRENT_VERSION: i64 = 2;
+pub(crate) const CURRENT_VERSION: i64 = 3;
 
 /// Apply all pending migrations in order.
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {

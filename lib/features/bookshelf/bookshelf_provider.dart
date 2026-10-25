@@ -185,3 +185,102 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
 final bookshelfProvider = NotifierProvider<BookshelfNotifier, BookshelfState>(
   BookshelfNotifier.new,
 );
+
+// ---------------------------------------------------------------------------
+// Bookshelf update check
+// ---------------------------------------------------------------------------
+
+/// Per-book update badges, keyed by `BookshelfItemModel.stableId`.
+///
+/// A value > 0 is the number of chapters published since the user last saw
+/// the book's chapter list. Books with a failed check carry no badge but are
+/// listed in [failedBooks].
+class BookshelfUpdatesState {
+  const BookshelfUpdatesState({
+    this.isChecking = false,
+    this.newChaptersByBook = const {},
+    this.failedBooks = const {},
+    this.lastError,
+  });
+
+  final bool isChecking;
+
+  final Map<String, int> newChaptersByBook;
+
+  /// Books whose individual check failed (dead source, network, auth),
+  /// mapped to the error message.
+  final Map<String, String> failedBooks;
+
+  /// Error of the last completed check, when it failed to run at all.
+  final Object? lastError;
+
+  BookshelfUpdatesState copyWith({
+    bool? isChecking,
+    Map<String, int>? newChaptersByBook,
+    Map<String, String>? failedBooks,
+    Object? lastError,
+    bool clearError = false,
+  }) {
+    return BookshelfUpdatesState(
+      isChecking: isChecking ?? this.isChecking,
+      newChaptersByBook: newChaptersByBook ?? this.newChaptersByBook,
+      failedBooks: failedBooks ?? this.failedBooks,
+      lastError: clearError ? null : lastError ?? this.lastError,
+    );
+  }
+}
+
+class BookshelfUpdatesNotifier extends Notifier<BookshelfUpdatesState> {
+  @override
+  BookshelfUpdatesState build() => const BookshelfUpdatesState();
+
+  /// Check every shelved book for new chapters. Emits badges incrementally
+  /// as each book completes. Running checks are not re-entrant.
+  Future<void> check() async {
+    if (state.isChecking) return;
+    state = const BookshelfUpdatesState(isChecking: true);
+
+    final badges = <String, int>{};
+    final failed = <String, String>{};
+    Object? fatal;
+
+    try {
+      await for (final update
+          in FeedService.instance.bookshelfUpdates()) {
+        final id = '${update.feedId}:${update.sourceBookId}';
+        if (update.error != null) {
+          failed[id] = update.error!;
+        } else if (update.newChapters > 0) {
+          badges[id] = update.newChapters;
+        }
+        state = state.copyWith(newChaptersByBook: {...badges});
+      }
+    } catch (e) {
+      fatal = e;
+    }
+
+    state = BookshelfUpdatesState(
+      isChecking: false,
+      newChaptersByBook: badges,
+      lastError: fatal,
+      failedBooks: failed,
+    );
+  }
+
+  /// Clear a book's badge after the user has seen its chapter list.
+  void clear(String feedId, String sourceBookId) {
+    final id = '$feedId:$sourceBookId';
+    if (!state.newChaptersByBook.containsKey(id)) return;
+    final updated = Map.of(state.newChaptersByBook)..remove(id);
+    state = state.copyWith(newChaptersByBook: updated);
+  }
+
+  /// Drop a book's badge when it is removed from the shelf.
+  void remove(String feedId, String sourceBookId) =>
+      clear(feedId, sourceBookId);
+}
+
+final bookshelfUpdatesProvider =
+    NotifierProvider<BookshelfUpdatesNotifier, BookshelfUpdatesState>(
+      BookshelfUpdatesNotifier.new,
+    );

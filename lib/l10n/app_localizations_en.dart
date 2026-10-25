@@ -24,6 +24,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bookshelfTitle => 'Bookshelf';
 
   @override
+  String get bookshelfCheckUpdates => 'Check for updates';
+
+  @override
+  String bookshelfNewChapters(int count) {
+    return '$count new chapters';
+  }
+
+  @override
+  String get bookshelfCheckFailed => 'Failed to check for updates';
+
+  @override
+  String bookshelfCheckPartialFailure(int count) {
+    return 'Failed to check $count books';
+  }
+
+  @override
   String get bookshelfEmpty => 'Your bookshelf is empty';
 
   @override

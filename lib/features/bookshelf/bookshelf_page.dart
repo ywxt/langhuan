@@ -26,11 +26,28 @@ class BookshelfPage extends ConsumerWidget {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final state = ref.watch(bookshelfProvider);
+    final updates = ref.watch(bookshelfUpdatesProvider);
+
+    // One-shot feedback when a check run completes.
+    ref.listen(bookshelfUpdatesProvider, (previous, next) {
+      if (previous?.isChecking != true || next.isChecking) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      if (next.lastError != null) {
+        showErrorSnack(messenger, l10n.bookshelfCheckFailed);
+      } else if (next.failedBooks.isNotEmpty) {
+        showErrorSnack(
+          messenger,
+          l10n.bookshelfCheckPartialFailure(next.failedBooks.length),
+        );
+      }
+    });
 
     return Scaffold(
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () => ref.read(bookshelfProvider.notifier).load(),
+          onRefresh: () =>
+              ref.read(bookshelfUpdatesProvider.notifier).check(),
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(
               parent: BouncingScrollPhysics(),
@@ -45,9 +62,24 @@ class BookshelfPage extends ConsumerWidget {
                   LanghuanTheme.spaceMd,
                 ),
                 sliver: SliverToBoxAdapter(
-                  child: Text(
-                    l10n.bookshelfTitle,
-                    style: theme.textTheme.headlineLarge,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          l10n.bookshelfTitle,
+                          style: theme.textTheme.headlineLarge,
+                        ),
+                      ),
+                      updates.isChecking
+                          ? const LanghuanSpinner(size: 20)
+                          : IconButton(
+                              tooltip: l10n.bookshelfCheckUpdates,
+                              icon: const Icon(Icons.refresh),
+                              onPressed: () => ref
+                                  .read(bookshelfUpdatesProvider.notifier)
+                                  .check(),
+                            ),
+                    ],
                   ),
                 ),
               ),
@@ -172,6 +204,11 @@ class BookshelfPage extends ConsumerWidget {
                               ),
                             ),
                           ),
+                          trailing: _UpdateBadge(
+                            count: updates.newChaptersByBook[item.stableId] ??
+                                0,
+                            l10n: l10n,
+                          ),
                         ),
                       );
                     },
@@ -263,6 +300,9 @@ class BookshelfPage extends ConsumerWidget {
         .read(bookshelfProvider.notifier)
         .remove(feedId: item.feedId, sourceBookId: item.sourceBookId);
     if (!context.mounted) return;
+    ref
+        .read(bookshelfUpdatesProvider.notifier)
+        .remove(item.feedId, item.sourceBookId);
     if (outcome is BookshelfOperationOutcomeError) {
       showErrorSnack(
         ScaffoldMessenger.of(context),
@@ -271,6 +311,41 @@ class BookshelfPage extends ConsumerWidget {
     } else {
       showSuccessSnack(ScaffoldMessenger.of(context), l10n.bookshelfRemoved);
     }
+  }
+}
+
+/// Red pill badge showing the number of new chapters for a shelved book.
+class _UpdateBadge extends StatelessWidget {
+  const _UpdateBadge({required this.count, required this.l10n});
+
+  final int count;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    if (count <= 0) return const SizedBox.shrink();
+
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      label: l10n.bookshelfNewChapters(count),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: LanghuanTheme.spaceSm,
+          vertical: LanghuanTheme.spaceXs,
+        ),
+        decoration: BoxDecoration(
+          color: scheme.error,
+          borderRadius: BorderRadius.circular(LanghuanTheme.radiusXl),
+        ),
+        child: Text(
+          count.toString(),
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            color: scheme.onError,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
   }
 }
 

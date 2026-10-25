@@ -7,6 +7,7 @@ import '../../src/rust/api/types.dart';
 import '../feeds/feed_service.dart';
 import 'bookmark_provider.dart';
 import 'book_providers.dart';
+import 'bookshelf_provider.dart';
 import 'reading_progress_provider.dart';
 import 'widgets/reader_controller.dart';
 import 'widgets/reader_types.dart';
@@ -86,6 +87,21 @@ class ReaderScreenController extends ChangeNotifier {
       _chapters = chapters;
       _isInitializing = false;
       _notify();
+
+      // Opening the reader shows the book's chapters: mark them seen so the
+      // bookshelf update badge clears.
+      if (chapters.isNotEmpty) {
+        unawaited(
+          FeedService.instance.markBookshelfSeen(
+            feedId: feedId,
+            sourceBookId: bookId,
+            chapterCount: chapters.length,
+          ),
+        );
+        _ref
+            .read(bookshelfUpdatesProvider.notifier)
+            .clear(feedId, bookId);
+      }
 
       final String startChapterId;
       final String startParagraphId;

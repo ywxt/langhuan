@@ -16,6 +16,18 @@
   "bookshelfTitle": "Bookshelf",
   "@bookshelfTitle": { "description": "Bookshelf page title" },
 
+  "bookshelfCheckUpdates": "Check for updates",
+  "@bookshelfCheckUpdates": { "description": "Tooltip for the bookshelf refresh button" },
+
+  "bookshelfNewChapters": "{count} new chapters",
+  "@bookshelfNewChapters": { "description": "Semantics label for a book's update badge", "placeholders": { "count": { "type": "int" } } },
+
+  "bookshelfCheckFailed": "Failed to check for updates",
+  "@bookshelfCheckFailed": { "description": "Snackbar when the update check could not run" },
+
+  "bookshelfCheckPartialFailure": "Failed to check {count} books",
+  "@bookshelfCheckPartialFailure": { "description": "Snackbar when some books failed their individual update check", "placeholders": { "count": { "type": "int" } } },
+
   "bookshelfEmpty": "Your bookshelf is empty",
   "@bookshelfEmpty": { "description": "Bookshelf empty state message" },
 

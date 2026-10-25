@@ -169,6 +169,19 @@ pub struct BookshelfListItem {
     pub cover_url: Option<String>,
     pub description_snapshot: Option<String>,
     pub added_at_unix_ms: i64,
+    pub last_seen_chapters: i64,
+}
+
+/// Per-book result of a bookshelf update check.
+pub struct BookshelfUpdateItem {
+    pub feed_id: String,
+    pub source_book_id: String,
+    /// Chapters published since the user last saw the book's chapter list.
+    /// 0 means no update (or a baseline adopted on first check).
+    pub new_chapters: i64,
+    /// Set when this book's check failed (dead source, network, auth); the
+    /// check continues with the remaining books.
+    pub error: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

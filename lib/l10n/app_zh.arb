@@ -8,6 +8,10 @@
   "navProfile": "設置",
 
   "bookshelfTitle": "書架",
+  "bookshelfCheckUpdates": "檢查更新",
+  "bookshelfNewChapters": "{count} 個新章節",
+  "bookshelfCheckFailed": "檢查更新失敗",
+  "bookshelfCheckPartialFailure": "{count} 本書檢查失敗",
   "bookshelfEmpty": "書架是空的",
   "bookshelfEmptyHint": "搜索並收藏書籍後會顯示在這裡",
   "bookshelfSearchHint": "搜索書籍…",

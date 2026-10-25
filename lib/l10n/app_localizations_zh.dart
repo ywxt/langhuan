@@ -24,6 +24,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bookshelfTitle => '書架';
 
   @override
+  String get bookshelfCheckUpdates => '檢查更新';
+
+  @override
+  String bookshelfNewChapters(int count) {
+    return '$count 個新章節';
+  }
+
+  @override
+  String get bookshelfCheckFailed => '檢查更新失敗';
+
+  @override
+  String bookshelfCheckPartialFailure(int count) {
+    return '$count 本書檢查失敗';
+  }
+
+  @override
   String get bookshelfEmpty => '書架是空的';
 
   @override

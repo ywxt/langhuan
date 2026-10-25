@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/rust/api/types.dart';
 import '../feeds/feed_service.dart';
+import 'bookshelf_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Chapters state
@@ -63,6 +66,19 @@ class ChaptersNotifier extends Notifier<ChaptersState> {
       if (runToken != _runToken) return;
 
       state = state.copyWith(items: items, isLoading: false);
+
+      // The user has seen this book's chapter list: record the baseline so
+      // the next update check clears its badge.
+      if (items.isNotEmpty) {
+        unawaited(
+          FeedService.instance.markBookshelfSeen(
+            feedId: feedId,
+            sourceBookId: bookId,
+            chapterCount: items.length,
+          ),
+        );
+        ref.read(bookshelfUpdatesProvider.notifier).clear(feedId, bookId);
+      }
     } catch (err) {
       if (runToken == _runToken) {
         state = state.copyWith(isLoading: false, error: () => err);

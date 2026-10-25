@@ -64,7 +64,7 @@ impl<T: Send + 'static> PullStream<T> {
 ///
 /// `make_stream` receives a `mpsc::Sender` and is responsible for iterating
 /// the feed stream inside the spawned task (so owned data can be moved in).
-fn spawn_pull_stream<T, F, Fut>(make_producer: F) -> PullStream<T>
+pub(crate) fn spawn_pull_stream<T, F, Fut>(make_producer: F) -> PullStream<T>
 where
     T: Send + 'static,
     F: FnOnce(mpsc::Sender<Result<T, BridgeError>>) -> Fut,

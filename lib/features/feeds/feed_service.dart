@@ -154,6 +154,31 @@ class BookshelfItemModel {
 }
 
 @immutable
+class BookshelfUpdateModel {
+  const BookshelfUpdateModel({
+    required this.feedId,
+    required this.sourceBookId,
+    required this.newChapters,
+    this.error,
+  });
+
+  final String feedId;
+  final String sourceBookId;
+  final int newChapters;
+
+  /// Non-null when this book's check failed (dead source, network, auth).
+  final String? error;
+
+  factory BookshelfUpdateModel.fromRust(BookshelfUpdateItem item) =>
+      BookshelfUpdateModel(
+        feedId: item.feedId,
+        sourceBookId: item.sourceBookId,
+        newChapters: item.newChapters,
+        error: item.error,
+      );
+}
+
+@immutable
 class ReadingProgressModel {
   const ReadingProgressModel({
     required this.feedId,
@@ -428,6 +453,40 @@ class FeedService {
         .toList(growable: false);
     result.sort((a, b) => b.addedAtUnixMs.compareTo(a.addedAtUnixMs));
     return result;
+  }
+
+  /// Check every shelved book for new chapters; emits one item per book as
+  /// each check completes.
+  Stream<BookshelfUpdateModel> bookshelfUpdates() async* {
+    final stream = await rust_bookshelf.openBookshelfUpdatesStream();
+    try {
+      while (true) {
+        final item = await stream.next();
+        if (item == null) break;
+        yield BookshelfUpdateModel.fromRust(item);
+      }
+    } finally {
+      stream.cancel();
+    }
+  }
+
+  /// Record the chapter count the user has just seen, clearing the book's
+  /// update badge until new chapters appear.
+  Future<void> markBookshelfSeen({
+    required String feedId,
+    required String sourceBookId,
+    required int chapterCount,
+  }) async {
+    try {
+      await rust_bookshelf.markBookshelfSeen(
+        feedId: feedId,
+        sourceBookId: sourceBookId,
+        chapterCount: chapterCount,
+      );
+    } on BridgeError {
+      // Marking seen is best-effort: a failure only means the badge may
+      // re-appear on the next check.
+    }
   }
 
   // -------------------------------------------------------------------------

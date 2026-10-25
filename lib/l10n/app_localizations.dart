@@ -128,6 +128,30 @@ abstract class AppLocalizations {
   /// **'Bookshelf'**
   String get bookshelfTitle;
 
+  /// Tooltip for the bookshelf refresh button
+  ///
+  /// In en, this message translates to:
+  /// **'Check for updates'**
+  String get bookshelfCheckUpdates;
+
+  /// Semantics label for a book's update badge
+  ///
+  /// In en, this message translates to:
+  /// **'{count} new chapters'**
+  String bookshelfNewChapters(int count);
+
+  /// Snackbar when the update check could not run
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to check for updates'**
+  String get bookshelfCheckFailed;
+
+  /// Snackbar when some books failed their individual update check
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to check {count} books'**
+  String bookshelfCheckPartialFailure(int count);
+
   /// Bookshelf empty state message
   ///
   /// In en, this message translates to:

@@ -35,6 +35,13 @@ pub struct BookshelfRemove {
 
 pub struct BookshelfList;
 
+/// Record the chapter count the user has just seen for a shelved book.
+pub struct BookshelfMarkSeen {
+    pub feed_id: String,
+    pub source_book_id: String,
+    pub chapter_count: i64,
+}
+
 // ---------------------------------------------------------------------------
 // Actor
 // ---------------------------------------------------------------------------
@@ -141,6 +148,7 @@ impl From<ShelfItem> for BookshelfListItem {
             cover_url: item.cover_url,
             description_snapshot: item.description,
             added_at_unix_ms: item.added_at_ms,
+            last_seen_chapters: item.last_seen_chapters,
         }
     }
 }
@@ -188,6 +196,31 @@ impl Handler<BookshelfList> for BookshelfActor {
 
     async fn handle(&mut self, _: BookshelfList, _: &Context<Self>) -> Self::Result {
         self.list().await
+    }
+}
+
+#[async_trait]
+impl Handler<BookshelfMarkSeen> for BookshelfActor {
+    type Result = Result<(), BridgeError>;
+
+    async fn handle(&mut self, msg: BookshelfMarkSeen, _: &Context<Self>) -> Self::Result {
+        tracing::debug!(
+            feed_id = %msg.feed_id,
+            source_book_id = %msg.source_book_id,
+            chapter_count = msg.chapter_count,
+            "bookshelf mark seen"
+        );
+        let db = self.db()?.clone();
+        db.write({
+            let BookshelfMarkSeen {
+                feed_id,
+                source_book_id,
+                chapter_count,
+            } = msg;
+            move |conn| conn.set_last_seen_chapters(&feed_id, &source_book_id, chapter_count)
+        })
+        .await?;
+        Ok(())
     }
 }
 

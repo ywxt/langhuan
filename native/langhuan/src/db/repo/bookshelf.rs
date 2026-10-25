@@ -18,6 +18,7 @@ pub struct ShelfItem {
     pub description: Option<String>,
     pub cover_url: Option<String>,
     pub added_at_ms: i64,
+    pub last_seen_chapters: i64,
 }
 
 /// Bookshelf operations, as methods on [`Connection`].
@@ -57,6 +58,10 @@ pub trait BookshelfRepo {
     /// A shelved book always has a `books` row (enforced by the FK), so the
     /// inner join can never drop entries.
     fn shelf_items(&self) -> Result<Vec<ShelfItem>>;
+
+    /// Record the chapter count the user has last seen for a shelved book
+    /// (detail page or reader list load). No-op when the book is not shelved.
+    fn set_last_seen_chapters(&self, feed_id: &str, book_id: &str, count: i64) -> Result<()>;
 
     /// Is this book currently shelved?
     fn is_shelved(&self, feed_id: &str, book_id: &str) -> Result<bool>;
@@ -117,7 +122,7 @@ impl BookshelfRepo for Connection {
 
     fn shelf_items(&self) -> Result<Vec<ShelfItem>> {
         let mut stmt = self.prepare_cached(
-            "SELECT s.feed_id, s.book_id, b.title, b.author, b.description, b.cover_url, s.added_at_ms \
+            "SELECT s.feed_id, s.book_id, b.title, b.author, b.description, b.cover_url, s.added_at_ms, s.last_seen_chapters \
              FROM bookshelf s \
              JOIN books b ON b.feed_id = s.feed_id AND b.book_id = s.book_id \
              ORDER BY s.added_at_ms DESC, s.feed_id, s.book_id",
@@ -132,10 +137,19 @@ impl BookshelfRepo for Connection {
                     description: row.get(4)?,
                     cover_url: row.get(5)?,
                     added_at_ms: row.get(6)?,
+                    last_seen_chapters: row.get(7)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(items)
+    }
+
+    fn set_last_seen_chapters(&self, feed_id: &str, book_id: &str, count: i64) -> Result<()> {
+        self.prepare_cached(
+            "UPDATE bookshelf SET last_seen_chapters = ?3 WHERE feed_id = ?1 AND book_id = ?2",
+        )?
+        .execute(tokio_rusqlite::params![feed_id, book_id, count])?;
+        Ok(())
     }
 
     fn is_shelved(&self, feed_id: &str, book_id: &str) -> Result<bool> {
@@ -165,7 +179,7 @@ mod tests {
         CREATE TABLE feeds (id TEXT PRIMARY KEY, name TEXT NOT NULL, version TEXT NOT NULL, author TEXT, source_url TEXT, content_hash TEXT NOT NULL, installed_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL) WITHOUT ROWID; \
         CREATE TABLE books (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, title TEXT NOT NULL, author TEXT NOT NULL, description TEXT, cover_url TEXT, cover_state TEXT NOT NULL DEFAULT 'none' CHECK (cover_state IN ('none','pending','downloaded','failed')), cover_fetched_at_ms INTEGER NOT NULL DEFAULT 0, info_fetched_at_ms INTEGER NOT NULL DEFAULT 0, last_used_at_ms INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE) WITHOUT ROWID; \
         CREATE TABLE covers (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, mime TEXT NOT NULL, bytes BLOB NOT NULL, fetched_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
-        CREATE TABLE bookshelf (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, added_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
+        CREATE TABLE bookshelf (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, added_at_ms INTEGER NOT NULL, last_seen_chapters INTEGER NOT NULL DEFAULT -1, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
         CREATE TABLE chapter_lists (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapters_json TEXT NOT NULL, cached_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
         CREATE TABLE chapters (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapter_id TEXT NOT NULL, paragraphs_json TEXT NOT NULL, cached_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id, chapter_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
         CREATE TABLE reading_progress (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapter_id TEXT NOT NULL, paragraph_id TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE) WITHOUT ROWID; \
@@ -207,6 +221,30 @@ mod tests {
         assert!(conn.is_shelved("f1", "b1").unwrap());
         let protected = conn.protected_pairs().unwrap();
         assert!(protected.contains(&("f1".to_owned(), "b1".to_owned())));
+    }
+
+    #[test]
+    fn last_seen_chapters_defaults_and_updates() {
+        let conn = conn();
+        assert!(
+            conn.add_book("f1", "b1", "One", "A", None, None, now_ms())
+                .unwrap()
+        );
+
+        // Freshly shelved books have never been seen (-1).
+        assert_eq!(conn.shelf_items().unwrap()[0].last_seen_chapters, -1);
+
+        // Marking a seen count persists through the list query.
+        conn.set_last_seen_chapters("f1", "b1", 42).unwrap();
+        assert_eq!(conn.shelf_items().unwrap()[0].last_seen_chapters, 42);
+
+        // Marking an unshelved book is a no-op (no row, no error).
+        conn.set_last_seen_chapters("f1", "missing", 7).unwrap();
+        assert_eq!(conn.shelf_items().unwrap().len(), 1);
+
+        // Removing the book drops the seen count with the row.
+        assert!(conn.remove_book("f1", "b1").unwrap());
+        assert!(conn.shelf_items().unwrap().is_empty());
     }
 
     #[test]
