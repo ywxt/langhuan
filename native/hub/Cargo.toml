@@ -39,6 +39,7 @@ tracing-oslog = "0.3"
 
 [dev-dependencies]
 tempfile = "3"
+mockito = "1"
 
 # Uncomment below to target the web.
 # tokio_with_wasm = { version = "0.8.5", features = ["rt", "macros", "time"] }

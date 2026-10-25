@@ -270,11 +270,7 @@ impl Handler<OpenSearchStream> for FeedActor {
 impl Handler<OpenAggregatedSearchStream> for FeedActor {
     type Result = Result<PullStream<AggregatedSearchEvent>, BridgeError>;
 
-    async fn handle(
-        &mut self,
-        msg: OpenAggregatedSearchStream,
-        _: &Context<Self>,
-    ) -> Self::Result {
+    async fn handle(&mut self, msg: OpenAggregatedSearchStream, _: &Context<Self>) -> Self::Result {
         tracing::debug!(keyword = %msg.keyword, "open aggregated search stream");
         let feeds: Vec<FeedMetaItem> = self
             .registry_addr
@@ -319,7 +315,9 @@ async fn search_one_feed(
     // Flatten the messaging + resolution results so either failure kind is
     // reported for this feed alone.
     let feed = match registry
-        .send(GetFeed { feed_id: meta.id.clone() })
+        .send(GetFeed {
+            feed_id: meta.id.clone(),
+        })
         .await
         .map_err(|e| e.to_string())
         .and_then(|inner| inner.map_err(|e| e.to_string()))
@@ -461,5 +459,346 @@ impl Handler<OpenParagraphsStream> for FeedActor {
                 .await
             }))
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests — aggregated search over mockito-backed fixture feeds
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+    use std::error::Error;
+
+    use langhuan::db::Db;
+    use langhuan::db::repo::FeedsRepo;
+    use langhuan::feed::FeedMeta;
+    use langhuan::script::runtime::ScriptEngine;
+    use messages::prelude::Context;
+    use tokio::spawn;
+
+    use super::*;
+    use crate::actors::app_data_actor::InitializeAppDataDirectory;
+
+    type TestResult = Result<(), Box<dyn Error>>;
+
+    /// Count-driven fixture script (same shape as the integration tests'):
+    /// the search endpoint answers with a plain number and the script turns
+    /// it into that many items, so a non-numeric body makes the parse fail.
+    const FIXTURE_SCRIPT: &str = r#"
+-- ==Feed==
+-- @id           __ID__
+-- @name         __NAME__
+-- @version      1.0.0
+-- @author       hub-test
+-- @description  Fixture feed backed by a mockito server
+-- @base_url     __BASE_URL__
+-- @access_domain 127.0.0.1
+-- @schema_version 1
+-- ==/Feed==
+
+return {
+    search = {
+        request = function(keyword, cursor)
+            return {
+                url = meta.base_url .. "/search",
+                method = "GET",
+                headers = {},
+            }
+        end,
+        parse = function(resp)
+            local count = tonumber(resp.body or "")
+            if count == nil then
+                error("fixture: invalid search count: " .. tostring(resp.body))
+            end
+            local items = {}
+            for i = 1, count do
+                table.insert(items, {
+                    id = tostring(1000 + i),
+                    title = "Fixture Book " .. tostring(i),
+                    author = "Fixture Author",
+                    description = "Hermetic fixture book.",
+                })
+            end
+            return { items = items, next_cursor = nil }
+        end,
+    },
+
+    book_info = {
+        request = function(id)
+            return {
+                url = meta.base_url .. "/book/" .. tostring(id),
+                method = "GET",
+                headers = {},
+            }
+        end,
+        parse = function(resp)
+            return {
+                id = "1001",
+                title = "Fixture Book 1",
+                author = "Fixture Author",
+                description = "Hermetic fixture book.",
+            }
+        end,
+    },
+
+    chapters = {
+        request = function(book_id, cursor)
+            return {
+                url = meta.base_url .. "/chapters/" .. tostring(book_id),
+                method = "GET",
+                headers = {},
+            }
+        end,
+        parse = function(resp)
+            return { items = {}, next_cursor = nil }
+        end,
+    },
+
+    paragraphs = {
+        request = function(book_id, chapter_id, cursor)
+            return {
+                url = meta.base_url .. "/paragraphs/" .. tostring(book_id)
+                    .. "/" .. tostring(chapter_id),
+                method = "GET",
+                headers = {},
+            }
+        end,
+        parse = function(resp)
+            return {
+                items = {
+                    { type = "text", content = "Fixture paragraph." },
+                },
+                next_cursor = nil,
+            }
+        end,
+    },
+}
+"#;
+
+    fn fixture_script(id: &str, name: &str, base_url: &str) -> String {
+        FIXTURE_SCRIPT
+            .replace("__ID__", id)
+            .replace("__NAME__", name)
+            .replace("__BASE_URL__", base_url)
+    }
+
+    fn meta(id: &str, name: &str, base_url: &str) -> FeedMeta {
+        let mut access_domains = HashSet::new();
+        access_domains.insert("127.0.0.1".to_owned());
+        FeedMeta {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            version: "1.0.0".to_owned(),
+            author: None,
+            description: None,
+            base_url: base_url.to_owned(),
+            access_domains,
+            schema_version: 1,
+        }
+    }
+
+    /// Seed one feed (meta + script) directly through the repo layer.
+    async fn seed_feed(
+        db: &Db,
+        id: &str,
+        name: &str,
+        base_url: &str,
+        script: String,
+    ) -> Result<(), Box<dyn Error>> {
+        let feed_meta = meta(id, name, base_url);
+        let feed_id = id.to_owned();
+        db.write(move |conn| {
+            conn.upsert_feed(&feed_meta, None, "hash", 1)?;
+            conn.upsert_script(&feed_id, "1.0.0", "hash", &script, 1)
+        })
+        .await?;
+        Ok(())
+    }
+
+    /// Spawn a registry (initialized with [db] via its handler), plus
+    /// conversion and feed actors, returning the feed actor's address.
+    async fn spawn_feed_actor(db: Db) -> Result<Address<FeedActor>, Box<dyn Error>> {
+        let registry_context = Context::new();
+        let mut registry_addr = registry_context.address();
+        spawn(registry_context.run(RegistryActor::new(ScriptEngine::new())));
+
+        registry_addr
+            .send(InitializeAppDataDirectory { db })
+            .await
+            .map_err(|e| format!("messaging: {e}"))?
+            .map_err(|e| format!("init: {e}"))?;
+
+        let conversion_context = Context::new();
+        let conversion_addr = conversion_context.address();
+        spawn(conversion_context.run(ConversionActor::new()));
+
+        let feed_context = Context::new();
+        let feed_addr = feed_context.address();
+        spawn(feed_context.run(FeedActor::new(registry_addr, conversion_addr)));
+        Ok(feed_addr)
+    }
+
+    async fn collect(
+        mut stream: PullStream<AggregatedSearchEvent>,
+    ) -> Result<Vec<AggregatedSearchEvent>, BridgeError> {
+        let mut events = Vec::new();
+        while let Some(event) = stream.next().await? {
+            events.push(event);
+        }
+        Ok(events)
+    }
+
+    #[tokio::test]
+    async fn aggregated_search_merges_feeds_and_isolates_failures() -> TestResult {
+        let db = Db::open_in_memory().await?;
+
+        let mut ok_server = mockito::Server::new_async().await;
+        let _ok_mock = ok_server.mock("GET", "/search").with_body("2").create();
+        let mut bad_server = mockito::Server::new_async().await;
+        // A non-numeric body makes the fixture's search parse fail, which
+        // must only fail this feed's contribution.
+        let _bad_mock = bad_server
+            .mock("GET", "/search")
+            .with_body("not-a-number")
+            .create();
+
+        seed_feed(
+            &db,
+            "feed-ok",
+            "Feed Ok",
+            &ok_server.url(),
+            fixture_script("feed-ok", "Feed Ok", &ok_server.url()),
+        )
+        .await?;
+        seed_feed(
+            &db,
+            "feed-bad",
+            "Feed Bad",
+            &bad_server.url(),
+            fixture_script("feed-bad", "Feed Bad", &bad_server.url()),
+        )
+        .await?;
+
+        let mut feed_addr = spawn_feed_actor(db).await?;
+        let stream = feed_addr
+            .send(OpenAggregatedSearchStream {
+                keyword: "kw".to_owned(),
+            })
+            .await
+            .map_err(|e| format!("messaging: {e}"))?
+            .map_err(|e| format!("open: {}", e.message))?;
+
+        let events = collect(stream).await.map_err(|e| e.message)?;
+
+        // The healthy feed contributes its two items, attributed correctly.
+        let ok_items: Vec<&SearchResultItem> = events
+            .iter()
+            .filter_map(|event| match event {
+                AggregatedSearchEvent::Item {
+                    feed_id,
+                    feed_name,
+                    item,
+                } if feed_id == "feed-ok" => {
+                    assert_eq!(feed_name, "Feed Ok");
+                    Some(item)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            ok_items
+                .iter()
+                .map(|item| item.id.clone())
+                .collect::<Vec<_>>(),
+            ["1001", "1002"],
+            "both items arrive from the healthy feed"
+        );
+
+        // The failing feed reports exactly one error event, attributed too.
+        let bad_errors: Vec<&str> = events
+            .iter()
+            .filter_map(|event| match event {
+                AggregatedSearchEvent::FeedError {
+                    feed_id,
+                    feed_name,
+                    error,
+                } if feed_id == "feed-bad" => {
+                    assert_eq!(feed_name, "Feed Bad");
+                    Some(error.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(bad_errors.len(), 1, "one error event for the bad feed");
+        assert!(
+            bad_errors[0].contains("invalid search count"),
+            "error carries the script failure: {}",
+            bad_errors[0]
+        );
+
+        // Nothing else contributes and the stream ended on its own.
+        assert_eq!(events.len(), 3, "2 items + 1 feed error in total");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn aggregated_search_with_no_feeds_ends_immediately() -> TestResult {
+        let db = Db::open_in_memory().await?;
+        let mut feed_addr = spawn_feed_actor(db).await?;
+
+        let stream = feed_addr
+            .send(OpenAggregatedSearchStream {
+                keyword: "kw".to_owned(),
+            })
+            .await
+            .map_err(|e| format!("messaging: {e}"))?
+            .map_err(|e| format!("open: {}", e.message))?;
+
+        let events = collect(stream).await.map_err(|e| e.message)?;
+        assert!(events.is_empty(), "no feeds, no events");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn single_feed_search_stream_reports_source_errors() -> TestResult {
+        let db = Db::open_in_memory().await?;
+        let mut bad_server = mockito::Server::new_async().await;
+        let _bad_mock = bad_server
+            .mock("GET", "/search")
+            .with_body("not-a-number")
+            .create();
+
+        seed_feed(
+            &db,
+            "feed-bad",
+            "Feed Bad",
+            &bad_server.url(),
+            fixture_script("feed-bad", "Feed Bad", &bad_server.url()),
+        )
+        .await?;
+
+        let mut feed_addr = spawn_feed_actor(db).await?;
+        let mut stream = feed_addr
+            .send(OpenSearchStream {
+                feed_id: "feed-bad".to_owned(),
+                keyword: "kw".to_owned(),
+            })
+            .await
+            .map_err(|e| format!("messaging: {e}"))?
+            .map_err(|e| format!("open: {}", e.message))?;
+
+        // The broken search surfaces as a stream error on the first pull.
+        let error = match stream.next().await {
+            Err(e) => e,
+            Ok(_) => panic!("expected a stream error, got a value instead"),
+        };
+        assert!(
+            error.message.contains("invalid search count"),
+            "unexpected error: {}",
+            error.message
+        );
+        Ok(())
     }
 }

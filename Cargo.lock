@@ -1190,6 +1190,7 @@ dependencies = [
  "flutter_rust_bridge",
  "langhuan",
  "messages",
+ "mockito",
  "paranoid-android",
  "rust-i18n",
  "semver",

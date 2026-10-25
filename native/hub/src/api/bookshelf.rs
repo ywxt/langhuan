@@ -5,7 +5,7 @@ use super::types::{
 use crate::actors::{
     addresses,
     bookshelf_actor::{BookshelfAdd, BookshelfList, BookshelfMarkSeen, BookshelfRemove},
-    feed_actor::{spawn_pull_stream, OpenChaptersStream, PullStream},
+    feed_actor::{OpenChaptersStream, PullStream, spawn_pull_stream},
     hub_db,
 };
 
@@ -152,8 +152,7 @@ pub async fn open_bookshelf_updates_stream() -> Result<BookshelfUpdatesStream, B
             if result.error.is_none() {
                 if item.last_seen_chapters < 0 {
                     // Never seen: adopt the fresh count as the baseline.
-                    let (feed_id, book_id) =
-                        (item.feed_id.clone(), item.book_id.clone());
+                    let (feed_id, book_id) = (item.feed_id.clone(), item.book_id.clone());
                     let _ = db
                         .write(move |conn| {
                             use langhuan::db::repo::BookshelfRepo;
