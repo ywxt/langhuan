@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../shared/app_service.dart';
+import '../../shared/cache_stats_provider.dart';
 import '../../shared/constants.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/format_bytes.dart';
@@ -25,27 +26,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   bool _isCleaning = false;
   bool _isClearing = false;
 
-  CacheStats? _stats;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadStats();
-  }
-
-  Future<void> _loadStats() async {
-    try {
-      final stats = await AppService.instance.cacheStats();
-      if (mounted) setState(() => _stats = stats);
-    } catch (_) {
-      // The database is not reachable yet (or at all) — the stats rows fall
-      // back to placeholders and the action rows still work.
-      if (mounted) setState(() => _stats = null);
-    }
-  }
-
-  String _statText(String Function(CacheStats) read) {
-    final stats = _stats;
+  String _statText(CacheStats? stats, String Function(CacheStats) read) {
     return stats == null ? '—' : read(stats);
   }
 
@@ -55,7 +36,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     try {
       final result = await AppService.instance.cleanupStaleData();
-      await _loadStats();
+      ref.invalidate(cacheStatsProvider);
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
       if (result.itemsRemoved > 0) {
@@ -100,7 +81,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       final result = await AppService.instance.clearCache();
       // Stored cover bytes are gone — make BookCover widgets re-read.
       ref.invalidate(coverProvider);
-      await _loadStats();
+      ref.invalidate(cacheStatsProvider);
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
       if (result.itemsRemoved > 0) {
@@ -130,6 +111,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
+    // AsyncValue.value keeps the previous snapshot on screen while a refresh
+    // is in flight; null (loading without data, or a database error) falls
+    // back to the '—' placeholders.
+    final stats = ref.watch(cacheStatsProvider).value;
 
     return Scaffold(
       body: SafeArea(
@@ -170,7 +155,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   icon: Icons.dataset_outlined,
                   label: l10n.settingsStorageDatabaseSize,
                   trailing: Text(
-                    _statText((s) => formatBytes(s.dbBytes)),
+                    _statText(stats, (s) => formatBytes(s.dbBytes)),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -181,14 +166,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   icon: Icons.storage_outlined,
                   label: l10n.settingsStorageCacheSize,
                   trailing: Text(
-                    _statText((s) => formatBytes(s.cacheBytes)),
+                    _statText(stats, (s) => formatBytes(s.cacheBytes)),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ),
                 const _SettingsDivider(),
-                _StatsChips(stats: _stats, l10n: l10n),
+                _StatsChips(stats: stats, l10n: l10n),
                 const _SettingsDivider(),
                 _SettingsRow(
                   icon: Icons.cleaning_services_outlined,
