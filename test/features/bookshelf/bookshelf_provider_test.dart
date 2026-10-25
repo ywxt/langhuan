@@ -96,4 +96,33 @@ void main() {
       ['kept:book-b'],
     );
   });
+
+  test(
+    'remove propagates service failures instead of returning an error variant',
+    () async {
+      final container = ProviderContainer(
+        overrides: [
+          feedServiceProvider.overrideWithValue(
+            FakeFeedService(
+              removeFromBookshelfHandler: () async =>
+                  throw StateError('database unavailable'),
+            ),
+          ),
+          appDataDirectorySetProvider.overrideWith(
+            (ref) async => const AppDataDirectoryResult(feedCount: 1),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(appDataDirectorySetProvider.future);
+
+      await expectLater(
+        container
+            .read(bookshelfProvider.notifier)
+            .remove(feedId: 'feed', sourceBookId: 'book'),
+        throwsA(isA<StateError>()),
+      );
+    },
+  );
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:langhuan/features/bookshelf/bookshelf_page.dart';
+import 'package:langhuan/features/bookshelf/bookshelf_operation.dart';
 import 'package:langhuan/features/bookshelf/bookshelf_provider.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
@@ -16,6 +17,8 @@ const _book = BookshelfItemModel(
   title: 'Book one',
   author: 'Author one',
   addedAtUnixMs: 2,
+  progressCurrentChapter: 2,
+  progressTotalChapters: 5,
 );
 
 const _otherBook = BookshelfItemModel(
@@ -31,11 +34,11 @@ class _TestBookshelfNotifier extends BookshelfNotifier {
   BookshelfState build() => const BookshelfState(items: [_book, _otherBook]);
 
   @override
-  Future<BookshelfOperationOutcome> remove({
+  Future<BookshelfRemoveResult> remove({
     required String feedId,
     required String sourceBookId,
   }) async {
-    return const BookshelfOperationOutcomeRemoved();
+    return BookshelfRemoveResult.removed;
   }
 }
 
@@ -87,6 +90,18 @@ GoRouter _router() {
 }
 
 void main() {
+  testWidgets('cached reading progress is shown on the book card', (
+    tester,
+  ) async {
+    final router = _router();
+    addTearDown(router.dispose);
+    await tester.pumpWidget(_testApp(router, _TestUpdatesNotifier()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Chapter 2 of 5 · 40%'), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+  });
+
   testWidgets('update badge shows the new chapter count with semantics', (
     tester,
   ) async {
@@ -108,10 +123,14 @@ void main() {
     final row = find
         .ancestor(of: find.text('3'), matching: find.byType(ListTile))
         .first;
-    expect(find.descendant(of: row, matching: find.text(_book.title)),
-        findsOneWidget);
-    expect(find.descendant(of: row, matching: find.text(_otherBook.title)),
-        findsNothing);
+    expect(
+      find.descendant(of: row, matching: find.text(_book.title)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: row, matching: find.text(_otherBook.title)),
+      findsNothing,
+    );
   });
 
   testWidgets('books without new chapters carry no badge', (tester) async {
@@ -142,7 +161,6 @@ void main() {
     // active.
     expect(find.byTooltip('Check for updates'), findsNothing);
     expect(find.byType(LanghuanSpinner), findsNothing);
-    expect(find.byType(IconButton), findsNothing);
     expect(find.byType(RefreshIndicator), findsOneWidget);
   });
 
@@ -158,10 +176,12 @@ void main() {
     updates.emit(const BookshelfUpdatesState(isChecking: true));
     await tester.pump();
 
-    updates.emit(const BookshelfUpdatesState(
-      isChecking: false,
-      failedBooks: {'feed-1:book-1': 'source unavailable'},
-    ));
+    updates.emit(
+      const BookshelfUpdatesState(
+        isChecking: false,
+        failedBooks: {'feed-1:book-1': 'source unavailable'},
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Failed to check 1 books'), findsOneWidget);

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use langhuan::cache::download_cover;
-use langhuan::db::Db;
 use langhuan::db::repo::ShelfItem;
+use langhuan::db::Db;
 use messages::prelude::{Actor, Context, Handler};
 
 use crate::api::types::{
@@ -149,6 +149,8 @@ impl From<ShelfItem> for BookshelfListItem {
             description_snapshot: item.description,
             added_at_unix_ms: item.added_at_ms,
             last_seen_chapters: item.last_seen_chapters,
+            progress_current_chapter: item.progress_current_chapter,
+            progress_total_chapters: item.progress_total_chapters,
         }
     }
 }

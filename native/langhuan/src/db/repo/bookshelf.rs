@@ -17,6 +17,8 @@ pub struct ShelfItem {
     pub cover_url: Option<String>,
     pub added_at_ms: i64,
     pub last_seen_chapters: i64,
+    pub progress_current_chapter: Option<i64>,
+    pub progress_total_chapters: Option<i64>,
 }
 
 impl Repo<'_> {
@@ -93,13 +95,19 @@ impl Repo<'_> {
     /// inner join can never drop entries.
     pub fn shelf_items(&self) -> Result<Vec<ShelfItem>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT s.feed_id, s.book_id, b.title, b.author, b.description, b.cover_url, s.added_at_ms, s.last_seen_chapters \
+            "SELECT s.feed_id, s.book_id, b.title, b.author, b.description, b.cover_url, s.added_at_ms, s.last_seen_chapters, rp.chapter_id, cl.chapters_json \
              FROM bookshelf s \
              JOIN books b ON b.feed_id = s.feed_id AND b.book_id = s.book_id \
+             LEFT JOIN reading_progress rp ON rp.feed_id = s.feed_id AND rp.book_id = s.book_id \
+             LEFT JOIN chapter_lists cl ON cl.feed_id = s.feed_id AND cl.book_id = s.book_id \
              ORDER BY s.added_at_ms DESC, s.feed_id, s.book_id",
         )?;
         let items = stmt
             .query_map([], |row| {
+                let chapter_id = row.get::<_, Option<String>>(8)?;
+                let chapters_json = row.get::<_, Option<String>>(9)?;
+                let (progress_current_chapter, progress_total_chapters) =
+                    chapter_progress(chapter_id.as_deref(), chapters_json.as_deref());
                 Ok(ShelfItem {
                     feed_id: row.get(0)?,
                     book_id: row.get(1)?,
@@ -109,6 +117,8 @@ impl Repo<'_> {
                     cover_url: row.get(5)?,
                     added_at_ms: row.get(6)?,
                     last_seen_chapters: row.get(7)?,
+                    progress_current_chapter,
+                    progress_total_chapters,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -150,6 +160,26 @@ impl Repo<'_> {
     }
 }
 
+fn chapter_progress(
+    current_chapter_id: Option<&str>,
+    chapters_json: Option<&str>,
+) -> (Option<i64>, Option<i64>) {
+    let (Some(current_chapter_id), Some(chapters_json)) = (current_chapter_id, chapters_json)
+    else {
+        return (None, None);
+    };
+    let Ok(chapters) = serde_json::from_str::<Vec<crate::model::ChapterInfo>>(chapters_json) else {
+        return (None, None);
+    };
+    let Some(index) = chapters
+        .iter()
+        .position(|chapter| chapter.id == current_chapter_id)
+    else {
+        return (None, None);
+    };
+    (Some(index as i64 + 1), Some(chapters.len() as i64))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::db::now_ms;
@@ -161,19 +191,15 @@ mod tests {
         db.seed_feed("f1");
         let conn = db.repo();
         let now = now_ms();
-        assert!(
-            conn.add_book("f1", "b1", "One", "A", None, Some("u1"), now)
-                .unwrap()
-        );
-        assert!(
-            !conn
-                .add_book("f1", "b1", "One", "A", None, Some("u1"), now + 5)
-                .unwrap()
-        );
-        assert!(
-            conn.add_book("f1", "b2", "Two", "B", None, None, now + 10)
-                .unwrap()
-        );
+        assert!(conn
+            .add_book("f1", "b1", "One", "A", None, Some("u1"), now)
+            .unwrap());
+        assert!(!conn
+            .add_book("f1", "b1", "One", "A", None, Some("u1"), now + 5)
+            .unwrap());
+        assert!(conn
+            .add_book("f1", "b2", "Two", "B", None, None, now + 10)
+            .unwrap());
 
         let items = conn.shelf_items().unwrap();
         assert_eq!(items.len(), 2);
@@ -190,10 +216,9 @@ mod tests {
         let db = TestDb::new();
         db.seed_feed("f1");
         let conn = db.repo();
-        assert!(
-            conn.add_book("f1", "b1", "One", "A", None, None, now_ms())
-                .unwrap()
-        );
+        assert!(conn
+            .add_book("f1", "b1", "One", "A", None, None, now_ms())
+            .unwrap());
 
         // Freshly shelved books have never been seen (-1).
         assert_eq!(conn.shelf_items().unwrap()[0].last_seen_chapters, -1);
@@ -209,6 +234,32 @@ mod tests {
         // Removing the book drops the seen count with the row.
         assert!(conn.remove_book("f1", "b1").unwrap());
         assert!(conn.shelf_items().unwrap().is_empty());
+    }
+
+    #[test]
+    fn list_includes_cached_chapter_progress() {
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        db.seed_shelf_item("f1", "b1");
+        let conn = db.repo();
+        conn.conn()
+            .execute_batch(
+                r#"
+                INSERT INTO chapter_lists VALUES (
+                    'f1', 'b1',
+                    '[{"id":"c1","title":"One"},{"id":"c2","title":"Two"},{"id":"c3","title":"Three"}]',
+                    1
+                );
+                INSERT INTO reading_progress (
+                    feed_id, book_id, chapter_id, paragraph_id, updated_at_ms
+                ) VALUES ('f1', 'b1', 'c2', 'p1', 1);
+                "#,
+            )
+            .expect("seed progress");
+
+        let item = &conn.shelf_items().unwrap()[0];
+        assert_eq!(item.progress_current_chapter, Some(2));
+        assert_eq!(item.progress_total_chapters, Some(3));
     }
 
     #[test]

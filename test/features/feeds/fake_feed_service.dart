@@ -1,4 +1,5 @@
 import 'package:langhuan/features/feeds/feed_service.dart';
+import 'package:langhuan/features/bookshelf/bookshelf_operation.dart';
 import 'package:langhuan/src/rust/api/types.dart';
 
 /// Hand-rolled [FeedService] fake for notifier unit tests.
@@ -11,6 +12,8 @@ class FakeFeedService implements FeedService {
     this.searchAllHandler,
     this.bookshelfUpdatesHandler,
     this.listBookshelfHandler,
+    this.addToBookshelfHandler,
+    this.removeFromBookshelfHandler,
     this.listFeedsHandler,
     this.removeFeedHandler,
     this.setFeedEnabledHandler,
@@ -32,6 +35,8 @@ class FakeFeedService implements FeedService {
   searchAllHandler;
   final Stream<BookshelfUpdateModel> Function()? bookshelfUpdatesHandler;
   final Future<List<BookshelfItemModel>> Function()? listBookshelfHandler;
+  final Future<BookshelfAddResult> Function()? addToBookshelfHandler;
+  final Future<BookshelfRemoveResult> Function()? removeFromBookshelfHandler;
   final Future<List<FeedMetaItem>> Function()? listFeedsHandler;
   final Future<void> Function(String feedId)? removeFeedHandler;
 
@@ -75,6 +80,36 @@ class FakeFeedService implements FeedService {
   }
 
   @override
+  Future<BookshelfAddResult> addToBookshelf({
+    required String feedId,
+    required String sourceBookId,
+    required String title,
+    required String author,
+    String? coverUrl,
+    String? description,
+  }) {
+    final handler = addToBookshelfHandler;
+    if (handler == null) {
+      throw UnimplementedError('addToBookshelf not configured for this test');
+    }
+    return handler();
+  }
+
+  @override
+  Future<BookshelfRemoveResult> removeFromBookshelf({
+    required String feedId,
+    required String sourceBookId,
+  }) {
+    final handler = removeFromBookshelfHandler;
+    if (handler == null) {
+      throw UnimplementedError(
+        'removeFromBookshelf not configured for this test',
+      );
+    }
+    return handler();
+  }
+
+  @override
   Future<List<FeedMetaItem>> listFeeds() {
     final handler = listFeedsHandler;
     if (handler == null) {
@@ -96,10 +131,7 @@ class FakeFeedService implements FeedService {
   setFeedEnabledHandler;
 
   @override
-  Future<void> setFeedEnabled({
-    required String feedId,
-    required bool enabled,
-  }) {
+  Future<void> setFeedEnabled({required String feedId, required bool enabled}) {
     final handler = setFeedEnabledHandler;
     if (handler == null) {
       throw UnimplementedError('setFeedEnabled not configured for this test');

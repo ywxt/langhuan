@@ -8,6 +8,7 @@ import '../../src/rust/api/reading_progress.dart' as rust_progress;
 import '../../src/rust/api/registry.dart' as rust_registry;
 import '../../src/rust/api/transfer.dart' as rust_transfer;
 import '../../src/rust/api/types.dart';
+import '../bookshelf/bookshelf_operation.dart';
 
 // ---------------------------------------------------------------------------
 // ParagraphId ↔ String helpers (synchronous, no FFI round-trip)
@@ -171,6 +172,8 @@ class BookshelfItemModel {
     required this.addedAtUnixMs,
     this.coverUrl,
     this.description,
+    this.progressCurrentChapter,
+    this.progressTotalChapters,
   });
 
   final String feedId;
@@ -180,6 +183,15 @@ class BookshelfItemModel {
   final int addedAtUnixMs;
   final String? coverUrl;
   final String? description;
+  final int? progressCurrentChapter;
+  final int? progressTotalChapters;
+
+  double? get progressFraction {
+    final current = progressCurrentChapter;
+    final total = progressTotalChapters;
+    if (current == null || total == null || total <= 0) return null;
+    return (current / total).clamp(0.0, 1.0);
+  }
 
   String get stableId => '$feedId:$sourceBookId';
 
@@ -192,6 +204,8 @@ class BookshelfItemModel {
         addedAtUnixMs: item.addedAtUnixMs,
         coverUrl: item.coverUrl,
         description: item.descriptionSnapshot,
+        progressCurrentChapter: item.progressCurrentChapter,
+        progressTotalChapters: item.progressTotalChapters,
       );
 }
 
@@ -299,36 +313,6 @@ class FeedAuthEntryModel {
 
   final String url;
   final String? title;
-}
-
-// ---------------------------------------------------------------------------
-// Bookshelf operation outcome — Dart-side sealed view of the Rust add/remove
-// outcomes, with transport errors folded into the error variant.
-// ---------------------------------------------------------------------------
-
-sealed class BookshelfOperationOutcome {
-  const BookshelfOperationOutcome();
-}
-
-class BookshelfOperationOutcomeAdded extends BookshelfOperationOutcome {
-  const BookshelfOperationOutcomeAdded();
-}
-
-class BookshelfOperationOutcomeAlreadyExists extends BookshelfOperationOutcome {
-  const BookshelfOperationOutcomeAlreadyExists();
-}
-
-class BookshelfOperationOutcomeRemoved extends BookshelfOperationOutcome {
-  const BookshelfOperationOutcomeRemoved();
-}
-
-class BookshelfOperationOutcomeNotFound extends BookshelfOperationOutcome {
-  const BookshelfOperationOutcomeNotFound();
-}
-
-class BookshelfOperationOutcomeError extends BookshelfOperationOutcome {
-  const BookshelfOperationOutcomeError({required this.message});
-  final String message;
 }
 
 // ---------------------------------------------------------------------------
@@ -455,7 +439,7 @@ class FeedService {
   /// [title]/[author]/[coverUrl]/[description] form the display snapshot the
   /// shelf renders from — taken from the search result or detail page the
   /// user is looking at.
-  Future<BookshelfOperationOutcome> addToBookshelf({
+  Future<BookshelfAddResult> addToBookshelf({
     required String feedId,
     required String sourceBookId,
     required String title,
@@ -463,43 +447,32 @@ class FeedService {
     String? coverUrl,
     String? description,
   }) async {
-    try {
-      final outcome = await rust_bookshelf.bookshelfAdd(
-        feedId: feedId,
-        sourceBookId: sourceBookId,
-        title: title,
-        author: author,
-        coverUrl: coverUrl,
-        description: description,
-      );
-      return switch (outcome) {
-        BookshelfAddOutcome.added => const BookshelfOperationOutcomeAdded(),
-        BookshelfAddOutcome.alreadyExists =>
-          const BookshelfOperationOutcomeAlreadyExists(),
-      };
-    } on BridgeError catch (e) {
-      return BookshelfOperationOutcomeError(message: e.message);
-    }
+    final outcome = await rust_bookshelf.bookshelfAdd(
+      feedId: feedId,
+      sourceBookId: sourceBookId,
+      title: title,
+      author: author,
+      coverUrl: coverUrl,
+      description: description,
+    );
+    return switch (outcome) {
+      BookshelfAddOutcome.added => BookshelfAddResult.added,
+      BookshelfAddOutcome.alreadyExists => BookshelfAddResult.alreadyExists,
+    };
   }
 
-  Future<BookshelfOperationOutcome> removeFromBookshelf({
+  Future<BookshelfRemoveResult> removeFromBookshelf({
     required String feedId,
     required String sourceBookId,
   }) async {
-    try {
-      final outcome = await rust_bookshelf.bookshelfRemove(
-        feedId: feedId,
-        sourceBookId: sourceBookId,
-      );
-      return switch (outcome) {
-        BookshelfRemoveOutcome.removed =>
-          const BookshelfOperationOutcomeRemoved(),
-        BookshelfRemoveOutcome.notFound =>
-          const BookshelfOperationOutcomeNotFound(),
-      };
-    } on BridgeError catch (e) {
-      return BookshelfOperationOutcomeError(message: e.message);
-    }
+    final outcome = await rust_bookshelf.bookshelfRemove(
+      feedId: feedId,
+      sourceBookId: sourceBookId,
+    );
+    return switch (outcome) {
+      BookshelfRemoveOutcome.removed => BookshelfRemoveResult.removed,
+      BookshelfRemoveOutcome.notFound => BookshelfRemoveResult.notFound,
+    };
   }
 
   Future<List<BookshelfItemModel>> listBookshelf() async {
@@ -626,10 +599,7 @@ class FeedService {
   /// Pause (`enabled = false`) or resume a feed. Paused feeds are excluded
   /// from aggregated search and bookshelf update checks; explicit
   /// single-feed actions keep working.
-  Future<void> setFeedEnabled({
-    required String feedId,
-    required bool enabled,
-  }) {
+  Future<void> setFeedEnabled({required String feedId, required bool enabled}) {
     return rust_registry.setFeedEnabled(feedId: feedId, enabled: enabled);
   }
 

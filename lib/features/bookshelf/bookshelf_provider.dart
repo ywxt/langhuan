@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../rust_init.dart';
 import '../feeds/feed_providers.dart';
 import '../feeds/feed_service.dart';
+import 'bookshelf_operation.dart';
 
 // ---------------------------------------------------------------------------
 // Error types (for i18n)
@@ -133,7 +134,7 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     );
   }
 
-  Future<BookshelfOperationOutcome> add({
+  Future<BookshelfAddResult> add({
     required String feedId,
     required String sourceBookId,
     required String title,
@@ -143,11 +144,7 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   }) async {
     final bootstrap = ref.read(appDataDirectorySetProvider);
     if (!_isBootstrapReady(bootstrap)) {
-      return BookshelfOperationOutcomeError(
-        message: BookshelfError(
-          BookshelfErrorType.appDataDirectoryNotReady,
-        ).toString(),
-      );
+      throw const BookshelfError(BookshelfErrorType.appDataDirectoryNotReady);
     }
 
     final itemId = '$feedId:$sourceBookId';
@@ -173,17 +170,13 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     }
   }
 
-  Future<BookshelfOperationOutcome> remove({
+  Future<BookshelfRemoveResult> remove({
     required String feedId,
     required String sourceBookId,
   }) async {
     final bootstrap = ref.read(appDataDirectorySetProvider);
     if (!_isBootstrapReady(bootstrap)) {
-      return BookshelfOperationOutcomeError(
-        message: BookshelfError(
-          BookshelfErrorType.appDataDirectoryNotReady,
-        ).toString(),
-      );
+      throw const BookshelfError(BookshelfErrorType.appDataDirectoryNotReady);
     }
 
     final itemId = '$feedId:$sourceBookId';

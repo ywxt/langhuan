@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../shared/constants.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/always_disabled_focus_node.dart';
+import '../../shared/utils/delete_with_undo.dart';
 import '../../shared/utils/snackbars.dart';
 import '../../shared/widgets/confirm_dialog.dart';
 import '../../shared/widgets/cover_placeholder.dart';
@@ -16,17 +18,25 @@ import 'bookshelf_provider.dart';
 import 'widgets/book_cover.dart';
 import 'widgets/book_cover_hero.dart';
 
-enum _BookshelfAction { details, delete }
-
-class BookshelfPage extends ConsumerWidget {
+class BookshelfPage extends ConsumerStatefulWidget {
   const BookshelfPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BookshelfPage> createState() => _BookshelfPageState();
+}
+
+class _BookshelfPageState extends ConsumerState<BookshelfPage> {
+  final Set<String> _pendingDeleteIds = <String>{};
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final state = ref.watch(bookshelfProvider);
     final updates = ref.watch(bookshelfUpdatesProvider);
+    final visibleItems = state.items
+        .where((item) => !_pendingDeleteIds.contains(item.stableId))
+        .toList(growable: false);
 
     // One-shot feedback when a check run completes.
     ref.listen(bookshelfUpdatesProvider, (previous, next) {
@@ -87,8 +97,12 @@ class BookshelfPage extends ConsumerWidget {
             // one-shot snackbar above provide the feedback.
             Expanded(
               child: RefreshIndicator(
-                onRefresh: () =>
+                onRefresh: () async {
+                  await Future.wait([
+                    ref.read(bookshelfProvider.notifier).load(),
                     ref.read(bookshelfUpdatesProvider.notifier).check(),
+                  ]);
+                },
                 child: CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(
                     parent: BouncingScrollPhysics(),
@@ -108,7 +122,7 @@ class BookshelfPage extends ConsumerWidget {
                           subtitle: state.error.toString(),
                         ),
                       )
-                    else if (state.items.isEmpty)
+                    else if (visibleItems.isEmpty)
                       SliverFillRemaining(
                         hasScrollBody: false,
                         child: EmptyState(
@@ -124,89 +138,140 @@ class BookshelfPage extends ConsumerWidget {
                         ),
                         sliver: SliverList.separated(
                           itemBuilder: (context, index) {
-                            final item = state.items[index];
-                            return Material(
-                              color: theme.colorScheme.surfaceContainer,
-                              borderRadius: LanghuanTheme.borderRadiusMd,
-                              child: ListTile(
-                                onTap: () {
-                                  context.pushNamed(
-                                    'bookshelf-reader',
-                                    queryParameters: {
-                                      'feedId': item.feedId,
-                                      'bookId': item.sourceBookId,
-                                      'chapterId': '',
-                                      'paragraphId': '',
-                                    },
-                                  );
-                                },
-                                onLongPress: () =>
-                                    _showBookActions(context, ref, item),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: LanghuanTheme.spaceMd,
-                                  vertical: LanghuanTheme.spaceXs,
+                            final item = visibleItems[index];
+                            return Dismissible(
+                              key: ValueKey('bookshelf-${item.stableId}'),
+                              direction: _pendingDeleteIds.isEmpty
+                                  ? DismissDirection.endToStart
+                                  : DismissDirection.none,
+                              background: Container(
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: LanghuanTheme.spaceLg,
                                 ),
-                                leading: Hero(
-                                  tag: bookCoverHeroTag(
-                                    item.feedId,
-                                    item.sourceBookId,
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.errorContainer,
+                                  borderRadius: LanghuanTheme.borderRadiusMd,
+                                ),
+                                child: Icon(
+                                  Icons.delete_outline,
+                                  color: theme.colorScheme.onErrorContainer,
+                                ),
+                              ),
+                              confirmDismiss: (_) async {
+                                final confirmed = await _confirmDelete(
+                                  context,
+                                  item,
+                                );
+                                if (confirmed && context.mounted) {
+                                  _handleDeleteWithUndo(
+                                    item,
+                                    ScaffoldMessenger.of(context),
+                                  );
+                                }
+                                return false;
+                              },
+                              child: Material(
+                                color: theme.colorScheme.surfaceContainer,
+                                borderRadius: LanghuanTheme.borderRadiusMd,
+                                child: ListTile(
+                                  onTap: () => _openReader(item),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: LanghuanTheme.spaceMd,
+                                    vertical: LanghuanTheme.spaceXs,
                                   ),
-                                  flightShuttleBuilder:
-                                      bookCoverFlightShuttleBuilder,
-                                  child: ClipRRect(
-                                    borderRadius: LanghuanTheme.borderRadiusSm,
-                                    child: SizedBox(
-                                      width: 44,
-                                      height: 60,
-                                      child: BookCover(
-                                        feedId: item.feedId,
-                                        bookId: item.sourceBookId,
-                                        url: item.coverUrl,
-                                        placeholder:
-                                            const _SmallCoverPlaceholder(),
+                                  leading: Hero(
+                                    tag: bookCoverHeroTag(
+                                      item.feedId,
+                                      item.sourceBookId,
+                                    ),
+                                    flightShuttleBuilder:
+                                        bookCoverFlightShuttleBuilder,
+                                    child: ClipRRect(
+                                      borderRadius:
+                                          LanghuanTheme.borderRadiusSm,
+                                      child: SizedBox(
+                                        width: 44,
+                                        height: 60,
+                                        child: BookCover(
+                                          feedId: item.feedId,
+                                          bookId: item.sourceBookId,
+                                          url: item.coverUrl,
+                                          placeholder:
+                                              const _SmallCoverPlaceholder(),
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                                title: BookTextHero(
-                                  tag: bookTitleHeroTag(
-                                    item.feedId,
-                                    item.sourceBookId,
-                                  ),
-                                  child: Text(
-                                    item.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.bodyLarge,
-                                  ),
-                                ),
-                                subtitle: BookTextHero(
-                                  tag: bookAuthorHeroTag(
-                                    item.feedId,
-                                    item.sourceBookId,
-                                  ),
-                                  child: Text(
-                                    item.author,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
+                                  title: BookTextHero(
+                                    tag: bookTitleHeroTag(
+                                      item.feedId,
+                                      item.sourceBookId,
+                                    ),
+                                    child: Text(
+                                      item.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodyLarge,
                                     ),
                                   ),
-                                ),
-                                trailing: _UpdateBadge(
-                                  count:
-                                      updates.newChaptersByBook[item
-                                          .stableId] ??
-                                      0,
-                                  l10n: l10n,
+                                  subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      BookTextHero(
+                                        tag: bookAuthorHeroTag(
+                                          item.feedId,
+                                          item.sourceBookId,
+                                        ),
+                                        child: Text(
+                                          item.author,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(
+                                                color: theme
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
+                                              ),
+                                        ),
+                                      ),
+                                      if (item.progressFraction
+                                          case final value?)
+                                        _ReadingProgress(
+                                          value: value,
+                                          label: l10n.bookshelfReadingProgress(
+                                            item.progressCurrentChapter!,
+                                            item.progressTotalChapters!,
+                                            (value * 100).round(),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _UpdateBadge(
+                                        count:
+                                            updates.newChaptersByBook[item
+                                                .stableId] ??
+                                            0,
+                                        l10n: l10n,
+                                      ),
+                                      IconButton(
+                                        tooltip: l10n.bookshelfBookDetails,
+                                        icon: const Icon(Icons.info_outline),
+                                        onPressed: () => _openDetails(item),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             );
                           },
                           separatorBuilder: (_, _) =>
                               const SizedBox(height: LanghuanTheme.spaceSm),
-                          itemCount: state.items.length,
+                          itemCount: visibleItems.length,
                         ),
                       ),
                       const SliverToBoxAdapter(
@@ -223,69 +288,35 @@ class BookshelfPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _showBookActions(
-    BuildContext context,
-    WidgetRef ref,
-    BookshelfItemModel item,
-  ) async {
-    final l10n = AppLocalizations.of(context);
-    final action = await showModalBottomSheet<_BookshelfAction>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        final colorScheme = Theme.of(sheetContext).colorScheme;
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.info_outline),
-                title: Text(l10n.bookshelfBookDetails),
-                onTap: () =>
-                    Navigator.pop(sheetContext, _BookshelfAction.details),
-              ),
-              ListTile(
-                leading: Icon(Icons.delete_outline, color: colorScheme.error),
-                title: Text(
-                  l10n.bookshelfDeleteBook,
-                  style: TextStyle(color: colorScheme.error),
-                ),
-                onTap: () =>
-                    Navigator.pop(sheetContext, _BookshelfAction.delete),
-              ),
-              const SizedBox(height: LanghuanTheme.spaceSm),
-            ],
-          ),
-        );
+  Future<void> _openReader(BookshelfItemModel item) async {
+    await context.pushNamed(
+      'bookshelf-reader',
+      queryParameters: {
+        'feedId': item.feedId,
+        'bookId': item.sourceBookId,
+        'chapterId': '',
+        'paragraphId': '',
       },
     );
-
-    if (!context.mounted || action == null) return;
-    switch (action) {
-      case _BookshelfAction.details:
-        await context.pushNamed(
-          'bookshelf-book-detail',
-          queryParameters: {'feedId': item.feedId, 'bookId': item.sourceBookId},
-          extra: BookDetailRouteExtra(
-            coverUrl: item.coverUrl,
-            title: item.title,
-            author: item.author,
-          ),
-        );
-        return;
-      case _BookshelfAction.delete:
-        await _confirmAndDelete(context, ref, item);
-        return;
-    }
+    if (mounted) await ref.read(bookshelfProvider.notifier).load();
   }
 
-  Future<void> _confirmAndDelete(
-    BuildContext context,
-    WidgetRef ref,
-    BookshelfItemModel item,
-  ) async {
+  Future<void> _openDetails(BookshelfItemModel item) async {
+    await context.pushNamed(
+      'bookshelf-book-detail',
+      queryParameters: {'feedId': item.feedId, 'bookId': item.sourceBookId},
+      extra: BookDetailRouteExtra(
+        coverUrl: item.coverUrl,
+        title: item.title,
+        author: item.author,
+      ),
+    );
+    if (mounted) await ref.read(bookshelfProvider.notifier).load();
+  }
+
+  Future<bool> _confirmDelete(BuildContext context, BookshelfItemModel item) {
     final l10n = AppLocalizations.of(context);
-    final confirmed = await showConfirmDialog(
+    return showConfirmDialog(
       context,
       title: l10n.bookshelfDeleteConfirmTitle,
       message: l10n.bookshelfDeleteConfirmMessage(item.title),
@@ -293,20 +324,81 @@ class BookshelfPage extends ConsumerWidget {
       confirmLabel: l10n.bookshelfDeleteConfirm,
       cancelLabel: l10n.bookshelfDeleteCancel,
     );
-    if (!confirmed || !context.mounted) return;
+  }
 
-    final outcome = await ref
-        .read(bookshelfProvider.notifier)
-        .remove(feedId: item.feedId, sourceBookId: item.sourceBookId);
-    if (!context.mounted) return;
-    ref
-        .read(bookshelfUpdatesProvider.notifier)
-        .remove(item.feedId, item.sourceBookId);
-    if (outcome is BookshelfOperationOutcomeError) {
-      showErrorSnack(ScaffoldMessenger.of(context), l10n.bookshelfActionFailed);
-    } else {
-      showSuccessSnack(ScaffoldMessenger.of(context), l10n.bookshelfRemoved);
+  Future<void> _handleDeleteWithUndo(
+    BookshelfItemModel item,
+    ScaffoldMessengerState messenger,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    setState(() => _pendingDeleteIds.add(item.stableId));
+
+    final undone = await deleteWithUndo(
+      messenger: messenger,
+      message: l10n.bookshelfDeleteQueued(item.title),
+      undoLabel: l10n.bookshelfDeleteUndo,
+      duration: AppConstants.undoDuration,
+    );
+    if (!mounted) return;
+    if (undone) {
+      setState(() => _pendingDeleteIds.remove(item.stableId));
+      messenger.clearSnackBars();
+      return;
     }
+
+    try {
+      await ref
+          .read(bookshelfProvider.notifier)
+          .remove(feedId: item.feedId, sourceBookId: item.sourceBookId);
+      ref
+          .read(bookshelfUpdatesProvider.notifier)
+          .remove(item.feedId, item.sourceBookId);
+      if (!mounted) return;
+      showSuccessSnack(ScaffoldMessenger.of(context), l10n.bookshelfRemoved);
+    } catch (_) {
+      if (!mounted) return;
+      showErrorSnack(ScaffoldMessenger.of(context), l10n.bookshelfActionFailed);
+    } finally {
+      if (mounted) {
+        setState(() => _pendingDeleteIds.remove(item.stableId));
+      }
+    }
+  }
+}
+
+class _ReadingProgress extends StatelessWidget {
+  const _ReadingProgress({required this.value, required this.label});
+
+  final double value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: LanghuanTheme.spaceXs),
+      child: Semantics(
+        label: label,
+        value: '${(value * 100).round()}%',
+        child: Row(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(LanghuanTheme.radiusXl),
+                child: LinearProgressIndicator(value: value, minHeight: 3),
+              ),
+            ),
+            const SizedBox(width: LanghuanTheme.spaceSm),
+            Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

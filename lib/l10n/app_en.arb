@@ -57,10 +57,7 @@
   "@bookshelfErrorLoadFailed": { "description": "Bookshelf error: load bookshelf failed" },
 
   "bookshelfBookDetails": "Book Details",
-  "@bookshelfBookDetails": { "description": "Bookshelf long-press action that opens book details" },
-
-  "bookshelfDeleteBook": "Delete from Bookshelf",
-  "@bookshelfDeleteBook": { "description": "Bookshelf long-press delete action" },
+  "@bookshelfBookDetails": { "description": "Bookshelf action that opens book details" },
 
   "bookshelfDeleteConfirmTitle": "Delete book?",
   "@bookshelfDeleteConfirmTitle": { "description": "Title of the bookshelf book deletion confirmation" },
@@ -79,6 +76,15 @@
 
   "bookshelfDeleteConfirm": "Delete",
   "@bookshelfDeleteConfirm": { "description": "Confirm bookshelf book deletion" },
+
+  "bookshelfDeleteQueued": "\"{bookTitle}\" will be removed from your bookshelf",
+  "@bookshelfDeleteQueued": { "description": "Snackbar before a bookshelf deletion is committed", "placeholders": { "bookTitle": { "type": "String" } } },
+
+  "bookshelfDeleteUndo": "Undo",
+  "@bookshelfDeleteUndo": { "description": "Undo a pending bookshelf deletion" },
+
+  "bookshelfReadingProgress": "Chapter {current} of {total} · {percent}%",
+  "@bookshelfReadingProgress": { "description": "Chapter-level reading progress shown on a bookshelf card", "placeholders": { "current": { "type": "int" }, "total": { "type": "int" }, "percent": { "type": "int" } } },
 
   "searchTitle": "Search",
   "@searchTitle": { "description": "Search page title" },

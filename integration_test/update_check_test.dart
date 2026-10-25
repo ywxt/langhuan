@@ -19,6 +19,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
+import 'package:langhuan/features/bookshelf/bookshelf_operation.dart';
 import 'package:langhuan/shared/app_service.dart';
 import 'package:langhuan/src/rust/frb_generated.dart';
 import 'package:path_provider/path_provider.dart';
@@ -90,7 +91,7 @@ void main() {
       title: results.first.title,
       author: results.first.author,
     );
-    expect(outcome, isA<BookshelfOperationOutcomeAdded>());
+    expect(outcome, BookshelfAddResult.added);
 
     // ── First check: a never-seen book adopts the fresh count silently ────
     var updates = await FeedService.instance.bookshelfUpdates().toList();

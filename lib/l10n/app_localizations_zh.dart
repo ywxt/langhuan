@@ -70,9 +70,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bookshelfBookDetails => '書籍詳情';
 
   @override
-  String get bookshelfDeleteBook => '從書架刪除';
-
-  @override
   String get bookshelfDeleteConfirmTitle => '刪除書籍？';
 
   @override
@@ -88,6 +85,19 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get bookshelfDeleteConfirm => '刪除';
+
+  @override
+  String bookshelfDeleteQueued(String bookTitle) {
+    return '「$bookTitle」將從書架移除';
+  }
+
+  @override
+  String get bookshelfDeleteUndo => '撤銷';
+
+  @override
+  String bookshelfReadingProgress(int current, int total, int percent) {
+    return '第 $current/$total 章 · $percent%';
+  }
 
   @override
   String get searchTitle => '搜索';

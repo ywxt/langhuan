@@ -206,17 +206,11 @@ abstract class AppLocalizations {
   /// **'Failed to load bookshelf'**
   String get bookshelfErrorLoadFailed;
 
-  /// Bookshelf long-press action that opens book details
+  /// Bookshelf action that opens book details
   ///
   /// In en, this message translates to:
   /// **'Book Details'**
   String get bookshelfBookDetails;
-
-  /// Bookshelf long-press delete action
-  ///
-  /// In en, this message translates to:
-  /// **'Delete from Bookshelf'**
-  String get bookshelfDeleteBook;
 
   /// Title of the bookshelf book deletion confirmation
   ///
@@ -247,6 +241,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Delete'**
   String get bookshelfDeleteConfirm;
+
+  /// Snackbar before a bookshelf deletion is committed
+  ///
+  /// In en, this message translates to:
+  /// **'\"{bookTitle}\" will be removed from your bookshelf'**
+  String bookshelfDeleteQueued(String bookTitle);
+
+  /// Undo a pending bookshelf deletion
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get bookshelfDeleteUndo;
+
+  /// Chapter-level reading progress shown on a bookshelf card
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter {current} of {total} · {percent}%'**
+  String bookshelfReadingProgress(int current, int total, int percent);
 
   /// Search page title
   ///

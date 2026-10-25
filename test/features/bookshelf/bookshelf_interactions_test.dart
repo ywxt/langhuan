@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:langhuan/features/bookshelf/book_detail_page.dart';
 import 'package:langhuan/features/bookshelf/book_providers.dart';
 import 'package:langhuan/features/bookshelf/bookshelf_page.dart';
+import 'package:langhuan/features/bookshelf/bookshelf_operation.dart';
 import 'package:langhuan/features/bookshelf/bookshelf_provider.dart';
 import 'package:langhuan/features/bookshelf/reading_progress_provider.dart';
 import 'package:langhuan/features/bookshelf/widgets/book_cover.dart';
@@ -33,12 +34,13 @@ class _TestBookshelfNotifier extends BookshelfNotifier {
   BookshelfState build() => const BookshelfState(items: [_book]);
 
   @override
-  Future<BookshelfOperationOutcome> remove({
+  Future<BookshelfRemoveResult> remove({
     required String feedId,
     required String sourceBookId,
   }) async {
     removeCalls++;
-    return const BookshelfOperationOutcomeRemoved();
+    state = const BookshelfState();
+    return BookshelfRemoveResult.removed;
   }
 }
 
@@ -139,22 +141,19 @@ void main() {
     expect(find.text('Reader book-1'), findsOneWidget);
   });
 
-  testWidgets('long-pressing a bookshelf book shows management actions', (
-    tester,
-  ) async {
+  testWidgets('details button opens book details', (tester) async {
     final router = _router();
     addTearDown(router.dispose);
     await tester.pumpWidget(_testApp(router));
     await tester.pumpAndSettle();
 
-    await tester.longPress(find.text(_book.title));
+    await tester.tap(find.byTooltip('Book Details'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Book Details'), findsOneWidget);
-    expect(find.text('Delete from Bookshelf'), findsOneWidget);
+    expect(find.text('Book details'), findsOneWidget);
   });
 
-  testWidgets('delete action confirms before removing the book', (
+  testWidgets('swipe delete confirms and allows undo before removing', (
     tester,
   ) async {
     final router = _router();
@@ -167,19 +166,49 @@ void main() {
     final notifier =
         container.read(bookshelfProvider.notifier) as _TestBookshelfNotifier;
 
-    await tester.longPress(find.text(_book.title));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Delete from Bookshelf'));
+    await tester.drag(find.byType(Dismissible), const Offset(-500, 0));
     await tester.pumpAndSettle();
 
     expect(find.text('Remove "Book one" from your bookshelf?'), findsOneWidget);
     expect(notifier.removeCalls, 0);
 
     await tester.tap(find.text('Delete'));
+    await tester.pump();
+
+    expect(
+      find.text('"Book one" will be removed from your bookshelf'),
+      findsOneWidget,
+    );
+    expect(find.text('Undo'), findsOneWidget);
+    expect(notifier.removeCalls, 0);
+
+    await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
 
     expect(notifier.removeCalls, 1);
     expect(find.text('Removed from local bookshelf'), findsOneWidget);
+  });
+
+  testWidgets('undo cancels a pending bookshelf deletion', (tester) async {
+    final router = _router();
+    addTearDown(router.dispose);
+    await tester.pumpWidget(_testApp(router));
+    await tester.pumpAndSettle();
+
+    final element = tester.element(find.byType(BookshelfPage));
+    final container = ProviderScope.containerOf(element);
+    final notifier =
+        container.read(bookshelfProvider.notifier) as _TestBookshelfNotifier;
+
+    await tester.drag(find.byType(Dismissible), const Offset(-500, 0));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pump();
+    tester.widget<SnackBarAction>(find.byType(SnackBarAction)).onPressed();
+    await tester.pumpAndSettle();
+
+    expect(notifier.removeCalls, 0);
+    expect(find.text(_book.title), findsOneWidget);
   });
 
   testWidgets('search result cover exposes the shared book Hero tag', (

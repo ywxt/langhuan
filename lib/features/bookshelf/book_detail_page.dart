@@ -16,7 +16,6 @@ import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/loading.dart';
 import 'book_providers.dart';
 import 'bookshelf_provider.dart';
-import '../feeds/feed_service.dart';
 import 'reading_progress_provider.dart';
 import 'widgets/book_cover.dart';
 import 'widgets/book_cover_hero.dart';
@@ -484,34 +483,28 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
         bootstrap.hasError ||
         bootstrap.asData?.value == null) {
       if (!context.mounted) return;
-      showErrorSnack(
-        ScaffoldMessenger.of(context),
-        l10n.bookshelfActionFailed,
-      );
+      showErrorSnack(ScaffoldMessenger.of(context), l10n.bookshelfActionFailed);
       return;
     }
 
     // Snapshot the currently displayed info so the shelf renders instantly.
     final book = ref.read(bookInfoProvider).book;
-    final outcome = await ref
-        .read(bookshelfProvider.notifier)
-        .add(
-          feedId: widget.feedId,
-          sourceBookId: widget.bookId,
-          title: book?.title ?? widget.bookId,
-          author: book?.author ?? '',
-          coverUrl: book?.coverUrl,
-          description: book?.description,
-        );
-
-    if (!context.mounted) return;
-    if (outcome is BookshelfOperationOutcomeError) {
-      showErrorSnack(
-        ScaffoldMessenger.of(context),
-        l10n.bookshelfActionFailed,
-      );
-    } else {
+    try {
+      await ref
+          .read(bookshelfProvider.notifier)
+          .add(
+            feedId: widget.feedId,
+            sourceBookId: widget.bookId,
+            title: book?.title ?? widget.bookId,
+            author: book?.author ?? '',
+            coverUrl: book?.coverUrl,
+            description: book?.description,
+          );
+      if (!context.mounted) return;
       showSuccessSnack(ScaffoldMessenger.of(context), l10n.bookshelfAdded);
+    } catch (_) {
+      if (!context.mounted) return;
+      showErrorSnack(ScaffoldMessenger.of(context), l10n.bookshelfActionFailed);
     }
   }
 
@@ -522,10 +515,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
         bootstrap.hasError ||
         bootstrap.asData?.value == null) {
       if (!context.mounted) return;
-      showErrorSnack(
-        ScaffoldMessenger.of(context),
-        l10n.bookshelfActionFailed,
-      );
+      showErrorSnack(ScaffoldMessenger.of(context), l10n.bookshelfActionFailed);
       return;
     }
 
@@ -545,18 +535,15 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     );
     if (!confirmed || !context.mounted) return;
 
-    final outcome = await ref
-        .read(bookshelfProvider.notifier)
-        .remove(feedId: widget.feedId, sourceBookId: widget.bookId);
-
-    if (!context.mounted) return;
-    if (outcome is BookshelfOperationOutcomeError) {
-      showErrorSnack(
-        ScaffoldMessenger.of(context),
-        l10n.bookshelfActionFailed,
-      );
-    } else {
+    try {
+      await ref
+          .read(bookshelfProvider.notifier)
+          .remove(feedId: widget.feedId, sourceBookId: widget.bookId);
+      if (!context.mounted) return;
       showSuccessSnack(ScaffoldMessenger.of(context), l10n.bookshelfRemoved);
+    } catch (_) {
+      if (!context.mounted) return;
+      showErrorSnack(ScaffoldMessenger.of(context), l10n.bookshelfActionFailed);
     }
   }
 }

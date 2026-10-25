@@ -70,9 +70,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bookshelfBookDetails => 'Book Details';
 
   @override
-  String get bookshelfDeleteBook => 'Delete from Bookshelf';
-
-  @override
   String get bookshelfDeleteConfirmTitle => 'Delete book?';
 
   @override
@@ -89,6 +86,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get bookshelfDeleteConfirm => 'Delete';
+
+  @override
+  String bookshelfDeleteQueued(String bookTitle) {
+    return '\"$bookTitle\" will be removed from your bookshelf';
+  }
+
+  @override
+  String get bookshelfDeleteUndo => 'Undo';
+
+  @override
+  String bookshelfReadingProgress(int current, int total, int percent) {
+    return 'Chapter $current of $total · $percent%';
+  }
 
   @override
   String get searchTitle => 'Search';
