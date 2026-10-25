@@ -40,44 +40,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                         path: 'book',
                         name: 'bookshelf-book-detail',
                         parentNavigatorKey: _rootNavigatorKey,
-                        pageBuilder: (context, state) {
+                        builder: (context, state) {
                           final feedId =
                               state.uri.queryParameters['feedId'] ?? '';
                           final bookId =
                               state.uri.queryParameters['bookId'] ?? '';
-                          return CustomTransitionPage(
-                            key: state.pageKey,
-                            child: BookDetailPage(
-                              feedId: feedId,
-                              bookId: bookId,
-                            ),
-                            transitionsBuilder:
-                                (
-                                  context,
-                                  animation,
-                                  secondaryAnimation,
-                                  child,
-                                ) {
-                                  return FadeTransition(
-                                    opacity: CurveTween(
-                                      curve: Curves.easeOut,
-                                    ).animate(animation),
-                                    child: SlideTransition(
-                                      position:
-                                          Tween<Offset>(
-                                                begin: const Offset(0, 0.05),
-                                                end: Offset.zero,
-                                              )
-                                              .chain(
-                                                CurveTween(
-                                                  curve: Curves.easeOut,
-                                                ),
-                                              )
-                                              .animate(animation),
-                                      child: child,
-                                    ),
-                                  );
-                                },
+                          return BookDetailPage(
+                            feedId: feedId,
+                            bookId: bookId,
                           );
                         },
                         routes: [
@@ -85,7 +55,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                             path: 'read',
                             name: 'bookshelf-reader',
                             parentNavigatorKey: _rootNavigatorKey,
-                            pageBuilder: (context, state) {
+                            builder: (context, state) {
                               final feedId =
                                   state.uri.queryParameters['feedId'] ?? '';
                               final bookId =
@@ -97,44 +67,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                                           .uri
                                           .queryParameters['paragraphId'] ??
                                       '';
-                              return CustomTransitionPage(
-                                key: state.pageKey,
-                                child: ReaderPage(
-                                  feedId: feedId,
-                                  bookId: bookId,
-                                  chapterId: chapterId,
-                                  paragraphId: paragraphId,
-                                ),
-                                transitionsBuilder:
-                                    (
-                                      context,
-                                      animation,
-                                      secondaryAnimation,
-                                      child,
-                                    ) {
-                                      return FadeTransition(
-                                        opacity: CurveTween(
-                                          curve: Curves.easeOut,
-                                        ).animate(animation),
-                                        child: SlideTransition(
-                                          position:
-                                              Tween<Offset>(
-                                                    begin: const Offset(
-                                                      0,
-                                                      0.1,
-                                                    ),
-                                                    end: Offset.zero,
-                                                  )
-                                                  .chain(
-                                                    CurveTween(
-                                                      curve: Curves.easeOut,
-                                                    ),
-                                                  )
-                                                  .animate(animation),
-                                          child: child,
-                                        ),
-                                      );
-                                    },
+                              return ReaderPage(
+                                feedId: feedId,
+                                bookId: bookId,
+                                chapterId: chapterId,
+                                paragraphId: paragraphId,
                               );
                             },
                           ),

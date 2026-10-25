@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'fade_slide_page_transitions_builder.dart';
+
 /// Langhuan design tokens and theme configuration.
 ///
 /// Inspired by the Wise Design System — clean, flat, borderless, with generous
@@ -219,6 +221,17 @@ abstract final class LanghuanTheme {
       textTheme: textTheme,
       scaffoldBackgroundColor: scheme.surface,
       splashFactory: InkSparkle.splashFactory,
+
+      // ── Page transitions ──────────────────────────────────────────
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: FadeSlidePageTransitionsBuilder(),
+          TargetPlatform.iOS: FadeSlidePageTransitionsBuilder(),
+          TargetPlatform.linux: FadeSlidePageTransitionsBuilder(),
+          TargetPlatform.macOS: FadeSlidePageTransitionsBuilder(),
+          TargetPlatform.windows: FadeSlidePageTransitionsBuilder(),
+        },
+      ),
 
       // ── AppBar ─────────────────────────────────────────────────────
       appBarTheme: AppBarTheme(
