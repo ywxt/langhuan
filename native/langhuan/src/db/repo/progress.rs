@@ -101,25 +101,13 @@ impl ProgressRepo for Connection {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const SCHEMA: &str = "\
-        CREATE TABLE feeds (id TEXT PRIMARY KEY, name TEXT NOT NULL, version TEXT NOT NULL, author TEXT, source_url TEXT, content_hash TEXT NOT NULL, installed_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL) WITHOUT ROWID; \
-        CREATE TABLE books (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, title TEXT NOT NULL, author TEXT NOT NULL, description TEXT, cover_url TEXT, cover_state TEXT NOT NULL DEFAULT 'none', cover_fetched_at_ms INTEGER NOT NULL DEFAULT 0, info_fetched_at_ms INTEGER NOT NULL DEFAULT 0, last_used_at_ms INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE) WITHOUT ROWID; \
-        CREATE TABLE bookshelf (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, added_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
-        CREATE TABLE reading_progress (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapter_id TEXT NOT NULL, paragraph_id TEXT NOT NULL, paragraph_char_offset INTEGER NOT NULL DEFAULT 0, updated_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE) WITHOUT ROWID;";
-
-    fn conn() -> Connection {
-        let conn = Connection::open_in_memory().expect("open");
-        conn.execute_batch(SCHEMA).expect("schema");
-        conn.execute_batch("INSERT INTO feeds VALUES ('f1', 'Feed', '1.0', NULL, NULL, 'h', 1, 1); \
-                            INSERT INTO books (feed_id, book_id, title, author) VALUES ('f1', 'b1', 'T', 'A'), ('f1', 'b2', 'T2', 'A');")
-            .expect("seed");
-        conn
-    }
+    use crate::db::repo::test_support::TestDb;
 
     #[test]
     fn set_get_overwrites() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         conn.set_progress("f1", "b1", "c1", "p1", 0, 100).unwrap();
         conn.set_progress("f1", "b1", "c2", "p9", 240, 200).unwrap();
 
@@ -133,28 +121,29 @@ mod tests {
 
     #[test]
     fn char_offset_defaults_to_zero_for_old_rows() {
-        let conn = conn();
-        conn.execute_batch(
-            "INSERT INTO reading_progress (feed_id, book_id, chapter_id, paragraph_id, updated_at_ms) \
-             VALUES ('f1', 'b1', 'c1', 'p1', 100);",
-        )
-        .unwrap();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        db.conn()
+            .execute_batch(
+                "INSERT INTO reading_progress (feed_id, book_id, chapter_id, paragraph_id, updated_at_ms) \
+                 VALUES ('f1', 'b1', 'c1', 'p1', 100);",
+            )
+            .unwrap();
 
-        let row = conn.get_progress("f1", "b1").unwrap().expect("row");
+        let row = db.conn().get_progress("f1", "b1").unwrap().expect("row");
         assert_eq!(row.paragraph_char_offset, 0);
     }
 
     #[test]
     fn stale_removal_respects_shelf() {
-        let conn = conn();
-        conn.execute_batch("INSERT INTO bookshelf VALUES ('f1', 'b1', 1);")
-            .unwrap();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        db.seed_shelf_item("f1", "b1");
+        let conn = db.conn();
         conn.set_progress("f1", "b1", "c", "p", 0, 100).unwrap(); // old but protected
         conn.set_progress("f1", "b2", "c", "p", 0, 100).unwrap(); // old, unprotected
         conn.set_progress("f1", "b3", "c", "p", 0, 10_000).unwrap(); // fresh
-        // b3 has no books row — set_progress would violate nothing (FK is on
-        // feeds), but b3 was never inserted into books above; insert for
-        // realism: (feeds FK only, so this passes.)
+        // b3 needs no `books` row: `reading_progress` references feeds only.
 
         let removed = conn.remove_stale_progress(1000).unwrap();
         assert_eq!(removed, 1);

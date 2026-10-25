@@ -84,20 +84,7 @@ impl BookmarksRepo for Connection {
 mod tests {
     use super::*;
     use crate::db::now_ms;
-
-    const SCHEMA: &str = "\
-        CREATE TABLE feeds (id TEXT PRIMARY KEY, name TEXT NOT NULL, version TEXT NOT NULL, author TEXT, source_url TEXT, content_hash TEXT NOT NULL, installed_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL) WITHOUT ROWID; \
-        CREATE TABLE bookmarks (id TEXT PRIMARY KEY, feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapter_id TEXT NOT NULL, paragraph_id TEXT NOT NULL, paragraph_name TEXT NOT NULL DEFAULT '', paragraph_preview TEXT NOT NULL DEFAULT '', label TEXT NOT NULL DEFAULT '', created_at_ms INTEGER NOT NULL, FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE) WITHOUT ROWID;";
-
-    fn conn() -> Connection {
-        let conn = Connection::open_in_memory().expect("open");
-        conn.execute_batch(SCHEMA).expect("schema");
-        conn.execute_batch(
-            "INSERT INTO feeds VALUES ('f1', 'Feed', '1.0', NULL, NULL, 'h', 1, 1);",
-        )
-        .expect("seed");
-        conn
-    }
+    use crate::db::repo::test_support::TestDb;
 
     fn row(id: &str, at: i64) -> BookmarkRow {
         BookmarkRow {
@@ -115,7 +102,9 @@ mod tests {
 
     #[test]
     fn add_list_remove() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
         conn.add_bookmark(&row("bm1", now)).unwrap();
         conn.add_bookmark(&row("bm2", now + 10)).unwrap();

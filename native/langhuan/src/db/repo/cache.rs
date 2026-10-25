@@ -594,24 +594,8 @@ impl CacheRepo for Connection {
 mod tests {
     use super::*;
     use crate::db::now_ms;
+    use crate::db::repo::test_support::TestDb;
     use crate::model::ParagraphId;
-
-    const SCHEMA: &str = "\
-        CREATE TABLE feeds (id TEXT PRIMARY KEY, name TEXT NOT NULL, version TEXT NOT NULL, author TEXT, source_url TEXT, content_hash TEXT NOT NULL, installed_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL) WITHOUT ROWID; \
-        CREATE TABLE books (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, title TEXT NOT NULL, author TEXT NOT NULL, description TEXT, cover_url TEXT, cover_state TEXT NOT NULL DEFAULT 'none' CHECK (cover_state IN ('none','pending','downloaded','failed')), cover_fetched_at_ms INTEGER NOT NULL DEFAULT 0, info_fetched_at_ms INTEGER NOT NULL DEFAULT 0, last_used_at_ms INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE) WITHOUT ROWID; \
-        CREATE TABLE covers (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, mime TEXT NOT NULL, bytes BLOB NOT NULL, fetched_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
-        CREATE TABLE chapter_lists (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapters_json TEXT NOT NULL, cached_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
-        CREATE TABLE chapters (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapter_id TEXT NOT NULL, paragraphs_json TEXT NOT NULL, cached_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id, chapter_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID;";
-
-    fn conn() -> Connection {
-        let conn = Connection::open_in_memory().expect("open");
-        conn.execute_batch(SCHEMA).expect("schema");
-        conn.execute_batch(
-            "INSERT INTO feeds VALUES ('f1', 'Feed', '1.0', NULL, NULL, 'h', 1, 1);",
-        )
-        .expect("seed feed");
-        conn
-    }
 
     fn info(id: &str, cover: Option<&str>) -> BookInfo {
         BookInfo {
@@ -649,7 +633,9 @@ mod tests {
 
     #[test]
     fn fetched_book_roundtrip() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
         conn.upsert_fetched_book("f1", &info("b1", Some("https://c")), now)
             .expect("upsert");
@@ -660,12 +646,14 @@ mod tests {
         assert_eq!(row.title, "Book b1");
         assert!(row.is_fetched());
         assert_eq!(row.cover_url.as_deref(), Some("https://c"));
-        assert_eq!(state(&conn, "b1"), CoverState::None);
+        assert_eq!(state(conn, "b1"), CoverState::None);
     }
 
     #[test]
     fn claim_decides_whether_a_download_is_due() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
 
         // Fresh row with a cover URL → due.
@@ -674,17 +662,17 @@ mod tests {
         assert!(conn.claim_cover_download("f1", "b1", now).unwrap());
         // Claimed → pending; a second claim is single-flighted away.
         assert!(!conn.claim_cover_download("f1", "b1", now + 1000).unwrap());
-        assert_eq!(state(&conn, "b1"), CoverState::Pending);
+        assert_eq!(state(conn, "b1"), CoverState::Pending);
 
         // Completed download → not due again…
         conn.set_cover("f1", "b1", "image/jpeg", b"junk", now + 2000)
             .unwrap();
-        assert_eq!(state(&conn, "b1"), CoverState::Downloaded);
+        assert_eq!(state(conn, "b1"), CoverState::Downloaded);
         assert!(!conn.claim_cover_download("f1", "b1", now + 3000).unwrap());
         // …not even after a re-fetch with the same URL.
         conn.upsert_fetched_book("f1", &info("b1", Some("u1")), now + 4000)
             .unwrap();
-        assert_eq!(state(&conn, "b1"), CoverState::Downloaded);
+        assert_eq!(state(conn, "b1"), CoverState::Downloaded);
         assert!(!conn.claim_cover_download("f1", "b1", now + 5000).unwrap());
 
         // A failed download is not retried within the backoff window…
@@ -700,19 +688,21 @@ mod tests {
 
     #[test]
     fn url_change_resets_state_and_drops_bytes() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
 
         conn.upsert_fetched_book("f1", &info("b1", Some("u1")), now)
             .unwrap();
         conn.set_cover("f1", "b1", "image/jpeg", b"junk", now + 1000)
             .unwrap();
-        assert_eq!(state(&conn, "b1"), CoverState::Downloaded);
+        assert_eq!(state(conn, "b1"), CoverState::Downloaded);
 
         // A different URL resets the state and removes the stale bytes.
         conn.upsert_fetched_book("f1", &info("b1", Some("u2")), now + 2000)
             .unwrap();
-        assert_eq!(state(&conn, "b1"), CoverState::None);
+        assert_eq!(state(conn, "b1"), CoverState::None);
         assert_eq!(conn.get_cover_bytes("f1", "b1").unwrap(), None);
         assert!(conn.claim_cover_download("f1", "b1", now + 3000).unwrap());
 
@@ -721,7 +711,7 @@ mod tests {
             .unwrap();
         conn.upsert_fetched_book("f1", &info("b1", None), now + 5000)
             .unwrap();
-        assert_eq!(state(&conn, "b1"), CoverState::None);
+        assert_eq!(state(conn, "b1"), CoverState::None);
         assert_eq!(conn.get_cover_bytes("f1", "b1").unwrap(), None);
         // No URL → nothing to download.
         assert!(!conn.claim_cover_download("f1", "b1", now + 6000).unwrap());
@@ -729,7 +719,9 @@ mod tests {
 
     #[test]
     fn claim_repairs_downloaded_state_without_bytes() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
         conn.upsert_fetched_book("f1", &info("b1", Some("u1")), now)
             .unwrap();
@@ -743,7 +735,9 @@ mod tests {
 
     #[test]
     fn stale_pending_is_retried_after_inflight_window() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
         conn.upsert_fetched_book("f1", &info("b1", Some("u1")), now)
             .unwrap();
@@ -761,7 +755,9 @@ mod tests {
 
     #[test]
     fn cover_state_sql_roundtrip() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
         for wanted in [
             CoverState::None,
@@ -772,13 +768,15 @@ mod tests {
             conn.upsert_fetched_book("f1", &info("b1", Some("u")), now)
                 .unwrap();
             conn.mark_cover("f1", "b1", wanted, now).unwrap();
-            assert_eq!(state(&conn, "b1"), wanted);
+            assert_eq!(state(conn, "b1"), wanted);
         }
     }
 
     #[test]
     fn snapshot_only_refreshes_placeholders() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
 
         conn.upsert_snapshot("f1", "b1", "Snap", "A", Some("d"), Some("u1"), now)
@@ -803,7 +801,9 @@ mod tests {
 
     #[test]
     fn chapter_list_ttl() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
         let chapters = vec![ChapterInfo {
             id: "c1".to_owned(),
@@ -836,7 +836,9 @@ mod tests {
 
     #[test]
     fn paragraphs_roundtrip_and_delete() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
         conn.set_paragraphs("f1", "b1", "c1", &paragraphs(), now)
             .expect("set");

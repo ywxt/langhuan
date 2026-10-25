@@ -38,19 +38,12 @@ impl MetaRepo for Connection {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn conn() -> Connection {
-        let conn = Connection::open_in_memory().expect("open");
-        conn.execute_batch(
-            "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;",
-        )
-        .expect("schema");
-        conn
-    }
+    use crate::db::repo::test_support::TestDb;
 
     #[test]
     fn set_get_roundtrip() {
-        let conn = conn();
+        let db = TestDb::new();
+        let conn = db.conn();
         conn.set_meta("k", "v").expect("set");
         assert_eq!(conn.get_meta("k").expect("get").as_deref(), Some("v"));
 
@@ -60,13 +53,14 @@ mod tests {
 
     #[test]
     fn missing_key_returns_none() {
-        let conn = conn();
-        assert_eq!(conn.get_meta("nope").expect("get"), None);
+        let db = TestDb::new();
+        assert_eq!(db.conn().get_meta("nope").expect("get"), None);
     }
 
     #[test]
     fn get_meta_i64_defaults() {
-        let conn = conn();
+        let db = TestDb::new();
+        let conn = db.conn();
         assert_eq!(conn.get_meta_i64("n", 7).expect("get"), 7);
         conn.set_meta("n", "42").expect("set");
         assert_eq!(conn.get_meta_i64("n", 7).expect("get"), 42);

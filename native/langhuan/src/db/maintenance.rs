@@ -145,26 +145,13 @@ pub async fn cache_stats(db: &Db) -> Result<CacheStats> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::repo::test_support::feed_meta;
     use crate::db::repo::{BookshelfRepo, CacheRepo, FeedsRepo};
-    use crate::feed::FeedMeta;
-
-    fn meta(id: &str, version: &str) -> FeedMeta {
-        FeedMeta {
-            id: id.to_owned(),
-            name: format!("Feed {id}"),
-            version: version.to_owned(),
-            author: None,
-            description: None,
-            base_url: "https://example.com".to_owned(),
-            access_domains: Default::default(),
-            schema_version: 1,
-        }
-    }
 
     #[tokio::test]
     async fn throttle_skips_within_24h_and_force_overrides() {
         let db = Db::open_in_memory().await.expect("open");
-        db.write(|conn| conn.upsert_feed(&meta("f1", "1.0.0"), None, "h", now_ms()))
+        db.write(|conn| conn.upsert_feed(&feed_meta("f1", "1.0.0"), None, "h", now_ms()))
             .await
             .expect("seed feed");
 
@@ -195,7 +182,7 @@ mod tests {
         let now = now_ms();
         let stale = now - 20 * 24 * 3600 * 1000;
 
-        db.write(move |conn| conn.upsert_feed(&meta("biquge-tw", "1.0.0"), None, "h", now))
+        db.write(move |conn| conn.upsert_feed(&feed_meta("biquge-tw", "1.0.0"), None, "h", now))
             .await
             .expect("seed feed");
 
@@ -252,7 +239,10 @@ mod tests {
         .expect("age rows");
 
         // Sanity: the shelf holds five books before maintenance.
-        let items = db.call(|conn| conn.shelf_items()).await.expect("shelf before");
+        let items = db
+            .call(|conn| conn.shelf_items())
+            .await
+            .expect("shelf before");
         assert_eq!(items.len(), 5, "seeded shelf must have 5 items");
 
         // The launch-time maintenance pass.
@@ -263,7 +253,10 @@ mod tests {
             "cleanup must have removed the stale unshelved data (outcome: {outcome:?})"
         );
 
-        let items = db.call(|conn| conn.shelf_items()).await.expect("shelf after");
+        let items = db
+            .call(|conn| conn.shelf_items())
+            .await
+            .expect("shelf after");
         assert_eq!(
             items.len(),
             5,
@@ -301,7 +294,7 @@ mod tests {
     async fn maintenance_removes_stale_unshelved_books() {
         let db = Db::open_in_memory().await.expect("open");
         let now = now_ms();
-        db.write(move |conn| conn.upsert_feed(&meta("f1", "1.0.0"), None, "h", now))
+        db.write(move |conn| conn.upsert_feed(&feed_meta("f1", "1.0.0"), None, "h", now))
             .await
             .expect("seed feed");
 
@@ -330,7 +323,7 @@ mod tests {
     async fn clear_cache_frees_payloads() {
         let db = Db::open_in_memory().await.expect("open");
         let now = now_ms();
-        db.write(move |conn| conn.upsert_feed(&meta("f1", "1.0.0"), None, "h", now))
+        db.write(move |conn| conn.upsert_feed(&feed_meta("f1", "1.0.0"), None, "h", now))
             .await
             .expect("seed feed");
 

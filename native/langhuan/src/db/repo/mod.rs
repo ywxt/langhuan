@@ -27,6 +27,8 @@ pub mod feeds;
 pub mod maintenance;
 pub mod meta;
 pub mod progress;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 pub use auth::AuthRepo;
 pub use bookmarks::{BookmarkRow, BookmarksRepo};

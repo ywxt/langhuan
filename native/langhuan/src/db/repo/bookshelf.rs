@@ -111,10 +111,8 @@ impl BookshelfRepo for Connection {
         // and covers; progress and bookmarks only cascade from `feeds`.
         self.prepare_cached("DELETE FROM books WHERE feed_id = ?1 AND book_id = ?2")?
             .execute([feed_id, book_id])?;
-        self.prepare_cached(
-            "DELETE FROM reading_progress WHERE feed_id = ?1 AND book_id = ?2",
-        )?
-        .execute([feed_id, book_id])?;
+        self.prepare_cached("DELETE FROM reading_progress WHERE feed_id = ?1 AND book_id = ?2")?
+            .execute([feed_id, book_id])?;
         self.prepare_cached("DELETE FROM bookmarks WHERE feed_id = ?1 AND book_id = ?2")?
             .execute([feed_id, book_id])?;
         Ok(true)
@@ -174,30 +172,13 @@ impl BookshelfRepo for Connection {
 mod tests {
     use super::*;
     use crate::db::now_ms;
-
-    const SCHEMA: &str = "\
-        CREATE TABLE feeds (id TEXT PRIMARY KEY, name TEXT NOT NULL, version TEXT NOT NULL, author TEXT, source_url TEXT, content_hash TEXT NOT NULL, installed_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL) WITHOUT ROWID; \
-        CREATE TABLE books (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, title TEXT NOT NULL, author TEXT NOT NULL, description TEXT, cover_url TEXT, cover_state TEXT NOT NULL DEFAULT 'none' CHECK (cover_state IN ('none','pending','downloaded','failed')), cover_fetched_at_ms INTEGER NOT NULL DEFAULT 0, info_fetched_at_ms INTEGER NOT NULL DEFAULT 0, last_used_at_ms INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE) WITHOUT ROWID; \
-        CREATE TABLE covers (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, mime TEXT NOT NULL, bytes BLOB NOT NULL, fetched_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
-        CREATE TABLE bookshelf (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, added_at_ms INTEGER NOT NULL, last_seen_chapters INTEGER NOT NULL DEFAULT -1, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
-        CREATE TABLE chapter_lists (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapters_json TEXT NOT NULL, cached_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
-        CREATE TABLE chapters (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapter_id TEXT NOT NULL, paragraphs_json TEXT NOT NULL, cached_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id, chapter_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
-        CREATE TABLE reading_progress (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapter_id TEXT NOT NULL, paragraph_id TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE) WITHOUT ROWID; \
-        CREATE TABLE bookmarks (id TEXT PRIMARY KEY, feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapter_id TEXT NOT NULL, paragraph_id TEXT NOT NULL, paragraph_name TEXT NOT NULL, paragraph_preview TEXT NOT NULL, label TEXT NOT NULL, created_at_ms INTEGER NOT NULL, FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE) WITHOUT ROWID;";
-
-    fn conn() -> Connection {
-        let conn = Connection::open_in_memory().expect("open");
-        conn.execute_batch(SCHEMA).expect("schema");
-        conn.execute_batch(
-            "INSERT INTO feeds VALUES ('f1', 'Feed', '1.0', NULL, NULL, 'h', 1, 1);",
-        )
-        .expect("seed");
-        conn
-    }
+    use crate::db::repo::test_support::TestDb;
 
     #[test]
     fn add_is_idempotent_and_lists_newest_first() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
         assert!(
             conn.add_book("f1", "b1", "One", "A", None, Some("u1"), now)
@@ -225,7 +206,9 @@ mod tests {
 
     #[test]
     fn last_seen_chapters_defaults_and_updates() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         assert!(
             conn.add_book("f1", "b1", "One", "A", None, None, now_ms())
                 .unwrap()
@@ -249,7 +232,9 @@ mod tests {
 
     #[test]
     fn remove_then_list() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
         conn.add_book("f1", "b1", "One", "A", None, None, now)
             .unwrap();
@@ -260,7 +245,9 @@ mod tests {
 
     #[test]
     fn remove_deletes_book_data() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
         conn.add_book("f1", "b1", "One", "A", None, None, now)
             .unwrap();
@@ -268,7 +255,7 @@ mod tests {
             "INSERT INTO chapters VALUES ('f1', 'b1', 'c1', '[]', 1); \
              INSERT INTO chapter_lists VALUES ('f1', 'b1', '[]', 1); \
              INSERT INTO covers VALUES ('f1', 'b1', 'image/png', x'00', 1); \
-             INSERT INTO reading_progress VALUES ('f1', 'b1', 'c1', 'p1', 1); \
+             INSERT INTO reading_progress (feed_id, book_id, chapter_id, paragraph_id, updated_at_ms) VALUES ('f1', 'b1', 'c1', 'p1', 1); \
              INSERT INTO bookmarks VALUES ('k1', 'f1', 'b1', 'c1', 'p1', 'n', 'x', 'l', 1);",
         )
         .expect("seed book data");

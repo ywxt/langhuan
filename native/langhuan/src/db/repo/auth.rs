@@ -58,24 +58,13 @@ impl AuthRepo for Connection {
 mod tests {
     use super::*;
     use crate::db::now_ms;
-
-    fn conn() -> Connection {
-        let conn = Connection::open_in_memory().expect("open");
-        conn.execute_batch(
-            "CREATE TABLE feeds (id TEXT PRIMARY KEY, name TEXT NOT NULL, version TEXT NOT NULL, author TEXT, source_url TEXT, content_hash TEXT NOT NULL, installed_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL) WITHOUT ROWID; \
-             CREATE TABLE auth (feed_id TEXT PRIMARY KEY REFERENCES feeds(id) ON DELETE CASCADE, cookies_json TEXT NOT NULL, updated_at_ms INTEGER NOT NULL) WITHOUT ROWID;",
-        )
-        .expect("schema");
-        conn.execute_batch(
-            "INSERT INTO feeds VALUES ('f1', 'Feed', '1.0', NULL, NULL, 'h', 1, 1);",
-        )
-        .expect("seed");
-        conn
-    }
+    use crate::db::repo::test_support::TestDb;
 
     #[test]
     fn roundtrip_and_clear() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         assert!(conn.get_auth("f1").unwrap().is_none());
 
         let payload = serde_json::json!({"cookies": [{"name": "sid", "value": "abc"}]});

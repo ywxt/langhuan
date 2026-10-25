@@ -244,37 +244,16 @@ fn map_feed_row(
 mod tests {
     use super::*;
     use crate::db::now_ms;
-
-    fn meta(id: &str, version: &str) -> FeedMeta {
-        FeedMeta {
-            id: id.to_owned(),
-            name: format!("Feed {id}"),
-            version: version.to_owned(),
-            author: Some("a".to_owned()),
-            description: None,
-            base_url: "https://example.com".to_owned(),
-            access_domains: Default::default(),
-            schema_version: 1,
-        }
-    }
-
-    fn setup() -> Connection {
-        let conn = Connection::open_in_memory().expect("open");
-        conn.execute_batch(
-            "CREATE TABLE feeds (id TEXT PRIMARY KEY, name TEXT NOT NULL, version TEXT NOT NULL, author TEXT, source_url TEXT, content_hash TEXT NOT NULL, installed_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL) WITHOUT ROWID; \
-             CREATE TABLE feed_scripts (feed_id TEXT NOT NULL REFERENCES feeds(id) ON DELETE CASCADE, version TEXT NOT NULL, content_hash TEXT NOT NULL, script TEXT NOT NULL, installed_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, version)) WITHOUT ROWID;",
-        )
-        .expect("schema");
-        conn
-    }
+    use crate::db::repo::test_support::{TestDb, feed_meta};
 
     #[test]
     fn upsert_feed_installs_then_upgrades() {
-        let conn = setup();
+        let db = TestDb::new();
+        let conn = db.conn();
         let now = now_ms();
-        conn.upsert_feed(&meta("f1", "1.0.0"), Some("https://src"), "h1", now)
+        conn.upsert_feed(&feed_meta("f1", "1.0.0"), Some("https://src"), "h1", now)
             .expect("install");
-        conn.upsert_feed(&meta("f1", "1.1.0"), None, "h2", now + 10)
+        conn.upsert_feed(&feed_meta("f1", "1.1.0"), None, "h2", now + 10)
             .expect("upgrade");
 
         let row = conn.get_feed("f1").expect("get").expect("exists");
@@ -288,9 +267,10 @@ mod tests {
 
     #[test]
     fn script_history_prunes_to_limit() {
-        let conn = setup();
+        let db = TestDb::new();
+        let conn = db.conn();
         let now = now_ms();
-        conn.upsert_feed(&meta("f1", "1.0.3"), None, "h", now)
+        conn.upsert_feed(&feed_meta("f1", "1.0.3"), None, "h", now)
             .expect("feed");
         for (i, v) in ["1.0.1", "1.0.2", "1.0.3", "1.0.4"].iter().enumerate() {
             conn.upsert_script("f1", v, "h", &format!("--{v}"), now + i as i64)
@@ -311,9 +291,10 @@ mod tests {
 
     #[test]
     fn current_script_follows_feeds_version() {
-        let conn = setup();
+        let db = TestDb::new();
+        let conn = db.conn();
         let now = now_ms();
-        conn.upsert_feed(&meta("f1", "1.0.0"), None, "h", now)
+        conn.upsert_feed(&feed_meta("f1", "1.0.0"), None, "h", now)
             .expect("feed");
         conn.upsert_script("f1", "1.0.0", "h", "--active", now)
             .expect("script");
@@ -328,7 +309,7 @@ mod tests {
 
     #[test]
     fn delete_feed_returns_false_when_missing() {
-        let conn = setup();
-        assert!(!conn.delete_feed("nope").expect("delete"));
+        let db = TestDb::new();
+        assert!(!db.conn().delete_feed("nope").expect("delete"));
     }
 }

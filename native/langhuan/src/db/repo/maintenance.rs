@@ -228,29 +228,10 @@ impl MaintenanceRepo for Connection {
 mod tests {
     use super::*;
     use crate::db::now_ms;
+    use crate::db::repo::test_support::{TestDb, feed_meta};
     use crate::db::repo::{
         BookmarkRow, BookmarksRepo, BookshelfRepo, CacheRepo, FeedsRepo, ProgressRepo,
     };
-    use crate::feed::FeedMeta;
-
-    fn conn() -> Connection {
-        let mut conn = Connection::open_in_memory().expect("open");
-        crate::db::schema_for_tests(&mut conn);
-        conn
-    }
-
-    fn meta(id: &str) -> FeedMeta {
-        FeedMeta {
-            id: id.to_owned(),
-            name: format!("Feed {id}"),
-            version: "1.0.0".to_owned(),
-            author: None,
-            description: None,
-            base_url: "https://example.com".to_owned(),
-            access_domains: Default::default(),
-            schema_version: 1,
-        }
-    }
 
     /// Seed a book with `n` cached chapters of `bytes_each` payload bytes.
     fn seed_book(conn: &Connection, book_id: &str, bytes_each: usize, n: usize, at_ms: i64) {
@@ -267,10 +248,11 @@ mod tests {
 
     #[test]
     fn stats_counts_seeded_data() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
-        conn.upsert_feed(&meta("f1"), None, "h", now).expect("feed");
-        seed_book(&conn, "b1", 100, 3, now);
+        seed_book(conn, "b1", 100, 3, now);
         conn.set_cover("f1", "b1", "image/png", &[7; 50], now)
             .expect("cover");
         conn.add_book("f1", "b1", "T", "A", None, None, now)
@@ -305,20 +287,21 @@ mod tests {
 
     #[test]
     fn stale_cleanup_protects_shelf_and_drops_old() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
-        conn.upsert_feed(&meta("f1"), None, "h", now).expect("feed");
 
         let old = now - 16 * 24 * 3600 * 1000;
-        seed_book(&conn, "old-plain", 100, 2, old);
-        seed_book(&conn, "old-shelved", 100, 2, old);
-        seed_book(&conn, "fresh-plain", 100, 2, now);
+        seed_book(conn, "old-plain", 100, 2, old);
+        seed_book(conn, "old-shelved", 100, 2, old);
+        seed_book(conn, "fresh-plain", 100, 2, now);
         conn.add_book("f1", "old-shelved", "T", "A", None, None, now)
             .expect("shelf");
         conn.set_progress("f1", "old-plain", "c", "p", 0, old)
             .expect("progress");
-        bookmark(&conn, "k1", "old-plain", old);
-        bookmark(&conn, "k2", "old-shelved", old);
+        bookmark(conn, "k1", "old-plain", old);
+        bookmark(conn, "k2", "old-shelved", old);
 
         let cutoff = now - 15 * 24 * 3600 * 1000;
         let report = conn.stale_cleanup(cutoff).expect("cleanup");
@@ -349,14 +332,15 @@ mod tests {
 
     #[test]
     fn eviction_oldest_first_and_chunked() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
-        conn.upsert_feed(&meta("f1"), None, "h", now).expect("feed");
 
-        seed_book(&conn, "oldest", 100, 1, now - 3000);
-        seed_book(&conn, "middle", 100, 1, now - 2000);
-        seed_book(&conn, "newest", 100, 1, now - 1000);
-        seed_book(&conn, "shelved", 100, 1, now - 5000);
+        seed_book(conn, "oldest", 100, 1, now - 3000);
+        seed_book(conn, "middle", 100, 1, now - 2000);
+        seed_book(conn, "newest", 100, 1, now - 1000);
+        seed_book(conn, "shelved", 100, 1, now - 5000);
         conn.add_book("f1", "shelved", "T", "A", None, None, now)
             .expect("shelf");
 
@@ -383,10 +367,11 @@ mod tests {
 
     #[test]
     fn clear_cache_wipes_payloads_keeps_rows_and_resets_state() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
-        conn.upsert_feed(&meta("f1"), None, "h", now).expect("feed");
-        seed_book(&conn, "b1", 100, 2, now);
+        seed_book(conn, "b1", 100, 2, now);
         conn.set_cover("f1", "b1", "image/png", &[1; 10], now)
             .expect("cover");
         conn.add_book("f1", "b1", "T", "A", None, None, now)
@@ -422,12 +407,13 @@ mod tests {
 
     #[test]
     fn prune_all_scripts_keeps_active_and_limit() {
-        let conn = conn();
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        let conn = db.conn();
         let now = now_ms();
 
         // f1: the active version is the newest — plain top-3 pruning.
-        let mut m1 = meta("f1");
-        m1.version = "1.0.4".to_owned();
+        let m1 = feed_meta("f1", "1.0.4");
         conn.upsert_feed(&m1, None, "h", now).expect("feed");
         for (i, v) in ["1.0.1", "1.0.2", "1.0.3", "1.0.4"].iter().enumerate() {
             conn.upsert_script("f1", v, "h", "--s", now + i as i64)
@@ -436,8 +422,7 @@ mod tests {
 
         // f2: the active version is artificially the oldest — the safety net
         // must keep it even though it falls outside the top 3.
-        let mut m2 = meta("f2");
-        m2.version = "1.0.0".to_owned();
+        let m2 = feed_meta("f2", "1.0.0");
         conn.upsert_feed(&m2, None, "h", now).expect("feed");
         for (i, v) in ["1.0.0", "1.0.2", "1.0.3", "1.0.4"].iter().enumerate() {
             conn.upsert_script("f2", v, "h", "--s", now + i as i64)
