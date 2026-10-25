@@ -181,6 +181,122 @@ mod tests {
         assert!(!out.skipped);
     }
 
+    /// File-backed (WAL) repro of the incident: shelved books whose
+    /// `last_used_at_ms` is older than the stale cutoff must survive a
+    /// maintenance pass — only their *unshelved* peers may be dropped.
+    #[tokio::test]
+    async fn maintenance_preserves_stale_shelved_books_file_backed() {
+        use tokio_rusqlite::rusqlite::params;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("langhuan.db");
+        let db = Db::open(&path).await.expect("open file db");
+
+        let now = now_ms();
+        let stale = now - 20 * 24 * 3600 * 1000;
+
+        db.write(move |conn| conn.upsert_feed(&meta("biquge-tw", "1.0.0"), None, "h", now))
+            .await
+            .expect("seed feed");
+
+        // Four stale shelved books (shelved weeks ago, never opened since)
+        // plus one fresh shelved book (recently read).
+        for id in ["b1", "b2", "b3", "b4"] {
+            db.write({
+                let id = id.to_owned();
+                move |conn| conn.add_book("biquge-tw", &id, "T", "A", None, None, stale)
+            })
+            .await
+            .expect("add stale shelved book");
+        }
+        db.write(move |conn| {
+            conn.add_book("biquge-tw", "fresh", "T", "A", None, None, now - 3_600_000)
+        })
+        .await
+        .expect("add fresh shelved book");
+
+        // A stale unshelved book — the cleanup's legitimate target.
+        db.write(move |conn| conn.ensure_book("biquge-tw", "old-plain", stale))
+            .await
+            .expect("seed unshelved book");
+
+        // Age the user-era rows and give every old book stale caches
+        // (chapter lists, chapter content, covers) — exactly the state the
+        // real database was in before the incident.
+        db.write(move |conn| {
+            conn.execute(
+                "UPDATE books SET last_used_at_ms = ?1, info_fetched_at_ms = ?1 \
+                 WHERE book_id IN ('b1','b2','b3','b4','old-plain')",
+                params![stale],
+            )?;
+            for id in ["b1", "b2", "b3", "b4", "old-plain"] {
+                conn.execute(
+                    "INSERT INTO chapter_lists (feed_id, book_id, chapters_json, cached_at_ms) \
+                     VALUES ('biquge-tw', ?1, '[]', ?2)",
+                    params![id, stale],
+                )?;
+                conn.execute(
+                    "INSERT INTO chapters (feed_id, book_id, chapter_id, paragraphs_json, cached_at_ms) \
+                     VALUES ('biquge-tw', ?1, 'c0', '[]', ?2)",
+                    params![id, stale],
+                )?;
+                conn.execute(
+                    "INSERT INTO covers (feed_id, book_id, mime, bytes, fetched_at_ms) \
+                     VALUES ('biquge-tw', ?1, 'image/jpeg', X'00', ?2)",
+                    params![id, stale],
+                )?;
+            }
+            Ok(())
+        })
+        .await
+        .expect("age rows");
+
+        // Sanity: the shelf holds five books before maintenance.
+        let items = db.call(|conn| conn.shelf_items()).await.expect("shelf before");
+        assert_eq!(items.len(), 5, "seeded shelf must have 5 items");
+
+        // The launch-time maintenance pass.
+        let outcome = run_maintenance(&db, true).await.expect("maintenance");
+        assert!(!outcome.skipped);
+        assert!(
+            outcome.items_removed > 0,
+            "cleanup must have removed the stale unshelved data (outcome: {outcome:?})"
+        );
+
+        let items = db.call(|conn| conn.shelf_items()).await.expect("shelf after");
+        assert_eq!(
+            items.len(),
+            5,
+            "stale shelved books must survive maintenance (items: {items:?})"
+        );
+
+        // The stale unshelved book must be gone — proving the cleanup ran.
+        let plain: i64 = db
+            .call(|conn| {
+                Ok(conn.query_row(
+                    "SELECT COUNT(*) FROM books WHERE book_id = 'old-plain'",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .await
+            .expect("count old-plain");
+        assert_eq!(plain, 0, "stale unshelved book should have been cleaned");
+
+        // And the four stale shelved books must keep their `books` rows.
+        let kept: i64 = db
+            .call(|conn| {
+                Ok(conn.query_row(
+                    "SELECT COUNT(*) FROM books WHERE book_id IN ('b1','b2','b3','b4')",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .await
+            .expect("count shelved books rows");
+        assert_eq!(kept, 4, "stale shelved books' rows must survive");
+    }
+
     #[tokio::test]
     async fn maintenance_removes_stale_unshelved_books() {
         let db = Db::open_in_memory().await.expect("open");
