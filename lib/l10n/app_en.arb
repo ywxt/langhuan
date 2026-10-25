@@ -89,6 +89,15 @@
   "searchHintNoFeed": "Select a feed first…",
   "@searchHintNoFeed": { "description": "Search bar hint when no feed is selected" },
 
+  "searchHintAllFeeds": "Search across all feeds…",
+  "@searchHintAllFeeds": { "description": "Search bar hint when the aggregated all-feeds search is selected" },
+
+  "searchAllFeeds": "All",
+  "@searchAllFeeds": { "description": "Feed selector chip that searches every feed" },
+
+  "searchSourceFailed": "Failed to search {feedName}",
+  "@searchSourceFailed": { "description": "Header of a failed source's section in aggregated results" },
+
   "searchHintWithFeed": "Search in {feedName}…",
   "@searchHintWithFeed": {
     "description": "Search bar hint when a feed is selected",

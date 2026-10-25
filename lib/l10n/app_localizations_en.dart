@@ -100,6 +100,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchHintNoFeed => 'Select a feed first…';
 
   @override
+  String get searchHintAllFeeds => 'Search across all feeds…';
+
+  @override
+  String get searchAllFeeds => 'All';
+
+  @override
+  String searchSourceFailed(Object feedName) {
+    return 'Failed to search $feedName';
+  }
+
+  @override
   String searchHintWithFeed(String feedName) {
     return 'Search in $feedName…';
   }

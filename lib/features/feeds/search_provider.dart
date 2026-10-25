@@ -10,10 +10,39 @@ import 'feed_service.dart';
 
 const _pageSize = 20;
 
+/// Results from one source. An aggregated search holds one group per feed
+/// that produced results or an error; a single-source search holds exactly
+/// one.
+class SearchFeedGroup {
+  const SearchFeedGroup({
+    required this.feedId,
+    required this.feedName,
+    this.items = const [],
+    this.error,
+  });
+
+  final String feedId;
+  final String feedName;
+  final List<SearchResultModel> items;
+  final String? error;
+
+  SearchFeedGroup copyWith({
+    List<SearchResultModel>? items,
+    String? Function()? error,
+  }) {
+    return SearchFeedGroup(
+      feedId: feedId,
+      feedName: feedName,
+      items: items ?? this.items,
+      error: error != null ? error() : this.error,
+    );
+  }
+}
+
 class SearchState {
   const SearchState({
     this.keyword = '',
-    this.items = const [],
+    this.groups = const [],
     this.isLoading = false,
     this.isLoadingMore = false,
     this.hasMore = true,
@@ -21,19 +50,19 @@ class SearchState {
   });
 
   final String keyword;
-  final List<SearchResultModel> items;
+  final List<SearchFeedGroup> groups;
   final bool isLoading;
   final bool isLoadingMore;
   final bool hasMore;
   final Object? error;
 
   bool get hasError => error != null;
-  bool get hasItems => items.isNotEmpty;
+  bool get hasItems => groups.any((group) => group.items.isNotEmpty);
   bool get isIdle => !isLoading && !isLoadingMore && !hasError;
 
   SearchState copyWith({
     String? keyword,
-    List<SearchResultModel>? items,
+    List<SearchFeedGroup>? groups,
     bool? isLoading,
     bool? isLoadingMore,
     bool? hasMore,
@@ -41,7 +70,7 @@ class SearchState {
   }) {
     return SearchState(
       keyword: keyword ?? this.keyword,
-      items: items ?? this.items,
+      groups: groups ?? this.groups,
       isLoading: isLoading ?? this.isLoading,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       hasMore: hasMore ?? this.hasMore,
@@ -52,25 +81,57 @@ class SearchState {
 
 class SearchNotifier extends Notifier<SearchState> {
   int _runToken = 0;
-  StreamIterator<SearchResultModel>? _iterator;
+  StreamIterator<AggregatedSearchEventModel>? _iterator;
+
+  /// The single feed of the last search, or null when it was an
+  /// all-feeds search. Kept for [retry].
+  String? _lastFeedId;
+  String? _lastFeedName;
 
   @override
   SearchState build() => const SearchState();
 
-  Future<void> search({required String feedId, required String keyword}) async {
-    _runToken++;
-    final runToken = _runToken;
-    _disposeIterator();
-
-    state = SearchState(keyword: keyword, isLoading: true);
-
-    final stream = FeedService.instance.search(
-      feedId: feedId,
+  Future<void> search({
+    required String feedId,
+    required String feedName,
+    required String keyword,
+  }) async {
+    _lastFeedId = feedId;
+    _lastFeedName = feedName;
+    await _run(
       keyword: keyword,
+      stream: FeedService.instance
+          .search(feedId: feedId, keyword: keyword)
+          .map(
+            (item) => AggregatedSearchEventModel(
+              feedId: feedId,
+              feedName: feedName,
+              item: item,
+            ),
+          ),
     );
-    _iterator = StreamIterator(stream);
+  }
 
-    await _loadPage(runToken: runToken, initial: true);
+  Future<void> searchAll({required String keyword}) async {
+    _lastFeedId = null;
+    _lastFeedName = null;
+    await _run(
+      keyword: keyword,
+      stream: FeedService.instance.searchAll(keyword: keyword),
+    );
+  }
+
+  Future<void> retry() async {
+    if (state.keyword.isEmpty) return;
+    if (_lastFeedId case final feedId?) {
+      await search(
+        feedId: feedId,
+        feedName: _lastFeedName ?? feedId,
+        keyword: state.keyword,
+      );
+    } else {
+      await searchAll(keyword: state.keyword);
+    }
   }
 
   Future<void> loadMore() async {
@@ -79,7 +140,7 @@ class SearchNotifier extends Notifier<SearchState> {
 
     final runToken = _runToken;
     state = state.copyWith(isLoadingMore: true);
-    await _loadPage(runToken: runToken, initial: false);
+    await _loadPage(runToken: runToken);
   }
 
   Future<void> cancelAndClear() async {
@@ -88,14 +149,30 @@ class SearchNotifier extends Notifier<SearchState> {
     state = const SearchState();
   }
 
-  Future<void> retry({required String feedId}) async {
-    if (state.keyword.isEmpty) return;
-    await search(feedId: feedId, keyword: state.keyword);
+  Future<void> _run({
+    required String keyword,
+    required Stream<AggregatedSearchEventModel> stream,
+  }) async {
+    _runToken++;
+    final runToken = _runToken;
+    _disposeIterator();
+
+    state = SearchState(keyword: keyword, isLoading: true);
+
+    _iterator = StreamIterator(stream);
+    await _loadPage(runToken: runToken);
   }
 
-  Future<void> _loadPage({required int runToken, required bool initial}) async {
+  /// Pull up to [_pageSize] events and route them into per-feed groups.
+  /// Feed errors land in their group instead of failing the whole run.
+  Future<void> _loadPage({required int runToken}) async {
     try {
-      final items = List<SearchResultModel>.of(state.items);
+      final groups = <String, SearchFeedGroup>{};
+      for (final group in state.groups) {
+        groups[group.feedId] = group.copyWith(
+          items: List.of(group.items),
+        );
+      }
       var exhausted = false;
 
       for (var i = 0; i < _pageSize; i++) {
@@ -105,11 +182,29 @@ class SearchNotifier extends Notifier<SearchState> {
           exhausted = true;
           break;
         }
-        items.add(_iterator!.current);
+
+        final event = _iterator!.current;
+        final existing = groups[event.feedId];
+        if (event.error != null) {
+          groups[event.feedId] = SearchFeedGroup(
+            feedId: event.feedId,
+            feedName: event.feedName,
+            items: existing?.items ?? const [],
+            error: event.error,
+          );
+        } else {
+          final item = event.item!;
+          groups[event.feedId] = SearchFeedGroup(
+            feedId: event.feedId,
+            feedName: event.feedName,
+            items: [...existing?.items ?? const [], item],
+            error: existing?.error,
+          );
+        }
       }
 
       state = state.copyWith(
-        items: List.unmodifiable(items),
+        groups: List.unmodifiable(groups.values),
         isLoading: false,
         isLoadingMore: false,
         hasMore: !exhausted,

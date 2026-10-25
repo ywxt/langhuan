@@ -266,6 +266,24 @@ abstract class AppLocalizations {
   /// **'Select a feed first…'**
   String get searchHintNoFeed;
 
+  /// Search bar hint when the aggregated all-feeds search is selected
+  ///
+  /// In en, this message translates to:
+  /// **'Search across all feeds…'**
+  String get searchHintAllFeeds;
+
+  /// Feed selector chip that searches every feed
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get searchAllFeeds;
+
+  /// Header of a failed source's section in aggregated results
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to search {feedName}'**
+  String searchSourceFailed(Object feedName);
+
   /// Search bar hint when a feed is selected
   ///
   /// In en, this message translates to:

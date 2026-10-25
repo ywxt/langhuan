@@ -106,7 +106,7 @@ class FeedListNotifier extends Notifier<FeedListState> {
       await FeedService.instance.removeFeed(feedId);
 
       final selected = ref.read(selectedFeedProvider);
-      if (selected?.id == feedId) {
+      if (selected is FeedSelectionOne && selected.feed.id == feedId) {
         ref.read(selectedFeedProvider.notifier).clear();
       }
 
@@ -136,17 +136,35 @@ final feedListProvider = NotifierProvider<FeedListNotifier, FeedListState>(
   FeedListNotifier.new,
 );
 
-/// The feed currently selected by the user (used as the source for searches).
-class SelectedFeedNotifier extends Notifier<FeedMetaItem?> {
-  @override
-  FeedMetaItem? build() => null;
+/// What the search page searches: every installed feed, or one specific
+/// source.
+sealed class FeedSelection {
+  const FeedSelection();
+}
 
-  void select(FeedMetaItem feed) => state = feed;
+/// Search across every installed feed concurrently.
+class FeedSelectionAll extends FeedSelection {
+  const FeedSelectionAll();
+}
+
+/// Search a single feed.
+class FeedSelectionOne extends FeedSelection {
+  const FeedSelectionOne(this.feed);
+
+  final FeedMetaItem feed;
+}
+
+/// The search source selection (all feeds or one specific feed).
+class SelectedFeedNotifier extends Notifier<FeedSelection?> {
+  @override
+  FeedSelection? build() => null;
+
+  void select(FeedSelection selection) => state = selection;
   void clear() => state = null;
 }
 
 final selectedFeedProvider =
-    NotifierProvider<SelectedFeedNotifier, FeedMetaItem?>(
+    NotifierProvider<SelectedFeedNotifier, FeedSelection?>(
       SelectedFeedNotifier.new,
     );
 

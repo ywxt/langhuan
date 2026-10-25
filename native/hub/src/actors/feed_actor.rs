@@ -18,11 +18,12 @@ use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 
 use crate::api::types::{
-    BookInfo, BridgeError, ChapterItem, ParagraphContent, ParagraphId, SearchResultItem,
+    AggregatedSearchEvent, BookInfo, BridgeError, ChapterItem, FeedMetaItem, ParagraphContent,
+    ParagraphId, SearchResultItem,
 };
 
 use super::conversion_actor::{BuildTransformChain, ConversionActor};
-use super::registry_actor::{GetFeed, RegistryActor};
+use super::registry_actor::{GetFeed, ListFeeds, RegistryActor};
 
 // ---------------------------------------------------------------------------
 // Generic pull-based stream
@@ -161,6 +162,10 @@ pub struct OpenSearchStream {
     pub keyword: String,
 }
 
+pub struct OpenAggregatedSearchStream {
+    pub keyword: String,
+}
+
 pub struct OpenChaptersStream {
     pub feed_id: String,
     pub book_id: String,
@@ -259,6 +264,113 @@ impl Handler<OpenSearchStream> for FeedActor {
             .await
         }))
     }
+}
+
+#[async_trait]
+impl Handler<OpenAggregatedSearchStream> for FeedActor {
+    type Result = Result<PullStream<AggregatedSearchEvent>, BridgeError>;
+
+    async fn handle(
+        &mut self,
+        msg: OpenAggregatedSearchStream,
+        _: &Context<Self>,
+    ) -> Self::Result {
+        tracing::debug!(keyword = %msg.keyword, "open aggregated search stream");
+        let feeds: Vec<FeedMetaItem> = self
+            .registry_addr
+            .send(ListFeeds)
+            .await
+            .map_err(BridgeError::from)?;
+
+        // One producer task per feed, all feeding a single merged channel.
+        // The actor mailbox only serialises the opening, so the searches
+        // themselves run concurrently. A failure in one feed surfaces as a
+        // FeedError event for that feed instead of ending the stream; only
+        // the initial registry listing can fail the whole request.
+        let registry = self.registry_addr.clone();
+        let keyword = msg.keyword;
+        Ok(spawn_pull_stream(move |tx| async move {
+            let mut tasks = Vec::with_capacity(feeds.len());
+            for meta in feeds {
+                let tx = tx.clone();
+                let registry = registry.clone();
+                let keyword = keyword.clone();
+                tasks.push(tokio::spawn(async move {
+                    search_one_feed(registry, tx, meta, keyword).await
+                }));
+            }
+            // The merged channel closes once every per-feed sender drops.
+            drop(tx);
+            for task in tasks {
+                let _ = task.await;
+            }
+        }))
+    }
+}
+
+/// Resolve one feed and drive its search into the merged channel,
+/// isolating both resolution and search failures to that feed.
+async fn search_one_feed(
+    mut registry: Address<RegistryActor>,
+    tx: mpsc::Sender<Result<AggregatedSearchEvent, BridgeError>>,
+    meta: FeedMetaItem,
+    keyword: String,
+) {
+    let feed = match registry.send(GetFeed { feed_id: meta.id.clone() }).await {
+        Ok(Ok(feed)) => feed,
+        Ok(Err(e)) => {
+            emit_feed_error(&tx, &meta, e.to_string()).await;
+            return;
+        }
+        Err(e) => {
+            emit_feed_error(&tx, &meta, e.to_string()).await;
+            return;
+        }
+    };
+
+    let stream = feed.search(&keyword);
+    tokio::pin!(stream);
+    while let Some(result) = stream.next().await {
+        let event = match result {
+            Ok(item) => AggregatedSearchEvent::Item {
+                feed_id: meta.id.clone(),
+                feed_name: meta.name.clone(),
+                item: SearchResultItem {
+                    id: item.id,
+                    title: item.title,
+                    author: item.author,
+                    cover_url: item.cover_url,
+                    description: item.description,
+                },
+            },
+            Err(e) => AggregatedSearchEvent::FeedError {
+                feed_id: meta.id.clone(),
+                feed_name: meta.name.clone(),
+                error: e.to_string(),
+            },
+        };
+        let is_feed_error = matches!(event, AggregatedSearchEvent::FeedError { .. });
+        if tx.send(Ok(event)).await.is_err() {
+            break; // receiver dropped (stream cancelled)
+        }
+        if is_feed_error {
+            break; // this feed's contribution is done
+        }
+    }
+}
+
+async fn emit_feed_error(
+    tx: &mpsc::Sender<Result<AggregatedSearchEvent, BridgeError>>,
+    meta: &FeedMetaItem,
+    error: String,
+) {
+    let _ = tx
+        .send(Ok(AggregatedSearchEvent::FeedError {
+            feed_id: meta.id.clone(),
+            feed_name: meta.name.clone(),
+            error,
+        }))
+        .await;
 }
 
 #[async_trait]

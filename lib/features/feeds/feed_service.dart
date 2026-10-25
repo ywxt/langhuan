@@ -54,6 +54,47 @@ class SearchResultModel {
       );
 }
 
+/// One event of an aggregated (all-feeds) search, flattened for the UI:
+/// either [item] from [feedId], or that source's terminal [error].
+@immutable
+class AggregatedSearchEventModel {
+  const AggregatedSearchEventModel({
+    required this.feedId,
+    required this.feedName,
+    this.item,
+    this.error,
+  });
+
+  final String feedId;
+  final String feedName;
+  final SearchResultModel? item;
+  final String? error;
+
+  factory AggregatedSearchEventModel.fromRust(AggregatedSearchEvent event) =>
+      switch (event) {
+        AggregatedSearchEvent_Item(
+          :final feedId,
+          :final feedName,
+          :final item,
+        ) =>
+          AggregatedSearchEventModel(
+            feedId: feedId,
+            feedName: feedName,
+            item: SearchResultModel.fromRust(item),
+          ),
+        AggregatedSearchEvent_FeedError(
+          :final feedId,
+          :final feedName,
+          :final error,
+        ) =>
+          AggregatedSearchEventModel(
+            feedId: feedId,
+            feedName: feedName,
+            error: error,
+          ),
+      };
+}
+
 @immutable
 class ChapterInfoModel {
   const ChapterInfoModel({required this.id, required this.title});
@@ -315,6 +356,26 @@ class FeedService {
         final item = await stream.next();
         if (item == null) break;
         yield SearchResultModel.fromRust(item);
+      }
+    } finally {
+      stream.cancel();
+    }
+  }
+
+  /// Search every installed feed concurrently. Each event carries its
+  /// source; a failing source yields an event with [error] set instead of
+  /// ending the stream.
+  Stream<AggregatedSearchEventModel> searchAll({
+    required String keyword,
+  }) async* {
+    final stream = await rust_stream.openAggregatedSearchStream(
+      keyword: keyword,
+    );
+    try {
+      while (true) {
+        final event = await stream.next();
+        if (event == null) break;
+        yield AggregatedSearchEventModel.fromRust(event);
       }
     } finally {
       stream.cancel();

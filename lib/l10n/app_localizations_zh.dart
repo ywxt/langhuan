@@ -99,6 +99,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get searchHintNoFeed => '請先選擇書源…';
 
   @override
+  String get searchHintAllFeeds => '在全部書源中搜索…';
+
+  @override
+  String get searchAllFeeds => '全部';
+
+  @override
+  String searchSourceFailed(Object feedName) {
+    return '「$feedName」搜索失敗';
+  }
+
+  @override
   String searchHintWithFeed(String feedName) {
     return '在 $feedName 中搜索…';
   }

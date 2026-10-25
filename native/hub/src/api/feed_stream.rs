@@ -1,10 +1,13 @@
 use crate::actors::addresses;
 use crate::actors::feed_actor::{
-    GetBookInfo, OpenChaptersStream, OpenParagraphsStream, OpenSearchStream, PullStream,
+    GetBookInfo, OpenAggregatedSearchStream, OpenChaptersStream, OpenParagraphsStream,
+    OpenSearchStream, PullStream,
 };
 
 use super::types::BookInfo;
-pub use super::types::{BridgeError, ChapterItem, ParagraphContent, SearchResultItem};
+pub use super::types::{
+    AggregatedSearchEvent, BridgeError, ChapterItem, ParagraphContent, SearchResultItem,
+};
 
 // ---------------------------------------------------------------------------
 // Pull-based stream types (opaque to Dart via FRB)
@@ -15,6 +18,19 @@ pub struct FeedSearchStream(PullStream<SearchResultItem>);
 
 impl FeedSearchStream {
     pub async fn next(&mut self) -> Result<Option<SearchResultItem>, BridgeError> {
+        self.0.next().await
+    }
+
+    pub fn cancel(&mut self) {
+        self.0.cancel();
+    }
+}
+
+/// A pull-based stream of aggregated search events across all feeds.
+pub struct AggregatedSearchStream(PullStream<AggregatedSearchEvent>);
+
+impl AggregatedSearchStream {
+    pub async fn next(&mut self) -> Result<Option<AggregatedSearchEvent>, BridgeError> {
         self.0.next().await
     }
 
@@ -64,6 +80,21 @@ pub async fn open_search_stream(
         .send(OpenSearchStream { feed_id, keyword })
         .await??;
     Ok(FeedSearchStream(stream))
+}
+
+/// Open a pull-based search stream across every installed feed. Results
+/// arrive interleaved, each attributed to its source; a failing source
+/// yields a [`AggregatedSearchEvent::FeedError`] event instead of ending
+/// the stream.
+pub async fn open_aggregated_search_stream(
+    keyword: String,
+) -> Result<AggregatedSearchStream, BridgeError> {
+    let stream = addresses()?
+        .feed
+        .clone()
+        .send(OpenAggregatedSearchStream { keyword })
+        .await??;
+    Ok(AggregatedSearchStream(stream))
 }
 
 /// Open a pull-based chapters stream.

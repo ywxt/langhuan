@@ -28,6 +28,30 @@ class SearchPage extends ConsumerStatefulWidget {
   ConsumerState<SearchPage> createState() => _SearchPageState();
 }
 
+/// One row of the results list, flattened from the per-feed groups.
+sealed class _ResultRow {
+  const _ResultRow();
+}
+
+class _GroupHeaderRow extends _ResultRow {
+  const _GroupHeaderRow(this.group);
+
+  final SearchFeedGroup group;
+}
+
+class _CardRow extends _ResultRow {
+  const _CardRow(this.group, this.index);
+
+  final SearchFeedGroup group;
+  final int index;
+}
+
+class _GroupErrorRow extends _ResultRow {
+  const _GroupErrorRow(this.group);
+
+  final SearchFeedGroup group;
+}
+
 class _SearchPageState extends ConsumerState<SearchPage> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
@@ -38,19 +62,21 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         .toList(growable: false);
   }
 
-  FeedMetaItem? _effectiveSelectedFeed({
+  /// The selection in effect: a stored single-source selection survives
+  /// while that feed is still installed; anything else falls back to the
+  /// aggregated all-feeds search.
+  FeedSelection _effectiveSelection({
     required List<FeedMetaItem> visibleFeeds,
-    required FeedMetaItem? selectedFeed,
+    required FeedSelection? selected,
   }) {
-    if (visibleFeeds.isEmpty) return null;
-    if (selectedFeed == null) return visibleFeeds.first;
-
-    for (final feed in visibleFeeds) {
-      if (feed.id == selectedFeed.id) {
-        return feed;
+    if (selected is FeedSelectionOne) {
+      for (final feed in visibleFeeds) {
+        if (feed.id == selected.feed.id) {
+          return selected;
+        }
       }
     }
-    return visibleFeeds.first;
+    return const FeedSelectionAll();
   }
 
   @override
@@ -77,18 +103,25 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     if (!bootstrapReady) return;
 
     final feedState = ref.read(feedListProvider);
-    final selectedFeed = ref.read(selectedFeedProvider);
-    final effectiveSelectedFeed = _effectiveSelectedFeed(
-      visibleFeeds: _visibleFeeds(feedState),
-      selectedFeed: selectedFeed,
+    final visibleFeeds = _visibleFeeds(feedState);
+    if (visibleFeeds.isEmpty) return;
+
+    final selection = _effectiveSelection(
+      visibleFeeds: visibleFeeds,
+      selected: ref.read(selectedFeedProvider),
     );
-    if (effectiveSelectedFeed == null) return;
 
     final keyword = _searchController.text.trim();
     if (keyword.isEmpty) return;
-    ref
-        .read(searchProvider.notifier)
-        .search(feedId: effectiveSelectedFeed.id, keyword: keyword);
+
+    switch (selection) {
+      case FeedSelectionOne(:final feed):
+        ref
+            .read(searchProvider.notifier)
+            .search(feedId: feed.id, feedName: feed.name, keyword: keyword);
+      case FeedSelectionAll():
+        ref.read(searchProvider.notifier).searchAll(keyword: keyword);
+    }
   }
 
   @override
@@ -99,24 +132,22 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         !bootstrap.hasError &&
         bootstrap.asData?.value != null;
     final feedState = ref.watch(feedListProvider);
-    final selectedFeed = ref.watch(selectedFeedProvider);
+    final selected = ref.watch(selectedFeedProvider);
     final visibleFeeds = _visibleFeeds(feedState);
-    final effectiveSelectedFeed = _effectiveSelectedFeed(
+    final effectiveSelection = _effectiveSelection(
       visibleFeeds: visibleFeeds,
-      selectedFeed: selectedFeed,
+      selected: selected,
     );
     final searchState = ref.watch(searchProvider);
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
 
-    if (effectiveSelectedFeed?.id != selectedFeed?.id) {
+    // Coerce a stale selection (feed removed, or nothing chosen yet) into
+    // the effective one.
+    if (selected != effectiveSelection) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        if (effectiveSelectedFeed == null) {
-          ref.read(selectedFeedProvider.notifier).clear();
-        } else {
-          ref.read(selectedFeedProvider.notifier).select(effectiveSelectedFeed);
-        }
+        ref.read(selectedFeedProvider.notifier).select(effectiveSelection);
       });
     }
 
@@ -135,10 +166,15 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             child: SearchBar(
               controller: _searchController,
               focusNode: _searchFocusNode,
-              hintText: effectiveSelectedFeed == null
-                  ? l10n.searchHintNoFeed
-                  : l10n.searchHintWithFeed(effectiveSelectedFeed.name),
-              enabled: effectiveSelectedFeed != null && bootstrapReady,
+              hintText: switch (effectiveSelection) {
+                FeedSelectionOne(:final feed) => l10n.searchHintWithFeed(
+                  feed.name,
+                ),
+                FeedSelectionAll() => visibleFeeds.isEmpty
+                    ? l10n.searchHintNoFeed
+                    : l10n.searchHintAllFeeds,
+              },
+              enabled: visibleFeeds.isNotEmpty && bootstrapReady,
               leading: Icon(
                 Icons.search,
                 color: theme.colorScheme.onSurfaceVariant,
@@ -169,7 +205,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           FeedSelector(
             feedState: feedState,
             visibleFeeds: visibleFeeds,
-            selectedFeed: effectiveSelectedFeed,
+            selection: effectiveSelection,
           ),
 
           // ── Loading indicator ──────────────────────────────────────────
@@ -182,7 +218,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             child: _buildResults(
               context,
               searchState,
-              effectiveSelectedFeed,
+              effectiveSelection,
               l10n,
             ),
           ),
@@ -194,12 +230,13 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   Widget _buildResults(
     BuildContext context,
     SearchState searchState,
-    FeedMetaItem? selectedFeed,
+    FeedSelection selection,
     AppLocalizations l10n,
   ) {
     if (searchState.hasError) {
       final showAuth =
-          selectedFeed != null && isAuthRequiredError(searchState.error);
+          selection is FeedSelectionOne &&
+          isAuthRequiredError(searchState.error);
 
       return Column(
         children: [
@@ -207,11 +244,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             child: ErrorState(
               title: l10n.searchError,
               message: normalizeErrorMessage(searchState.error!),
-              onRetry: selectedFeed == null
-                  ? null
-                  : () => ref
-                        .read(searchProvider.notifier)
-                        .retry(feedId: selectedFeed.id),
+              onRetry: () => ref.read(searchProvider.notifier).retry(),
               retryLabel: l10n.searchRetry,
             ),
           ),
@@ -236,12 +269,12 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                     onPressed: () async {
                       final loggedIn = await context.pushNamed<bool>(
                         'feed-auth',
-                        queryParameters: {'feedId': selectedFeed.id},
+                        queryParameters: {
+                          'feedId': selection.feed.id,
+                        },
                       );
                       if (loggedIn == true && context.mounted) {
-                        ref
-                            .read(searchProvider.notifier)
-                            .retry(feedId: selectedFeed.id);
+                        ref.read(searchProvider.notifier).retry();
                       }
                     },
                     icon: const Icon(Icons.login),
@@ -254,7 +287,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       );
     }
 
-    if (!searchState.isLoading && !searchState.hasItems) {
+    final allGroupsHealthy = searchState.groups.every(
+      (group) => group.error == null,
+    );
+    if (!searchState.isLoading && !searchState.hasItems && allGroupsHealthy) {
       return EmptyState(
         icon: Icons.search,
         title: searchState.keyword.isEmpty
@@ -263,7 +299,23 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       );
     }
 
-    // Results list — card-style items with spacing
+    // Flatten the per-feed groups into rows. Headers only appear when more
+    // than one source contributed, so a single-source search keeps its
+    // flat layout.
+    final showHeaders = searchState.groups.length > 1;
+    final rows = <_ResultRow>[];
+    for (final group in searchState.groups) {
+      if (showHeaders) {
+        rows.add(_GroupHeaderRow(group));
+      }
+      for (var i = 0; i < group.items.length; i++) {
+        rows.add(_CardRow(group, i));
+      }
+      if (group.error != null) {
+        rows.add(_GroupErrorRow(group));
+      }
+    }
+
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification is ScrollEndNotification &&
@@ -279,9 +331,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           horizontal: LanghuanTheme.spaceLg,
           vertical: LanghuanTheme.spaceSm,
         ),
-        itemCount: searchState.items.length + (searchState.hasMore ? 1 : 0),
+        itemCount: rows.length + (searchState.hasMore ? 1 : 0),
         itemBuilder: (context, index) {
-          if (index >= searchState.items.length) {
+          if (index >= rows.length) {
             // Loading indicator at the bottom
             return const Padding(
               padding: EdgeInsets.symmetric(vertical: LanghuanTheme.spaceLg),
@@ -290,46 +342,127 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           }
           return Padding(
             padding: const EdgeInsets.only(bottom: LanghuanTheme.spaceSm),
-            child: SearchResultCard(
-              item: searchState.items[index],
-              coverHeroTag: selectedFeed == null
-                  ? null
-                  : bookCoverHeroTag(
-                      selectedFeed.id,
-                      searchState.items[index].id,
-                    ),
-              titleHeroTag: selectedFeed == null
-                  ? null
-                  : bookTitleHeroTag(
-                      selectedFeed.id,
-                      searchState.items[index].id,
-                    ),
-              authorHeroTag: selectedFeed == null
-                  ? null
-                  : bookAuthorHeroTag(
-                      selectedFeed.id,
-                      searchState.items[index].id,
-                    ),
-              onTap: selectedFeed == null
-                  ? null
-                  : () {
-                      final item = searchState.items[index];
-                      context.pushNamed(
-                        'bookshelf-book-detail',
-                        queryParameters: {
-                          'feedId': selectedFeed.id,
-                          'bookId': item.id,
-                        },
-                        extra: BookDetailRouteExtra(
-                          coverUrl: item.coverUrl,
-                          title: item.title,
-                          author: item.author,
-                        ),
-                      );
-                    },
-            ),
+            child: switch (rows[index]) {
+              _GroupHeaderRow(:final group) =>
+                _buildGroupHeader(context, group),
+              _CardRow(:final group, :final index) => _buildResultCard(
+                context,
+                group: group,
+                index: index,
+              ),
+              _GroupErrorRow(:final group) =>
+                _buildGroupError(context, group, l10n),
+            },
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildGroupHeader(BuildContext context, SearchFeedGroup group) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(
+        top: LanghuanTheme.spaceMd,
+        bottom: LanghuanTheme.spaceSm,
+      ),
+      child: Text(
+        group.feedName,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResultCard(
+    BuildContext context, {
+    required SearchFeedGroup group,
+    required int index,
+  }) {
+    final item = group.items[index];
+    return SearchResultCard(
+      item: item,
+      coverHeroTag: bookCoverHeroTag(group.feedId, item.id),
+      titleHeroTag: bookTitleHeroTag(group.feedId, item.id),
+      authorHeroTag: bookAuthorHeroTag(group.feedId, item.id),
+      onTap: () {
+        context.pushNamed(
+          'bookshelf-book-detail',
+          queryParameters: {'feedId': group.feedId, 'bookId': item.id},
+          extra: BookDetailRouteExtra(
+            coverUrl: item.coverUrl,
+            title: item.title,
+            author: item.author,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildGroupError(
+    BuildContext context,
+    SearchFeedGroup group,
+    AppLocalizations l10n,
+  ) {
+    final theme = Theme.of(context);
+    final error = group.error;
+    if (error == null) {
+      return const SizedBox.shrink();
+    }
+    final showAuth = isAuthRequiredError(error);
+
+    return Material(
+      color: theme.colorScheme.surfaceContainer,
+      borderRadius: LanghuanTheme.borderRadiusMd,
+      child: Padding(
+        padding: const EdgeInsets.all(LanghuanTheme.spaceMd),
+        child: Row(
+          children: [
+            Icon(
+              Icons.error_outline,
+              color: theme.colorScheme.error,
+              size: 20,
+            ),
+            const SizedBox(width: LanghuanTheme.spaceMd),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    l10n.searchSourceFailed(group.feedName),
+                    style: theme.textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: LanghuanTheme.spaceXs),
+                  Text(
+                    normalizeErrorMessage(error),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            if (showAuth) ...[
+              const SizedBox(width: LanghuanTheme.spaceSm),
+              FilledButton.tonalIcon(
+                onPressed: () async {
+                  final loggedIn = await context.pushNamed<bool>(
+                    'feed-auth',
+                    queryParameters: {'feedId': group.feedId},
+                  );
+                  if (loggedIn == true && context.mounted) {
+                    ref.read(searchProvider.notifier).retry();
+                  }
+                },
+                icon: const Icon(Icons.login),
+                label: Text(l10n.searchAuthAction),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

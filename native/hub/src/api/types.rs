@@ -232,6 +232,25 @@ pub struct SearchResultItem {
     pub description: Option<String>,
 }
 
+/// One event of an aggregated (all-installed-feeds) search.
+///
+/// Every installed feed runs its own search concurrently. `Item` carries
+/// one result attributed to its source; `FeedError` reports that feed's
+/// terminal failure — resolution or search — without affecting the other
+/// feeds' contributions to the stream.
+pub enum AggregatedSearchEvent {
+    Item {
+        feed_id: String,
+        feed_name: String,
+        item: SearchResultItem,
+    },
+    FeedError {
+        feed_id: String,
+        feed_name: String,
+        error: String,
+    },
+}
+
 pub struct ChapterItem {
     pub id: String,
     pub title: String,
