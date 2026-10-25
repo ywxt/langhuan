@@ -6,6 +6,9 @@ import '../../shared/app_service.dart';
 import '../../shared/constants.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/format_bytes.dart';
+import '../../shared/utils/snackbars.dart';
+import '../../shared/widgets/confirm_dialog.dart';
+import '../../shared/widgets/loading.dart';
 import '../../src/rust/api/types.dart' show CacheStats;
 import '../bookshelf/reader_settings_provider.dart';
 import '../bookshelf/widgets/book_cover.dart' show coverProvider;
@@ -55,18 +58,24 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       await _loadStats();
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      final message = result.itemsRemoved > 0
-          ? l10n.settingsCleanupSuccess(result.itemsRemoved)
-          : l10n.settingsCleanupNothingToClean;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      if (result.itemsRemoved > 0) {
+        showSuccessSnack(
+          ScaffoldMessenger.of(context),
+          l10n.settingsCleanupSuccess(result.itemsRemoved),
+        );
+      } else {
+        showSuccessSnack(
+          ScaffoldMessenger.of(context),
+          l10n.settingsCleanupNothingToClean,
+        );
+      }
     } catch (_) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.settingsCleanupError)));
+      showErrorSnack(
+        ScaffoldMessenger.of(context),
+        l10n.settingsCleanupError,
+      );
     } finally {
       if (mounted) setState(() => _isCleaning = false);
     }
@@ -76,26 +85,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     if (_isClearing) return;
 
     final l10n = AppLocalizations.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.settingsClearCacheConfirmTitle),
-        content: Text(l10n.settingsClearCacheConfirmMessage),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(
-              MaterialLocalizations.of(dialogContext).cancelButtonLabel,
-            ),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(l10n.settingsClearCache),
-          ),
-        ],
-      ),
+    final confirmed = await showConfirmDialog(
+      context,
+      title: l10n.settingsClearCacheConfirmTitle,
+      message: l10n.settingsClearCacheConfirmMessage,
+      note: l10n.settingsClearCacheNote,
+      confirmLabel: l10n.settingsClearCache,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     setState(() => _isClearing = true);
 
@@ -105,17 +102,25 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ref.invalidate(coverProvider);
       await _loadStats();
       if (!mounted) return;
-      final message = result.itemsRemoved > 0
-          ? l10n.settingsClearCacheSuccess(formatBytes(result.bytesFreed))
-          : l10n.settingsClearCacheNothing;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      final l10n = AppLocalizations.of(context);
+      if (result.itemsRemoved > 0) {
+        showSuccessSnack(
+          ScaffoldMessenger.of(context),
+          l10n.settingsClearCacheSuccess(formatBytes(result.bytesFreed)),
+        );
+      } else {
+        showSuccessSnack(
+          ScaffoldMessenger.of(context),
+          l10n.settingsClearCacheNothing,
+        );
+      }
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.settingsClearCacheError)));
+      final l10n = AppLocalizations.of(context);
+      showErrorSnack(
+        ScaffoldMessenger.of(context),
+        l10n.settingsClearCacheError,
+      );
     } finally {
       if (mounted) setState(() => _isClearing = false);
     }
@@ -190,11 +195,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   label: l10n.settingsCleanupCache,
                   subtitle: l10n.settingsCleanupCacheDescription,
                   trailing: _isCleaning
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                      ? const LanghuanSpinner(size: 20)
                       : Icon(
                           Icons.chevron_right,
                           size: 20,
@@ -209,13 +210,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   icon: Icons.delete_sweep_outlined,
                   label: l10n.settingsClearCache,
                   subtitle: l10n.settingsClearCacheDescription,
-                  trailing: _isClearing
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
+                  trailing: _isClearing ? const LanghuanSpinner(size: 20) : Icon(
                           Icons.chevron_right,
                           size: 20,
                           color: theme.colorScheme.onSurfaceVariant.withAlpha(

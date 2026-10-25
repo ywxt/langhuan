@@ -7,10 +7,13 @@ import 'package:go_router/go_router.dart';
 import '../../l10n/app_localizations.dart';
 import '../../rust_init.dart';
 import '../../shared/theme/app_theme.dart';
+import '../../shared/utils/snackbars.dart';
+import '../../shared/widgets/confirm_dialog.dart';
 import '../../shared/widgets/cover_image.dart';
 import '../../shared/widgets/cover_placeholder.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
+import '../../shared/widgets/loading.dart';
 import 'book_providers.dart';
 import 'bookshelf_provider.dart';
 import '../feeds/feed_service.dart';
@@ -193,7 +196,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                 ),
               ],
               const Spacer(),
-              const CircularProgressIndicator(),
+              const LanghuanSpinner(),
               const Spacer(),
             ],
           ),
@@ -357,7 +360,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                 padding: EdgeInsets.symmetric(
                   horizontal: LanghuanTheme.spaceLg,
                 ),
-                child: LinearProgressIndicator(),
+                child: LinearProgressIndicator(minHeight: 2),
               ),
             )
           else if (currentChaptersState.hasError &&
@@ -481,9 +484,10 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
         bootstrap.hasError ||
         bootstrap.asData?.value == null) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(l10n.bookshelfActionFailed)));
+      showErrorSnack(
+        ScaffoldMessenger.of(context),
+        l10n.bookshelfActionFailed,
+      );
       return;
     }
 
@@ -501,12 +505,14 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
         );
 
     if (!context.mounted) return;
-    final text = outcome is BookshelfOperationOutcomeError
-        ? l10n.bookshelfActionFailed
-        : l10n.bookshelfAdded;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(text)));
+    if (outcome is BookshelfOperationOutcomeError) {
+      showErrorSnack(
+        ScaffoldMessenger.of(context),
+        l10n.bookshelfActionFailed,
+      );
+    } else {
+      showSuccessSnack(ScaffoldMessenger.of(context), l10n.bookshelfAdded);
+    }
   }
 
   Future<void> _removeFromBookshelf(BuildContext context) async {
@@ -516,9 +522,10 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
         bootstrap.hasError ||
         bootstrap.asData?.value == null) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(l10n.bookshelfActionFailed)));
+      showErrorSnack(
+        ScaffoldMessenger.of(context),
+        l10n.bookshelfActionFailed,
+      );
       return;
     }
 
@@ -528,56 +535,29 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     final title = hasCurrentBook && bookState.book != null
         ? bookState.book!.title
         : widget.initialBook?.title ?? widget.bookId;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        final theme = Theme.of(dialogContext);
-        return AlertDialog(
-          title: Text(l10n.bookshelfDeleteConfirmTitle),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(l10n.bookshelfDeleteConfirmMessage(title)),
-              const SizedBox(height: LanghuanTheme.spaceSm),
-              Text(
-                l10n.bookshelfDeleteCascadeWarning,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(l10n.bookshelfDeleteCancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              style: FilledButton.styleFrom(
-                backgroundColor: theme.colorScheme.error,
-                foregroundColor: theme.colorScheme.onError,
-              ),
-              child: Text(l10n.bookshelfDeleteConfirm),
-            ),
-          ],
-        );
-      },
+    final confirmed = await showConfirmDialog(
+      context,
+      title: l10n.bookshelfDeleteConfirmTitle,
+      message: l10n.bookshelfDeleteConfirmMessage(title),
+      warning: l10n.bookshelfDeleteCascadeWarning,
+      confirmLabel: l10n.bookshelfDeleteConfirm,
+      cancelLabel: l10n.bookshelfDeleteCancel,
     );
-    if (confirmed != true || !context.mounted) return;
+    if (!confirmed || !context.mounted) return;
 
     final outcome = await ref
         .read(bookshelfProvider.notifier)
         .remove(feedId: widget.feedId, sourceBookId: widget.bookId);
 
     if (!context.mounted) return;
-    final text = outcome is BookshelfOperationOutcomeError
-        ? l10n.bookshelfActionFailed
-        : l10n.bookshelfRemoved;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(text)));
+    if (outcome is BookshelfOperationOutcomeError) {
+      showErrorSnack(
+        ScaffoldMessenger.of(context),
+        l10n.bookshelfActionFailed,
+      );
+    } else {
+      showSuccessSnack(ScaffoldMessenger.of(context), l10n.bookshelfRemoved);
+    }
   }
 }
 

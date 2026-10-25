@@ -2,6 +2,8 @@ import 'dart:ui';
 
 import '../../../src/rust/api/types.dart';
 
+export '../../../shared/utils/errors.dart';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Paragraph selection — long-pressed paragraph info for toolbar overlay
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,16 +52,6 @@ final class ChapterLoadError extends ChapterLoadState {
 // ─────────────────────────────────────────────────────────────────────────────
 // Error normalisation
 // ─────────────────────────────────────────────────────────────────────────────
-
-String normalizeErrorMessage(Object error) {
-  final text = error.toString().trim();
-  if (text.isEmpty) return 'Unknown error';
-  final colonIndex = text.indexOf(':');
-  if (colonIndex > 0 && colonIndex < text.length - 1) {
-    return text.substring(colonIndex + 1).trim();
-  }
-  return text;
-}
 
 ErrorKind? extractErrorKind(Object? error) {
   if (error is BridgeError) return error.kind;

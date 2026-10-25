@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/utils/errors.dart';
+import '../../../shared/utils/snackbars.dart';
 import '../../../shared/widgets/meta_row.dart';
 import '../../../src/rust/api/types.dart';
 import '../feed_providers.dart';
@@ -99,9 +101,10 @@ class _FeedDetailContentState extends ConsumerState<_FeedDetailContent> {
       await _loadAuthStatus();
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.feedAuthUpdated)));
+      showSuccessSnack(
+        ScaffoldMessenger.of(context),
+        l10n.feedAuthUpdated,
+      );
     }
   }
 
@@ -113,14 +116,16 @@ class _FeedDetailContentState extends ConsumerState<_FeedDetailContent> {
       await _loadAuthStatus();
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.feedAuthLoggedOut)));
+      showSuccessSnack(
+        ScaffoldMessenger.of(context),
+        l10n.feedAuthLoggedOut,
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
+      showErrorSnack(
+        ScaffoldMessenger.of(context),
+        normalizeErrorMessage(e),
+      );
     }
   }
 

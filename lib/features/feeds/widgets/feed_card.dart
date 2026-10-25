@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart';
 import '../feed_providers.dart';
 import '../feed_service.dart';
@@ -91,14 +92,7 @@ class FeedCard extends ConsumerWidget {
 
               // ── Trailing ───────────────────────────────────────────
               if (isDeleting)
-                SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: theme.colorScheme.primary,
-                  ),
-                )
+                const LanghuanSpinner(size: 20)
               else if (hasError)
                 Icon(
                   Icons.error_outline,
@@ -127,13 +121,9 @@ class FeedCard extends ConsumerWidget {
     return authAsync.when(
       loading: () => Padding(
         padding: const EdgeInsets.only(left: LanghuanTheme.spaceSm),
-        child: SizedBox(
-          width: 10,
-          height: 10,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.5,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+        child: LanghuanSpinner(
+          size: 10,
+          color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
       error: (_, _) => const SizedBox.shrink(),

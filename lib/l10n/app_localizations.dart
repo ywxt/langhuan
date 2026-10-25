@@ -386,6 +386,60 @@ abstract class AppLocalizations {
   /// **'Missing reading parameters'**
   String get readerMissingParams;
 
+  /// Snackbar when a custom font file could not be loaded in the reader settings sheet
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load font file'**
+  String get readerFontLoadFailed;
+
+  /// Label above the custom font picker in the reader font sheet
+  ///
+  /// In en, this message translates to:
+  /// **'Font File'**
+  String get readerFontFileLabel;
+
+  /// Shown when no custom font is selected
+  ///
+  /// In en, this message translates to:
+  /// **'System Default'**
+  String get readerFontSystemDefault;
+
+  /// Button that opens the font file picker
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Font File'**
+  String get readerFontChoose;
+
+  /// Button to clear the custom font selection
+  ///
+  /// In en, this message translates to:
+  /// **'Reset'**
+  String get readerFontReset;
+
+  /// Font scale slider label
+  ///
+  /// In en, this message translates to:
+  /// **'Font {scale}x'**
+  String readerFontScale(String scale);
+
+  /// Letter spacing slider label
+  ///
+  /// In en, this message translates to:
+  /// **'Letter Spacing {value}'**
+  String readerLetterSpacing(String value);
+
+  /// Paragraph spacing slider label
+  ///
+  /// In en, this message translates to:
+  /// **'Paragraph Spacing {value}'**
+  String readerParagraphSpacing(String value);
+
+  /// Line height slider label
+  ///
+  /// In en, this message translates to:
+  /// **'Line Height {value}'**
+  String readerLineHeight(String value);
+
   /// Reader page content load error title
   ///
   /// In en, this message translates to:
@@ -1139,8 +1193,14 @@ abstract class AppLocalizations {
   /// Dialog body for the clear cache confirmation
   ///
   /// In en, this message translates to:
-  /// **'All cached chapters and covers will be removed and re-downloaded when needed.'**
+  /// **'Clear all cached data?'**
   String get settingsClearCacheConfirmMessage;
+
+  /// Neutral note block in the clear cache dialog about what is removed and kept
+  ///
+  /// In en, this message translates to:
+  /// **'Cached chapters and covers will be removed and re-downloaded when needed. Reading progress and bookmarks are kept.'**
+  String get settingsClearCacheNote;
 
   /// Snackbar after the cache was cleared
   ///

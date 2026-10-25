@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/loading.dart';
 
 enum ChapterStatusBlockKind { loading, error }
 
@@ -68,11 +69,7 @@ class _LoadingBlock extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2.5),
-              ),
+              const LanghuanSpinner(size: 20),
               const SizedBox(width: LanghuanTheme.spaceMdSm),
               Text(
                 AppLocalizations.of(context).readerLoading,

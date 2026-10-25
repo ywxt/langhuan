@@ -9,8 +9,12 @@ import '../../rust_init.dart';
 import '../../shared/constants.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/delete_with_undo.dart';
+import '../../shared/utils/errors.dart';
+import '../../shared/utils/snackbars.dart';
+import '../../shared/widgets/confirm_dialog.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
+import '../../shared/widgets/loading.dart';
 import '../../src/rust/api/types.dart';
 import 'add_feed_sheet.dart';
 import 'feed_providers.dart';
@@ -159,7 +163,7 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
     if (feedState.isLoading) {
       return const SliverFillRemaining(
         hasScrollBody: false,
-        child: Center(child: CircularProgressIndicator()),
+        child: LoadingState(),
       );
     }
 
@@ -169,7 +173,7 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
         hasScrollBody: false,
         child: ErrorState(
           title: l10n.feedsLoadError,
-          message: feedState.error.toString(),
+          message: normalizeErrorMessage(feedState.error!),
           onRetry: () => ref.read(feedListProvider.notifier).load(),
           retryLabel: l10n.feedsRetry,
         ),
@@ -291,63 +295,31 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
     });
 
     final cur = scaffoldMessengerKey.currentState;
+    if (cur == null) return;
 
     if (error == null) {
-      cur?.clearSnackBars();
-      cur?.showSnackBar(
-        SnackBar(content: Text(l10n.feedDeleteSuccess(feed.name))),
-      );
+      showSuccessSnack(cur, l10n.feedDeleteSuccess(feed.name));
       return;
     }
 
     final message = error == 'busy'
         ? l10n.feedDeleteBusy
-        : '${l10n.feedDeleteError}: $error';
-    cur?.clearSnackBars();
-    cur?.showSnackBar(SnackBar(content: Text(message)));
+        : '${l10n.feedDeleteError}: ${normalizeErrorMessage(error)}';
+    showErrorSnack(cur, message);
   }
 
-  Future<bool?> _confirmDelete(
+  Future<bool> _confirmDelete(
     BuildContext context,
     FeedMetaItem feed,
     AppLocalizations l10n,
   ) {
-    return showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        final theme = Theme.of(dialogContext);
-        return AlertDialog(
-          title: Text(l10n.feedDeleteConfirmTitle),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(l10n.feedDeleteConfirmMessage(feed.name)),
-              const SizedBox(height: LanghuanTheme.spaceSm),
-              Text(
-                l10n.feedDeleteCascadeWarning,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(l10n.feedDeleteCancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: FilledButton.styleFrom(
-                backgroundColor: theme.colorScheme.error,
-                foregroundColor: theme.colorScheme.onError,
-              ),
-              child: Text(l10n.feedDeleteConfirm),
-            ),
-          ],
-        );
-      },
+    return showConfirmDialog(
+      context,
+      title: l10n.feedDeleteConfirmTitle,
+      message: l10n.feedDeleteConfirmMessage(feed.name),
+      warning: l10n.feedDeleteCascadeWarning,
+      confirmLabel: l10n.feedDeleteConfirm,
+      cancelLabel: l10n.feedDeleteCancel,
     );
   }
 }

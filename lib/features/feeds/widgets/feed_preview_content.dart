@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart' show VersionChange;
 import '../feed_service.dart';
 
@@ -54,7 +55,7 @@ class LoadingContent extends StatelessWidget {
     return const SizedBox(
       width: 300,
       height: 100,
-      child: Center(child: CircularProgressIndicator()),
+      child: Center(child: LanghuanSpinner()),
     );
   }
 }

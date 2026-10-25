@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../shared/theme/app_theme.dart';
+import '../../shared/widgets/loading.dart';
 import '../../src/rust/api/types.dart';
 import 'feed_providers.dart';
 import 'feed_service.dart';
@@ -136,18 +137,14 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
                 ? null
                 : () => _submitPage(),
             child: _isSubmitting
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                ? const LanghuanSpinner(size: 16)
                 : Text(l10n.feedAuthDone),
           ),
           const SizedBox(width: LanghuanTheme.spaceSm),
         ],
       ),
       body: _isLoadingEntry
-          ? const Center(child: CircularProgressIndicator())
+          ? const LoadingState()
           : _error != null
           ? Center(
               child: Padding(

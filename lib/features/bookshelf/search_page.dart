@@ -7,6 +7,7 @@ import '../../l10n/app_localizations.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
+import '../../shared/widgets/loading.dart';
 import '../../src/rust/api/types.dart';
 import '../feeds/feed_providers.dart';
 import '../feeds/search_provider.dart';
@@ -173,7 +174,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
           // ── Loading indicator ──────────────────────────────────────────
           if (searchState.isLoading)
-            const LinearProgressIndicator()
+            const LinearProgressIndicator(minHeight: 2)
           else
             const SizedBox(height: 2), // Reserve space
           // ── Search results ─────────────────────────────────────────────
@@ -284,7 +285,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             // Loading indicator at the bottom
             return const Padding(
               padding: EdgeInsets.symmetric(vertical: LanghuanTheme.spaceLg),
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(child: LanghuanSpinner()),
             );
           }
           return Padding(

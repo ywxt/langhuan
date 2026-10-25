@@ -163,6 +163,41 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerMissingParams => '缺少閱讀參數';
 
   @override
+  String get readerFontLoadFailed => '字體檔案載入失敗';
+
+  @override
+  String get readerFontFileLabel => '字體檔案';
+
+  @override
+  String get readerFontSystemDefault => '系統默認';
+
+  @override
+  String get readerFontChoose => '選擇字體檔案';
+
+  @override
+  String get readerFontReset => '重設';
+
+  @override
+  String readerFontScale(String scale) {
+    return '字體 ${scale}x';
+  }
+
+  @override
+  String readerLetterSpacing(String value) {
+    return '字距 $value';
+  }
+
+  @override
+  String readerParagraphSpacing(String value) {
+    return '段落間距 $value';
+  }
+
+  @override
+  String readerLineHeight(String value) {
+    return '行高 $value';
+  }
+
+  @override
   String get readerLoadError => '加載章節失敗';
 
   @override
@@ -560,7 +595,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsClearCacheConfirmTitle => '清除快取？';
 
   @override
-  String get settingsClearCacheConfirmMessage => '所有已快取的章節與封面都會被刪除，需要時會重新下載。';
+  String get settingsClearCacheConfirmMessage => '確定要清除所有快取嗎？';
+
+  @override
+  String get settingsClearCacheNote => '快取章節與封面會被刪除，需要時會重新下載；閱讀進度與書籤會保留。';
 
   @override
   String settingsClearCacheSuccess(String bytes) {

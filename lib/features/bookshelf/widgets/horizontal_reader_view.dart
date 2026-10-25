@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
+import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart';
 import 'chapter_status_block.dart';
 import 'page_content_view.dart';
@@ -286,7 +287,7 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
     }
 
     if (_snapCurrent == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const LoadingState();
     }
 
     return LayoutBuilder(

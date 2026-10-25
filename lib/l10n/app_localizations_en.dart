@@ -164,6 +164,41 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readerMissingParams => 'Missing reading parameters';
 
   @override
+  String get readerFontLoadFailed => 'Failed to load font file';
+
+  @override
+  String get readerFontFileLabel => 'Font File';
+
+  @override
+  String get readerFontSystemDefault => 'System Default';
+
+  @override
+  String get readerFontChoose => 'Choose Font File';
+
+  @override
+  String get readerFontReset => 'Reset';
+
+  @override
+  String readerFontScale(String scale) {
+    return 'Font ${scale}x';
+  }
+
+  @override
+  String readerLetterSpacing(String value) {
+    return 'Letter Spacing $value';
+  }
+
+  @override
+  String readerParagraphSpacing(String value) {
+    return 'Paragraph Spacing $value';
+  }
+
+  @override
+  String readerLineHeight(String value) {
+    return 'Line Height $value';
+  }
+
+  @override
   String get readerLoadError => 'Failed to load chapter';
 
   @override
@@ -571,8 +606,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsClearCacheConfirmTitle => 'Clear cache?';
 
   @override
-  String get settingsClearCacheConfirmMessage =>
-      'All cached chapters and covers will be removed and re-downloaded when needed.';
+  String get settingsClearCacheConfirmMessage => 'Clear all cached data?';
+
+  @override
+  String get settingsClearCacheNote =>
+      'Cached chapters and covers will be removed and re-downloaded when needed. Reading progress and bookmarks are kept.';
 
   @override
   String settingsClearCacheSuccess(String bytes) {

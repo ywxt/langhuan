@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/utils/snackbars.dart';
 import '../../feeds/feed_service.dart';
 import '../bookmark_provider.dart';
 import '../reader_settings_provider.dart';
@@ -69,10 +70,10 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                     },
                   ),
                   const SizedBox(height: LanghuanTheme.spaceMd),
-                  Text('Font File'),
+                  Text(l10n.readerFontFileLabel),
                   const SizedBox(height: LanghuanTheme.spaceSm),
                   Text(
-                    settings.customFontDisplayName ?? 'System Default',
+                    settings.customFontDisplayName ?? l10n.readerFontSystemDefault,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
@@ -96,15 +97,14 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                               }
                             } catch (_) {
                               if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Failed to load font file'),
-                                ),
+                              showErrorSnack(
+                                ScaffoldMessenger.of(context),
+                                l10n.readerFontLoadFailed,
                               );
                             }
                           },
                           icon: const Icon(Icons.upload_file),
-                          label: const Text('Choose Font File'),
+                          label: Text(l10n.readerFontChoose),
                         ),
                       ),
                       const SizedBox(width: LanghuanTheme.spaceSm),
@@ -113,12 +113,12 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                           notifier.clearCustomFont();
                           setModalState(() {});
                         },
-                        child: const Text('Reset'),
+                        child: Text(l10n.readerFontReset),
                       ),
                     ],
                   ),
                   const SizedBox(height: LanghuanTheme.spaceMd),
-                  Text('Font ${settings.fontScale.toStringAsFixed(2)}x'),
+                  Text(l10n.readerFontScale(settings.fontScale.toStringAsFixed(2))),
                   Slider(
                     value: settings.fontScale,
                     min: 0.8,
@@ -131,7 +131,9 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
                   Text(
-                    'Letter Spacing ${settings.letterSpacing.toStringAsFixed(2)}',
+                    l10n.readerLetterSpacing(
+                      settings.letterSpacing.toStringAsFixed(2),
+                    ),
                   ),
                   Slider(
                     value: settings.letterSpacing,
@@ -145,7 +147,9 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
                   Text(
-                    'Paragraph Spacing ${settings.paragraphSpacing.toStringAsFixed(0)}',
+                    l10n.readerParagraphSpacing(
+                      settings.paragraphSpacing.toStringAsFixed(0),
+                    ),
                   ),
                   Slider(
                     value: settings.paragraphSpacing,
@@ -158,7 +162,11 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                     },
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
-                  Text('Line Height ${settings.lineHeight.toStringAsFixed(2)}'),
+                  Text(
+                    l10n.readerLineHeight(
+                      settings.lineHeight.toStringAsFixed(2),
+                    ),
+                  ),
                   Slider(
                     value: settings.lineHeight,
                     min: 1.2,

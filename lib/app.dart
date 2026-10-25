@@ -7,6 +7,7 @@ import 'package:langhuan/rust_init.dart';
 import 'l10n/app_localizations.dart';
 import 'router/app_router.dart';
 import 'shared/theme/app_theme.dart';
+import 'shared/utils/snackbars.dart';
 
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
@@ -26,21 +27,16 @@ class _LanghuanAppState extends ConsumerState<LanghuanApp> {
     if (_activeGlobalSnackMessage == message) return;
 
     _activeGlobalSnackMessage = message;
-    messenger.hideCurrentSnackBar();
-    messenger
-        .showSnackBar(
-          SnackBar(
-            content: Text(message),
-            duration: const Duration(seconds: 8),
-          ),
-        )
-        .closed
-        .then((_) {
-          if (!mounted) return;
-          if (_activeGlobalSnackMessage == message) {
-            _activeGlobalSnackMessage = null;
-          }
-        });
+    showErrorSnack(
+      messenger,
+      message,
+      duration: const Duration(seconds: 8),
+    ).closed.then((_) {
+      if (!mounted) return;
+      if (_activeGlobalSnackMessage == message) {
+        _activeGlobalSnackMessage = null;
+      }
+    });
   }
 
   @override

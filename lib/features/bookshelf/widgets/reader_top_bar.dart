@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/widgets/loading.dart';
+
 class ReaderTopBar extends StatelessWidget {
   const ReaderTopBar({
     super.key,
@@ -48,11 +50,7 @@ class ReaderTopBar extends StatelessWidget {
           ),
           IconButton(
             icon: isRefreshing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                ? const LanghuanSpinner(size: 18)
                 : const Icon(Icons.refresh),
             tooltip: refreshTooltip,
             onPressed: isRefreshing ? null : onRefresh,

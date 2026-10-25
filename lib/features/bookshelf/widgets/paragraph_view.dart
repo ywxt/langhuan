@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart';
 
 /// Renders a single [ParagraphContent] item (title, text, or image).
@@ -68,7 +69,7 @@ class ParagraphView extends StatelessWidget {
                     if (progress == null) return child;
                     return const AspectRatio(
                       aspectRatio: 16 / 9,
-                      child: Center(child: CircularProgressIndicator()),
+                      child: Center(child: LanghuanSpinner()),
                     );
                   },
                   errorBuilder: (_, _, _) => const AspectRatio(

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/loading.dart';
 import '../../../shared/widgets/option_row.dart';
 import 'add_feed_dialog.dart';
 
@@ -81,13 +82,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
             label: l10n.addFeedTabFile,
             subtitle: l10n.addFeedTabFileDesc,
             onTap: _pickingFile ? null : _pickFile,
-            trailing: _pickingFile
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : null,
+            trailing: _pickingFile ? const LanghuanSpinner(size: 20) : null,
           ),
         ],
       ),

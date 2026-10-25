@@ -6,6 +6,7 @@ import '../../l10n/app_localizations.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
+import '../../shared/widgets/loading.dart';
 import '../../src/rust/api/types.dart';
 import 'reader_page_actions.dart';
 import 'reader_screen_controller.dart';
@@ -125,7 +126,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     if (_screenController.isInitializing) {
       return Scaffold(
         appBar: AppBar(title: Text(l10n.readerTitle)),
-        body: const Center(child: CircularProgressIndicator()),
+        body: const LoadingState(),
       );
     }
 

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart';
 import '../../feeds/feed_service.dart';
 import '../reader_settings_provider.dart' show ReaderPageMode;
@@ -613,7 +614,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     _ensureBreaker();
     final entries = _buildFlatEntries();
     if (entries.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const LoadingState();
     }
 
     final abs = _resolveActiveAbsoluteIndex(entries);

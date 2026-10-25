@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/app_localizations.dart';
+import '../../../shared/utils/snackbars.dart';
 import '../add_feed_provider.dart';
 import 'feed_preview_content.dart';
 
@@ -66,9 +67,10 @@ class _AddFeedDialogState extends ConsumerState<AddFeedDialog> {
     ref.listen<AddFeedState>(addFeedProvider, (_, next) {
       if (next is AddFeedSuccess && mounted) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l10n.addFeedSuccess)));
+        showSuccessSnack(
+          ScaffoldMessenger.of(context),
+          l10n.addFeedSuccess,
+        );
       }
     });
 

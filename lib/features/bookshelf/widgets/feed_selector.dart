@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart';
 import '../../feeds/feed_providers.dart';
 
@@ -27,13 +28,7 @@ class FeedSelector extends ConsumerWidget {
     if (feedState.isLoading) {
       return const SizedBox(
         height: 48,
-        child: Center(
-          child: SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
+        child: Center(child: LanghuanSpinner(size: 20)),
       );
     }
 
