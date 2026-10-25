@@ -7,8 +7,13 @@ import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/always_disabled_focus_node.dart';
 import '../../shared/widgets/cover_placeholder.dart';
 import '../../shared/widgets/empty_state.dart';
+import '../feeds/feed_service.dart';
+import 'book_detail_page.dart';
 import 'bookshelf_provider.dart';
 import 'widgets/book_cover.dart';
+import 'widgets/book_cover_hero.dart';
+
+enum _BookshelfAction { details, delete }
 
 class BookshelfPage extends ConsumerWidget {
   const BookshelfPage({super.key});
@@ -103,20 +108,27 @@ class BookshelfPage extends ConsumerWidget {
                         child: ListTile(
                           onTap: () {
                             context.pushNamed(
-                              'bookshelf-book-detail',
+                              'bookshelf-reader',
                               queryParameters: {
                                 'feedId': item.feedId,
                                 'bookId': item.sourceBookId,
+                                'chapterId': '',
+                                'paragraphId': '',
                               },
                             );
                           },
+                          onLongPress: () =>
+                              _showBookActions(context, ref, item),
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: LanghuanTheme.spaceMd,
                             vertical: LanghuanTheme.spaceXs,
                           ),
                           leading: Hero(
-                            tag:
-                                'book-cover-${item.feedId}-${item.sourceBookId}',
+                            tag: bookCoverHeroTag(
+                              item.feedId,
+                              item.sourceBookId,
+                            ),
+                            flightShuttleBuilder: bookCoverFlightShuttleBuilder,
                             child: ClipRRect(
                               borderRadius: LanghuanTheme.borderRadiusSm,
                               child: SizedBox(
@@ -158,6 +170,99 @@ class BookshelfPage extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _showBookActions(
+    BuildContext context,
+    WidgetRef ref,
+    BookshelfItemModel item,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    final action = await showModalBottomSheet<_BookshelfAction>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        final colorScheme = Theme.of(sheetContext).colorScheme;
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: Text(l10n.bookshelfBookDetails),
+                onTap: () =>
+                    Navigator.pop(sheetContext, _BookshelfAction.details),
+              ),
+              ListTile(
+                leading: Icon(Icons.delete_outline, color: colorScheme.error),
+                title: Text(
+                  l10n.bookshelfDeleteBook,
+                  style: TextStyle(color: colorScheme.error),
+                ),
+                onTap: () =>
+                    Navigator.pop(sheetContext, _BookshelfAction.delete),
+              ),
+              const SizedBox(height: LanghuanTheme.spaceSm),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!context.mounted || action == null) return;
+    switch (action) {
+      case _BookshelfAction.details:
+        await context.pushNamed(
+          'bookshelf-book-detail',
+          queryParameters: {'feedId': item.feedId, 'bookId': item.sourceBookId},
+          extra: BookDetailRouteExtra(
+            coverUrl: item.coverUrl,
+            title: item.title,
+            author: item.author,
+          ),
+        );
+        return;
+      case _BookshelfAction.delete:
+        await _confirmAndDelete(context, ref, item);
+        return;
+    }
+  }
+
+  Future<void> _confirmAndDelete(
+    BuildContext context,
+    WidgetRef ref,
+    BookshelfItemModel item,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.bookshelfDeleteConfirmTitle),
+        content: Text(l10n.bookshelfDeleteConfirmMessage(item.title)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(l10n.bookshelfDeleteCancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(l10n.bookshelfDeleteConfirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final outcome = await ref
+        .read(bookshelfProvider.notifier)
+        .remove(feedId: item.feedId, sourceBookId: item.sourceBookId);
+    if (!context.mounted) return;
+    final message = outcome is BookshelfOperationOutcomeError
+        ? l10n.bookshelfActionFailed
+        : l10n.bookshelfRemoved;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 }
 

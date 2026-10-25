@@ -113,9 +113,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ).showSnackBar(SnackBar(content: Text(message)));
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.settingsClearCacheError)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.settingsClearCacheError)));
     } finally {
       if (mounted) setState(() => _isClearing = false);
     }
@@ -151,9 +151,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             _SectionLabel(label: l10n.settingsReading),
             const SizedBox(height: LanghuanTheme.spaceSm),
             _SettingsCard(
-              children: [
-                _ChineseConversionRow(ref: ref, l10n: l10n),
-              ],
+              children: [_ChineseConversionRow(ref: ref, l10n: l10n)],
             ),
 
             const SizedBox(height: LanghuanTheme.spaceLg),

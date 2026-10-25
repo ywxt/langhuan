@@ -57,6 +57,26 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bookshelfErrorLoadFailed => '加載書架失敗';
 
   @override
+  String get bookshelfBookDetails => '書籍詳情';
+
+  @override
+  String get bookshelfDeleteBook => '從書架刪除';
+
+  @override
+  String get bookshelfDeleteConfirmTitle => '刪除書籍？';
+
+  @override
+  String bookshelfDeleteConfirmMessage(String bookTitle) {
+    return '確定要從書架刪除「$bookTitle」嗎？';
+  }
+
+  @override
+  String get bookshelfDeleteCancel => '取消';
+
+  @override
+  String get bookshelfDeleteConfirm => '刪除';
+
+  @override
   String get searchTitle => '搜索';
 
   @override

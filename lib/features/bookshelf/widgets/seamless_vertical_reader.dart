@@ -230,13 +230,12 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
     final controller = _controller;
     if (controller == null || !controller.hasClients) return;
     final position = controller.position;
-    final estimate =
-        target.paragraphId.isEmpty
-            ? 0.0
-            : widget.estimateParagraphOffset?.call(
-                  target.chapterId,
-                  target.paragraphId,
-                ) ??
+    final estimate = target.paragraphId.isEmpty
+        ? 0.0
+        : widget.estimateParagraphOffset?.call(
+                target.chapterId,
+                target.paragraphId,
+              ) ??
               0.0;
     position.correctPixels(estimate);
   }
@@ -319,10 +318,12 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
     if (controller == null || !controller.hasClients) return;
     final position = controller.position;
     final dim = position.viewportDimension;
-    if (position.pixels - position.minScrollExtent < dim * _expandThresholdFactor) {
+    if (position.pixels - position.minScrollExtent <
+        dim * _expandThresholdFactor) {
       widget.window.expandAbove();
     }
-    if (position.maxScrollExtent - position.pixels < dim * _expandThresholdFactor) {
+    if (position.maxScrollExtent - position.pixels <
+        dim * _expandThresholdFactor) {
       widget.window.expandBelow();
     }
   }
@@ -427,8 +428,9 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
 
     var extent = 0.0;
     for (var i = lo; i < hi; i++) {
-      final sliverObject =
-          _sliverKeyOf(widget.chapters[i].id).currentContext?.findRenderObject();
+      final sliverObject = _sliverKeyOf(
+        widget.chapters[i].id,
+      ).currentContext?.findRenderObject();
       if (sliverObject is RenderSliver) {
         extent += sliverObject.geometry?.scrollExtent ?? 0.0;
       }
@@ -527,20 +529,18 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
               key: _topInsetKey,
               child: SizedBox(height: widget.contentPadding.top),
             ),
-            for (final chapterId in chapterIds)
-              ...[
-                if (chapterId == window.anchorChapterId)
-                  SliverToBoxAdapter(
-                    key: _centerKey,
-                    child: SizedBox(height: widget.contentPadding.top),
-                  ),
-                _buildChapterSliver(
-                  chapterId,
-                  showLoading: chapterId == loadingIndicatorChapterId,
+            for (final chapterId in chapterIds) ...[
+              if (chapterId == window.anchorChapterId)
+                SliverToBoxAdapter(
+                  key: _centerKey,
+                  child: SizedBox(height: widget.contentPadding.top),
                 ),
-              ],
-            if (atBookEnd)
-              const SliverToBoxAdapter(child: _EndOfBookMark()),
+              _buildChapterSliver(
+                chapterId,
+                showLoading: chapterId == loadingIndicatorChapterId,
+              ),
+            ],
+            if (atBookEnd) const SliverToBoxAdapter(child: _EndOfBookMark()),
             SliverToBoxAdapter(
               key: _bottomInsetKey,
               child: SizedBox(height: widget.contentPadding.bottom),
@@ -554,10 +554,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   static const _topInsetKey = ValueKey('vertical-top-inset');
   static const _bottomInsetKey = ValueKey('vertical-bottom-inset');
 
-  Widget _buildChapterSliver(
-    String chapterId, {
-    required bool showLoading,
-  }) {
+  Widget _buildChapterSliver(String chapterId, {required bool showLoading}) {
     final state = widget.window.stateOf(chapterId);
     final key = _sliverKeyOf(chapterId);
 
@@ -568,19 +565,16 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
       }
       return SliverList(
         key: key,
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-            // Slivers before [CustomScrollView.center] use reverse growth:
-            // child zero is placed closest to the center (the visual bottom).
-            // Reverse their data index so paragraphs still read top-to-bottom
-            // and the preceding chapter's title stays at its beginning.
-            final paragraphIndex = _isBeforeAnchor(chapterId)
-                ? paragraphs.length - 1 - index
-                : index;
-            return _buildParagraphItem(chapterId, paragraphs[paragraphIndex]);
-          },
-          childCount: paragraphs.length,
-        ),
+        delegate: SliverChildBuilderDelegate((context, index) {
+          // Slivers before [CustomScrollView.center] use reverse growth:
+          // child zero is placed closest to the center (the visual bottom).
+          // Reverse their data index so paragraphs still read top-to-bottom
+          // and the preceding chapter's title stays at its beginning.
+          final paragraphIndex = _isBeforeAnchor(chapterId)
+              ? paragraphs.length - 1 - index
+              : index;
+          return _buildParagraphItem(chapterId, paragraphs[paragraphIndex]);
+        }, childCount: paragraphs.length),
       );
     }
 
@@ -643,15 +637,14 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
           paragraphSpacing: widget.paragraphSpacing,
           lineHeight: widget.lineHeight,
           selected: selected,
-          onLongPress:
-              widget.onParagraphLongPress != null
-                  ? (rect) => widget.onParagraphLongPress!(
-                    chapterId,
-                    paragraphId,
-                    paragraph,
-                    rect,
-                  )
-                  : null,
+          onLongPress: widget.onParagraphLongPress != null
+              ? (rect) => widget.onParagraphLongPress!(
+                  chapterId,
+                  paragraphId,
+                  paragraph,
+                  rect,
+                )
+              : null,
         ),
       ),
     );

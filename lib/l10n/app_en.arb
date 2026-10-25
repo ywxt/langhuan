@@ -49,6 +49,27 @@
   "bookshelfErrorLoadFailed": "Failed to load bookshelf",
   "@bookshelfErrorLoadFailed": { "description": "Bookshelf error: load bookshelf failed" },
 
+  "bookshelfBookDetails": "Book Details",
+  "@bookshelfBookDetails": { "description": "Bookshelf long-press action that opens book details" },
+
+  "bookshelfDeleteBook": "Delete from Bookshelf",
+  "@bookshelfDeleteBook": { "description": "Bookshelf long-press delete action" },
+
+  "bookshelfDeleteConfirmTitle": "Delete book?",
+  "@bookshelfDeleteConfirmTitle": { "description": "Title of the bookshelf book deletion confirmation" },
+
+  "bookshelfDeleteConfirmMessage": "Remove \"{bookTitle}\" from your bookshelf?",
+  "@bookshelfDeleteConfirmMessage": {
+    "description": "Bookshelf book deletion confirmation message",
+    "placeholders": { "bookTitle": { "type": "String" } }
+  },
+
+  "bookshelfDeleteCancel": "Cancel",
+  "@bookshelfDeleteCancel": { "description": "Cancel bookshelf book deletion" },
+
+  "bookshelfDeleteConfirm": "Delete",
+  "@bookshelfDeleteConfirm": { "description": "Confirm bookshelf book deletion" },
+
   "searchTitle": "Search",
   "@searchTitle": { "description": "Search page title" },
 

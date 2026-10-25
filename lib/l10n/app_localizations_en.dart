@@ -57,6 +57,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bookshelfErrorLoadFailed => 'Failed to load bookshelf';
 
   @override
+  String get bookshelfBookDetails => 'Book Details';
+
+  @override
+  String get bookshelfDeleteBook => 'Delete from Bookshelf';
+
+  @override
+  String get bookshelfDeleteConfirmTitle => 'Delete book?';
+
+  @override
+  String bookshelfDeleteConfirmMessage(String bookTitle) {
+    return 'Remove \"$bookTitle\" from your bookshelf?';
+  }
+
+  @override
+  String get bookshelfDeleteCancel => 'Cancel';
+
+  @override
+  String get bookshelfDeleteConfirm => 'Delete';
+
+  @override
   String get searchTitle => 'Search';
 
   @override

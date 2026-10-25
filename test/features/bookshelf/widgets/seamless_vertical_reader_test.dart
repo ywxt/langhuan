@@ -94,10 +94,7 @@ void main() {
 
     // Drag past the end of the anchor chapter into the next one — the
     // content continues inside the same scroll view.
-    await tester.drag(
-      find.byType(CustomScrollView),
-      const Offset(0, -2400),
-    );
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -2400));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
@@ -116,9 +113,7 @@ void main() {
       anchorChapterId: 'c1',
       loader: _loader,
     );
-    await tester.pumpWidget(
-      _host(window: window, onToggle: () => toggles++),
-    );
+    await tester.pumpWidget(_host(window: window, onToggle: () => toggles++));
     await _pumpLoaded(tester);
 
     expect(_scrollable(tester).position.pixels, 0);
@@ -180,17 +175,11 @@ void main() {
       loader: _loader,
     );
     await tester.pumpWidget(
-      _host(
-        window: window,
-        onPosition: (c, p, o) => positions.add((c, p, o)),
-      ),
+      _host(window: window, onPosition: (c, p, o) => positions.add((c, p, o))),
     );
     await _pumpLoaded(tester);
 
-    await tester.drag(
-      find.byType(CustomScrollView),
-      const Offset(0, -2400),
-    );
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -2400));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 100));
@@ -261,10 +250,7 @@ void main() {
     await _pumpLoaded(tester);
 
     // Scroll deep into the anchor so the current offset is far from 0.
-    await tester.drag(
-      find.byType(CustomScrollView),
-      const Offset(0, -1200),
-    );
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -1200));
     await tester.pump(const Duration(milliseconds: 100));
 
     // Jump exactly like ChapterContentManager._onJumpCommand does:
@@ -388,18 +374,12 @@ void main() {
       loader: titledLoader,
     );
     await tester.pumpWidget(
-      _host(
-        window: window,
-        onPosition: (c, p, o) => positions.add((c, p, o)),
-      ),
+      _host(window: window, onPosition: (c, p, o) => positions.add((c, p, o))),
     );
     await _pumpLoaded(tester);
 
     // Reveal the reverse-growth region above the center/anchor.
-    await tester.drag(
-      find.byType(CustomScrollView),
-      const Offset(0, 400),
-    );
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 400));
     await tester.pump(const Duration(milliseconds: 100));
 
     final titleTop = tester.getTopLeft(find.text('c0 title')).dy;

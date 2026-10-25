@@ -10,6 +10,8 @@ import '../../shared/widgets/error_state.dart';
 import '../../src/rust/api/types.dart';
 import '../feeds/feed_providers.dart';
 import '../feeds/search_provider.dart';
+import 'book_detail_page.dart';
+import 'widgets/book_cover_hero.dart';
 import 'widgets/feed_selector.dart';
 import 'widgets/reader_types.dart';
 import 'widgets/search_result_card.dart';
@@ -289,6 +291,12 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             padding: const EdgeInsets.only(bottom: LanghuanTheme.spaceSm),
             child: SearchResultCard(
               item: searchState.items[index],
+              coverHeroTag: selectedFeed == null
+                  ? null
+                  : bookCoverHeroTag(
+                      selectedFeed.id,
+                      searchState.items[index].id,
+                    ),
               onTap: selectedFeed == null
                   ? null
                   : () {
@@ -299,6 +307,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                           'feedId': selectedFeed.id,
                           'bookId': item.id,
                         },
+                        extra: BookDetailRouteExtra(
+                          coverUrl: item.coverUrl,
+                          title: item.title,
+                          author: item.author,
+                        ),
                       );
                     },
             ),

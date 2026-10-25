@@ -125,7 +125,10 @@ class _ErrorBlock extends StatelessWidget {
               ),
             ),
             const SizedBox(height: LanghuanTheme.spaceLg),
-            Text(l10n.readerChapterLoadError, style: theme.textTheme.titleMedium),
+            Text(
+              l10n.readerChapterLoadError,
+              style: theme.textTheme.titleMedium,
+            ),
             if (hasTitle) ...[
               const SizedBox(height: LanghuanTheme.spaceXs),
               Text(

@@ -4,13 +4,20 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/cover_image.dart';
 import '../../../shared/widgets/cover_placeholder.dart';
 import '../../feeds/feed_service.dart';
+import 'book_cover_hero.dart';
 
 /// Card-style search result with book cover, title, author, and description.
 class SearchResultCard extends StatelessWidget {
-  const SearchResultCard({super.key, required this.item, this.onTap});
+  const SearchResultCard({
+    super.key,
+    required this.item,
+    this.onTap,
+    this.coverHeroTag,
+  });
 
   final SearchResultModel item;
   final VoidCallback? onTap;
+  final Object? coverHeroTag;
 
   @override
   Widget build(BuildContext context) {
@@ -28,14 +35,23 @@ class SearchResultCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ── Book cover ─────────────────────────────────────────
-              ClipRRect(
-                borderRadius: LanghuanTheme.borderRadiusSm,
-                child: SizedBox(
-                  width: 48,
-                  height: 64,
-                  child: item.coverUrl != null
-                      ? CoverImage(url: item.coverUrl!, width: 48, height: 64)
-                      : const CoverPlaceholder(),
+              _optionalCoverHero(
+                tag: coverHeroTag,
+                child: ClipRRect(
+                  borderRadius: LanghuanTheme.borderRadiusSm,
+                  child: SizedBox(
+                    width: 48,
+                    height: 64,
+                    child: item.coverUrl != null
+                        ? CoverImage(
+                            url: item.coverUrl!,
+                            width: 48,
+                            height: 64,
+                            decodeWidth: 120,
+                            decodeHeight: 160,
+                          )
+                        : const CoverPlaceholder(),
+                  ),
                 ),
               ),
               const SizedBox(width: LanghuanTheme.spaceMd),
@@ -88,5 +104,15 @@ class SearchResultCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _optionalCoverHero({required Object? tag, required Widget child}) {
+    return tag == null
+        ? child
+        : Hero(
+            tag: tag,
+            flightShuttleBuilder: bookCoverFlightShuttleBuilder,
+            child: child,
+          );
   }
 }

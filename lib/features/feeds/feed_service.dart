@@ -56,10 +56,7 @@ class SearchResultModel {
 
 @immutable
 class ChapterInfoModel {
-  const ChapterInfoModel({
-    required this.id,
-    required this.title,
-  });
+  const ChapterInfoModel({required this.id, required this.title});
 
   final String id;
   final String title;

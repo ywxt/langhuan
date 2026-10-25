@@ -9,18 +9,38 @@ import '../features/bookshelf/search_page.dart';
 import '../features/feeds/feed_auth_page.dart';
 import '../features/feeds/feeds_page.dart';
 import '../features/settings/settings_page.dart';
+import '../shared/theme/fade_slide_page_transitions_builder.dart';
+import '../shared/widgets/animated_branch_container.dart';
 import '../shared/widgets/main_scaffold.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
+
+CustomTransitionPage<void> _transitionPage(GoRouterState state, Widget child) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    transitionDuration: fadeSlideTransitionDuration,
+    reverseTransitionDuration: fadeSlideReverseTransitionDuration,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return buildFadeSlideTransition(animation, child);
+    },
+    child: child,
+  );
+}
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/bookshelf',
     routes: [
-      StatefulShellRoute.indexedStack(
+      StatefulShellRoute(
         builder: (context, state, navigationShell) {
           return MainScaffold(navigationShell: navigationShell);
+        },
+        navigatorContainerBuilder: (context, navigationShell, children) {
+          return AnimatedBranchContainer(
+            currentIndex: navigationShell.currentIndex,
+            children: children,
+          );
         },
         branches: [
           StatefulShellBranch(
@@ -34,20 +54,29 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     path: 'search',
                     name: 'bookshelf-search',
                     parentNavigatorKey: _rootNavigatorKey,
-                    builder: (context, state) => const SearchPage(),
+                    pageBuilder: (context, state) =>
+                        _transitionPage(state, const SearchPage()),
                     routes: [
                       GoRoute(
                         path: 'book',
                         name: 'bookshelf-book-detail',
                         parentNavigatorKey: _rootNavigatorKey,
-                        builder: (context, state) {
+                        pageBuilder: (context, state) {
                           final feedId =
                               state.uri.queryParameters['feedId'] ?? '';
                           final bookId =
                               state.uri.queryParameters['bookId'] ?? '';
-                          return BookDetailPage(
-                            feedId: feedId,
-                            bookId: bookId,
+                          final initialBook =
+                              state.extra is BookDetailRouteExtra
+                              ? state.extra as BookDetailRouteExtra
+                              : null;
+                          return _transitionPage(
+                            state,
+                            BookDetailPage(
+                              feedId: feedId,
+                              bookId: bookId,
+                              initialBook: initialBook,
+                            ),
                           );
                         },
                         routes: [
@@ -55,7 +84,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                             path: 'read',
                             name: 'bookshelf-reader',
                             parentNavigatorKey: _rootNavigatorKey,
-                            builder: (context, state) {
+                            pageBuilder: (context, state) {
                               final feedId =
                                   state.uri.queryParameters['feedId'] ?? '';
                               final bookId =
@@ -63,15 +92,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                               final chapterId =
                                   state.uri.queryParameters['chapterId'] ?? '';
                               final paragraphId =
-                                  state
-                                          .uri
-                                          .queryParameters['paragraphId'] ??
-                                      '';
-                              return ReaderPage(
-                                feedId: feedId,
-                                bookId: bookId,
-                                chapterId: chapterId,
-                                paragraphId: paragraphId,
+                                  state.uri.queryParameters['paragraphId'] ??
+                                  '';
+                              return _transitionPage(
+                                state,
+                                ReaderPage(
+                                  feedId: feedId,
+                                  bookId: bookId,
+                                  chapterId: chapterId,
+                                  paragraphId: paragraphId,
+                                ),
                               );
                             },
                           ),
@@ -94,9 +124,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     path: 'auth',
                     name: 'feed-auth',
                     parentNavigatorKey: _rootNavigatorKey,
-                    builder: (context, state) {
+                    pageBuilder: (context, state) {
                       final feedId = state.uri.queryParameters['feedId'] ?? '';
-                      return FeedAuthPage(feedId: feedId);
+                      return _transitionPage(
+                        state,
+                        FeedAuthPage(feedId: feedId),
+                      );
                     },
                   ),
                 ],

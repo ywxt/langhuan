@@ -100,7 +100,8 @@ class ReaderChapterWindow extends ChangeNotifier {
   bool get hasChapterBelow => _hi < _chapters.length - 1;
 
   /// The chapter above the window top, if any (used to pre-load).
-  String? get firstChapterAboveId => hasChapterAbove ? _chapters[_lo - 1].id : null;
+  String? get firstChapterAboveId =>
+      hasChapterAbove ? _chapters[_lo - 1].id : null;
 
   ChapterLoadState stateOf(String chapterId) =>
       _records[chapterId] ?? const ChapterIdle();
@@ -115,10 +116,7 @@ class ReaderChapterWindow extends ChangeNotifier {
 
   /// Replace the chapter list entirely (book/source switched) and anchor
   /// around [anchorChapterId].
-  void setChapters(
-    List<ChapterInfoModel> chapters,
-    String anchorChapterId,
-  ) {
+  void setChapters(List<ChapterInfoModel> chapters, String anchorChapterId) {
     _chapters = List.of(chapters);
     _cache.clear();
     _inFlight.clear();
@@ -144,8 +142,9 @@ class ReaderChapterWindow extends ChangeNotifier {
     if (_records[_chapters[_lo].id] is ChapterLoading) return;
     final id = _chapters[_lo - 1].id;
     _lo--;
-    _records[id] =
-        _cache.containsKey(id) ? ChapterLoaded(_cache[id]!) : const ChapterLoading();
+    _records[id] = _cache.containsKey(id)
+        ? ChapterLoaded(_cache[id]!)
+        : const ChapterLoading();
     _notify();
     _loadChapter(id);
   }
@@ -156,8 +155,9 @@ class ReaderChapterWindow extends ChangeNotifier {
     if (_records[_chapters[_hi].id] is ChapterLoading) return;
     final id = _chapters[_hi + 1].id;
     _hi++;
-    _records[id] =
-        _cache.containsKey(id) ? ChapterLoaded(_cache[id]!) : const ChapterLoading();
+    _records[id] = _cache.containsKey(id)
+        ? ChapterLoaded(_cache[id]!)
+        : const ChapterLoading();
     _notify();
     _loadChapter(id);
   }

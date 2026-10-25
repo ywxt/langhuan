@@ -19,6 +19,12 @@
   "bookshelfErrorAddFailed": "添加書籍失敗",
   "bookshelfErrorRemoveFailed": "移除書籍失敗",
   "bookshelfErrorLoadFailed": "加載書架失敗",
+  "bookshelfBookDetails": "書籍詳情",
+  "bookshelfDeleteBook": "從書架刪除",
+  "bookshelfDeleteConfirmTitle": "刪除書籍？",
+  "bookshelfDeleteConfirmMessage": "確定要從書架刪除「{bookTitle}」嗎？",
+  "bookshelfDeleteCancel": "取消",
+  "bookshelfDeleteConfirm": "刪除",
 
   "searchTitle": "搜索",
   "searchHintNoFeed": "請先選擇書源…",

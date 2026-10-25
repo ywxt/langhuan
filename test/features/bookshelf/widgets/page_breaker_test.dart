@@ -29,15 +29,12 @@ void main() {
     // Paragraph p1 spans three pages (offsets 0 / 240 / 480); p2 and p3 are
     // short and share page 3, where only p2 leads.
     PageItem item(String id, int? start) => PageItem(
-          source: ParagraphContent_Text(
-            id: ParagraphId.id(id),
-            content: 'x',
-          ),
-          paragraphIndex: 0,
-          paragraphId: id,
-          startOffset: start,
-          endOffset: start == null ? null : start + 240,
-        );
+      source: ParagraphContent_Text(id: ParagraphId.id(id), content: 'x'),
+      paragraphIndex: 0,
+      paragraphId: id,
+      startOffset: start,
+      endOffset: start == null ? null : start + 240,
+    );
     final pages = [
       PageContent(items: [item('p1', null)]), // p1 start (offset 0)
       PageContent(items: [item('p1', 240)]), // p1 continuation

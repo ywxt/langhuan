@@ -361,10 +361,7 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
     return _buildSlotContent(slot);
   }
 
-  Widget _buildSlotContent(
-    ReaderSlot slot, {
-    bool isCurrent = false,
-  }) {
+  Widget _buildSlotContent(ReaderSlot slot, {bool isCurrent = false}) {
     switch (slot) {
       case ReaderSlotPage(:final page):
         return Padding(
@@ -377,20 +374,18 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
             paragraphSpacing: widget.paragraphSpacing,
             lineHeight: widget.lineHeight,
             selectedParagraphId:
-                isCurrent &&
-                    widget.selectedChapterId == page.chapterId
+                isCurrent && widget.selectedChapterId == page.chapterId
                 ? widget.selectedParagraphId
                 : null,
-            onParagraphLongPress:
-                widget.onParagraphLongPress != null
-                    ? (paragraphId, paragraph, rect) =>
-                        widget.onParagraphLongPress!(
-                          page.chapterId,
-                          paragraphId,
-                          paragraph,
-                          rect,
-                        )
-                    : null,
+            onParagraphLongPress: widget.onParagraphLongPress != null
+                ? (paragraphId, paragraph, rect) =>
+                      widget.onParagraphLongPress!(
+                        page.chapterId,
+                        paragraphId,
+                        paragraph,
+                        rect,
+                      )
+                : null,
           ),
         );
       case ReaderSlotLoading(:final chapterTitle):
@@ -410,10 +405,9 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
             kind: ChapterStatusBlockKind.error,
             chapterTitle: chapterTitle,
             message: message,
-            onRetry:
-                widget.onRetryChapter != null
-                    ? () => widget.onRetryChapter!(chapterId)
-                    : null,
+            onRetry: widget.onRetryChapter != null
+                ? () => widget.onRetryChapter!(chapterId)
+                : null,
           ),
         );
     }

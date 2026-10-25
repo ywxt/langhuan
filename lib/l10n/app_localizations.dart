@@ -194,6 +194,42 @@ abstract class AppLocalizations {
   /// **'Failed to load bookshelf'**
   String get bookshelfErrorLoadFailed;
 
+  /// Bookshelf long-press action that opens book details
+  ///
+  /// In en, this message translates to:
+  /// **'Book Details'**
+  String get bookshelfBookDetails;
+
+  /// Bookshelf long-press delete action
+  ///
+  /// In en, this message translates to:
+  /// **'Delete from Bookshelf'**
+  String get bookshelfDeleteBook;
+
+  /// Title of the bookshelf book deletion confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Delete book?'**
+  String get bookshelfDeleteConfirmTitle;
+
+  /// Bookshelf book deletion confirmation message
+  ///
+  /// In en, this message translates to:
+  /// **'Remove \"{bookTitle}\" from your bookshelf?'**
+  String bookshelfDeleteConfirmMessage(String bookTitle);
+
+  /// Cancel bookshelf book deletion
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get bookshelfDeleteCancel;
+
+  /// Confirm bookshelf book deletion
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get bookshelfDeleteConfirm;
+
   /// Search page title
   ///
   /// In en, this message translates to:

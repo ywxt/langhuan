@@ -20,6 +20,8 @@ class CoverImage extends StatelessWidget {
     required this.url,
     this.width,
     this.height,
+    this.decodeWidth,
+    this.decodeHeight,
     this.fit = BoxFit.cover,
     this.placeholder,
     this.fadeDuration = const Duration(milliseconds: 220),
@@ -34,6 +36,12 @@ class CoverImage extends StatelessWidget {
 
   /// Optional fixed height.
   final double? height;
+
+  /// Optional logical dimensions used for image decoding. These can be larger
+  /// than the rendered thumbnail so a Hero destination can reuse the decoded
+  /// image without doing extra work during its flight.
+  final double? decodeWidth;
+  final double? decodeHeight;
 
   /// How the image should be inscribed into the box.
   final BoxFit fit;
@@ -53,8 +61,14 @@ class CoverImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final fallback = placeholder ?? const CoverPlaceholder();
     final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
-    final cacheW = width != null ? (width! * devicePixelRatio).round() : null;
-    final cacheH = height != null ? (height! * devicePixelRatio).round() : null;
+    final effectiveDecodeWidth = decodeWidth ?? width;
+    final effectiveDecodeHeight = decodeHeight ?? height;
+    final cacheW = effectiveDecodeWidth != null
+        ? (effectiveDecodeWidth * devicePixelRatio).round()
+        : null;
+    final cacheH = effectiveDecodeHeight != null
+        ? (effectiveDecodeHeight * devicePixelRatio).round()
+        : null;
     final image = _isLocalFile
         ? _buildFileImage(fallback, cacheW, cacheH)
         : _buildNetworkImage(fallback, cacheW, cacheH);

@@ -1,10 +1,31 @@
 import 'package:flutter/material.dart';
 
-/// Fades the page in while sliding it up from 10% below its final position.
+const fadeSlideTransitionDuration = Duration(milliseconds: 300);
+const fadeSlideReverseTransitionDuration = Duration(milliseconds: 240);
+
+Widget buildFadeSlideTransition(Animation<double> animation, Widget child) {
+  final curvedAnimation = CurvedAnimation(
+    parent: animation,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
+  return FadeTransition(
+    opacity: curvedAnimation,
+    child: SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0, 0.08),
+        end: Offset.zero,
+      ).animate(curvedAnimation),
+      child: child,
+    ),
+  );
+}
+
+/// Fades the page in while sliding it up from below its final position.
 ///
-/// Installed as the app-wide default through
-/// `LanghuanTheme`'s [ThemeData.pageTransitionsTheme], so every pushed route
-/// animates consistently without per-route [CustomTransitionPage] wrappers.
+/// Installed as the app-wide Material default. GoRouter routes also call
+/// [buildFadeSlideTransition] explicitly so their animation does not depend on
+/// how GoRouter adapts a widget builder into a platform page.
 class FadeSlidePageTransitionsBuilder extends PageTransitionsBuilder {
   const FadeSlidePageTransitionsBuilder();
 
@@ -16,15 +37,12 @@ class FadeSlidePageTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    return FadeTransition(
-      opacity: CurveTween(curve: Curves.easeOut).animate(animation),
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, 0.1),
-          end: Offset.zero,
-        ).chain(CurveTween(curve: Curves.easeOut)).animate(animation),
-        child: child,
-      ),
-    );
+    return buildFadeSlideTransition(animation, child);
   }
+
+  @override
+  Duration get transitionDuration => fadeSlideTransitionDuration;
+
+  @override
+  Duration get reverseTransitionDuration => fadeSlideReverseTransitionDuration;
 }

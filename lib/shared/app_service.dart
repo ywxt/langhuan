@@ -1,7 +1,8 @@
 import '../../src/rust/api/app_data.dart' as rust_app_data;
 import '../../src/rust/api/cache.dart' as rust_cache;
 import '../../src/rust/api/locale.dart' as rust_locale;
-import '../../src/rust/api/types.dart' show CacheStats, CleanupResult, CoverData;
+import '../../src/rust/api/types.dart'
+    show CacheStats, CleanupResult, CoverData;
 
 /// Service for non-feed Rust API calls (locale, app data directory, storage
 /// maintenance, etc.).
