@@ -18,9 +18,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get navFeeds => '書源';
 
   @override
-  String get navProfile => '設置';
-
-  @override
   String get bookshelfTitle => '書架';
 
   @override
@@ -135,9 +132,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get searchRetry => '重試';
 
   @override
-  String get searchLoadingMore => '加載更多…';
-
-  @override
   String get bookDetailTitle => '書籍詳情';
 
   @override
@@ -228,12 +222,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerEmpty => '暫無章節正文';
 
   @override
-  String get readerAtFirstChapter => '已是第一章';
-
-  @override
-  String get readerAtLastChapter => '已是最後一章';
-
-  @override
   String get readerPrevChapter => '上一章';
 
   @override
@@ -252,11 +240,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readerModeLabel => '閱讀方式';
-
-  @override
-  String readerChapterFallbackTitle(int index) {
-    return '第 $index 章';
-  }
 
   @override
   String get readerEndOfBook => '已讀完全書';
@@ -292,15 +275,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerBookmarkRemoved => '已刪除書籤';
 
   @override
-  String get readerBookmarkAddHint => '點擊添加書籤，長按可添加標籤';
-
-  @override
-  String get readerBookmarkLabelTitle => '新增書籤';
-
-  @override
-  String get readerBookmarkLabelHint => '可選標籤';
-
-  @override
   String get readerNoBookmarks => '暫無書籤';
 
   @override
@@ -311,11 +285,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get readerSearchBookmarksHint => '搜索書籤';
-
-  @override
-  String readerBookmarkParagraph(int index) {
-    return '第 $index 段';
-  }
 
   @override
   String get readerThemeSystem => '跟隨系統';
@@ -378,9 +347,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get feedDetailAuthor => '作者';
-
-  @override
-  String get feedDetailTooltip => '詳情';
 
   @override
   String get feedAuthLabel => '登錄';
@@ -473,12 +439,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedSelectorNoFeeds => '暫無書源，請先在「書源」頁面添加腳本';
 
   @override
-  String get profileTitle => '設置';
-
-  @override
-  String get profileSubtitle => '管理你的偏好設置';
-
-  @override
   String get navSettings => '設置';
 
   @override
@@ -492,9 +452,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsLicenses => '開源許可';
-
-  @override
-  String get errorSomethingWrong => '出現錯誤';
 
   @override
   String get addFeedTitle => '添加書源';
@@ -516,9 +473,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get addFeedUrlPreview => '預覽';
-
-  @override
-  String get addFeedPickFile => '選擇腳本文件';
 
   @override
   String get addFeedPreviewTitle => '書源摘要';
@@ -555,12 +509,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get addFeedSuccess => '書源安裝成功';
-
-  @override
-  String get addFeedErrorPreview => '預覽書源失敗';
-
-  @override
-  String get addFeedErrorInstall => '安裝書源失敗';
 
   @override
   String get settingsReading => '閱讀';

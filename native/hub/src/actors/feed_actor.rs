@@ -316,14 +316,17 @@ async fn search_one_feed(
     meta: FeedMetaItem,
     keyword: String,
 ) {
-    let feed = match registry.send(GetFeed { feed_id: meta.id.clone() }).await {
-        Ok(Ok(feed)) => feed,
-        Ok(Err(e)) => {
-            emit_feed_error(&tx, &meta, e.to_string()).await;
-            return;
-        }
+    // Flatten the messaging + resolution results so either failure kind is
+    // reported for this feed alone.
+    let feed = match registry
+        .send(GetFeed { feed_id: meta.id.clone() })
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|inner| inner.map_err(|e| e.to_string()))
+    {
+        Ok(feed) => feed,
         Err(e) => {
-            emit_feed_error(&tx, &meta, e.to_string()).await;
+            emit_feed_error(&tx, &meta, e).await;
             return;
         }
     };

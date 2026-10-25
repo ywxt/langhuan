@@ -5,8 +5,6 @@
 
   "navBookshelf": "書架",
   "navFeeds": "書源",
-  "navProfile": "設置",
-
   "bookshelfTitle": "書架",
   "bookshelfNewChapters": "{count} 個新章節",
   "bookshelfCheckFailed": "檢查更新失敗",
@@ -43,8 +41,6 @@
   "searchNoResults": "「{keyword}」無搜索結果",
   "searchError": "搜索出錯",
   "searchRetry": "重試",
-  "searchLoadingMore": "加載更多…",
-
   "bookDetailTitle": "書籍詳情",
   "bookDetailError": "加載書籍信息失敗",
   "bookDetailRetry": "重試",
@@ -76,16 +72,12 @@
   "readerLineHeight": "行高 {value}",
   "@readerLineHeight": { "placeholders": { "value": { "type": "String" } } },
   "readerEmpty": "暫無章節正文",
-  "readerAtFirstChapter": "已是第一章",
-  "readerAtLastChapter": "已是最後一章",
   "readerPrevChapter": "上一章",
   "readerNextChapter": "下一章",
   "readerChapterProgress": "第 {current} / {total} 章",
   "readerModeVertical": "上下滑動",
   "readerModeHorizontal": "左右翻頁",
   "readerModeLabel": "閱讀方式",
-  "readerChapterFallbackTitle": "第 {index} 章",
-
   "readerEndOfBook": "已讀完全書",
   "readerLoading": "加載中\u2026",
   "readerChapterLoadError": "章節加載失敗",
@@ -98,14 +90,10 @@
   "readerBookmarks": "書籤",
   "readerBookmarkAdded": "已添加書籤",
   "readerBookmarkRemoved": "已刪除書籤",
-  "readerBookmarkAddHint": "點擊添加書籤，長按可添加標籤",
-  "readerBookmarkLabelTitle": "新增書籤",
-  "readerBookmarkLabelHint": "可選標籤",
   "readerNoBookmarks": "暫無書籤",
   "readerAddBookmark": "添加書籤",
   "readerSearchTocHint": "搜索章節",
   "readerSearchBookmarksHint": "搜索書籤",
-  "readerBookmarkParagraph": "第 {index} 段",
   "readerThemeSystem": "跟隨系統",
   "readerThemeLight": "淺色",
   "readerThemeDark": "深色",
@@ -129,8 +117,6 @@
   "feedDetailId": "ID",
   "feedDetailVersion": "版本",
   "feedDetailAuthor": "作者",
-  "feedDetailTooltip": "詳情",
-
   "feedAuthLabel": "登錄",
   "feedAuthStatusLoggedIn": "已登錄",
   "feedAuthStatusLoggedOut": "未登錄",
@@ -163,16 +149,11 @@
 
   "feedSelectorNoFeeds": "暫無書源，請先在「書源」頁面添加腳本",
 
-  "profileTitle": "設置",
-  "profileSubtitle": "管理你的偏好設置",
-
   "navSettings": "設置",
   "settingsTitle": "設置",
   "settingsAbout": "關於",
   "settingsVersion": "版本",
   "settingsLicenses": "開源許可",
-
-  "errorSomethingWrong": "出現錯誤",
 
   "addFeedTitle": "添加書源",
   "addFeedTabUrl": "從網絡",
@@ -181,7 +162,6 @@
   "addFeedTabFileDesc": "從本地存儲導入書源腳本",
   "addFeedUrlHint": "輸入腳本地址…",
   "addFeedUrlPreview": "預覽",
-  "addFeedPickFile": "選擇腳本文件",
   "addFeedPreviewTitle": "書源摘要",
   "addFeedAllowedDomains": "允許訪問的域名",
   "addFeedNoDomainRestriction": "無域名限制",
@@ -192,9 +172,6 @@
   "addFeedVersionUnknown": "已安裝 {from}，將安裝 {to}",
   "addFeedInstall": "安裝",
   "addFeedSuccess": "書源安裝成功",
-  "addFeedErrorPreview": "預覽書源失敗",
-  "addFeedErrorInstall": "安裝書源失敗",
-
   "settingsReading": "閱讀",
   "settingsChineseConversion": "繁簡轉換",
   "settingsChineseConversionDescription": "閱讀時自動轉換中文字體",

@@ -116,12 +116,6 @@ abstract class AppLocalizations {
   /// **'Feeds'**
   String get navFeeds;
 
-  /// Bottom nav: settings tab
-  ///
-  /// In en, this message translates to:
-  /// **'Settings'**
-  String get navProfile;
-
   /// Bookshelf page title
   ///
   /// In en, this message translates to:
@@ -326,12 +320,6 @@ abstract class AppLocalizations {
   /// **'Retry'**
   String get searchRetry;
 
-  /// Streaming badge at bottom of results
-  ///
-  /// In en, this message translates to:
-  /// **'Loading more…'**
-  String get searchLoadingMore;
-
   /// Book detail page title
   ///
   /// In en, this message translates to:
@@ -488,18 +476,6 @@ abstract class AppLocalizations {
   /// **'No chapter content available'**
   String get readerEmpty;
 
-  /// Snackbar shown when swiping before first chapter
-  ///
-  /// In en, this message translates to:
-  /// **'Already at the first chapter'**
-  String get readerAtFirstChapter;
-
-  /// Snackbar shown when swiping after last chapter
-  ///
-  /// In en, this message translates to:
-  /// **'Already at the last chapter'**
-  String get readerAtLastChapter;
-
   /// Reader page previous chapter button label
   ///
   /// In en, this message translates to:
@@ -535,12 +511,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reading Mode'**
   String get readerModeLabel;
-
-  /// Fallback chapter title when source does not provide one
-  ///
-  /// In en, this message translates to:
-  /// **'Chapter {index}'**
-  String readerChapterFallbackTitle(int index);
 
   /// Message shown after the last chapter of the book
   ///
@@ -608,24 +578,6 @@ abstract class AppLocalizations {
   /// **'Bookmark removed'**
   String get readerBookmarkRemoved;
 
-  /// Tooltip for bookmark add button
-  ///
-  /// In en, this message translates to:
-  /// **'Tap to add bookmark, long press to add label'**
-  String get readerBookmarkAddHint;
-
-  /// Dialog title for creating a bookmark with optional label
-  ///
-  /// In en, this message translates to:
-  /// **'New Bookmark'**
-  String get readerBookmarkLabelTitle;
-
-  /// Text field hint for bookmark label
-  ///
-  /// In en, this message translates to:
-  /// **'Optional label'**
-  String get readerBookmarkLabelHint;
-
   /// Bookmark list empty state
   ///
   /// In en, this message translates to:
@@ -649,12 +601,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Search bookmarks'**
   String get readerSearchBookmarksHint;
-
-  /// Fallback bookmark paragraph name
-  ///
-  /// In en, this message translates to:
-  /// **'Paragraph {index}'**
-  String readerBookmarkParagraph(int index);
 
   /// Reader theme option: follow system
   ///
@@ -775,12 +721,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Author'**
   String get feedDetailAuthor;
-
-  /// Feed list tile trailing icon tooltip
-  ///
-  /// In en, this message translates to:
-  /// **'Details'**
-  String get feedDetailTooltip;
 
   /// Feed detail auth section label
   ///
@@ -950,18 +890,6 @@ abstract class AppLocalizations {
   /// **'No feeds available. Add scripts in the Feeds tab first.'**
   String get feedSelectorNoFeeds;
 
-  /// Settings page title
-  ///
-  /// In en, this message translates to:
-  /// **'Settings'**
-  String get profileTitle;
-
-  /// Settings page subtitle
-  ///
-  /// In en, this message translates to:
-  /// **'Manage your preferences'**
-  String get profileSubtitle;
-
   /// Bottom nav: settings tab
   ///
   /// In en, this message translates to:
@@ -991,12 +919,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Licenses'**
   String get settingsLicenses;
-
-  /// Generic error title
-  ///
-  /// In en, this message translates to:
-  /// **'Something went wrong'**
-  String get errorSomethingWrong;
 
   /// Add feed source page/sheet title
   ///
@@ -1039,12 +961,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Preview'**
   String get addFeedUrlPreview;
-
-  /// Button label: open file picker for .lua script
-  ///
-  /// In en, this message translates to:
-  /// **'Pick Script File'**
-  String get addFeedPickFile;
 
   /// Section heading for the feed preview card
   ///
@@ -1105,18 +1021,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Feed installed successfully'**
   String get addFeedSuccess;
-
-  /// Error message when preview fails
-  ///
-  /// In en, this message translates to:
-  /// **'Failed to preview feed'**
-  String get addFeedErrorPreview;
-
-  /// Error message when install fails
-  ///
-  /// In en, this message translates to:
-  /// **'Failed to install feed'**
-  String get addFeedErrorInstall;
 
   /// Settings section: reading preferences
   ///

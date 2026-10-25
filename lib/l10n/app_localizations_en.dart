@@ -18,9 +18,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navFeeds => 'Feeds';
 
   @override
-  String get navProfile => 'Settings';
-
-  @override
   String get bookshelfTitle => 'Bookshelf';
 
   @override
@@ -136,9 +133,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchRetry => 'Retry';
 
   @override
-  String get searchLoadingMore => 'Loading more…';
-
-  @override
   String get bookDetailTitle => 'Book Details';
 
   @override
@@ -229,12 +223,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readerEmpty => 'No chapter content available';
 
   @override
-  String get readerAtFirstChapter => 'Already at the first chapter';
-
-  @override
-  String get readerAtLastChapter => 'Already at the last chapter';
-
-  @override
   String get readerPrevChapter => 'Previous';
 
   @override
@@ -253,11 +241,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get readerModeLabel => 'Reading Mode';
-
-  @override
-  String readerChapterFallbackTitle(int index) {
-    return 'Chapter $index';
-  }
 
   @override
   String get readerEndOfBook => 'You\'ve reached the end of the book';
@@ -293,16 +276,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readerBookmarkRemoved => 'Bookmark removed';
 
   @override
-  String get readerBookmarkAddHint =>
-      'Tap to add bookmark, long press to add label';
-
-  @override
-  String get readerBookmarkLabelTitle => 'New Bookmark';
-
-  @override
-  String get readerBookmarkLabelHint => 'Optional label';
-
-  @override
   String get readerNoBookmarks => 'No bookmarks yet';
 
   @override
@@ -313,11 +286,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get readerSearchBookmarksHint => 'Search bookmarks';
-
-  @override
-  String readerBookmarkParagraph(int index) {
-    return 'Paragraph $index';
-  }
 
   @override
   String get readerThemeSystem => 'System';
@@ -381,9 +349,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get feedDetailAuthor => 'Author';
-
-  @override
-  String get feedDetailTooltip => 'Details';
 
   @override
   String get feedAuthLabel => 'Auth';
@@ -479,12 +444,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'No feeds available. Add scripts in the Feeds tab first.';
 
   @override
-  String get profileTitle => 'Settings';
-
-  @override
-  String get profileSubtitle => 'Manage your preferences';
-
-  @override
   String get navSettings => 'Settings';
 
   @override
@@ -498,9 +457,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsLicenses => 'Licenses';
-
-  @override
-  String get errorSomethingWrong => 'Something went wrong';
 
   @override
   String get addFeedTitle => 'Add Feed Source';
@@ -524,9 +480,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addFeedUrlPreview => 'Preview';
-
-  @override
-  String get addFeedPickFile => 'Pick Script File';
 
   @override
   String get addFeedPreviewTitle => 'Feed Summary';
@@ -563,12 +516,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addFeedSuccess => 'Feed installed successfully';
-
-  @override
-  String get addFeedErrorPreview => 'Failed to preview feed';
-
-  @override
-  String get addFeedErrorInstall => 'Failed to install feed';
 
   @override
   String get settingsReading => 'Reading';

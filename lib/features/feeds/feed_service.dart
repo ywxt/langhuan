@@ -301,7 +301,8 @@ class FeedAuthEntryModel {
 }
 
 // ---------------------------------------------------------------------------
-// Bookshelf operation outcome (kept for provider compat)
+// Bookshelf operation outcome — Dart-side sealed view of the Rust add/remove
+// outcomes, with transport errors folded into the error variant.
 // ---------------------------------------------------------------------------
 
 sealed class BookshelfOperationOutcome {

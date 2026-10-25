@@ -25,141 +25,10 @@ import 'package:langhuan/shared/app_service.dart';
 import 'package:langhuan/src/rust/frb_generated.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'fixture_feed.dart';
+
 const _feedAId = 'fixture-a';
 const _feedBId = 'fixture-b';
-
-/// Lua feed script backed by one of the test's local HTTP servers. The
-/// search response body is a number; the script turns it into that many
-/// results, so the test controls each source's output (or failure, via a
-/// non-numeric body) by changing what the server serves.
-String _fixtureFeedScript({
-  required String id,
-  required String name,
-  required int port,
-}) => '''
--- ==Feed==
--- @id           $id
--- @name         $name
--- @version      1.0.0
--- @author       integration-test
--- @description  Hermetic fixture feed backed by a local HTTP server
--- @base_url     http://127.0.0.1:$port
--- @access_domain 127.0.0.1
--- @schema_version 1
--- ==/Feed==
-
-return {
-    search = {
-        request = function(keyword, cursor)
-            return {
-                url = meta.base_url .. "/search",
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            local count = tonumber(resp.body or "")
-            if count == nil then
-                error("fixture: invalid search count: " .. tostring(resp.body))
-            end
-            local items = {}
-            for i = 1, count do
-                table.insert(items, {
-                    id = tostring(1000 + i),
-                    title = "Fixture Book " .. tostring(i),
-                    author = "Fixture Author",
-                    description = "Hermetic fixture book.",
-                })
-            end
-            return {
-                items = items,
-                next_cursor = nil,
-            }
-        end,
-    },
-
-    book_info = {
-        request = function(id)
-            return {
-                url = meta.base_url .. "/book/" .. tostring(id),
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            return {
-                id = "1001",
-                title = "Fixture Book 1",
-                author = "Fixture Author",
-                description = "Hermetic fixture book.",
-            }
-        end,
-    },
-
-    chapters = {
-        request = function(book_id, cursor)
-            return {
-                url = meta.base_url .. "/chapters/" .. tostring(book_id),
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            local count = tonumber(resp.body or "")
-            if count == nil then
-                error("fixture: invalid chapter count: " .. tostring(resp.body))
-            end
-            local items = {}
-            for i = 1, count do
-                table.insert(items, {
-                    id = tostring(i),
-                    title = "Chapter " .. tostring(i),
-                })
-            end
-            return {
-                items = items,
-                next_cursor = nil,
-            }
-        end,
-    },
-
-    paragraphs = {
-        request = function(book_id, chapter_id, cursor)
-            return {
-                url = meta.base_url .. "/paragraphs/" .. tostring(book_id)
-                    .. "/" .. tostring(chapter_id),
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            return {
-                items = {
-                    { type = "text", content = "Fixture paragraph." },
-                },
-                next_cursor = nil,
-            }
-        end,
-    },
-}
-''';
-
-Future<void> _installFixture({
-  required String id,
-  required String name,
-  required int port,
-  required Directory dataDir,
-}) async {
-  final scriptFile = File('${dataDir.path}/$id.lua')
-    ..writeAsStringSync(
-      _fixtureFeedScript(id: id, name: name, port: port),
-    );
-  final preview = await FeedService.instance.previewFromFile(
-    scriptFile.path,
-  );
-  expect(preview.id, id);
-  await FeedService.instance.installFeed(preview.requestId);
-}
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -205,13 +74,13 @@ void main() {
     expect(loadedFeeds, 0, reason: 'a fresh data directory has no feeds');
 
     // ── Install both fixture feeds ─────────────────────────────────────────
-    await _installFixture(
+    await installFixtureFeed(
       id: _feedAId,
       name: 'Fixture Source A',
       port: serverA.port,
       dataDir: dataDir,
     );
-    await _installFixture(
+    await installFixtureFeed(
       id: _feedBId,
       name: 'Fixture Source B',
       port: serverB.port,

@@ -23,114 +23,10 @@ import 'package:langhuan/shared/app_service.dart';
 import 'package:langhuan/src/rust/frb_generated.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'fixture_feed.dart';
+
 const _feedId = 'fixture-test';
 const _bookId = '1001';
-
-/// Lua feed script backed by the test's local HTTP server. Any request is
-/// answered with the current chapter count as the body; the script turns
-/// that number into the chapter list, so the test controls "publications"
-/// by changing what the server serves.
-String _fixtureFeedScript(int port) => '''
--- ==Feed==
--- @id           fixture-test
--- @name         Fixture Test Source
--- @version      1.0.0
--- @author       integration-test
--- @description  Hermetic fixture feed backed by a local HTTP server
--- @base_url     http://127.0.0.1:$port
--- @access_domain 127.0.0.1
--- @schema_version 1
--- ==/Feed==
-
-return {
-    search = {
-        request = function(keyword, cursor)
-            return {
-                url = meta.base_url .. "/search",
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            return {
-                items = {
-                    {
-                        id = "1001",
-                        title = "Fixture Book",
-                        author = "Fixture Author",
-                        description = "Hermetic fixture book.",
-                    },
-                },
-                next_cursor = nil,
-            }
-        end,
-    },
-
-    book_info = {
-        request = function(id)
-            return {
-                url = meta.base_url .. "/book/" .. tostring(id),
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            return {
-                id = "1001",
-                title = "Fixture Book",
-                author = "Fixture Author",
-                description = "Hermetic fixture book.",
-            }
-        end,
-    },
-
-    chapters = {
-        request = function(book_id, cursor)
-            return {
-                url = meta.base_url .. "/chapters/" .. tostring(book_id),
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            local count = tonumber(resp.body or "")
-            if count == nil then
-                error("fixture: invalid chapter count: " .. tostring(resp.body))
-            end
-            local items = {}
-            for i = 1, count do
-                table.insert(items, {
-                    id = tostring(i),
-                    title = "Chapter " .. tostring(i),
-                })
-            end
-            return {
-                items = items,
-                next_cursor = nil,
-            }
-        end,
-    },
-
-    paragraphs = {
-        request = function(book_id, chapter_id, cursor)
-            return {
-                url = meta.base_url .. "/paragraphs/" .. tostring(book_id)
-                    .. "/" .. tostring(chapter_id),
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            return {
-                items = {
-                    { type = "text", content = "Fixture paragraph." },
-                },
-                next_cursor = nil,
-            }
-        end,
-    },
-}
-''';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -150,6 +46,9 @@ void main() {
     server.listen((request) async {
       if (failRequests) {
         request.response.statusCode = HttpStatus.internalServerError;
+      } else if (request.uri.path.startsWith('/search')) {
+        // One search result; the chapters endpoint serves [chapterCount].
+        request.response.write('1');
       } else {
         request.response.write('$chapterCount');
       }
@@ -168,13 +67,12 @@ void main() {
     expect(loadedFeeds, 0, reason: 'a fresh data directory has no feeds');
 
     // ── Install the fixture feed ──────────────────────────────────────────
-    final scriptFile = File('${dataDir.path}/fixture-feed.lua')
-      ..writeAsStringSync(_fixtureFeedScript(server.port));
-    final preview = await FeedService.instance.previewFromFile(
-      scriptFile.path,
+    await installFixtureFeed(
+      id: _feedId,
+      name: 'Fixture Test Source',
+      port: server.port,
+      dataDir: dataDir,
     );
-    expect(preview.id, _feedId);
-    await FeedService.instance.installFeed(preview.requestId);
     final feeds = await FeedService.instance.listFeeds();
     expect(feeds.map((feed) => feed.id), contains(_feedId));
 
@@ -184,7 +82,7 @@ void main() {
         .toList();
     expect(results, hasLength(1));
     expect(results.first.id, _bookId);
-    expect(results.first.title, 'Fixture Book');
+    expect(results.first.title, 'Fixture Book 1');
 
     final outcome = await FeedService.instance.addToBookshelf(
       feedId: _feedId,

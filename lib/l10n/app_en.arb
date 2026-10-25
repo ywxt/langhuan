@@ -10,9 +10,6 @@
   "navFeeds": "Feeds",
   "@navFeeds": { "description": "Bottom nav: feeds tab" },
 
-  "navProfile": "Settings",
-  "@navProfile": { "description": "Bottom nav: settings tab" },
-
   "bookshelfTitle": "Bookshelf",
   "@bookshelfTitle": { "description": "Bookshelf page title" },
 
@@ -129,9 +126,6 @@
   "searchRetry": "Retry",
   "@searchRetry": { "description": "Retry button label" },
 
-  "searchLoadingMore": "Loading more…",
-  "@searchLoadingMore": { "description": "Streaming badge at bottom of results" },
-
   "bookDetailTitle": "Book Details",
   "@bookDetailTitle": { "description": "Book detail page title" },
 
@@ -220,12 +214,6 @@
   "readerEmpty": "No chapter content available",
   "@readerEmpty": { "description": "Reader page empty content state" },
 
-  "readerAtFirstChapter": "Already at the first chapter",
-  "@readerAtFirstChapter": { "description": "Snackbar shown when swiping before first chapter" },
-
-  "readerAtLastChapter": "Already at the last chapter",
-  "@readerAtLastChapter": { "description": "Snackbar shown when swiping after last chapter" },
-
   "readerPrevChapter": "Previous",
   "@readerPrevChapter": { "description": "Reader page previous chapter button label" },
 
@@ -249,14 +237,6 @@
 
   "readerModeLabel": "Reading Mode",
   "@readerModeLabel": { "description": "Section label above the reader mode toggle" },
-
-  "readerChapterFallbackTitle": "Chapter {index}",
-  "@readerChapterFallbackTitle": {
-    "description": "Fallback chapter title when source does not provide one",
-    "placeholders": {
-      "index": { "type": "int" }
-    }
-  },
 
   "readerEndOfBook": "You've reached the end of the book",
   "@readerEndOfBook": { "description": "Message shown after the last chapter of the book" },
@@ -291,15 +271,6 @@
   "readerBookmarkRemoved": "Bookmark removed",
   "@readerBookmarkRemoved": { "description": "Snackbar after removing a bookmark" },
 
-  "readerBookmarkAddHint": "Tap to add bookmark, long press to add label",
-  "@readerBookmarkAddHint": { "description": "Tooltip for bookmark add button" },
-
-  "readerBookmarkLabelTitle": "New Bookmark",
-  "@readerBookmarkLabelTitle": { "description": "Dialog title for creating a bookmark with optional label" },
-
-  "readerBookmarkLabelHint": "Optional label",
-  "@readerBookmarkLabelHint": { "description": "Text field hint for bookmark label" },
-
   "readerNoBookmarks": "No bookmarks yet",
   "@readerNoBookmarks": { "description": "Bookmark list empty state" },
 
@@ -311,14 +282,6 @@
 
   "readerSearchBookmarksHint": "Search bookmarks",
   "@readerSearchBookmarksHint": { "description": "Search input hint in bookmarks bottom sheet" },
-
-  "readerBookmarkParagraph": "Paragraph {index}",
-  "@readerBookmarkParagraph": {
-    "description": "Fallback bookmark paragraph name",
-    "placeholders": {
-      "index": { "type": "int" }
-    }
-  },
 
   "readerThemeSystem": "System",
   "@readerThemeSystem": { "description": "Reader theme option: follow system" },
@@ -384,9 +347,6 @@
 
   "feedDetailAuthor": "Author",
   "@feedDetailAuthor": { "description": "Feed detail sheet: author label" },
-
-  "feedDetailTooltip": "Details",
-  "@feedDetailTooltip": { "description": "Feed list tile trailing icon tooltip" },
 
   "feedAuthLabel": "Auth",
   "@feedAuthLabel": { "description": "Feed detail auth section label" },
@@ -487,12 +447,6 @@
   "feedSelectorNoFeeds": "No feeds available. Add scripts in the Feeds tab first.",
   "@feedSelectorNoFeeds": { "description": "Search page: no feeds available message" },
 
-  "profileTitle": "Settings",
-  "@profileTitle": { "description": "Settings page title" },
-
-  "profileSubtitle": "Manage your preferences",
-  "@profileSubtitle": { "description": "Settings page subtitle" },
-
   "navSettings": "Settings",
   "@navSettings": { "description": "Bottom nav: settings tab" },
 
@@ -507,9 +461,6 @@
 
   "settingsLicenses": "Licenses",
   "@settingsLicenses": { "description": "Settings row: open source licenses" },
-
-  "errorSomethingWrong": "Something went wrong",
-  "@errorSomethingWrong": { "description": "Generic error title" },
 
   "addFeedTitle": "Add Feed Source",
   "@addFeedTitle": { "description": "Add feed source page/sheet title" },
@@ -531,9 +482,6 @@
 
   "addFeedUrlPreview": "Preview",
   "@addFeedUrlPreview": { "description": "Button label: preview feed from URL" },
-
-  "addFeedPickFile": "Pick Script File",
-  "@addFeedPickFile": { "description": "Button label: open file picker for .lua script" },
 
   "addFeedPreviewTitle": "Feed Summary",
   "@addFeedPreviewTitle": { "description": "Section heading for the feed preview card" },
@@ -582,12 +530,6 @@
 
   "addFeedSuccess": "Feed installed successfully",
   "@addFeedSuccess": { "description": "Snackbar message on successful install" },
-
-  "addFeedErrorPreview": "Failed to preview feed",
-  "@addFeedErrorPreview": { "description": "Error message when preview fails" },
-
-  "addFeedErrorInstall": "Failed to install feed",
-  "@addFeedErrorInstall": { "description": "Error message when install fails" },
 
   "settingsReading": "Reading",
   "@settingsReading": { "description": "Settings section: reading preferences" },
