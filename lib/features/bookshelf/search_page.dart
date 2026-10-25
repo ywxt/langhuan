@@ -297,6 +297,18 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                       selectedFeed.id,
                       searchState.items[index].id,
                     ),
+              titleHeroTag: selectedFeed == null
+                  ? null
+                  : bookTitleHeroTag(
+                      selectedFeed.id,
+                      searchState.items[index].id,
+                    ),
+              authorHeroTag: selectedFeed == null
+                  ? null
+                  : bookAuthorHeroTag(
+                      selectedFeed.id,
+                      searchState.items[index].id,
+                    ),
               onTap: selectedFeed == null
                   ? null
                   : () {

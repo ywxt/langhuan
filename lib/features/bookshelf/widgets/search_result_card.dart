@@ -13,11 +13,15 @@ class SearchResultCard extends StatelessWidget {
     required this.item,
     this.onTap,
     this.coverHeroTag,
+    this.titleHeroTag,
+    this.authorHeroTag,
   });
 
   final SearchResultModel item;
   final VoidCallback? onTap;
   final Object? coverHeroTag;
+  final Object? titleHeroTag;
+  final Object? authorHeroTag;
 
   @override
   Widget build(BuildContext context) {
@@ -61,20 +65,26 @@ class SearchResultCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      item.title,
-                      style: theme.textTheme.titleMedium,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    _optionalTextHero(
+                      tag: titleHeroTag,
+                      child: Text(
+                        item.title,
+                        style: theme.textTheme.titleMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     const SizedBox(height: LanghuanTheme.spaceXs),
-                    Text(
-                      item.author,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                    _optionalTextHero(
+                      tag: authorHeroTag,
+                      child: Text(
+                        item.author,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                     if (item.description != null) ...[
                       const SizedBox(height: LanghuanTheme.spaceXs),
@@ -114,5 +124,9 @@ class SearchResultCard extends StatelessWidget {
             flightShuttleBuilder: bookCoverFlightShuttleBuilder,
             child: child,
           );
+  }
+
+  Widget _optionalTextHero({required Object? tag, required Widget child}) {
+    return tag == null ? child : BookTextHero(tag: tag, child: child);
   }
 }

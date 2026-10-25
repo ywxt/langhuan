@@ -143,24 +143,60 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
         bookInfoState.feedId == widget.feedId &&
         bookInfoState.bookId == widget.bookId;
     final currentBook = hasCurrentBook ? bookInfoState.book : null;
+    final hasCurrentChapters =
+        chaptersState.feedId == widget.feedId &&
+        chaptersState.bookId == widget.bookId;
+    final currentChaptersState = hasCurrentChapters
+        ? chaptersState
+        : const ChaptersState();
+    final currentProgress =
+        progressState.feedId == widget.feedId &&
+            progressState.bookId == widget.bookId
+        ? progressState.progress
+        : null;
 
     if ((!hasCurrentBook || bookInfoState.isLoading) && currentBook == null) {
       return Scaffold(
         appBar: AppBar(title: Text(l10n.bookDetailTitle)),
-        body: Column(
-          children: [
-            const SizedBox(height: LanghuanTheme.spaceMd),
-            _buildHeroCover(
-              widget.initialBook?.coverUrl,
-              useRouteSnapshot: true,
-            ),
-            const SizedBox(height: LanghuanTheme.spaceLg),
-            if (widget.initialBook?.title case final title?)
-              Text(title, style: theme.textTheme.headlineMedium),
-            const Spacer(),
-            const CircularProgressIndicator(),
-            const Spacer(),
-          ],
+        body: SizedBox(
+          width: double.infinity,
+          child: Column(
+            children: [
+              const SizedBox(height: LanghuanTheme.spaceMd),
+              _buildHeroCover(widget.initialBook?.coverUrl),
+              const SizedBox(height: LanghuanTheme.spaceLg),
+              if (widget.initialBook?.title case final title?)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: LanghuanTheme.spaceLg,
+                  ),
+                  child: BookTextHero(
+                    tag: bookTitleHeroTag(widget.feedId, widget.bookId),
+                    child: Text(
+                      title,
+                      style: theme.textTheme.headlineMedium,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              if (widget.initialBook?.author case final author?) ...[
+                const SizedBox(height: LanghuanTheme.spaceXs),
+                BookTextHero(
+                  tag: bookAuthorHeroTag(widget.feedId, widget.bookId),
+                  child: Text(
+                    author,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+              const Spacer(),
+              const CircularProgressIndicator(),
+              const Spacer(),
+            ],
+          ),
         ),
       );
     }
@@ -210,12 +246,27 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                 children: [
                   Center(child: _buildHeroCover(book.coverUrl)),
                   const SizedBox(height: LanghuanTheme.spaceLg),
-                  Text(book.title, style: theme.textTheme.headlineMedium),
+                  Center(
+                    child: BookTextHero(
+                      tag: bookTitleHeroTag(widget.feedId, widget.bookId),
+                      child: Text(
+                        book.title,
+                        style: theme.textTheme.headlineMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: LanghuanTheme.spaceXs),
-                  Text(
-                    book.author,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                  Center(
+                    child: BookTextHero(
+                      tag: bookAuthorHeroTag(widget.feedId, widget.bookId),
+                      child: Text(
+                        book.author,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                   ),
                   const SizedBox(height: LanghuanTheme.spaceMd),
@@ -258,19 +309,19 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: chaptersState.items.isEmpty
+                      onPressed: currentChaptersState.items.isEmpty
                           ? null
                           : () => _openReader(context, ''),
                       child: Text(
-                        progressState.progress != null
+                        currentProgress != null
                             ? l10n.bookDetailContinueReading
                             : l10n.bookDetailStartReading,
                       ),
                     ),
                   ),
-                  if (progressState.progress != null &&
-                      chaptersState.items.any(
-                        (c) => c.id == progressState.progress!.chapterId,
+                  if (currentProgress != null &&
+                      currentChaptersState.items.any(
+                        (c) => c.id == currentProgress.chapterId,
                       ))
                     Padding(
                       padding: const EdgeInsets.only(
@@ -278,10 +329,9 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                       ),
                       child: Text(
                         l10n.bookDetailLastReadChapter(
-                          chaptersState.items
+                          currentChaptersState.items
                               .firstWhere(
-                                (c) =>
-                                    c.id == progressState.progress!.chapterId,
+                                (c) => c.id == currentProgress.chapterId,
                               )
                               .title,
                         ),
@@ -293,14 +343,15 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                     ),
                   const SizedBox(height: LanghuanTheme.spaceXl),
                   Text(
-                    l10n.bookDetailChapters(chaptersState.items.length),
+                    l10n.bookDetailChapters(currentChaptersState.items.length),
                     style: theme.textTheme.titleLarge,
                   ),
                 ],
               ),
             ),
           ),
-          if (chaptersState.isLoading && chaptersState.items.isEmpty)
+          if (currentChaptersState.isLoading &&
+              currentChaptersState.items.isEmpty)
             const SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.symmetric(
@@ -309,7 +360,8 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                 child: LinearProgressIndicator(),
               ),
             )
-          else if (chaptersState.hasError && chaptersState.items.isEmpty)
+          else if (currentChaptersState.hasError &&
+              currentChaptersState.items.isEmpty)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -317,7 +369,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                 ),
                 child: ErrorState(
                   title: l10n.bookDetailChaptersError,
-                  message: normalizeErrorMessage(chaptersState.error!),
+                  message: normalizeErrorMessage(currentChaptersState.error!),
                   onRetry: () => ref
                       .read(chaptersProvider.notifier)
                       .retry(feedId: widget.feedId),
@@ -334,12 +386,12 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                 LanghuanTheme.spaceLg,
               ),
               sliver: SliverList.builder(
-                itemCount: chaptersState.items.length,
+                itemCount: currentChaptersState.items.length,
                 itemBuilder: (context, index) {
-                  final chapter = chaptersState.items[index];
+                  final chapter = currentChaptersState.items[index];
                   final isLastRead =
-                      progressState.progress != null &&
-                      progressState.progress!.chapterId == chapter.id;
+                      currentProgress != null &&
+                      currentProgress.chapterId == chapter.id;
                   return Padding(
                     padding: const EdgeInsets.only(
                       bottom: LanghuanTheme.spaceSm,
@@ -392,7 +444,8 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     );
   }
 
-  Widget _buildHeroCover(String? coverUrl, {bool useRouteSnapshot = false}) {
+  Widget _buildHeroCover(String? coverUrl) {
+    final stableCoverUrl = widget.initialBook?.coverUrl ?? coverUrl;
     return Hero(
       tag: bookCoverHeroTag(widget.feedId, widget.bookId),
       flightShuttleBuilder: bookCoverFlightShuttleBuilder,
@@ -401,9 +454,9 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
         child: SizedBox(
           width: 120,
           height: 160,
-          child: useRouteSnapshot && coverUrl != null
+          child: stableCoverUrl != null
               ? CoverImage(
-                  url: coverUrl,
+                  url: stableCoverUrl,
                   width: 120,
                   height: 160,
                   placeholder: const _LargeCoverPlaceholder(),
@@ -471,12 +524,10 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
 
     final bookState = ref.read(bookInfoProvider);
     final hasCurrentBook =
-        bookState.feedId == widget.feedId &&
-        bookState.bookId == widget.bookId;
-    final title =
-        hasCurrentBook && bookState.book != null
-            ? bookState.book!.title
-            : widget.initialBook?.title ?? widget.bookId;
+        bookState.feedId == widget.feedId && bookState.bookId == widget.bookId;
+    final title = hasCurrentBook && bookState.book != null
+        ? bookState.book!.title
+        : widget.initialBook?.title ?? widget.bookId;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {

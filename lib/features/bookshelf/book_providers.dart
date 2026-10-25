@@ -51,7 +51,10 @@ class ChaptersNotifier extends Notifier<ChaptersState> {
     _runToken++;
     final runToken = _runToken;
 
-    state = ChaptersState(feedId: feedId, bookId: bookId, isLoading: true);
+    final isSameBook = state.feedId == feedId && state.bookId == bookId;
+    state = isSameBook
+        ? state.copyWith(isLoading: true, error: () => null)
+        : ChaptersState(feedId: feedId, bookId: bookId, isLoading: true);
 
     try {
       final items = await FeedService.instance
@@ -118,7 +121,10 @@ class BookInfoNotifier extends Notifier<BookInfoState> {
   BookInfoState build() => const BookInfoState();
 
   Future<void> load({required String feedId, required String bookId}) async {
-    state = BookInfoState(feedId: feedId, bookId: bookId, isLoading: true);
+    final isSameBook = state.feedId == feedId && state.bookId == bookId;
+    state = isSameBook
+        ? state.copyWith(isLoading: true, error: () => null)
+        : BookInfoState(feedId: feedId, bookId: bookId, isLoading: true);
 
     try {
       final book = await FeedService.instance.bookInfo(
@@ -134,7 +140,7 @@ class BookInfoNotifier extends Notifier<BookInfoState> {
       state = state.copyWith(
         isLoading: false,
         error: () => e,
-        book: () => null,
+        book: isSameBook ? null : () => null,
       );
     }
   }

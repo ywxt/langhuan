@@ -143,18 +143,30 @@ class BookshelfPage extends ConsumerWidget {
                               ),
                             ),
                           ),
-                          title: Text(
-                            item.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyLarge,
+                          title: BookTextHero(
+                            tag: bookTitleHeroTag(
+                              item.feedId,
+                              item.sourceBookId,
+                            ),
+                            child: Text(
+                              item.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyLarge,
+                            ),
                           ),
-                          subtitle: Text(
-                            item.author,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                          subtitle: BookTextHero(
+                            tag: bookAuthorHeroTag(
+                              item.feedId,
+                              item.sourceBookId,
+                            ),
+                            child: Text(
+                              item.author,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
                           ),
                         ),

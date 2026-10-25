@@ -1,15 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:langhuan/features/bookshelf/book_detail_page.dart';
+import 'package:langhuan/features/bookshelf/book_providers.dart';
 import 'package:langhuan/features/bookshelf/bookshelf_page.dart';
 import 'package:langhuan/features/bookshelf/bookshelf_provider.dart';
+import 'package:langhuan/features/bookshelf/reading_progress_provider.dart';
 import 'package:langhuan/features/bookshelf/widgets/book_cover.dart';
 import 'package:langhuan/features/bookshelf/widgets/book_cover_hero.dart';
 import 'package:langhuan/features/bookshelf/widgets/search_result_card.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
+import 'package:langhuan/rust_init.dart';
 import 'package:langhuan/shared/widgets/cover_image.dart';
 
 const _book = BookshelfItemModel(
@@ -34,6 +40,44 @@ class _TestBookshelfNotifier extends BookshelfNotifier {
     removeCalls++;
     return const BookshelfOperationOutcomeRemoved();
   }
+}
+
+class _IdleBookInfoNotifier extends BookInfoNotifier {
+  @override
+  BookInfoState build() => const BookInfoState();
+
+  @override
+  Future<void> load({required String feedId, required String bookId}) async {}
+}
+
+class _LoadedBookInfoNotifier extends _IdleBookInfoNotifier {
+  @override
+  BookInfoState build() => const BookInfoState(
+    feedId: 'feed-1',
+    bookId: 'book-1',
+    book: BookInfoModel(id: 'book-1', title: 'Book one', author: 'Author one'),
+  );
+}
+
+class _IdleChaptersNotifier extends ChaptersNotifier {
+  @override
+  ChaptersState build() => const ChaptersState();
+
+  @override
+  Future<void> load({required String feedId, required String bookId}) async {}
+}
+
+class _IdleProgressNotifier extends ReadingProgressNotifier {
+  @override
+  ReadingProgressState build() => const ReadingProgressState();
+
+  @override
+  Future<void> load({
+    required String feedId,
+    required String bookId,
+    required String fallbackChapterId,
+    String fallbackParagraphId = '',
+  }) async {}
 }
 
 Widget _testApp(GoRouter router) {
@@ -141,7 +185,9 @@ void main() {
   testWidgets('search result cover exposes the shared book Hero tag', (
     tester,
   ) async {
-    final tag = bookCoverHeroTag('feed-1', 'book-1');
+    final coverTag = bookCoverHeroTag('feed-1', 'book-1');
+    final titleTag = bookTitleHeroTag('feed-1', 'book-1');
+    final authorTag = bookAuthorHeroTag('feed-1', 'book-1');
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -151,16 +197,20 @@ void main() {
               title: 'Book one',
               author: 'Author one',
             ),
-            coverHeroTag: tag,
+            coverHeroTag: coverTag,
+            titleHeroTag: titleTag,
+            authorHeroTag: authorTag,
           ),
         ),
       ),
     );
 
-    expect(
-      find.byWidgetPredicate((widget) => widget is Hero && widget.tag == tag),
-      findsOneWidget,
-    );
+    Finder heroWithTag(Object tag) =>
+        find.byWidgetPredicate((widget) => widget is Hero && widget.tag == tag);
+
+    expect(heroWithTag(coverTag), findsOneWidget);
+    expect(heroWithTag(titleTag), findsOneWidget);
+    expect(heroWithTag(authorTag), findsOneWidget);
   });
 
   testWidgets('search cover decodes once at the detail Hero size', (
@@ -186,5 +236,89 @@ void main() {
     expect(cover.height, 64);
     expect(cover.decodeWidth, 120);
     expect(cover.decodeHeight, 160);
+  });
+
+  testWidgets('uncached detail cover starts at the final horizontal center', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDataDirectorySetProvider.overrideWith(
+            (ref) => Completer<AppDataDirectoryResult>().future,
+          ),
+          bookshelfProvider.overrideWith(_TestBookshelfNotifier.new),
+          bookInfoProvider.overrideWith(_IdleBookInfoNotifier.new),
+          chaptersProvider.overrideWith(_IdleChaptersNotifier.new),
+          readingProgressProvider.overrideWith(_IdleProgressNotifier.new),
+        ],
+        child: const MaterialApp(
+          localizationsDelegates: [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: BookDetailPage(
+            feedId: 'feed-1',
+            bookId: 'book-1',
+            initialBook: BookDetailRouteExtra(
+              coverUrl: '/missing-cover.jpg',
+              title: 'Book one',
+              author: 'Author one',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final scaffoldRect = tester.getRect(find.byType(Scaffold));
+    final coverRect = tester.getRect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Hero &&
+            widget.tag == bookCoverHeroTag('feed-1', 'book-1'),
+      ),
+    );
+    expect(coverRect.center.dx, closeTo(scaffoldRect.center.dx, 0.1));
+  });
+
+  testWidgets('detail title and author are centered', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDataDirectorySetProvider.overrideWith(
+            (ref) => Completer<AppDataDirectoryResult>().future,
+          ),
+          bookshelfProvider.overrideWith(_TestBookshelfNotifier.new),
+          bookInfoProvider.overrideWith(_LoadedBookInfoNotifier.new),
+          chaptersProvider.overrideWith(_IdleChaptersNotifier.new),
+          readingProgressProvider.overrideWith(_IdleProgressNotifier.new),
+          coverProvider.overrideWith((ref, key) async => null),
+        ],
+        child: const MaterialApp(
+          localizationsDelegates: [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: BookDetailPage(feedId: 'feed-1', bookId: 'book-1'),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester.widget<Text>(find.text('Book one')).textAlign,
+      TextAlign.center,
+    );
+    expect(
+      tester.widget<Text>(find.text('Author one')).textAlign,
+      TextAlign.center,
+    );
   });
 }
