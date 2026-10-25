@@ -6,6 +6,7 @@ import '../../src/rust/api/bookshelf.dart' as rust_bookshelf;
 import '../../src/rust/api/feed_stream.dart' as rust_stream;
 import '../../src/rust/api/reading_progress.dart' as rust_progress;
 import '../../src/rust/api/registry.dart' as rust_registry;
+import '../../src/rust/api/transfer.dart' as rust_transfer;
 import '../../src/rust/api/types.dart';
 
 // ---------------------------------------------------------------------------
@@ -630,6 +631,29 @@ class FeedService {
     required bool enabled,
   }) {
     return rust_registry.setFeedEnabled(feedId: feedId, enabled: enabled);
+  }
+
+  // -------------------------------------------------------------------------
+  // Feed export / import
+  // -------------------------------------------------------------------------
+
+  /// Every installed feed — scripts included — as a portable JSON document
+  /// [FeedService.importFeeds] accepts back.
+  Future<String> exportFeeds() {
+    return rust_transfer.exportFeeds();
+  }
+
+  /// Parse a feed export and classify each entry against the installed
+  /// registry, without installing anything.
+  Future<List<FeedImportEntry>> previewImportFeeds(String json) {
+    return rust_transfer.previewImportFeeds(json: json);
+  }
+
+  /// Install every feed from an export. Entries already installed at the
+  /// exact same version and content are skipped; each other entry installs
+  /// independently, and failures are collected per entry.
+  Future<FeedImportOutcome> importFeeds(String json) {
+    return rust_transfer.importFeeds(json: json);
   }
 
   // -------------------------------------------------------------------------

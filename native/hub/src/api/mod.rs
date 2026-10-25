@@ -14,6 +14,7 @@ pub mod init;
 pub mod locale;
 pub mod reading_progress;
 pub mod registry;
+pub mod transfer;
 
 // Re-export all public API functions so FRB can find them.
 pub use app_data::*;
@@ -26,3 +27,4 @@ pub use feed_stream::*;
 pub use locale::*;
 pub use reading_progress::*;
 pub use registry::*;
+pub use transfer::*;

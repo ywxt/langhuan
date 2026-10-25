@@ -14,6 +14,9 @@ class FakeFeedService implements FeedService {
     this.listFeedsHandler,
     this.removeFeedHandler,
     this.setFeedEnabledHandler,
+    this.exportFeedsHandler,
+    this.previewImportFeedsHandler,
+    this.importFeedsHandler,
     this.listBookmarksHandler,
     this.chaptersHandler,
     this.paragraphsHandler,
@@ -102,6 +105,42 @@ class FakeFeedService implements FeedService {
       throw UnimplementedError('setFeedEnabled not configured for this test');
     }
     return handler(feedId, enabled);
+  }
+
+  final Future<String> Function()? exportFeedsHandler;
+
+  @override
+  Future<String> exportFeeds() {
+    final handler = exportFeedsHandler;
+    if (handler == null) {
+      throw UnimplementedError('exportFeeds not configured for this test');
+    }
+    return handler();
+  }
+
+  final Future<List<FeedImportEntry>> Function(String json)?
+  previewImportFeedsHandler;
+
+  @override
+  Future<List<FeedImportEntry>> previewImportFeeds(String json) {
+    final handler = previewImportFeedsHandler;
+    if (handler == null) {
+      throw UnimplementedError(
+        'previewImportFeeds not configured for this test',
+      );
+    }
+    return handler(json);
+  }
+
+  final Future<FeedImportOutcome> Function(String json)? importFeedsHandler;
+
+  @override
+  Future<FeedImportOutcome> importFeeds(String json) {
+    final handler = importFeedsHandler;
+    if (handler == null) {
+      throw UnimplementedError('importFeeds not configured for this test');
+    }
+    return handler(json);
   }
 
   final Future<List<BookmarkModel>> Function(String feedId, String bookId)?

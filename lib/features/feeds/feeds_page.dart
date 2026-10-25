@@ -1,5 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,6 +24,7 @@ import '../bookshelf/bookshelf_provider.dart';
 import 'add_feed_sheet.dart';
 import 'feed_providers.dart';
 import 'widgets/feed_card.dart';
+import 'widgets/feed_import_dialog.dart';
 
 // ---------------------------------------------------------------------------
 // FeedsPage — Wise-inspired feed (book source) management
@@ -36,6 +41,7 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
   final _filterController = TextEditingController();
   String _filterText = '';
   final Set<String> _pendingDeleteIds = <String>{};
+  bool _transferring = false;
 
   @override
   void initState() {
@@ -49,6 +55,80 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
   void dispose() {
     _filterController.dispose();
     super.dispose();
+  }
+
+  // ── Feed export / import ────────────────────────────────────────────────
+
+  Future<void> _exportFeeds() async {
+    if (_transferring) return;
+    final l10n = AppLocalizations.of(context);
+    setState(() => _transferring = true);
+
+    try {
+      final json = await ref.read(feedServiceProvider).exportFeeds();
+      final saved = await FilePicker.saveFile(
+        fileName:
+            'langhuan-feeds-${DateTime.now().millisecondsSinceEpoch}.json',
+        bytes: Uint8List.fromList(utf8.encode(json)),
+      );
+      if (!mounted) return;
+      if (saved != null) {
+        showSuccessSnack(ScaffoldMessenger.of(context), l10n.feedsExported);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      showErrorSnack(
+        ScaffoldMessenger.of(context),
+        '${l10n.feedsExportError}: ${normalizeErrorMessage(e)}',
+      );
+    } finally {
+      if (mounted) setState(() => _transferring = false);
+    }
+  }
+
+  Future<void> _importFeeds() async {
+    if (_transferring) return;
+    final l10n = AppLocalizations.of(context);
+    setState(() => _transferring = true);
+
+    try {
+      final picked = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (picked.isEmpty) return;
+      final path = picked.first.path;
+      if (path == null) return;
+
+      final json = await File(path).readAsString();
+      final preview = await ref
+          .read(feedServiceProvider)
+          .previewImportFeeds(json);
+      if (!mounted) return;
+
+      final confirmed = await showFeedImportDialog(context, entries: preview);
+      if (!confirmed || !mounted) return;
+
+      final outcome = await ref.read(feedServiceProvider).importFeeds(json);
+      await ref.read(feedListProvider.notifier).load();
+      if (!mounted) return;
+      showSuccessSnack(
+        ScaffoldMessenger.of(context),
+        l10n.feedsImportResult(
+          outcome.installed,
+          outcome.skipped,
+          outcome.failed.length,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      showErrorSnack(
+        ScaffoldMessenger.of(context),
+        '${l10n.feedsImportError}: ${normalizeErrorMessage(e)}',
+      );
+    } finally {
+      if (mounted) setState(() => _transferring = false);
+    }
   }
 
   List<FeedMetaItem> _filtered(List<FeedMetaItem> items) {
@@ -93,12 +173,38 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
               padding: const EdgeInsets.fromLTRB(
                 LanghuanTheme.spaceLg,
                 LanghuanTheme.spaceLg,
-                LanghuanTheme.spaceLg,
+                LanghuanTheme.spaceSm,
                 LanghuanTheme.spaceMd,
               ),
-              child: Text(
-                l10n.feedsTitle,
-                style: theme.textTheme.headlineLarge,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      l10n.feedsTitle,
+                      style: theme.textTheme.headlineLarge,
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    enabled: bootstrapReady && !_transferring,
+                    tooltip: l10n.feedsTitle,
+                    onSelected: (value) => switch (value) {
+                      'import' => _importFeeds(),
+                      'export' => _exportFeeds(),
+                      _ => (),
+                    },
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        value: 'import',
+                        child: Text(l10n.feedsMenuImport),
+                      ),
+                      PopupMenuItem(
+                        value: 'export',
+                        enabled: feedState.items.isNotEmpty,
+                        child: Text(l10n.feedsMenuExport),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
 

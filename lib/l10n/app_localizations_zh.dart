@@ -436,6 +436,67 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedToggleError => '切換書源狀態失敗';
 
   @override
+  String get feedsMenuImport => '導入書源';
+
+  @override
+  String get feedsMenuExport => '導出書源';
+
+  @override
+  String get feedsExported => '書源已導出';
+
+  @override
+  String get feedsExportNone => '沒有可導出的書源';
+
+  @override
+  String get feedsExportError => '導出書源失敗';
+
+  @override
+  String get feedsImportError => '導入書源失敗';
+
+  @override
+  String get feedsImportTitle => '導入書源';
+
+  @override
+  String get feedsImportConfirm => '導入';
+
+  @override
+  String feedsImportCount(num count) {
+    return '共找到 $count 個書源';
+  }
+
+  @override
+  String feedsImportResult(Object failed, Object installed, Object skipped) {
+    return '已安裝 $installed，跳過 $skipped，失敗 $failed';
+  }
+
+  @override
+  String get feedsImportChangeNew => '新增';
+
+  @override
+  String get feedsImportChangeUpgrade => '升級';
+
+  @override
+  String get feedsImportChangeDowngrade => '降級';
+
+  @override
+  String get feedsImportChangeSame => '已安裝';
+
+  @override
+  String get feedsImportChangeUnknown => '未知';
+
+  @override
+  String get settingsBackup => '導出備份';
+
+  @override
+  String get settingsBackupDescription => '將書源、書架、閱讀進度與書籤保存爲文件';
+
+  @override
+  String get settingsBackupSuccess => '備份已保存';
+
+  @override
+  String get settingsBackupError => '導出備份失敗';
+
+  @override
   String get feedDeleteBusy => '目前有其他書源操作進行中';
 
   @override

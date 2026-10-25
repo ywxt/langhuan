@@ -120,6 +120,33 @@ pub struct FeedMetaItem {
     pub error: Option<String>,
 }
 
+/// One entry of a feed-import preview: the script's own metadata plus how
+/// its version relates to the installed one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeedImportEntry {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub author: Option<String>,
+    pub change: VersionChange,
+}
+
+/// One failed entry of a feed import (empty `id` when the script could not
+/// even be parsed).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeedImportFailure {
+    pub id: String,
+    pub error: String,
+}
+
+/// Summary of a feed import.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeedImportOutcome {
+    pub installed: u32,
+    pub skipped: u32,
+    pub failed: Vec<FeedImportFailure>,
+}
+
 /// How the version of a previewed script relates to the installed one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VersionChange {

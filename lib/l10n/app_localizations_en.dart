@@ -440,6 +440,74 @@ class AppLocalizationsEn extends AppLocalizations {
   String get feedToggleError => 'Failed to switch feed';
 
   @override
+  String get feedsMenuImport => 'Import feeds';
+
+  @override
+  String get feedsMenuExport => 'Export feeds';
+
+  @override
+  String get feedsExported => 'Feed export saved';
+
+  @override
+  String get feedsExportNone => 'No feeds to export';
+
+  @override
+  String get feedsExportError => 'Failed to export feeds';
+
+  @override
+  String get feedsImportError => 'Failed to import feeds';
+
+  @override
+  String get feedsImportTitle => 'Import feeds';
+
+  @override
+  String get feedsImportConfirm => 'Import';
+
+  @override
+  String feedsImportCount(num count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count feeds found',
+      one: '1 feed found',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String feedsImportResult(Object failed, Object installed, Object skipped) {
+    return 'Installed $installed, skipped $skipped, failed $failed';
+  }
+
+  @override
+  String get feedsImportChangeNew => 'New';
+
+  @override
+  String get feedsImportChangeUpgrade => 'Upgrade';
+
+  @override
+  String get feedsImportChangeDowngrade => 'Downgrade';
+
+  @override
+  String get feedsImportChangeSame => 'Installed';
+
+  @override
+  String get feedsImportChangeUnknown => 'Unknown';
+
+  @override
+  String get settingsBackup => 'Export backup';
+
+  @override
+  String get settingsBackupDescription =>
+      'Save sources, shelf, reading progress and bookmarks to a file';
+
+  @override
+  String get settingsBackupSuccess => 'Backup saved';
+
+  @override
+  String get settingsBackupError => 'Failed to export backup';
+
+  @override
   String get feedDeleteBusy => 'Another feed operation is in progress';
 
   @override

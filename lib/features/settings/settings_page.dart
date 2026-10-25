@@ -1,5 +1,10 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../shared/app_service.dart';
@@ -25,6 +30,7 @@ class SettingsPage extends ConsumerStatefulWidget {
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   bool _isCleaning = false;
   bool _isClearing = false;
+  bool _isBackingUp = false;
 
   String _statText(CacheStats? stats, String Function(CacheStats) read) {
     return stats == null ? '—' : read(stats);
@@ -101,6 +107,46 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       );
     } finally {
       if (mounted) setState(() => _isClearing = false);
+    }
+  }
+
+  /// Write a database snapshot into the app-data directory, hand it to the
+  /// system save dialog, then remove the temporary file. The copy the user
+  /// saved (if any) is the only thing that survives.
+  Future<void> _exportBackup() async {
+    if (_isBackingUp) return;
+    final l10n = AppLocalizations.of(context);
+    setState(() => _isBackingUp = true);
+
+    File? temp;
+    try {
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final dir = await getApplicationDocumentsDirectory();
+      temp = File('${dir.path}/langhuan-backup-$stamp.db');
+      await AppService.instance.exportBackup(path: temp.path);
+
+      final bytes = await temp.readAsBytes();
+      final saved = await FilePicker.saveFile(
+        fileName: 'langhuan-backup-$stamp.db',
+        bytes: Uint8List.fromList(bytes),
+      );
+      if (!mounted) return;
+      if (saved != null) {
+        showSuccessSnack(
+          ScaffoldMessenger.of(context),
+          l10n.settingsBackupSuccess,
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      showErrorSnack(ScaffoldMessenger.of(context), l10n.settingsBackupError);
+    } finally {
+      // The snapshot is handed off (or abandoned); the temp never stays.
+      if (temp != null && await temp.exists()) {
+        await temp.delete();
+      }
+      if (mounted) setState(() => _isBackingUp = false);
     }
   }
 
@@ -204,6 +250,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                                     .withAlpha(120),
                               ),
                         onTap: _isClearing ? null : _clearCache,
+                      ),
+                      const _SettingsDivider(),
+                      _SettingsRow(
+                        icon: Icons.save_outlined,
+                        label: l10n.settingsBackup,
+                        subtitle: l10n.settingsBackupDescription,
+                        trailing: _isBackingUp
+                            ? const LanghuanSpinner(size: 20)
+                            : Icon(
+                                Icons.chevron_right,
+                                size: 20,
+                                color: theme.colorScheme.onSurfaceVariant
+                                    .withAlpha(120),
+                              ),
+                        onTap: _isBackingUp ? null : _exportBackup,
                       ),
                     ],
                   ),

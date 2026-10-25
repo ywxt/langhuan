@@ -61,6 +61,18 @@ impl<'a> Repo<'a> {
     pub fn conn(&self) -> &Connection {
         self.conn
     }
+
+    /// Write a standalone snapshot of the whole database to `path`
+    /// (`VACUUM INTO`): a single compacted file with the WAL folded in,
+    /// consistent as of this call. `VACUUM` cannot run inside a
+    /// transaction, so this must be invoked through
+    /// [`Db::call`](crate::db::Db::call), not `Db::write`.
+    ///
+    /// Fails when `path` already exists (the caller owns the target).
+    pub fn vacuum_into(&self, path: &str) -> Result<()> {
+        self.conn.execute("VACUUM INTO ?1", [path])?;
+        Ok(())
+    }
 }
 
 /// Deserialize a JSON payload stored in the database.

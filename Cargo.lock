@@ -1195,6 +1195,7 @@ dependencies = [
  "rust-i18n",
  "semver",
  "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "tokio-stream",

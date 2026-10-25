@@ -1,6 +1,7 @@
 import '../../src/rust/api/app_data.dart' as rust_app_data;
 import '../../src/rust/api/cache.dart' as rust_cache;
 import '../../src/rust/api/locale.dart' as rust_locale;
+import '../../src/rust/api/transfer.dart' as rust_transfer;
 import '../../src/rust/api/types.dart'
     show CacheStats, CleanupResult, CoverData;
 
@@ -42,6 +43,13 @@ class AppService {
   /// re-download on demand.
   Future<CleanupResult> clearCache() {
     return rust_cache.clearCache();
+  }
+
+  /// Write a standalone snapshot of the whole database (feeds, shelf,
+  /// progress, bookmarks) to [path] via `VACUUM INTO`. The caller owns the
+  /// file afterwards.
+  Future<void> exportBackup({required String path}) {
+    return rust_transfer.exportBackup(path: path);
   }
 
   /// Read the downloaded cover for a book, if one is stored.

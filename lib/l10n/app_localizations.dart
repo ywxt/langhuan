@@ -884,6 +884,120 @@ abstract class AppLocalizations {
   /// **'Failed to switch feed'**
   String get feedToggleError;
 
+  /// Menu item: import feeds from a file
+  ///
+  /// In en, this message translates to:
+  /// **'Import feeds'**
+  String get feedsMenuImport;
+
+  /// Menu item: export all feeds to a file
+  ///
+  /// In en, this message translates to:
+  /// **'Export feeds'**
+  String get feedsMenuExport;
+
+  /// Snack: the feeds file was written
+  ///
+  /// In en, this message translates to:
+  /// **'Feed export saved'**
+  String get feedsExported;
+
+  /// Snack: export attempted with an empty registry
+  ///
+  /// In en, this message translates to:
+  /// **'No feeds to export'**
+  String get feedsExportNone;
+
+  /// Snack: feed export failed
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to export feeds'**
+  String get feedsExportError;
+
+  /// Snack: feed import failed (unreadable file, bad format)
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to import feeds'**
+  String get feedsImportError;
+
+  /// Dialog title: confirm a feed import
+  ///
+  /// In en, this message translates to:
+  /// **'Import feeds'**
+  String get feedsImportTitle;
+
+  /// Dialog button: run the import
+  ///
+  /// In en, this message translates to:
+  /// **'Import'**
+  String get feedsImportConfirm;
+
+  /// Dialog subtitle: number of entries in the file
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 feed found} other{{count} feeds found}}'**
+  String feedsImportCount(num count);
+
+  /// Snack: import summary
+  ///
+  /// In en, this message translates to:
+  /// **'Installed {installed}, skipped {skipped}, failed {failed}'**
+  String feedsImportResult(Object failed, Object installed, Object skipped);
+
+  /// Badge: entry not installed yet
+  ///
+  /// In en, this message translates to:
+  /// **'New'**
+  String get feedsImportChangeNew;
+
+  /// Badge: entry newer than installed
+  ///
+  /// In en, this message translates to:
+  /// **'Upgrade'**
+  String get feedsImportChangeUpgrade;
+
+  /// Badge: entry older than installed
+  ///
+  /// In en, this message translates to:
+  /// **'Downgrade'**
+  String get feedsImportChangeDowngrade;
+
+  /// Badge: entry identical to installed (will skip)
+  ///
+  /// In en, this message translates to:
+  /// **'Installed'**
+  String get feedsImportChangeSame;
+
+  /// Badge: version not comparable
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get feedsImportChangeUnknown;
+
+  /// Settings row: write a full data snapshot
+  ///
+  /// In en, this message translates to:
+  /// **'Export backup'**
+  String get settingsBackup;
+
+  /// Settings row subtitle for the backup row
+  ///
+  /// In en, this message translates to:
+  /// **'Save sources, shelf, reading progress and bookmarks to a file'**
+  String get settingsBackupDescription;
+
+  /// Snack: the backup file was written
+  ///
+  /// In en, this message translates to:
+  /// **'Backup saved'**
+  String get settingsBackupSuccess;
+
+  /// Snack: backup export failed
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to export backup'**
+  String get settingsBackupError;
+
   /// Snackbar when user tries delete while another delete is running
   ///
   /// In en, this message translates to:

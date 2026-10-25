@@ -14,11 +14,14 @@ use async_trait::async_trait;
 use langhuan::cache::CachedFeed;
 use langhuan::db::Db;
 use langhuan::db::repo::FeedRow;
+use langhuan::feed::FeedMeta;
 use langhuan::script::lua::LuaFeed;
 use langhuan::script::runtime::ScriptEngine;
 use messages::prelude::{Actor, Context, Handler};
 
-use crate::api::types::{BridgeError, FeedMetaItem, FeedPreviewInfo, VersionChange};
+use crate::api::types::{
+    BridgeError, FeedImportFailure, FeedImportOutcome, FeedMetaItem, FeedPreviewInfo, VersionChange,
+};
 use crate::localize_error;
 
 use super::app_data_actor::InitializeAppDataDirectory;
@@ -94,6 +97,20 @@ pub struct RemoveFeed {
 pub struct SetFeedEnabled {
     pub feed_id: String,
     pub enabled: bool,
+}
+
+/// One script of a bulk import. The script content is the source of truth;
+/// `source_url` is carried separately because it is registry state, not
+/// script metadata.
+pub struct ImportFeedScript {
+    pub script: String,
+    pub source_url: Option<String>,
+}
+
+/// Bulk-install scripts (feed import). Installs each entry independently;
+/// failures are collected per entry instead of failing the whole import.
+pub struct ImportFeeds {
+    pub entries: Vec<ImportFeedScript>,
 }
 
 // ---------------------------------------------------------------------------
@@ -336,6 +353,99 @@ impl RegistryActor {
         Ok(())
     }
 
+    /// Install one imported script. Returns `Ok(false)` when the exact
+    /// version and content are already installed (a skip, not an error).
+    async fn install_imported(
+        &mut self,
+        meta: FeedMeta,
+        content: String,
+        source_url: Option<String>,
+    ) -> Result<bool, BridgeError> {
+        let db = self.require_db()?;
+
+        // Compile first — a script that cannot run is never persisted.
+        let feed = self.engine.load_feed(&content).await?;
+
+        let content_hash = langhuan::hash::sha256_hex(content.as_bytes());
+        let already_installed = db
+            .call({
+                let id = meta.id.clone();
+                move |repo| repo.get_feed(&id)
+            })
+            .await?
+            .is_some_and(|row| {
+                row.version == meta.version && row.content_hash == content_hash
+            });
+        if already_installed {
+            return Ok(false);
+        }
+
+        let now = langhuan::db::now_ms();
+        db.write({
+            let meta = meta.clone();
+            move |conn| {
+                conn.upsert_feed(&meta, source_url.as_deref(), &content_hash, now)?;
+                conn.upsert_script(&meta.id, &meta.version, &content_hash, &content, now)?;
+                conn.prune_scripts(&meta.id, SCRIPT_HISTORY_KEEP)?;
+                Ok(())
+            }
+        })
+        .await?;
+
+        self.feeds.insert(meta.id.clone(), Arc::new(feed));
+        self.load_errors.remove(&meta.id);
+        tracing::info!(feed_id = %meta.id, version = %meta.version, "feed imported");
+        Ok(true)
+    }
+
+    /// Bulk-import scripts: each entry installs (or skips) independently,
+    /// and failures are collected per entry.
+    async fn do_import(
+        &mut self,
+        entries: Vec<ImportFeedScript>,
+    ) -> Result<FeedImportOutcome, BridgeError> {
+        tracing::debug!(count = entries.len(), "import feeds");
+        let mut outcome = FeedImportOutcome {
+            installed: 0,
+            skipped: 0,
+            failed: Vec::new(),
+        };
+
+        for entry in entries {
+            // Parse first so failures carry the feed id when it is known.
+            let meta = match langhuan::script::meta::parse_meta(&entry.script) {
+                Ok((meta, _)) => meta,
+                Err(e) => {
+                    outcome.failed.push(FeedImportFailure {
+                        id: String::new(),
+                        error: BridgeError::from(e).message,
+                    });
+                    continue;
+                }
+            };
+            let feed_id = meta.id.clone();
+            match self
+                .install_imported(meta, entry.script, entry.source_url)
+                .await
+            {
+                Ok(true) => outcome.installed += 1,
+                Ok(false) => outcome.skipped += 1,
+                Err(e) => outcome.failed.push(FeedImportFailure {
+                    id: feed_id,
+                    error: e.message,
+                }),
+            }
+        }
+
+        tracing::info!(
+            installed = outcome.installed,
+            skipped = outcome.skipped,
+            failed = outcome.failed.len(),
+            "feed import complete"
+        );
+        Ok(outcome)
+    }
+
     async fn do_remove(&mut self, feed_id: String) -> Result<(), BridgeError> {
         tracing::debug!(feed_id = %feed_id, "remove feed");
         let db = self.require_db()?;
@@ -382,7 +492,7 @@ impl RegistryActor {
 }
 
 /// Compare the installed version with the previewed one.
-fn classify_version_change(current: Option<&str>, new: &str) -> VersionChange {
+pub(crate) fn classify_version_change(current: Option<&str>, new: &str) -> VersionChange {
     let Some(current) = current else {
         return VersionChange::New;
     };
@@ -515,6 +625,15 @@ impl Handler<SetFeedEnabled> for RegistryActor {
     }
 }
 
+#[async_trait]
+impl Handler<ImportFeeds> for RegistryActor {
+    type Result = Result<FeedImportOutcome, BridgeError>;
+
+    async fn handle(&mut self, msg: ImportFeeds, _: &Context<Self>) -> Self::Result {
+        self.do_import(msg.entries).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
@@ -535,6 +654,97 @@ mod tests {
         assert_eq!(classify_version_change(Some("1.0.0"), "1.0.0"), Same);
         assert_eq!(classify_version_change(Some("latest"), "1.0.0"), Unknown);
         assert_eq!(classify_version_change(Some("1.0.0"), "latest"), Unknown);
+    }
+
+    /// A minimal but valid feed script: all four required handlers, all
+    /// no-ops (the import only checks that the script compiles).
+    fn import_script(id: &str, version: &str) -> String {
+        format!(
+            "-- ==Feed==\n-- @id  {id}\n-- @name Feed {id}\n-- @version {version}\n\
+             -- @schema_version 1\n-- @base_url http://127.0.0.1:1/\n\
+             -- @access_domain 127.0.0.1\n-- ==/Feed==\n\
+             return {{\n\
+             \x20   search = {{ request = function(keyword, cursor) return {{}} end,\n\
+             \x20              parse = function(resp) return {{ items = {{}}, next_cursor = nil }} end }},\n\
+             \x20   book_info = {{ request = function(id) return {{}} end,\n\
+             \x20                parse = function(resp) return {{}} end }},\n\
+             \x20   chapters = {{ request = function(book_id, cursor) return {{}} end,\n\
+             \x20               parse = function(resp) return {{ items = {{}}, next_cursor = nil }} end }},\n\
+             \x20   paragraphs = {{ request = function(book_id, chapter_id, cursor) return {{}} end,\n\
+             \x20                 parse = function(resp) return {{ items = {{}}, next_cursor = nil }} end }},\n\
+             }}\n"
+        )
+    }
+
+    #[tokio::test]
+    async fn import_installs_skips_and_collects_failures() -> TestResult {
+        let db = Db::open_in_memory().await?;
+
+        // Pre-install f1 exactly as the import will carry it, so that
+        // entry skips (same version AND content).
+        let f1 = import_script("f1", "1.0.0");
+        let (meta, _) = langhuan::script::meta::parse_meta(&f1)?;
+        let hash = langhuan::hash::sha256_hex(f1.as_bytes());
+        db.write({
+            let script = f1.clone();
+            move |repo| {
+                repo.upsert_feed(&meta, None, &hash, 1)?;
+                repo.upsert_script("f1", "1.0.0", &hash, &script, 1)
+            }
+        })
+        .await?;
+
+        let mut actor = RegistryActor::new(ScriptEngine::new());
+        actor.initialize_app_data_directory(db.clone()).await?;
+
+        let f2 = import_script("f2", "1.0.0");
+        let outcome = actor
+            .do_import(vec![
+                ImportFeedScript {
+                    script: f1.clone(),
+                    source_url: None,
+                },
+                ImportFeedScript {
+                    script: f2.clone(),
+                    source_url: Some("https://example.com/src".to_owned()),
+                },
+                ImportFeedScript {
+                    script: "-- ==Feed==\n-- no metadata at all\n-- ==/Feed==\nreturn {}"
+                        .to_owned(),
+                    source_url: None,
+                },
+            ])
+            .await?;
+
+        assert_eq!(outcome.installed, 1, "the new feed installs");
+        assert_eq!(outcome.skipped, 1, "the identical feed skips");
+        assert_eq!(outcome.failed.len(), 1, "the unparseable feed fails alone");
+        assert_eq!(outcome.failed[0].id, "");
+
+        // The installed feed is compiled, registered and persisted with
+        // its source_url.
+        assert!(actor.feeds.contains_key("f2"));
+        let rows = db.call(|repo| repo.list_feeds()).await?;
+        let f2_row = rows.iter().find(|row| row.id == "f2").expect("f2 row");
+        assert_eq!(f2_row.source_url.as_deref(), Some("https://example.com/src"));
+
+        // Re-importing the same set: nothing new installs, both valid
+        // entries skip, the broken one keeps failing.
+        let outcome = actor
+            .do_import(vec![
+                ImportFeedScript {
+                    script: f1,
+                    source_url: None,
+                },
+                ImportFeedScript {
+                    script: f2,
+                    source_url: None,
+                },
+            ])
+            .await?;
+        assert_eq!(outcome.installed, 0);
+        assert_eq!(outcome.skipped, 2);
+        Ok(())
     }
 
     #[tokio::test]
