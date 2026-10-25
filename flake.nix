@@ -318,11 +318,21 @@
           # directly; see flutter-tools-settings-gradle9.gradle.
           # The wrapper is a symlinkJoin: its real build script lives in
           # buildCommand (postBuild hooks never run), so append there.
+          # A second patch replaces native_plugin_loader.gradle.kts, the
+          # interpreted script the compiled FlutterAppPluginLoaderPlugin
+          # reflectively calls to enumerate Android plugins: Gradle >= 9
+          # requires every project directory to be writable, so plugins
+          # that live inside the read-only SDK (integration_test, pulled
+          # in by its dev dependency) must be mirrored into ~/.cache;
+          # see flutter-native-plugin-loader-nix.gradle.kts.
           flutterGradle9 = pkgs.flutter.overrideAttrs (old: {
             buildCommand = old.buildCommand + ''
               rm "$out/packages/flutter_tools/gradle/settings.gradle"
               cp "${./flutter-tools-settings-gradle9.gradle}" \
                 "$out/packages/flutter_tools/gradle/settings.gradle"
+              rm "$out/packages/flutter_tools/gradle/src/main/scripts/native_plugin_loader.gradle.kts"
+              cp "${./flutter-native-plugin-loader-nix.gradle.kts}" \
+                "$out/packages/flutter_tools/gradle/src/main/scripts/native_plugin_loader.gradle.kts"
             '';
           });
         in
