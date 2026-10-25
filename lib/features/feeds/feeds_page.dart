@@ -19,6 +19,7 @@ import '../../shared/widgets/confirm_dialog.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/loading.dart';
+import '../../shared/widgets/swipe_action_card.dart';
 import '../../src/rust/api/types.dart';
 import '../bookshelf/bookshelf_provider.dart';
 import 'add_feed_sheet.dart';
@@ -328,42 +329,22 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
 
           return Padding(
             padding: const EdgeInsets.only(bottom: LanghuanTheme.spaceSm),
-            child: ClipRRect(
-              borderRadius: LanghuanTheme.borderRadiusMd,
-              child: Dismissible(
-                key: ValueKey('feed-${feed.id}'),
-                direction: isBusy
-                    ? DismissDirection.none
-                    : DismissDirection.endToStart,
-                background: ColoredBox(
-                  color: theme.colorScheme.errorContainer,
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: LanghuanTheme.spaceLg,
-                      ),
-                      child: Icon(
-                        Icons.delete_outline,
-                        color: theme.colorScheme.onErrorContainer,
-                      ),
-                    ),
-                  ),
-                ),
-                confirmDismiss: (_) async {
-                  final confirmed =
-                      await _confirmDelete(context, feed, l10n) == true;
-                  if (confirmed && context.mounted) {
-                    final messenger = ScaffoldMessenger.of(context);
-                    _handleDeleteWithUndo(feed, l10n, messenger);
-                  }
-                  return false;
-                },
-                child: FeedCard(
-                  feed: feed,
-                  isDeleting: isDeleting,
-                  borderRadius: BorderRadius.zero,
-                ),
+            child: SwipeActionCard(
+              dismissKey: ValueKey('feed-${feed.id}'),
+              enabled: !isBusy,
+              confirmDismiss: (_) async {
+                final confirmed =
+                    await _confirmDelete(context, feed, l10n) == true;
+                if (confirmed && context.mounted) {
+                  final messenger = ScaffoldMessenger.of(context);
+                  _handleDeleteWithUndo(feed, l10n, messenger);
+                }
+                return false;
+              },
+              child: FeedCard(
+                feed: feed,
+                isDeleting: isDeleting,
+                borderRadius: BorderRadius.zero,
               ),
             ),
           );

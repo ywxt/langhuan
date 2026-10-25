@@ -66,7 +66,10 @@ class BookCover extends ConsumerWidget {
         }
         return _networkFallback(fallback);
       },
-      loading: () => fallback,
+      // Keep showing the same remote image used by the source Hero while the
+      // local cache lookup completes. Falling back to the placeholder here
+      // causes a visible default-cover flash on the first detail-page visit.
+      loading: () => _networkFallback(fallback),
       error: (_, _) => _networkFallback(fallback),
     );
   }

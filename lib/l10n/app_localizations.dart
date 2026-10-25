@@ -260,6 +260,18 @@ abstract class AppLocalizations {
   /// **'Chapter {current} of {total} · {percent}%'**
   String bookshelfReadingProgress(int current, int total, int percent);
 
+  /// No description provided for @bookshelfFeedPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Feed paused'**
+  String get bookshelfFeedPaused;
+
+  /// No description provided for @bookshelfFeedPausedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This feed is paused. The saved book remains readable, but update checks are skipped.'**
+  String get bookshelfFeedPausedHint;
+
   /// Search page title
   ///
   /// In en, this message translates to:

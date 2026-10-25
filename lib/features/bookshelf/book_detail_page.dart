@@ -9,7 +9,6 @@ import '../../rust_init.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/snackbars.dart';
 import '../../shared/widgets/confirm_dialog.dart';
-import '../../shared/widgets/cover_image.dart';
 import '../../shared/widgets/cover_placeholder.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
@@ -456,21 +455,17 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
         child: SizedBox(
           width: 120,
           height: 160,
-          child: stableCoverUrl != null
-              ? CoverImage(
-                  url: stableCoverUrl,
-                  width: 120,
-                  height: 160,
-                  placeholder: const _LargeCoverPlaceholder(),
-                )
-              : BookCover(
-                  feedId: widget.feedId,
-                  bookId: widget.bookId,
-                  url: coverUrl,
-                  width: 120,
-                  height: 160,
-                  placeholder: const _LargeCoverPlaceholder(),
-                ),
+          // Use one stable widget across the loading and loaded layouts.
+          // It keeps the remote Hero image visible while checking local
+          // bytes, then switches directly to the cached image when present.
+          child: BookCover(
+            feedId: widget.feedId,
+            bookId: widget.bookId,
+            url: stableCoverUrl,
+            width: 120,
+            height: 160,
+            placeholder: const _LargeCoverPlaceholder(),
+          ),
         ),
       ),
     );

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -129,6 +130,29 @@ GoRouter _router() {
 }
 
 void main() {
+  testWidgets(
+    'book cover keeps remote fallback while cache lookup is pending',
+    (tester) async {
+      final pendingCover = Completer<Uint8List?>();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            coverProvider.overrideWith((ref, key) => pendingCover.future),
+          ],
+          child: const MaterialApp(
+            home: BookCover(
+              feedId: 'feed-1',
+              bookId: 'book-1',
+              url: 'https://example.test/cover.jpg',
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(CoverImage), findsOneWidget);
+    },
+  );
+
   testWidgets('tapping a bookshelf book opens the reader', (tester) async {
     final router = _router();
     addTearDown(router.dispose);

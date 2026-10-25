@@ -200,8 +200,11 @@ pub struct BookshelfListItem {
     pub description_snapshot: Option<String>,
     pub added_at_unix_ms: i64,
     pub last_seen_chapters: i64,
+    pub feed_enabled: bool,
     pub progress_current_chapter: Option<i64>,
     pub progress_total_chapters: Option<i64>,
+    pub progress_current_paragraph: Option<i64>,
+    pub progress_total_paragraphs: Option<i64>,
 }
 
 /// Per-book result of a bookshelf update check.

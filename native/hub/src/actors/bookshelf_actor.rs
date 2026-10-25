@@ -149,8 +149,11 @@ impl From<ShelfItem> for BookshelfListItem {
             description_snapshot: item.description,
             added_at_unix_ms: item.added_at_ms,
             last_seen_chapters: item.last_seen_chapters,
+            feed_enabled: item.feed_enabled,
             progress_current_chapter: item.progress_current_chapter,
             progress_total_chapters: item.progress_total_chapters,
+            progress_current_paragraph: item.progress_current_paragraph,
+            progress_total_paragraphs: item.progress_total_paragraphs,
         }
     }
 }

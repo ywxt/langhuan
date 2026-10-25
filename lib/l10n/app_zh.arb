@@ -30,6 +30,8 @@
   "bookshelfDeleteQueued": "「{bookTitle}」將從書架移除",
   "bookshelfDeleteUndo": "撤銷",
   "bookshelfReadingProgress": "第 {current}/{total} 章 · {percent}%",
+  "bookshelfFeedPaused": "書源已暫停",
+  "bookshelfFeedPausedHint": "書源已暫停；已收藏書籍仍可閱讀，但不會檢查更新。",
 
   "searchTitle": "搜索",
   "searchHintNoFeed": "請先選擇書源…",

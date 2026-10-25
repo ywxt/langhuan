@@ -17,8 +17,11 @@ pub struct ShelfItem {
     pub cover_url: Option<String>,
     pub added_at_ms: i64,
     pub last_seen_chapters: i64,
+    pub feed_enabled: bool,
     pub progress_current_chapter: Option<i64>,
     pub progress_total_chapters: Option<i64>,
+    pub progress_current_paragraph: Option<i64>,
+    pub progress_total_paragraphs: Option<i64>,
 }
 
 impl Repo<'_> {
@@ -95,19 +98,25 @@ impl Repo<'_> {
     /// inner join can never drop entries.
     pub fn shelf_items(&self) -> Result<Vec<ShelfItem>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT s.feed_id, s.book_id, b.title, b.author, b.description, b.cover_url, s.added_at_ms, s.last_seen_chapters, rp.chapter_id, cl.chapters_json \
+            "SELECT s.feed_id, s.book_id, b.title, b.author, b.description, b.cover_url, s.added_at_ms, s.last_seen_chapters, f.enabled, rp.chapter_id, rp.paragraph_id, cl.chapters_json, c.paragraphs_json \
              FROM bookshelf s \
              JOIN books b ON b.feed_id = s.feed_id AND b.book_id = s.book_id \
+             JOIN feeds f ON f.id = s.feed_id \
              LEFT JOIN reading_progress rp ON rp.feed_id = s.feed_id AND rp.book_id = s.book_id \
              LEFT JOIN chapter_lists cl ON cl.feed_id = s.feed_id AND cl.book_id = s.book_id \
+             LEFT JOIN chapters c ON c.feed_id = rp.feed_id AND c.book_id = rp.book_id AND c.chapter_id = rp.chapter_id \
              ORDER BY s.added_at_ms DESC, s.feed_id, s.book_id",
         )?;
         let items = stmt
             .query_map([], |row| {
-                let chapter_id = row.get::<_, Option<String>>(8)?;
-                let chapters_json = row.get::<_, Option<String>>(9)?;
+                let chapter_id = row.get::<_, Option<String>>(9)?;
+                let paragraph_id = row.get::<_, Option<String>>(10)?;
+                let chapters_json = row.get::<_, Option<String>>(11)?;
+                let paragraphs_json = row.get::<_, Option<String>>(12)?;
                 let (progress_current_chapter, progress_total_chapters) =
                     chapter_progress(chapter_id.as_deref(), chapters_json.as_deref());
+                let (progress_current_paragraph, progress_total_paragraphs) =
+                    paragraph_progress(paragraph_id.as_deref(), paragraphs_json.as_deref());
                 Ok(ShelfItem {
                     feed_id: row.get(0)?,
                     book_id: row.get(1)?,
@@ -117,8 +126,11 @@ impl Repo<'_> {
                     cover_url: row.get(5)?,
                     added_at_ms: row.get(6)?,
                     last_seen_chapters: row.get(7)?,
+                    feed_enabled: row.get::<_, i64>(8)? != 0,
                     progress_current_chapter,
                     progress_total_chapters,
+                    progress_current_paragraph,
+                    progress_total_paragraphs,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -178,6 +190,28 @@ fn chapter_progress(
         return (None, None);
     };
     (Some(index as i64 + 1), Some(chapters.len() as i64))
+}
+
+fn paragraph_progress(
+    current_paragraph_id: Option<&str>,
+    paragraphs_json: Option<&str>,
+) -> (Option<i64>, Option<i64>) {
+    let (Some(current_paragraph_id), Some(paragraphs_json)) =
+        (current_paragraph_id, paragraphs_json)
+    else {
+        return (None, None);
+    };
+    let Ok(paragraphs) = serde_json::from_str::<Vec<crate::model::Paragraph>>(paragraphs_json)
+    else {
+        return (None, None);
+    };
+    let Some(index) = paragraphs
+        .iter()
+        .position(|paragraph| paragraph.id().to_string_lossy() == current_paragraph_id)
+    else {
+        return (None, None);
+    };
+    (Some(index as i64 + 1), Some(paragraphs.len() as i64))
 }
 
 #[cfg(test)]
@@ -242,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn list_includes_cached_chapter_progress() {
+    fn list_includes_cached_chapter_and_paragraph_progress() {
         let db = TestDb::new();
         db.seed_feed("f1");
         db.seed_shelf_item("f1", "b1");
@@ -257,7 +291,12 @@ mod tests {
                 );
                 INSERT INTO reading_progress (
                     feed_id, book_id, chapter_id, paragraph_id, updated_at_ms
-                ) VALUES ('f1', 'b1', 'c2', 'p1', 1);
+                ) VALUES ('f1', 'b1', 'c2', 'p2', 1);
+                INSERT INTO chapters VALUES (
+                    'f1', 'b1', 'c2',
+                    '[{"type":"title","id":"title","text":"Two"},{"type":"text","id":"p1","content":"First"},{"type":"text","id":"p2","content":"Second"}]',
+                    1
+                );
                 "#,
             )
             .expect("seed progress");
@@ -265,6 +304,21 @@ mod tests {
         let item = &conn.shelf_items().unwrap()[0];
         assert_eq!(item.progress_current_chapter, Some(2));
         assert_eq!(item.progress_total_chapters, Some(3));
+        assert_eq!(item.progress_current_paragraph, Some(3));
+        assert_eq!(item.progress_total_paragraphs, Some(3));
+    }
+
+    #[test]
+    fn list_reports_paused_feed_without_hiding_its_book() {
+        let db = TestDb::new();
+        db.seed_feed("f1");
+        db.seed_shelf_item("f1", "b1");
+        let conn = db.repo();
+        conn.set_feed_enabled("f1", false).unwrap();
+
+        let items = conn.shelf_items().unwrap();
+        assert_eq!(items.len(), 1);
+        assert!(!items[0].feed_enabled);
     }
 
     #[test]

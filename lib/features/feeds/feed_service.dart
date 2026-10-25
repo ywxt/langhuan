@@ -170,10 +170,13 @@ class BookshelfItemModel {
     required this.title,
     required this.author,
     required this.addedAtUnixMs,
+    this.feedEnabled = true,
     this.coverUrl,
     this.description,
     this.progressCurrentChapter,
     this.progressTotalChapters,
+    this.progressCurrentParagraph,
+    this.progressTotalParagraphs,
   });
 
   final String feedId;
@@ -181,15 +184,26 @@ class BookshelfItemModel {
   final String title;
   final String author;
   final int addedAtUnixMs;
+  final bool feedEnabled;
   final String? coverUrl;
   final String? description;
   final int? progressCurrentChapter;
   final int? progressTotalChapters;
+  final int? progressCurrentParagraph;
+  final int? progressTotalParagraphs;
 
   double? get progressFraction {
     final current = progressCurrentChapter;
     final total = progressTotalChapters;
     if (current == null || total == null || total <= 0) return null;
+    final currentParagraph = progressCurrentParagraph;
+    final totalParagraphs = progressTotalParagraphs;
+    if (currentParagraph != null &&
+        totalParagraphs != null &&
+        totalParagraphs > 0) {
+      final chapterPart = (currentParagraph / totalParagraphs).clamp(0.0, 1.0);
+      return ((current - 1 + chapterPart) / total).clamp(0.0, 1.0);
+    }
     return (current / total).clamp(0.0, 1.0);
   }
 
@@ -202,10 +216,13 @@ class BookshelfItemModel {
         title: item.title,
         author: item.author,
         addedAtUnixMs: item.addedAtUnixMs,
+        feedEnabled: item.feedEnabled,
         coverUrl: item.coverUrl,
         description: item.descriptionSnapshot,
         progressCurrentChapter: item.progressCurrentChapter,
         progressTotalChapters: item.progressTotalChapters,
+        progressCurrentParagraph: item.progressCurrentParagraph,
+        progressTotalParagraphs: item.progressTotalParagraphs,
       );
 }
 

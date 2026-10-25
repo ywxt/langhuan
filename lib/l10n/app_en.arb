@@ -85,6 +85,8 @@
 
   "bookshelfReadingProgress": "Chapter {current} of {total} · {percent}%",
   "@bookshelfReadingProgress": { "description": "Chapter-level reading progress shown on a bookshelf card", "placeholders": { "current": { "type": "int" }, "total": { "type": "int" }, "percent": { "type": "int" } } },
+  "bookshelfFeedPaused": "Feed paused",
+  "bookshelfFeedPausedHint": "This feed is paused. The saved book remains readable, but update checks are skipped.",
 
   "searchTitle": "Search",
   "@searchTitle": { "description": "Search page title" },

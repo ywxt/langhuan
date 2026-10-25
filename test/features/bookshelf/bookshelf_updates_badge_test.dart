@@ -19,6 +19,9 @@ const _book = BookshelfItemModel(
   addedAtUnixMs: 2,
   progressCurrentChapter: 2,
   progressTotalChapters: 5,
+  progressCurrentParagraph: 4,
+  progressTotalParagraphs: 10,
+  feedEnabled: false,
 );
 
 const _otherBook = BookshelfItemModel(
@@ -90,7 +93,23 @@ GoRouter _router() {
 }
 
 void main() {
-  testWidgets('cached reading progress is shown on the book card', (
+  testWidgets(
+    'cached chapter and paragraph progress is shown on the book card',
+    (tester) async {
+      final router = _router();
+      addTearDown(router.dispose);
+      await tester.pumpWidget(_testApp(router, _TestUpdatesNotifier()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Chapter 2 of 5 · 28%'), findsOneWidget);
+      final progress = tester.widget<LinearProgressIndicator>(
+        find.byType(LinearProgressIndicator),
+      );
+      expect(progress.value, closeTo(0.28, 0.001));
+    },
+  );
+
+  testWidgets('paused feed is marked without hiding its bookshelf book', (
     tester,
   ) async {
     final router = _router();
@@ -98,8 +117,13 @@ void main() {
     await tester.pumpWidget(_testApp(router, _TestUpdatesNotifier()));
     await tester.pumpAndSettle();
 
-    expect(find.text('Chapter 2 of 5 · 40%'), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.text(_book.title), findsOneWidget);
+    expect(
+      find.byTooltip(
+        'This feed is paused. The saved book remains readable, but update checks are skipped.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('update badge shows the new chapter count with semantics', (

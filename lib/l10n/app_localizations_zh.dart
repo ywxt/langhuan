@@ -100,6 +100,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get bookshelfFeedPaused => '書源已暫停';
+
+  @override
+  String get bookshelfFeedPausedHint => '書源已暫停；已收藏書籍仍可閱讀，但不會檢查更新。';
+
+  @override
   String get searchTitle => '搜索';
 
   @override

@@ -101,6 +101,13 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get bookshelfFeedPaused => 'Feed paused';
+
+  @override
+  String get bookshelfFeedPausedHint =>
+      'This feed is paused. The saved book remains readable, but update checks are skipped.';
+
+  @override
   String get searchTitle => 'Search';
 
   @override
