@@ -638,6 +638,96 @@ abstract class AppLocalizations {
   /// **'Sepia'**
   String get readerThemeSepia;
 
+  /// Reader theme option: user-defined colors
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get readerThemeCustom;
+
+  /// Title of the custom reader theme editor
+  ///
+  /// In en, this message translates to:
+  /// **'Custom reader theme'**
+  String get readerThemeCustomizeTitle;
+
+  /// Custom reader theme background color label
+  ///
+  /// In en, this message translates to:
+  /// **'Background'**
+  String get readerThemeBackground;
+
+  /// Custom reader theme text color label
+  ///
+  /// In en, this message translates to:
+  /// **'Text'**
+  String get readerThemeText;
+
+  /// Custom reader theme accent color label
+  ///
+  /// In en, this message translates to:
+  /// **'Accent'**
+  String get readerThemeAccent;
+
+  /// Custom reader theme preview label
+  ///
+  /// In en, this message translates to:
+  /// **'Preview'**
+  String get readerThemePreview;
+
+  /// Sample chapter title in the custom theme preview
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter title'**
+  String get readerThemePreviewTitle;
+
+  /// Sample body text in the custom theme preview
+  ///
+  /// In en, this message translates to:
+  /// **'Reading should feel comfortable on every page.'**
+  String get readerThemePreviewBody;
+
+  /// Warning when custom reader colors do not have readable contrast
+  ///
+  /// In en, this message translates to:
+  /// **'Choose background and text colors with more contrast.'**
+  String get readerThemeContrastWarning;
+
+  /// Reset custom reader theme colors
+  ///
+  /// In en, this message translates to:
+  /// **'Reset'**
+  String get readerThemeReset;
+
+  /// Apply custom reader theme colors
+  ///
+  /// In en, this message translates to:
+  /// **'Apply'**
+  String get readerThemeApply;
+
+  /// Hue control in the reader color picker
+  ///
+  /// In en, this message translates to:
+  /// **'Hue'**
+  String get readerThemeColorHue;
+
+  /// Saturation control in the reader color picker
+  ///
+  /// In en, this message translates to:
+  /// **'Saturation'**
+  String get readerThemeColorSaturation;
+
+  /// Brightness control in the reader color picker
+  ///
+  /// In en, this message translates to:
+  /// **'Brightness'**
+  String get readerThemeColorBrightness;
+
+  /// Cancel the reader color picker
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get readerThemeColorCancel;
+
   /// Reader settings section label: theme
   ///
   /// In en, this message translates to:

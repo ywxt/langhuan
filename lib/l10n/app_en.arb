@@ -301,6 +301,51 @@
   "readerThemeSepia": "Sepia",
   "@readerThemeSepia": { "description": "Reader theme option: sepia" },
 
+  "readerThemeCustom": "Custom",
+  "@readerThemeCustom": { "description": "Reader theme option: user-defined colors" },
+
+  "readerThemeCustomizeTitle": "Custom reader theme",
+  "@readerThemeCustomizeTitle": { "description": "Title of the custom reader theme editor" },
+
+  "readerThemeBackground": "Background",
+  "@readerThemeBackground": { "description": "Custom reader theme background color label" },
+
+  "readerThemeText": "Text",
+  "@readerThemeText": { "description": "Custom reader theme text color label" },
+
+  "readerThemeAccent": "Accent",
+  "@readerThemeAccent": { "description": "Custom reader theme accent color label" },
+
+  "readerThemePreview": "Preview",
+  "@readerThemePreview": { "description": "Custom reader theme preview label" },
+
+  "readerThemePreviewTitle": "Chapter title",
+  "@readerThemePreviewTitle": { "description": "Sample chapter title in the custom theme preview" },
+
+  "readerThemePreviewBody": "Reading should feel comfortable on every page.",
+  "@readerThemePreviewBody": { "description": "Sample body text in the custom theme preview" },
+
+  "readerThemeContrastWarning": "Choose background and text colors with more contrast.",
+  "@readerThemeContrastWarning": { "description": "Warning when custom reader colors do not have readable contrast" },
+
+  "readerThemeReset": "Reset",
+  "@readerThemeReset": { "description": "Reset custom reader theme colors" },
+
+  "readerThemeApply": "Apply",
+  "@readerThemeApply": { "description": "Apply custom reader theme colors" },
+
+  "readerThemeColorHue": "Hue",
+  "@readerThemeColorHue": { "description": "Hue control in the reader color picker" },
+
+  "readerThemeColorSaturation": "Saturation",
+  "@readerThemeColorSaturation": { "description": "Saturation control in the reader color picker" },
+
+  "readerThemeColorBrightness": "Brightness",
+  "@readerThemeColorBrightness": { "description": "Brightness control in the reader color picker" },
+
+  "readerThemeColorCancel": "Cancel",
+  "@readerThemeColorCancel": { "description": "Cancel the reader color picker" },
+
   "readerThemeLabel": "Theme",
   "@readerThemeLabel": { "description": "Reader settings section label: theme" },
 

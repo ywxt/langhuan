@@ -79,7 +79,7 @@ void main() {
       expect(find.text('Theme'), findsOneWidget);
       expect(find.widgetWithText(OutlinedButton, 'System'), findsOneWidget);
 
-      // Open the picker: all four options appear (the settings sheet with
+      // Open the picker: every option appears (the settings sheet with
       // its own "System" button stays in the tree behind the picker).
       await tester.tap(find.widgetWithText(OutlinedButton, 'System'));
       await tester.pumpAndSettle();
@@ -87,6 +87,7 @@ void main() {
       expect(find.widgetWithText(ListTile, 'Light'), findsOneWidget);
       expect(find.widgetWithText(ListTile, 'Dark'), findsOneWidget);
       expect(find.widgetWithText(ListTile, 'Sepia'), findsOneWidget);
+      expect(find.widgetWithText(ListTile, 'Custom'), findsOneWidget);
 
       await tester.tap(find.widgetWithText(ListTile, 'Dark'));
       await tester.pumpAndSettle();
@@ -98,6 +99,81 @@ void main() {
         container.read(readerSettingsProvider).themeMode,
         ReaderThemeMode.dark,
       );
+    });
+
+    testWidgets('custom theme editor previews and applies saved colors', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(readerSettingsProvider);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: localized(
+            Scaffold(
+              body: sheetLauncher(
+                (ref, context) => showReaderSettingsSheet(context),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(OutlinedButton, 'System'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Custom'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Custom reader theme'), findsOneWidget);
+      expect(find.text('Background'), findsOneWidget);
+      expect(find.text('Text'), findsOneWidget);
+      expect(find.text('Accent'), findsOneWidget);
+      expect(find.text('Chapter title'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('reader-theme-color-background')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Hue'), findsOneWidget);
+      expect(find.text('Saturation'), findsOneWidget);
+      expect(find.text('Brightness'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+      await tester.drag(
+        find.byKey(const ValueKey('reader-theme-hue-slider')),
+        const Offset(40, 0),
+      );
+      await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+      await tester.pumpAndSettle();
+
+      for (final key in const [
+        'reader-theme-color-background-161A20',
+        'reader-theme-color-text-F4F4F0',
+        'reader-theme-color-accent-315C8A',
+      ]) {
+        final swatch = find.byKey(ValueKey(key));
+        await tester.ensureVisible(swatch);
+        await tester.tap(swatch);
+        await tester.pump();
+      }
+
+      final apply = find.widgetWithText(FilledButton, 'Apply');
+      await tester.ensureVisible(apply);
+      await tester.tap(apply);
+      await tester.pumpAndSettle();
+
+      final settings = container.read(readerSettingsProvider);
+      expect(settings.themeMode, ReaderThemeMode.custom);
+      expect(settings.customTheme.background, const Color(0xFF161A20));
+      expect(settings.customTheme.foreground, const Color(0xFFF4F4F0));
+      expect(settings.customTheme.accent, const Color(0xFF315C8A));
+      expect(find.widgetWithText(OutlinedButton, 'Custom'), findsOneWidget);
+      expect(find.byTooltip('Custom reader theme'), findsOneWidget);
     });
   });
 

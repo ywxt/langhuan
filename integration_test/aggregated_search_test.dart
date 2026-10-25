@@ -125,11 +125,15 @@ void main() {
       reason: 'no source fails once B is healthy again',
     );
     expect(
-      recovered.where((event) => event.feedId == _feedBId && event.item != null),
+      recovered.where(
+        (event) => event.feedId == _feedBId && event.item != null,
+      ),
       hasLength(1),
     );
     expect(
-      recovered.where((event) => event.feedId == _feedAId && event.item != null),
+      recovered.where(
+        (event) => event.feedId == _feedAId && event.item != null,
+      ),
       hasLength(2),
     );
 

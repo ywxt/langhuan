@@ -170,9 +170,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 FeedSelectionOne(:final feed) => l10n.searchHintWithFeed(
                   feed.name,
                 ),
-                FeedSelectionAll() => visibleFeeds.isEmpty
-                    ? l10n.searchHintNoFeed
-                    : l10n.searchHintAllFeeds,
+                FeedSelectionAll() =>
+                  visibleFeeds.isEmpty
+                      ? l10n.searchHintNoFeed
+                      : l10n.searchHintAllFeeds,
               },
               enabled: visibleFeeds.isNotEmpty && bootstrapReady,
               leading: Icon(
@@ -269,9 +270,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                     onPressed: () async {
                       final loggedIn = await context.pushNamed<bool>(
                         'feed-auth',
-                        queryParameters: {
-                          'feedId': selection.feed.id,
-                        },
+                        queryParameters: {'feedId': selection.feed.id},
                       );
                       if (loggedIn == true && context.mounted) {
                         ref.read(searchProvider.notifier).retry();
@@ -343,15 +342,20 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           return Padding(
             padding: const EdgeInsets.only(bottom: LanghuanTheme.spaceSm),
             child: switch (rows[index]) {
-              _GroupHeaderRow(:final group) =>
-                _buildGroupHeader(context, group),
+              _GroupHeaderRow(:final group) => _buildGroupHeader(
+                context,
+                group,
+              ),
               _CardRow(:final group, :final index) => _buildResultCard(
                 context,
                 group: group,
                 index: index,
               ),
-              _GroupErrorRow(:final group) =>
-                _buildGroupError(context, group, l10n),
+              _GroupErrorRow(:final group) => _buildGroupError(
+                context,
+                group,
+                l10n,
+              ),
             },
           );
         },
@@ -419,11 +423,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         padding: const EdgeInsets.all(LanghuanTheme.spaceMd),
         child: Row(
           children: [
-            Icon(
-              Icons.error_outline,
-              color: theme.colorScheme.error,
-              size: 20,
-            ),
+            Icon(Icons.error_outline, color: theme.colorScheme.error, size: 20),
             const SizedBox(width: LanghuanTheme.spaceMd),
             Expanded(
               child: Column(

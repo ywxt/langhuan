@@ -67,10 +67,7 @@ class _AddFeedDialogState extends ConsumerState<AddFeedDialog> {
     ref.listen<AddFeedState>(addFeedProvider, (_, next) {
       if (next is AddFeedSuccess && mounted) {
         Navigator.of(context).pop();
-        showSuccessSnack(
-          ScaffoldMessenger.of(context),
-          l10n.addFeedSuccess,
-        );
+        showSuccessSnack(ScaffoldMessenger.of(context), l10n.addFeedSuccess);
       }
     });
 

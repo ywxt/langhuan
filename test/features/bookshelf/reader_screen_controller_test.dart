@@ -79,8 +79,7 @@ void main() {
   }) {
     return FakeFeedService(
       chaptersHandler: chapterStream ?? (f, b) => Stream.fromIterable(chapters),
-      getReadingProgressHandler:
-          progress ?? (f, b) async => null,
+      getReadingProgressHandler: progress ?? (f, b) async => null,
       markBookshelfSeenHandler: (f, b, count) async {
         seen?.add((f, b, count));
       },
@@ -191,10 +190,7 @@ void main() {
     testWidgets('toggle cycles controls; a selection takes precedence', (
       tester,
     ) async {
-      final (controller, _, _) = await pumpHost(
-        tester,
-        service: baseService(),
-      );
+      final (controller, _, _) = await pumpHost(tester, service: baseService());
 
       expect(controller.showControls, false);
       controller.toggleControls();
@@ -204,7 +200,10 @@ void main() {
       controller.setSelection(
         chapterId: 'c1',
         paragraphId: 'p1',
-        paragraph: const ParagraphContent_Title(id: ParagraphId.id('t'), text: 'Title'),
+        paragraph: const ParagraphContent_Title(
+          id: ParagraphId.id('t'),
+          text: 'Title',
+        ),
         globalRect: Rect.zero,
       );
       expect(controller.showControls, false);
@@ -281,14 +280,14 @@ void main() {
           refreshCalls.add((chapterId, forceRefresh));
           return () async* {
             await gate.future;
-            yield ParagraphContent_Text(id: const ParagraphId.id('p0'), content: 'refreshed');
+            yield ParagraphContent_Text(
+              id: const ParagraphId.id('p0'),
+              content: 'refreshed',
+            );
           }();
         },
       );
-      final (controller, _, reader) = await pumpHost(
-        tester,
-        service: service,
-      );
+      final (controller, _, reader) = await pumpHost(tester, service: service);
 
       final first = controller.refreshCurrentChapter('c2');
       await tester.pump();

@@ -7,13 +7,13 @@ import 'feed_service.dart';
 /// FRB generates no `copyWith`; the notifier needs to flip `enabled`.
 extension FeedMetaEnabled on FeedMetaItem {
   FeedMetaItem withEnabled(bool value) => FeedMetaItem(
-        id: id,
-        name: name,
-        version: version,
-        author: author,
-        enabled: value,
-        error: error,
-      );
+    id: id,
+    name: name,
+    version: version,
+    author: author,
+    enabled: value,
+    error: error,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -22,7 +22,9 @@ extension FeedMetaEnabled on FeedMetaItem {
 
 /// The [FeedService] used by every provider. Overriding this in a
 /// ProviderScope is how unit tests substitute a fake service.
-final feedServiceProvider = Provider<FeedService>((ref) => FeedService.instance);
+final feedServiceProvider = Provider<FeedService>(
+  (ref) => FeedService.instance,
+);
 
 // ---------------------------------------------------------------------------
 // Feed list state

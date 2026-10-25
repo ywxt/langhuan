@@ -6,8 +6,18 @@ import 'package:langhuan/src/rust/api/types.dart';
 
 import 'fake_feed_service.dart';
 
-const _feedA = FeedMetaItem(id: 'feed-a', name: 'Source A', version: '1', enabled: true);
-const _feedB = FeedMetaItem(id: 'feed-b', name: 'Source B', version: '1', enabled: true);
+const _feedA = FeedMetaItem(
+  id: 'feed-a',
+  name: 'Source A',
+  version: '1',
+  enabled: true,
+);
+const _feedB = FeedMetaItem(
+  id: 'feed-b',
+  name: 'Source B',
+  version: '1',
+  enabled: true,
+);
 
 void main() {
   ProviderContainer container(FakeFeedService service) {
@@ -83,24 +93,26 @@ void main() {
       );
     });
 
-    test('removeFeed keeps the selection when another feed is removed', () async {
-      final c = container(
-        FakeFeedService(
-          listFeedsHandler: () async => [_feedA],
-          removeFeedHandler: (feedId) async {},
-        ),
-      );
-      await loadFeeds(c);
-      c.read(selectedFeedProvider.notifier).select(FeedSelectionOne(_feedA));
+    test(
+      'removeFeed keeps the selection when another feed is removed',
+      () async {
+        final c = container(
+          FakeFeedService(
+            listFeedsHandler: () async => [_feedA],
+            removeFeedHandler: (feedId) async {},
+          ),
+        );
+        await loadFeeds(c);
+        c.read(selectedFeedProvider.notifier).select(FeedSelectionOne(_feedA));
 
-      final error = await c
-          .read(feedListProvider.notifier)
-          .removeFeed(feedId: 'feed-b');
+        final error = await c
+            .read(feedListProvider.notifier)
+            .removeFeed(feedId: 'feed-b');
 
-
-      expect(error, isNull);
-      expect(c.read(selectedFeedProvider), isA<FeedSelectionOne>());
-    });
+        expect(error, isNull);
+        expect(c.read(selectedFeedProvider), isA<FeedSelectionOne>());
+      },
+    );
 
     test('removeFeed reports failures and keeps the list', () async {
       final c = container(
@@ -116,10 +128,10 @@ void main() {
           .removeFeed(feedId: 'feed-a');
 
       expect(error, isNotNull);
-      expect(
-        c.read(feedListProvider).items.map((feed) => feed.id),
-        ['feed-a', 'feed-b'],
-      );
+      expect(c.read(feedListProvider).items.map((feed) => feed.id), [
+        'feed-a',
+        'feed-b',
+      ]);
       expect(c.read(feedListProvider).removingFeedId, isNull);
     });
 

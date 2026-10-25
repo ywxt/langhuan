@@ -48,10 +48,9 @@ class BookmarkNotifier extends Notifier<BookmarkState> {
     );
 
     try {
-      final items = await ref.read(feedServiceProvider).listBookmarks(
-        feedId: feedId,
-        bookId: bookId,
-      );
+      final items = await ref
+          .read(feedServiceProvider)
+          .listBookmarks(feedId: feedId, bookId: bookId);
       state = state.copyWith(items: items, isLoading: false, error: () => null);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: () => e);
@@ -68,15 +67,17 @@ class BookmarkNotifier extends Notifier<BookmarkState> {
     String label = '',
   }) async {
     try {
-      final created = await ref.read(feedServiceProvider).addBookmark(
-        feedId: feedId,
-        bookId: bookId,
-        chapterId: chapterId,
-        paragraphId: paragraphId,
-        paragraphName: paragraphName,
-        paragraphPreview: paragraphPreview,
-        label: label,
-      );
+      final created = await ref
+          .read(feedServiceProvider)
+          .addBookmark(
+            feedId: feedId,
+            bookId: bookId,
+            chapterId: chapterId,
+            paragraphId: paragraphId,
+            paragraphName: paragraphName,
+            paragraphPreview: paragraphPreview,
+            label: label,
+          );
       final next = List<BookmarkModel>.of(state.items)..insert(0, created);
       state = state.copyWith(items: next, error: () => null);
       return created;
@@ -88,7 +89,9 @@ class BookmarkNotifier extends Notifier<BookmarkState> {
 
   Future<void> remove(String id) async {
     try {
-      final removed = await ref.read(feedServiceProvider).removeBookmark(id: id);
+      final removed = await ref
+          .read(feedServiceProvider)
+          .removeBookmark(id: id);
       if (!removed) return;
       final next = state.items.where((e) => e.id != id).toList(growable: false);
       state = state.copyWith(items: next, error: () => null);

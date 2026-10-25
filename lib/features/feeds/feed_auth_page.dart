@@ -46,7 +46,9 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
     });
 
     try {
-      final entry = await ref.read(feedServiceProvider).getFeedAuthEntry(widget.feedId);
+      final entry = await ref
+          .read(feedServiceProvider)
+          .getFeedAuthEntry(widget.feedId);
       if (!mounted) return;
 
       if (entry == null) {
@@ -94,16 +96,18 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
       final url = await controller.getUrl();
       if (url != null) await _captureCookiesBestEffort(url);
 
-      await ref.read(feedServiceProvider).submitFeedAuthPage(
-        feedId: widget.feedId,
-        currentUrl: currentUrl,
-        response: html,
-        // WebView does not expose successful main-frame response headers on
-        // every platform. Re-fetching the URL here is unsafe for one-time
-        // OAuth callbacks, so feeds should prefer page content and cookies.
-        responseHeaders: const [],
-        cookies: _capturedCookies.values.toList(growable: false),
-      );
+      await ref
+          .read(feedServiceProvider)
+          .submitFeedAuthPage(
+            feedId: widget.feedId,
+            currentUrl: currentUrl,
+            response: html,
+            // WebView does not expose successful main-frame response headers on
+            // every platform. Re-fetching the URL here is unsafe for one-time
+            // OAuth callbacks, so feeds should prefer page content and cookies.
+            responseHeaders: const [],
+            cookies: _capturedCookies.values.toList(growable: false),
+          );
 
       if (!mounted) return;
       ref.invalidate(feedAuthStatusProvider(widget.feedId));

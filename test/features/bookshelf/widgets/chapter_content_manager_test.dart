@@ -102,10 +102,7 @@ void main() {
 
     // The anchor chapter is fetched (with its neighbor) and rendered.
     expect(find.text('Chapter One'), findsOneWidget);
-    expect(
-      calls.where((c) => c.$3 == 'c1' && c.$4 == false),
-      isNotEmpty,
-    );
+    expect(calls.where((c) => c.$3 == 'c1' && c.$4 == false), isNotEmpty);
   });
 
   testWidgets('a jump command switches chapters and reports the position', (

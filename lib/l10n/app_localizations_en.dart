@@ -310,6 +310,53 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readerThemeSepia => 'Sepia';
 
   @override
+  String get readerThemeCustom => 'Custom';
+
+  @override
+  String get readerThemeCustomizeTitle => 'Custom reader theme';
+
+  @override
+  String get readerThemeBackground => 'Background';
+
+  @override
+  String get readerThemeText => 'Text';
+
+  @override
+  String get readerThemeAccent => 'Accent';
+
+  @override
+  String get readerThemePreview => 'Preview';
+
+  @override
+  String get readerThemePreviewTitle => 'Chapter title';
+
+  @override
+  String get readerThemePreviewBody =>
+      'Reading should feel comfortable on every page.';
+
+  @override
+  String get readerThemeContrastWarning =>
+      'Choose background and text colors with more contrast.';
+
+  @override
+  String get readerThemeReset => 'Reset';
+
+  @override
+  String get readerThemeApply => 'Apply';
+
+  @override
+  String get readerThemeColorHue => 'Hue';
+
+  @override
+  String get readerThemeColorSaturation => 'Saturation';
+
+  @override
+  String get readerThemeColorBrightness => 'Brightness';
+
+  @override
+  String get readerThemeColorCancel => 'Cancel';
+
+  @override
   String get readerThemeLabel => 'Theme';
 
   @override

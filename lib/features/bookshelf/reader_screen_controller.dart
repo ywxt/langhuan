@@ -102,9 +102,7 @@ class ReaderScreenController extends ChangeNotifier {
                 chapterCount: chapters.length,
               ),
         );
-        _ref
-            .read(bookshelfUpdatesProvider.notifier)
-            .clear(feedId, bookId);
+        _ref.read(bookshelfUpdatesProvider.notifier).clear(feedId, bookId);
       }
 
       final String startChapterId;

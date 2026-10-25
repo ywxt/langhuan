@@ -74,7 +74,8 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                   Text(l10n.readerFontFileLabel),
                   const SizedBox(height: LanghuanTheme.spaceSm),
                   Text(
-                    settings.customFontDisplayName ?? l10n.readerFontSystemDefault,
+                    settings.customFontDisplayName ??
+                        l10n.readerFontSystemDefault,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
@@ -119,7 +120,9 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                     ],
                   ),
                   const SizedBox(height: LanghuanTheme.spaceMd),
-                  Text(l10n.readerFontScale(settings.fontScale.toStringAsFixed(2))),
+                  Text(
+                    l10n.readerFontScale(settings.fontScale.toStringAsFixed(2)),
+                  ),
                   Slider(
                     value: settings.fontScale,
                     min: 0.8,
@@ -215,21 +218,52 @@ Future<void> showReaderSettingsSheet(BuildContext context) async {
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
               const SizedBox(height: LanghuanTheme.spaceSm),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.palette_outlined),
-                  label: Text(
-                    readerThemeModeLabel(l10n, settings.themeMode),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.palette_outlined),
+                      label: Text(
+                        readerThemeModeLabel(l10n, settings.themeMode),
+                      ),
+                      onPressed: () async {
+                        final mode = await showReaderThemePicker(
+                          context,
+                          selected: settings.themeMode,
+                          customTheme: settings.customTheme,
+                        );
+                        if (mode == null || !context.mounted) return;
+                        if (mode != ReaderThemeMode.custom) {
+                          notifier.setThemeMode(mode);
+                          return;
+                        }
+                        final customTheme = await showReaderCustomThemeEditor(
+                          context,
+                          initial: settings.customTheme,
+                        );
+                        if (customTheme != null) {
+                          notifier.setCustomTheme(customTheme);
+                        }
+                      },
+                    ),
                   ),
-                  onPressed: () async {
-                    final mode = await showReaderThemePicker(
-                      context,
-                      selected: settings.themeMode,
-                    );
-                    if (mode != null) notifier.setThemeMode(mode);
-                  },
-                ),
+                  if (settings.themeMode == ReaderThemeMode.custom) ...[
+                    const SizedBox(width: LanghuanTheme.spaceSm),
+                    IconButton.filledTonal(
+                      tooltip: l10n.readerThemeCustomizeTitle,
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () async {
+                        final customTheme = await showReaderCustomThemeEditor(
+                          context,
+                          initial: settings.customTheme,
+                        );
+                        if (customTheme != null) {
+                          notifier.setCustomTheme(customTheme);
+                        }
+                      },
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: LanghuanTheme.spaceMd),
               Text(
@@ -295,9 +329,7 @@ Future<void> showReaderBookmarkSheet({
               final query = _FilterableSheet.queryOf(context);
               final filtered = _filterBookmarks(bookmarks, chapters, query);
               if (filtered.isEmpty) {
-                return _SheetMessage(
-                  message: l10n.readerSearchNoMatch(query),
-                );
+                return _SheetMessage(message: l10n.readerSearchNoMatch(query));
               }
 
               return ListView.builder(
@@ -393,9 +425,7 @@ Future<void> showReaderTocSheet({
               final filtered = _filterChapters(chapters, query);
 
               if (filtered.isEmpty) {
-                return _SheetMessage(
-                  message: l10n.readerSearchNoMatch(query),
-                );
+                return _SheetMessage(message: l10n.readerSearchNoMatch(query));
               }
 
               return ListView.builder(
@@ -471,10 +501,7 @@ class _FilterableSheet extends StatefulWidget {
 }
 
 class _FilterableSheetScope extends InheritedWidget {
-  const _FilterableSheetScope({
-    required this.query,
-    required super.child,
-  });
+  const _FilterableSheetScope({required this.query, required super.child});
 
   final String query;
 

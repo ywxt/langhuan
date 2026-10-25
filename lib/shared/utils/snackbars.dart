@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 /// Shows a success snackbar with a leading check icon.
-ScaffoldFeatureController<SnackBar, SnackBarClosedReason>
-showSuccessSnack(ScaffoldMessengerState messenger, String message) {
+ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showSuccessSnack(
+  ScaffoldMessengerState messenger,
+  String message,
+) {
   return _showSnack(messenger, message, Icons.check_circle_outline);
 }
 

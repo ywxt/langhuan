@@ -73,11 +73,13 @@ class ChaptersNotifier extends Notifier<ChaptersState> {
       // the next update check clears its badge.
       if (items.isNotEmpty) {
         unawaited(
-          ref.read(feedServiceProvider).markBookshelfSeen(
-            feedId: feedId,
-            sourceBookId: bookId,
-            chapterCount: items.length,
-          ),
+          ref
+              .read(feedServiceProvider)
+              .markBookshelfSeen(
+                feedId: feedId,
+                sourceBookId: bookId,
+                chapterCount: items.length,
+              ),
         );
         ref.read(bookshelfUpdatesProvider.notifier).clear(feedId, bookId);
       }
@@ -145,10 +147,9 @@ class BookInfoNotifier extends Notifier<BookInfoState> {
         : BookInfoState(feedId: feedId, bookId: bookId, isLoading: true);
 
     try {
-      final book = await ref.read(feedServiceProvider).bookInfo(
-        feedId: feedId,
-        bookId: bookId,
-      );
+      final book = await ref
+          .read(feedServiceProvider)
+          .bookInfo(feedId: feedId, bookId: bookId);
       state = state.copyWith(
         book: () => book,
         isLoading: false,

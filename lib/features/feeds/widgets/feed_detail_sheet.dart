@@ -57,13 +57,15 @@ class _FeedDetailContentState extends ConsumerState<_FeedDetailContent> {
     });
     var supported = false;
     try {
-      supported = await ref.read(feedServiceProvider).isFeedAuthSupported(
-        widget.feed.id,
-      );
+      supported = await ref
+          .read(feedServiceProvider)
+          .isFeedAuthSupported(widget.feed.id);
       FeedAuthStatusModel status = FeedAuthStatusModel.unsupported;
       if (supported) {
         try {
-          status = await ref.read(feedServiceProvider).getFeedAuthStatus(widget.feed.id);
+          status = await ref
+              .read(feedServiceProvider)
+              .getFeedAuthStatus(widget.feed.id);
         } catch (_) {
           // A failed status probe (for example while offline) must not hide
           // the login action for an auth-capable feed.
@@ -101,10 +103,7 @@ class _FeedDetailContentState extends ConsumerState<_FeedDetailContent> {
       await _loadAuthStatus();
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      showSuccessSnack(
-        ScaffoldMessenger.of(context),
-        l10n.feedAuthUpdated,
-      );
+      showSuccessSnack(ScaffoldMessenger.of(context), l10n.feedAuthUpdated);
     }
   }
 
@@ -116,16 +115,10 @@ class _FeedDetailContentState extends ConsumerState<_FeedDetailContent> {
       await _loadAuthStatus();
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      showSuccessSnack(
-        ScaffoldMessenger.of(context),
-        l10n.feedAuthLoggedOut,
-      );
+      showSuccessSnack(ScaffoldMessenger.of(context), l10n.feedAuthLoggedOut);
     } catch (e) {
       if (!mounted) return;
-      showErrorSnack(
-        ScaffoldMessenger.of(context),
-        normalizeErrorMessage(e),
-      );
+      showErrorSnack(ScaffoldMessenger.of(context), normalizeErrorMessage(e));
     }
   }
 

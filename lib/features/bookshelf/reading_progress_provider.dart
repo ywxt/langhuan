@@ -94,10 +94,9 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
     );
 
     try {
-      final progress = await ref.read(feedServiceProvider).getReadingProgress(
-        feedId: feedId,
-        bookId: bookId,
-      );
+      final progress = await ref
+          .read(feedServiceProvider)
+          .getReadingProgress(feedId: feedId, bookId: bookId);
       final chapterId = progress?.chapterId ?? fallbackChapterId;
       final paragraphId = progress?.paragraphId ?? fallbackParagraphId;
       hydrateInitialPosition(
@@ -151,14 +150,16 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
     state = state.copyWith(isSaving: true, error: () => null);
 
     try {
-      await ref.read(feedServiceProvider).setReadingProgress(
-        feedId: state.feedId,
-        bookId: state.bookId,
-        chapterId: state.activeChapterId,
-        paragraphId: state.activeParagraphId,
-        paragraphCharOffset: state.activeParagraphCharOffset,
-        updatedAtMs: timestamp,
-      );
+      await ref
+          .read(feedServiceProvider)
+          .setReadingProgress(
+            feedId: state.feedId,
+            bookId: state.bookId,
+            chapterId: state.activeChapterId,
+            paragraphId: state.activeParagraphId,
+            paragraphCharOffset: state.activeParagraphCharOffset,
+            updatedAtMs: timestamp,
+          );
 
       state = state.copyWith(
         progress: () => ReadingProgressModel(

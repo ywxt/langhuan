@@ -17,7 +17,11 @@ AggregatedSearchEventModel _item(String feedId, String name, String id) {
 }
 
 AggregatedSearchEventModel _error(String feedId, String name, String message) {
-  return AggregatedSearchEventModel(feedId: feedId, feedName: name, error: message);
+  return AggregatedSearchEventModel(
+    feedId: feedId,
+    feedName: name,
+    error: message,
+  );
 }
 
 void main() {
@@ -156,42 +160,46 @@ void main() {
       expect(searchAllCalls, 2);
     });
 
-    test('a new run supersedes the pending one and cancels its stream', () async {
-      var firstCancelled = false;
-      final first = StreamController<AggregatedSearchEventModel>();
-      final second = StreamController<AggregatedSearchEventModel>();
-      first.onCancel = () => firstCancelled = true;
+    test(
+      'a new run supersedes the pending one and cancels its stream',
+      () async {
+        var firstCancelled = false;
+        final first = StreamController<AggregatedSearchEventModel>();
+        final second = StreamController<AggregatedSearchEventModel>();
+        first.onCancel = () => firstCancelled = true;
 
-      var calls = 0;
-      final c = container(
-        FakeFeedService(
-          searchAllHandler: (keyword) => calls++ == 0 ? first.stream : second.stream,
-        ),
-      );
-      final notifier = c.read(searchProvider.notifier);
+        var calls = 0;
+        final c = container(
+          FakeFeedService(
+            searchAllHandler: (keyword) =>
+                calls++ == 0 ? first.stream : second.stream,
+          ),
+        );
+        final notifier = c.read(searchProvider.notifier);
 
-      // Run 1 pulls from `first`, which never emits. Its future never
-      // completes once superseded — that is fine, it must not touch state
-      // again, which the assertions below prove.
-      unawaited(notifier.searchAll(keyword: 'a'));
-      await Future<void>.delayed(Duration.zero);
+        // Run 1 pulls from `first`, which never emits. Its future never
+        // completes once superseded — that is fine, it must not touch state
+        // again, which the assertions below prove.
+        unawaited(notifier.searchAll(keyword: 'a'));
+        await Future<void>.delayed(Duration.zero);
 
-      // Run 2 supersedes it.
-      final pending2 = notifier.searchAll(keyword: 'b');
-      await Future<void>.delayed(Duration.zero);
+        // Run 2 supersedes it.
+        final pending2 = notifier.searchAll(keyword: 'b');
+        await Future<void>.delayed(Duration.zero);
 
-      second.add(_item('feed-x', 'X', 'x1'));
-      // The StreamIterator keeps its subscription after the stream ends, so
-      // awaiting close() would never complete.
-      unawaited(second.close());
-      await pending2;
+        second.add(_item('feed-x', 'X', 'x1'));
+        // The StreamIterator keeps its subscription after the stream ends, so
+        // awaiting close() would never complete.
+        unawaited(second.close());
+        await pending2;
 
-      final state = c.read(searchProvider);
-      expect(state.keyword, 'b');
-      expect(state.groups, hasLength(1));
-      expect(state.groups.single.feedId, 'feed-x');
-      expect(firstCancelled, isTrue, reason: 'run 1 was cancelled');
-    });
+        final state = c.read(searchProvider);
+        expect(state.keyword, 'b');
+        expect(state.groups, hasLength(1));
+        expect(state.groups.single.feedId, 'feed-x');
+        expect(firstCancelled, isTrue, reason: 'run 1 was cancelled');
+      },
+    );
 
     test('cancelAndClear resets the state', () async {
       final events = [

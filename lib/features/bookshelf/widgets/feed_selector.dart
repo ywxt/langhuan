@@ -50,7 +50,11 @@ class FeedSelector extends ConsumerWidget {
       );
     }
 
-    Widget chip({required String label, required bool selected, VoidCallback? onSelected}) {
+    Widget chip({
+      required String label,
+      required bool selected,
+      VoidCallback? onSelected,
+    }) {
       return Padding(
         padding: const EdgeInsets.only(right: LanghuanTheme.spaceSm),
         child: ChoiceChip(

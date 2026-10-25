@@ -309,6 +309,51 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerThemeSepia => '護眼';
 
   @override
+  String get readerThemeCustom => '自定義';
+
+  @override
+  String get readerThemeCustomizeTitle => '自定義閱讀主題';
+
+  @override
+  String get readerThemeBackground => '背景';
+
+  @override
+  String get readerThemeText => '文字';
+
+  @override
+  String get readerThemeAccent => '強調色';
+
+  @override
+  String get readerThemePreview => '預覽';
+
+  @override
+  String get readerThemePreviewTitle => '章節標題';
+
+  @override
+  String get readerThemePreviewBody => '讓每一頁都有舒適的閱讀體驗。';
+
+  @override
+  String get readerThemeContrastWarning => '請選擇對比更明顯的背景色與文字色。';
+
+  @override
+  String get readerThemeReset => '重置';
+
+  @override
+  String get readerThemeApply => '應用';
+
+  @override
+  String get readerThemeColorHue => '色相';
+
+  @override
+  String get readerThemeColorSaturation => '飽和度';
+
+  @override
+  String get readerThemeColorBrightness => '亮度';
+
+  @override
+  String get readerThemeColorCancel => '取消';
+
+  @override
   String get readerThemeLabel => '主題';
 
   @override

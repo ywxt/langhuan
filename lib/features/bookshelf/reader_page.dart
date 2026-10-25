@@ -162,7 +162,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       readingProgressProvider.select((s) => s.activeChapterId),
     );
     final baseTheme = Theme.of(context);
-    final readerTheme = resolveReaderTheme(baseTheme, settings.themeMode);
+    final readerTheme = resolveReaderTheme(
+      baseTheme,
+      settings.themeMode,
+      customTheme: settings.customTheme,
+    );
 
     if (widget.feedId.isEmpty || widget.bookId.isEmpty) {
       return Scaffold(

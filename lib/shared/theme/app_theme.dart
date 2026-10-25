@@ -208,12 +208,51 @@ abstract final class LanghuanTheme {
 
   static ThemeData light() => _buildTheme(lightScheme);
   static ThemeData dark() => _buildTheme(darkScheme);
+  static ThemeData fromColorScheme(ColorScheme scheme) => _buildTheme(scheme);
+
+  /// Makes every populated style safe for [TextTheme.lerp].
+  static TextTheme interpolatableTextTheme(TextTheme source) => source.copyWith(
+    displayLarge: _interpolatableStyle(source.displayLarge, 57),
+    displayMedium: _interpolatableStyle(source.displayMedium, 45),
+    displaySmall: _interpolatableStyle(source.displaySmall, 36),
+    headlineLarge: _interpolatableStyle(source.headlineLarge, 32),
+    headlineMedium: _interpolatableStyle(source.headlineMedium, 28),
+    headlineSmall: _interpolatableStyle(source.headlineSmall, 24),
+    titleLarge: _interpolatableStyle(source.titleLarge, 22),
+    titleMedium: _interpolatableStyle(source.titleMedium, 16),
+    titleSmall: _interpolatableStyle(source.titleSmall, 14),
+    bodyLarge: _interpolatableStyle(source.bodyLarge, 16),
+    bodyMedium: _interpolatableStyle(source.bodyMedium, 14),
+    bodySmall: _interpolatableStyle(source.bodySmall, 12),
+    labelLarge: _interpolatableStyle(source.labelLarge, 14),
+    labelMedium: _interpolatableStyle(source.labelMedium, 12),
+    labelSmall: _interpolatableStyle(source.labelSmall, 11),
+  );
+
+  static TextStyle _interpolatableStyle(
+    TextStyle? style,
+    double defaultFontSize,
+  ) => (style ?? const TextStyle()).copyWith(
+    inherit: false,
+    fontSize: style?.fontSize ?? defaultFontSize,
+    textBaseline: style?.textBaseline ?? TextBaseline.alphabetic,
+  );
 
   static ThemeData _buildTheme(ColorScheme scheme) {
     final isLight = scheme.brightness == Brightness.light;
     final neutralBg = isLight
         ? const Color(0xFFF2F4EF)
         : const Color(0xFF1E211B);
+    // Merge our typography tokens onto Material's complete text styles. This
+    // keeps `inherit` and the otherwise unspecified fields consistent with
+    // Material component states, so controls can animate between enabled and
+    // disabled without TextStyle.lerp assertions.
+    final textTheme = interpolatableTextTheme(
+      ThemeData(
+        useMaterial3: true,
+        colorScheme: scheme,
+      ).textTheme.merge(LanghuanTheme.textTheme),
+    );
 
     return ThemeData(
       useMaterial3: true,

@@ -5,10 +5,34 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../shared/theme/app_theme.dart';
 import '../../src/rust/api/conversion.dart' as rust_conversion;
 import '../../src/rust/api/types.dart' show ChineseConversionMode;
 
-enum ReaderThemeMode { system, light, dark, sepia }
+enum ReaderThemeMode { system, light, dark, sepia, custom }
+
+@immutable
+class ReaderCustomTheme {
+  const ReaderCustomTheme({
+    this.background = const Color(0xFFF7F2E8),
+    this.foreground = const Color(0xFF302A22),
+    this.accent = const Color(0xFF7A5C3E),
+  });
+
+  final Color background;
+  final Color foreground;
+  final Color accent;
+
+  ReaderCustomTheme copyWith({
+    Color? background,
+    Color? foreground,
+    Color? accent,
+  }) => ReaderCustomTheme(
+    background: background ?? this.background,
+    foreground: foreground ?? this.foreground,
+    accent: accent ?? this.accent,
+  );
+}
 
 /// How the reader advances through content.
 ///
@@ -53,6 +77,7 @@ class ReaderSettingsState {
     this.paragraphSpacing = 16.0,
     this.lineHeight = 1.8,
     this.themeMode = ReaderThemeMode.system,
+    this.customTheme = const ReaderCustomTheme(),
     this.chineseConversion = ChineseConversionMode.none,
     this.pageMode = ReaderPageMode.horizontal,
   });
@@ -65,6 +90,7 @@ class ReaderSettingsState {
   final double paragraphSpacing;
   final double lineHeight;
   final ReaderThemeMode themeMode;
+  final ReaderCustomTheme customTheme;
   final ChineseConversionMode chineseConversion;
   final ReaderPageMode pageMode;
 
@@ -77,6 +103,7 @@ class ReaderSettingsState {
     double? paragraphSpacing,
     double? lineHeight,
     ReaderThemeMode? themeMode,
+    ReaderCustomTheme? customTheme,
     ChineseConversionMode? chineseConversion,
     ReaderPageMode? pageMode,
   }) {
@@ -93,6 +120,7 @@ class ReaderSettingsState {
       paragraphSpacing: paragraphSpacing ?? this.paragraphSpacing,
       lineHeight: lineHeight ?? this.lineHeight,
       themeMode: themeMode ?? this.themeMode,
+      customTheme: customTheme ?? this.customTheme,
       chineseConversion: chineseConversion ?? this.chineseConversion,
       pageMode: pageMode ?? this.pageMode,
     );
@@ -108,6 +136,9 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
   static const _kParagraphSpacing = 'reader.paragraphSpacing';
   static const _kLineHeight = 'reader.lineHeight';
   static const _kThemeMode = 'reader.themeMode';
+  static const _kCustomThemeBackground = 'reader.customTheme.background';
+  static const _kCustomThemeForeground = 'reader.customTheme.foreground';
+  static const _kCustomThemeAccent = 'reader.customTheme.accent';
   static const _kChineseConversion = 'reader.chineseConversion';
   static const _kPageMode = 'reader.pageMode';
 
@@ -202,6 +233,14 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
     _persistState();
   }
 
+  void setCustomTheme(ReaderCustomTheme theme) {
+    state = state.copyWith(
+      themeMode: ReaderThemeMode.custom,
+      customTheme: theme,
+    );
+    _persistState();
+  }
+
   void setChineseConversion(ChineseConversionMode mode) {
     state = state.copyWith(chineseConversion: mode);
     _persistState();
@@ -267,6 +306,21 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
         ? ReaderPageMode.values[pageModeIndex]
         : state.pageMode;
 
+    final customTheme = ReaderCustomTheme(
+      background: Color(
+        prefs.getInt(_kCustomThemeBackground) ??
+            state.customTheme.background.toARGB32(),
+      ),
+      foreground: Color(
+        prefs.getInt(_kCustomThemeForeground) ??
+            state.customTheme.foreground.toARGB32(),
+      ),
+      accent: Color(
+        prefs.getInt(_kCustomThemeAccent) ??
+            state.customTheme.accent.toARGB32(),
+      ),
+    );
+
     final storedFilePath = prefs.getString(_kCustomFontFilePath);
     final storedDisplayName = prefs.getString(_kCustomFontDisplayName);
     final storedFontFamily = prefs.getString(_kFontFamily);
@@ -277,6 +331,7 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
       paragraphSpacing: paragraphSpacing,
       lineHeight: lineHeight,
       themeMode: restoredThemeMode,
+      customTheme: customTheme,
       chineseConversion: restoredConversion,
       pageMode: restoredPageMode,
       fontFamily: () => storedFontFamily,
@@ -329,6 +384,18 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
     await prefs.setDouble(_kParagraphSpacing, state.paragraphSpacing);
     await prefs.setDouble(_kLineHeight, state.lineHeight);
     await prefs.setInt(_kThemeMode, state.themeMode.index);
+    await prefs.setInt(
+      _kCustomThemeBackground,
+      state.customTheme.background.toARGB32(),
+    );
+    await prefs.setInt(
+      _kCustomThemeForeground,
+      state.customTheme.foreground.toARGB32(),
+    );
+    await prefs.setInt(
+      _kCustomThemeAccent,
+      state.customTheme.accent.toARGB32(),
+    );
     await prefs.setInt(_kChineseConversion, state.chineseConversion.index);
     await prefs.setInt(_kPageMode, state.pageMode.index);
   }
@@ -339,40 +406,78 @@ final readerSettingsProvider =
       ReaderSettingsNotifier.new,
     );
 
-ThemeData resolveReaderTheme(ThemeData base, ReaderThemeMode mode) {
+ThemeData resolveReaderTheme(
+  ThemeData base,
+  ReaderThemeMode mode, {
+  ReaderCustomTheme customTheme = const ReaderCustomTheme(),
+}) {
   return switch (mode) {
     ReaderThemeMode.system => base,
-    ReaderThemeMode.light => ThemeData.light(useMaterial3: true),
-    ReaderThemeMode.dark => ThemeData.dark(useMaterial3: true),
-    ReaderThemeMode.sepia => _sepiaTheme(base),
+    ReaderThemeMode.light => LanghuanTheme.light(),
+    ReaderThemeMode.dark => LanghuanTheme.dark(),
+    ReaderThemeMode.sepia => _sepiaTheme(),
+    ReaderThemeMode.custom => _customTheme(customTheme),
   };
 }
 
-ThemeData _sepiaTheme(ThemeData base) {
-  const background = Color(0xFFF3E9D2);
-  const foreground = Color(0xFF4A3B2A);
+ThemeData _sepiaTheme() => _customTheme(
+  const ReaderCustomTheme(
+    background: Color(0xFFF3E9D2),
+    foreground: Color(0xFF4A3B2A),
+    accent: Color(0xFF8A5A2B),
+  ),
+);
+
+ThemeData _customTheme(ReaderCustomTheme custom) {
+  final brightness = custom.background.computeLuminance() > 0.35
+      ? Brightness.light
+      : Brightness.dark;
   final scheme =
       ColorScheme.fromSeed(
-        seedColor: const Color(0xFF8A5A2B),
-        brightness: Brightness.light,
+        seedColor: custom.accent,
+        brightness: brightness,
       ).copyWith(
-        surface: background,
-        surfaceContainer: const Color(0xFFE8D9B5),
-        onSurface: foreground,
-        onSurfaceVariant: foreground,
+        primary: custom.accent,
+        surface: custom.background,
+        surfaceContainerLowest: custom.background,
+        surfaceContainerLow: Color.lerp(
+          custom.background,
+          custom.foreground,
+          0.03,
+        ),
+        surfaceContainer: Color.lerp(
+          custom.background,
+          custom.foreground,
+          0.06,
+        ),
+        surfaceContainerHigh: Color.lerp(
+          custom.background,
+          custom.foreground,
+          0.09,
+        ),
+        surfaceContainerHighest: Color.lerp(
+          custom.background,
+          custom.foreground,
+          0.12,
+        ),
+        onSurface: custom.foreground,
+        onSurfaceVariant: Color.lerp(
+          custom.foreground,
+          custom.background,
+          0.25,
+        ),
       );
 
-  return base.copyWith(
-    colorScheme: scheme,
-    scaffoldBackgroundColor: background,
-    textTheme: base.textTheme.apply(
-      bodyColor: foreground,
-      displayColor: foreground,
-    ),
-    appBarTheme: base.appBarTheme.copyWith(
-      backgroundColor: const Color(0xFFE8D9B5),
-      foregroundColor: foreground,
-      surfaceTintColor: Colors.transparent,
-    ),
+  final theme = LanghuanTheme.fromColorScheme(scheme);
+  final coloredTextTheme = theme.textTheme.apply(
+    bodyColor: custom.foreground,
+    displayColor: custom.foreground,
+  );
+  final normalizedTextTheme = LanghuanTheme.interpolatableTextTheme(
+    coloredTextTheme,
+  );
+  return theme.copyWith(
+    scaffoldBackgroundColor: custom.background,
+    textTheme: normalizedTextTheme,
   );
 }

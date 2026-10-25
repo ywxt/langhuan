@@ -171,9 +171,7 @@ class SearchNotifier extends Notifier<SearchState> {
     try {
       final groups = <String, SearchFeedGroup>{};
       for (final group in state.groups) {
-        groups[group.feedId] = group.copyWith(
-          items: List.of(group.items),
-        );
+        groups[group.feedId] = group.copyWith(items: List.of(group.items));
       }
       var exhausted = false;
 

@@ -79,7 +79,9 @@ class AddFeedNotifier extends Notifier<AddFeedState> {
     state = const AddFeedInstalling();
 
     try {
-      await ref.read(feedServiceProvider).installFeed(current.preview.requestId);
+      await ref
+          .read(feedServiceProvider)
+          .installFeed(current.preview.requestId);
       // Refresh the feed list so the newly installed feed appears.
       ref.read(feedListProvider.notifier).load();
       state = const AddFeedSuccess();

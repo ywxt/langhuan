@@ -16,7 +16,8 @@ String fixtureFeedScript({
   required String id,
   required String name,
   required int port,
-}) => '''
+}) =>
+    '''
 -- ==Feed==
 -- @id           $id
 -- @name         $name
@@ -133,9 +134,7 @@ Future<void> installFixtureFeed({
 }) async {
   final scriptFile = File('${dataDir.path}/$id.lua')
     ..writeAsStringSync(fixtureFeedScript(id: id, name: name, port: port));
-  final preview = await FeedService.instance.previewFromFile(
-    scriptFile.path,
-  );
+  final preview = await FeedService.instance.previewFromFile(scriptFile.path);
   expect(preview.id, id);
   await FeedService.instance.installFeed(preview.requestId);
 }
