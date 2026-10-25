@@ -295,6 +295,17 @@
   "readerThemeSepia": "Sepia",
   "@readerThemeSepia": { "description": "Reader theme option: sepia" },
 
+  "readerThemeLabel": "Theme",
+  "@readerThemeLabel": { "description": "Reader settings section label: theme" },
+
+  "readerSearchNoMatch": "Nothing matching \"{keyword}\"",
+  "@readerSearchNoMatch": {
+    "description": "Reader TOC/bookmark sheet filter no match message",
+    "placeholders": {
+      "keyword": { "type": "String" }
+    }
+  },
+
   "readerSettingPlaceholder": "This entry is reserved for future settings.",
   "@readerSettingPlaceholder": { "description": "Placeholder text in reader settings sheet" },
 

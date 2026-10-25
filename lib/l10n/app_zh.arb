@@ -98,6 +98,8 @@
   "readerThemeLight": "淺色",
   "readerThemeDark": "深色",
   "readerThemeSepia": "護眼",
+  "readerThemeLabel": "主題",
+  "readerSearchNoMatch": "沒有符合「{keyword}」的內容",
   "readerSettingPlaceholder": "此入口預留，後續擴展。",
 
   "readerChineseConversion": "繁簡轉換",

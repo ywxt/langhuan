@@ -300,6 +300,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readerThemeSepia => 'Sepia';
 
   @override
+  String get readerThemeLabel => 'Theme';
+
+  @override
+  String readerSearchNoMatch(String keyword) {
+    return 'Nothing matching \"$keyword\"';
+  }
+
+  @override
   String get readerSettingPlaceholder =>
       'This entry is reserved for future settings.';
 

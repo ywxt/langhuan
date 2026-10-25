@@ -299,6 +299,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerThemeSepia => '護眼';
 
   @override
+  String get readerThemeLabel => '主題';
+
+  @override
+  String readerSearchNoMatch(String keyword) {
+    return '沒有符合「$keyword」的內容';
+  }
+
+  @override
   String get readerSettingPlaceholder => '此入口預留，後續擴展。';
 
   @override

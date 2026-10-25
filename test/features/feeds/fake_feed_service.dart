@@ -12,6 +12,10 @@ class FakeFeedService implements FeedService {
     this.bookshelfUpdatesHandler,
     this.listFeedsHandler,
     this.removeFeedHandler,
+    this.listBookmarksHandler,
+    this.chaptersHandler,
+    this.paragraphsHandler,
+    this.markBookshelfSeenHandler,
   });
 
   final Stream<SearchResultModel> Function(String feedId, String keyword)?
@@ -68,6 +72,75 @@ class FakeFeedService implements FeedService {
       throw UnimplementedError('removeFeed not configured for this test');
     }
     return handler(feedId);
+  }
+
+  final Future<List<BookmarkModel>> Function(String feedId, String bookId)?
+  listBookmarksHandler;
+
+  @override
+  Future<List<BookmarkModel>> listBookmarks({
+    required String feedId,
+    required String bookId,
+  }) {
+    final handler = listBookmarksHandler;
+    if (handler == null) {
+      throw UnimplementedError('listBookmarks not configured for this test');
+    }
+    return handler(feedId, bookId);
+  }
+
+  final Stream<ChapterInfoModel> Function(String feedId, String bookId)?
+  chaptersHandler;
+
+  @override
+  Stream<ChapterInfoModel> chapters({
+    required String feedId,
+    required String bookId,
+    bool forceRefresh = false,
+  }) {
+    final handler = chaptersHandler;
+    if (handler == null) {
+      throw UnimplementedError('chapters not configured for this test');
+    }
+    return handler(feedId, bookId);
+  }
+
+  final Stream<ParagraphContent> Function(
+    String feedId,
+    String bookId,
+    String chapterId, {
+    bool forceRefresh,
+  })?
+  paragraphsHandler;
+
+  @override
+  Stream<ParagraphContent> paragraphs({
+    required String feedId,
+    required String bookId,
+    required String chapterId,
+    bool forceRefresh = false,
+  }) {
+    final handler = paragraphsHandler;
+    if (handler == null) {
+      throw UnimplementedError('paragraphs not configured for this test');
+    }
+    return handler(feedId, bookId, chapterId, forceRefresh: forceRefresh);
+  }
+
+  final Future<void> Function(String feedId, String sourceBookId, int count)?
+  markBookshelfSeenHandler;
+
+  @override
+  Future<void> markBookshelfSeen({
+    required String feedId,
+    required String sourceBookId,
+    required int chapterCount,
+  }) {
+    final handler = markBookshelfSeenHandler;
+    if (handler == null) {
+      throw UnimplementedError('markBookshelfSeen not configured for this test');
+    }
+    return handler(feedId, sourceBookId, chapterCount);
   }
 
   @override

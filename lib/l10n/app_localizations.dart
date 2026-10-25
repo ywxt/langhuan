@@ -626,6 +626,18 @@ abstract class AppLocalizations {
   /// **'Sepia'**
   String get readerThemeSepia;
 
+  /// Reader settings section label: theme
+  ///
+  /// In en, this message translates to:
+  /// **'Theme'**
+  String get readerThemeLabel;
+
+  /// Reader TOC/bookmark sheet filter no match message
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing matching \"{keyword}\"'**
+  String readerSearchNoMatch(String keyword);
+
   /// Placeholder text in reader settings sheet
   ///
   /// In en, this message translates to:

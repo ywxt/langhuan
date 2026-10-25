@@ -10,6 +10,7 @@ import '../bookmark_provider.dart';
 import '../reader_settings_provider.dart';
 import '../reading_progress_provider.dart';
 import 'chinese_conversion_picker.dart';
+import 'reader_theme_picker.dart';
 
 Future<void> showReaderInterfaceSheet(BuildContext context) async {
   final l10n = AppLocalizations.of(context);
@@ -210,6 +211,28 @@ Future<void> showReaderSettingsSheet(BuildContext context) async {
               ),
               const SizedBox(height: LanghuanTheme.spaceMd),
               Text(
+                l10n.readerThemeLabel,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              const SizedBox(height: LanghuanTheme.spaceSm),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.palette_outlined),
+                  label: Text(
+                    readerThemeModeLabel(l10n, settings.themeMode),
+                  ),
+                  onPressed: () async {
+                    final mode = await showReaderThemePicker(
+                      context,
+                      selected: settings.themeMode,
+                    );
+                    if (mode != null) notifier.setThemeMode(mode);
+                  },
+                ),
+              ),
+              const SizedBox(height: LanghuanTheme.spaceMd),
+              Text(
                 l10n.readerChineseConversion,
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
@@ -257,51 +280,86 @@ Future<void> showReaderBookmarkSheet({
   await showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
-    builder: (context) => Consumer(
-      builder: (context, ref, _) {
-        final bookmarks = ref.watch(bookmarkProvider).items;
-        if (bookmarks.isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
-            child: Center(child: Text(l10n.readerNoBookmarks)),
-          );
-        }
+    isScrollControlled: true,
+    builder: (context) => _FilterableSheet(
+      hintText: l10n.readerSearchBookmarksHint,
+      child: Consumer(
+        builder: (context, ref, _) {
+          final bookmarks = ref.watch(bookmarkProvider).items;
+          if (bookmarks.isEmpty) {
+            return _SheetMessage(message: l10n.readerNoBookmarks);
+          }
 
-        return ListView.builder(
-          itemCount: bookmarks.length,
-          itemBuilder: (context, index) {
-            final item = bookmarks[index];
-            final chapterIndex = chapters.indexWhere(
-              (c) => c.id == item.chapterId,
-            );
-            final chapterTitle = chapterIndex >= 0
-                ? chapters[chapterIndex].title
-                : item.chapterId;
-            return ListTile(
-              title: Text(chapterTitle),
-              subtitle: Text(
-                item.paragraphName.trim().isEmpty
-                    ? item.paragraphId
-                    : item.paragraphName,
-              ),
-              onTap: () {
-                Navigator.of(context).pop();
-                onJumpToParagraph(item.chapterId, item.paragraphId);
-              },
-              trailing: IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () async {
-                  await ref.read(bookmarkProvider.notifier).remove(item.id);
-                  if (!context.mounted) return;
-                  onBookmarkRemoved();
+          return Builder(
+            builder: (context) {
+              final query = _FilterableSheet.queryOf(context);
+              final filtered = _filterBookmarks(bookmarks, chapters, query);
+              if (filtered.isEmpty) {
+                return _SheetMessage(
+                  message: l10n.readerSearchNoMatch(query),
+                );
+              }
+
+              return ListView.builder(
+                itemCount: filtered.length,
+                itemBuilder: (context, index) {
+                  final item = filtered[index];
+                  final chapterIndex = chapters.indexWhere(
+                    (c) => c.id == item.chapterId,
+                  );
+                  final chapterTitle = chapterIndex >= 0
+                      ? chapters[chapterIndex].title
+                      : item.chapterId;
+                  return ListTile(
+                    title: Text(chapterTitle),
+                    subtitle: Text(
+                      item.paragraphName.trim().isEmpty
+                          ? item.paragraphId
+                          : item.paragraphName,
+                    ),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onJumpToParagraph(item.chapterId, item.paragraphId);
+                    },
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () async {
+                        await ref
+                            .read(bookmarkProvider.notifier)
+                            .remove(item.id);
+                        if (!context.mounted) return;
+                        onBookmarkRemoved();
+                      },
+                    ),
+                  );
                 },
-              ),
-            );
-          },
-        );
-      },
+              );
+            },
+          );
+        },
+      ),
     ),
   );
+}
+
+/// Bookmarks whose chapter title, paragraph name or preview matches
+/// [query] (case-insensitive; empty query keeps everything).
+List<BookmarkModel> _filterBookmarks(
+  List<BookmarkModel> bookmarks,
+  List<ChapterInfoModel> chapters,
+  String query,
+) {
+  if (query.isEmpty) return bookmarks;
+  return bookmarks.where((item) {
+    final chapterIndex = chapters.indexWhere((c) => c.id == item.chapterId);
+    final haystack = [
+      chapterIndex >= 0 ? chapters[chapterIndex].title : item.chapterId,
+      item.paragraphName,
+      item.paragraphPreview,
+      item.paragraphId,
+    ].join('\n').toLowerCase();
+    return haystack.contains(query);
+  }).toList();
 }
 
 Future<void> showReaderTocSheet({
@@ -310,6 +368,7 @@ Future<void> showReaderTocSheet({
   required List<ChapterInfoModel> chapters,
   required void Function(String chapterId) onJumpToChapter,
 }) async {
+  final l10n = AppLocalizations.of(context);
   final reading = ref.read(readingProgressProvider);
   final activeId = reading.activeChapterId;
   final activeIdx = chapters.indexWhere((c) => c.id == activeId);
@@ -320,39 +379,178 @@ Future<void> showReaderTocSheet({
   await showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
-    builder: (context) => Consumer(
-      builder: (context, ref, _) {
-        final reading = ref.watch(readingProgressProvider);
-        final currentActiveId = reading.activeChapterId;
-        return ListView.builder(
-          controller: scrollController,
-          itemCount: chapters.length,
-          itemExtent: 56.0,
-          itemBuilder: (context, index) {
-            final chapter = chapters[index];
-            final isActive = chapter.id == currentActiveId;
-            return ListTile(
-              leading: Text('${index + 1}'),
-              title: Text(
-                chapter.title,
-                style: isActive
-                    ? TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                      )
-                    : null,
-              ),
-              selected: isActive,
-              onTap: () {
-                Navigator.of(context).pop();
-                onJumpToChapter(chapter.id);
-              },
-            );
-          },
-        );
-      },
+    isScrollControlled: true,
+    builder: (context) => _FilterableSheet(
+      hintText: l10n.readerSearchTocHint,
+      child: Consumer(
+        builder: (context, ref, _) {
+          final reading = ref.watch(readingProgressProvider);
+          final currentActiveId = reading.activeChapterId;
+
+          return Builder(
+            builder: (context) {
+              final query = _FilterableSheet.queryOf(context);
+              final filtered = _filterChapters(chapters, query);
+
+              if (filtered.isEmpty) {
+                return _SheetMessage(
+                  message: l10n.readerSearchNoMatch(query),
+                );
+              }
+
+              return ListView.builder(
+                controller: scrollController,
+                itemCount: filtered.length,
+                itemExtent: 56.0,
+                itemBuilder: (context, index) {
+                  final (chapterNo, chapter) = filtered[index];
+                  final isActive = chapter.id == currentActiveId;
+                  return ListTile(
+                    leading: Text('$chapterNo'),
+                    title: Text(
+                      chapter.title,
+                      style: isActive
+                          ? TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.bold,
+                            )
+                          : null,
+                    ),
+                    selected: isActive,
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onJumpToChapter(chapter.id);
+                    },
+                  );
+                },
+              );
+            },
+          );
+        },
+      ),
     ),
   );
 
   scrollController.dispose();
+}
+
+/// Chapters whose title matches [query], paired with their original
+/// one-based number so filtered lists keep the book's real numbering.
+List<(int, ChapterInfoModel)> _filterChapters(
+  List<ChapterInfoModel> chapters,
+  String query,
+) {
+  final numbered = [
+    for (var i = 0; i < chapters.length; i++) (i + 1, chapters[i]),
+  ];
+  if (query.isEmpty) return numbered;
+  return numbered
+      .where((entry) => entry.$2.title.toLowerCase().contains(query))
+      .toList();
+}
+
+/// Sheet scaffold: a pinned search bar over a scrolling body, sized to most
+/// of the screen and inset for the on-screen keyboard.
+///
+/// Descendants read the normalized query through [queryOf], which rebuilds
+/// them on every keystroke via the inherited widget.
+class _FilterableSheet extends StatefulWidget {
+  const _FilterableSheet({required this.hintText, required this.child});
+
+  final String hintText;
+  final Widget child;
+
+  static String queryOf(BuildContext context) {
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<_FilterableSheetScope>();
+    return scope?.query ?? '';
+  }
+
+  @override
+  State<_FilterableSheet> createState() => _FilterableSheetState();
+}
+
+class _FilterableSheetScope extends InheritedWidget {
+  const _FilterableSheetScope({
+    required this.query,
+    required super.child,
+  });
+
+  final String query;
+
+  @override
+  bool updateShouldNotify(_FilterableSheetScope oldWidget) =>
+      query != oldWidget.query;
+}
+
+class _FilterableSheetState extends State<_FilterableSheet> {
+  final TextEditingController _filterController = TextEditingController();
+
+  @override
+  void dispose() {
+    _filterController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.8,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                LanghuanTheme.spaceLg,
+                LanghuanTheme.spaceSm,
+                LanghuanTheme.spaceLg,
+                LanghuanTheme.spaceSm,
+              ),
+              child: SearchBar(
+                controller: _filterController,
+                autoFocus: false,
+                hintText: widget.hintText,
+                leading: Icon(
+                  Icons.search,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                trailing: [
+                  if (_filterController.text.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        _filterController.clear();
+                        setState(() {});
+                      },
+                    ),
+                ],
+                onChanged: (_) => setState(() {}),
+              ),
+            ),
+            Expanded(
+              child: _FilterableSheetScope(
+                query: _filterController.text.trim().toLowerCase(),
+                child: widget.child,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetMessage extends StatelessWidget {
+  const _SheetMessage({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
+      child: Center(child: Text(message)),
+    );
+  }
 }
