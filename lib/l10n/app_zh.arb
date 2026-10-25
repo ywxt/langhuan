@@ -8,7 +8,6 @@
   "navProfile": "設置",
 
   "bookshelfTitle": "書架",
-  "bookshelfCheckUpdates": "檢查更新",
   "bookshelfNewChapters": "{count} 個新章節",
   "bookshelfCheckFailed": "檢查更新失敗",
   "bookshelfCheckPartialFailure": "{count} 本書檢查失敗",

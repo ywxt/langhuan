@@ -16,8 +16,6 @@
   "bookshelfTitle": "Bookshelf",
   "@bookshelfTitle": { "description": "Bookshelf page title" },
 
-  "bookshelfCheckUpdates": "Check for updates",
-  "@bookshelfCheckUpdates": { "description": "Tooltip for the bookshelf refresh button" },
 
   "bookshelfNewChapters": "{count} new chapters",
   "@bookshelfNewChapters": { "description": "Semantics label for a book's update badge", "placeholders": { "count": { "type": "int" } } },

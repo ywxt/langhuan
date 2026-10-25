@@ -128,12 +128,6 @@ abstract class AppLocalizations {
   /// **'Bookshelf'**
   String get bookshelfTitle;
 
-  /// Tooltip for the bookshelf refresh button
-  ///
-  /// In en, this message translates to:
-  /// **'Check for updates'**
-  String get bookshelfCheckUpdates;
-
   /// Semantics label for a book's update badge
   ///
   /// In en, this message translates to:

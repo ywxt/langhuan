@@ -24,9 +24,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bookshelfTitle => '書架';
 
   @override
-  String get bookshelfCheckUpdates => '檢查更新';
-
-  @override
   String bookshelfNewChapters(int count) {
     return '$count 個新章節';
   }

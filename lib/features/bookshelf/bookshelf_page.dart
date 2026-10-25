@@ -62,24 +62,12 @@ class BookshelfPage extends ConsumerWidget {
                   LanghuanTheme.spaceMd,
                 ),
                 sliver: SliverToBoxAdapter(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          l10n.bookshelfTitle,
-                          style: theme.textTheme.headlineLarge,
-                        ),
-                      ),
-                      updates.isChecking
-                          ? const LanghuanSpinner(size: 20)
-                          : IconButton(
-                              tooltip: l10n.bookshelfCheckUpdates,
-                              icon: const Icon(Icons.refresh),
-                              onPressed: () => ref
-                                  .read(bookshelfUpdatesProvider.notifier)
-                                  .check(),
-                            ),
-                    ],
+                  // Update checks are triggered by the pull-to-refresh
+                  // gesture above; per-book badges and the one-shot
+                  // snackbar below provide the feedback.
+                  child: Text(
+                    l10n.bookshelfTitle,
+                    style: theme.textTheme.headlineLarge,
                   ),
                 ),
               ),

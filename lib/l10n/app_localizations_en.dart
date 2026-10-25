@@ -24,9 +24,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bookshelfTitle => 'Bookshelf';
 
   @override
-  String get bookshelfCheckUpdates => 'Check for updates';
-
-  @override
   String bookshelfNewChapters(int count) {
     return '$count new chapters';
   }
