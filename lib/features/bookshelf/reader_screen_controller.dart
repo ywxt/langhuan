@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/rust/api/types.dart';
+import '../feeds/feed_providers.dart';
 import '../feeds/feed_service.dart';
 import 'bookmark_provider.dart';
 import 'book_providers.dart';
@@ -62,7 +63,8 @@ class ReaderScreenController extends ChangeNotifier {
     _notify();
 
     try {
-      final chapters = await FeedService.instance
+      final chapters = await _ref
+          .read(feedServiceProvider)
           .chapters(feedId: feedId, bookId: bookId)
           .toList();
 
@@ -92,11 +94,13 @@ class ReaderScreenController extends ChangeNotifier {
       // bookshelf update badge clears.
       if (chapters.isNotEmpty) {
         unawaited(
-          FeedService.instance.markBookshelfSeen(
-            feedId: feedId,
-            sourceBookId: bookId,
-            chapterCount: chapters.length,
-          ),
+          _ref
+              .read(feedServiceProvider)
+              .markBookshelfSeen(
+                feedId: feedId,
+                sourceBookId: bookId,
+                chapterCount: chapters.length,
+              ),
         );
         _ref
             .read(bookshelfUpdatesProvider.notifier)
@@ -191,7 +195,8 @@ class ReaderScreenController extends ChangeNotifier {
     _isRefreshingChapter = true;
     _notify();
     try {
-      await FeedService.instance
+      await _ref
+          .read(feedServiceProvider)
           .paragraphs(
             feedId: feedId,
             bookId: bookId,

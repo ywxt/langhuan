@@ -16,6 +16,9 @@ class FakeFeedService implements FeedService {
     this.chaptersHandler,
     this.paragraphsHandler,
     this.markBookshelfSeenHandler,
+    this.getReadingProgressHandler,
+    this.setReadingProgressHandler,
+    this.bookInfoHandler,
   });
 
   final Stream<SearchResultModel> Function(String feedId, String keyword)?
@@ -141,6 +144,72 @@ class FakeFeedService implements FeedService {
       throw UnimplementedError('markBookshelfSeen not configured for this test');
     }
     return handler(feedId, sourceBookId, chapterCount);
+  }
+
+  final Future<ReadingProgressModel?> Function(String feedId, String bookId)?
+  getReadingProgressHandler;
+
+  @override
+  Future<ReadingProgressModel?> getReadingProgress({
+    required String feedId,
+    required String bookId,
+  }) {
+    final handler = getReadingProgressHandler;
+    if (handler == null) {
+      throw UnimplementedError(
+        'getReadingProgress not configured for this test',
+      );
+    }
+    return handler(feedId, bookId);
+  }
+
+  final Future<void> Function(
+    String feedId,
+    String bookId,
+    String chapterId,
+    String paragraphId,
+    int paragraphCharOffset,
+  )?
+  setReadingProgressHandler;
+
+  @override
+  Future<void> setReadingProgress({
+    required String feedId,
+    required String bookId,
+    required String chapterId,
+    required String paragraphId,
+    int paragraphCharOffset = 0,
+    required int updatedAtMs,
+  }) {
+    final handler = setReadingProgressHandler;
+    if (handler == null) {
+      throw UnimplementedError(
+        'setReadingProgress not configured for this test',
+      );
+    }
+    return handler(
+      feedId,
+      bookId,
+      chapterId,
+      paragraphId,
+      paragraphCharOffset,
+    );
+  }
+
+  final Future<BookInfoModel> Function(String feedId, String bookId)?
+  bookInfoHandler;
+
+  @override
+  Future<BookInfoModel> bookInfo({
+    required String feedId,
+    required String bookId,
+    bool forceRefresh = false,
+  }) {
+    final handler = bookInfoHandler;
+    if (handler == null) {
+      throw UnimplementedError('bookInfo not configured for this test');
+    }
+    return handler(feedId, bookId);
   }
 
   @override
