@@ -11,8 +11,8 @@ import 'package:langhuan/l10n/app_localizations.dart';
 import 'package:langhuan/rust_init.dart';
 import 'package:langhuan/src/rust/api/types.dart';
 
-const _feedA = FeedMetaItem(id: 'feed-a', name: 'Source A', version: '1');
-const _feedB = FeedMetaItem(id: 'feed-b', name: 'Source B', version: '1');
+const _feedA = FeedMetaItem(id: 'feed-a', name: 'Source A', version: '1', enabled: true);
+const _feedB = FeedMetaItem(id: 'feed-b', name: 'Source B', version: '1', enabled: true);
 
 const _resultA1 = SearchResultModel(
   id: 'a-1',

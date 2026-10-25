@@ -272,11 +272,14 @@ impl Handler<OpenAggregatedSearchStream> for FeedActor {
 
     async fn handle(&mut self, msg: OpenAggregatedSearchStream, _: &Context<Self>) -> Self::Result {
         tracing::debug!(keyword = %msg.keyword, "open aggregated search stream");
-        let feeds: Vec<FeedMetaItem> = self
+        let all_feeds: Vec<FeedMetaItem> = self
             .registry_addr
             .send(ListFeeds)
             .await
             .map_err(BridgeError::from)?;
+
+        // Paused feeds never take part in aggregated search.
+        let feeds: Vec<FeedMetaItem> = all_feeds.into_iter().filter(|f| f.enabled).collect();
 
         // One producer task per feed, all feeding a single merged channel.
         // The actor mailbox only serialises the opening, so the searches
@@ -757,6 +760,75 @@ return {
 
         let events = collect(stream).await.map_err(|e| e.message)?;
         assert!(events.is_empty(), "no feeds, no events");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn aggregated_search_skips_paused_feeds() -> TestResult {
+        let db = Db::open_in_memory().await?;
+
+        let mut paused_server = mockito::Server::new_async().await;
+        let paused_mock = paused_server
+            .mock("GET", "/search")
+            .with_body("1")
+            .expect(0)
+            .create();
+        let mut active_server = mockito::Server::new_async().await;
+        let active_mock = active_server
+            .mock("GET", "/search")
+            .with_body("1")
+            .expect(1)
+            .create();
+
+        seed_feed(
+            &db,
+            "feed-paused",
+            "Feed Paused",
+            &paused_server.url(),
+            fixture_script("feed-paused", "Feed Paused", &paused_server.url()),
+        )
+        .await?;
+        seed_feed(
+            &db,
+            "feed-active",
+            "Feed Active",
+            &active_server.url(),
+            fixture_script("feed-active", "Feed Active", &active_server.url()),
+        )
+        .await?;
+        db.write(|repo| repo.set_feed_enabled("feed-paused", false))
+            .await?;
+
+        let mut feed_addr = spawn_feed_actor(db).await?;
+        let stream = feed_addr
+            .send(OpenAggregatedSearchStream {
+                keyword: "kw".to_owned(),
+            })
+            .await
+            .map_err(|e| format!("messaging: {e}"))?
+            .map_err(|e| format!("open: {}", e.message))?;
+
+        let events = collect(stream).await.map_err(|e| e.message)?;
+
+        let sources: Vec<&str> = events
+            .iter()
+            .filter_map(|event| match event {
+                AggregatedSearchEvent::Item { feed_id, .. } => Some(feed_id.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            sources,
+            ["feed-active"],
+            "only the active feed contributes"
+        );
+        assert_eq!(
+            events.len(),
+            1,
+            "the paused feed produces neither items nor errors"
+        );
+        paused_mock.assert();
+        active_mock.assert();
         Ok(())
     }
 

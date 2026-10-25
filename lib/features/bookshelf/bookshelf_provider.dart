@@ -114,6 +114,25 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     }
   }
 
+  /// Drop every locally cached shelf item owned by a deleted feed.
+  ///
+  /// The database removes these rows through `ON DELETE CASCADE`; this keeps
+  /// the long-lived bookshelf tab in sync without waiting for another load.
+  void removeFeed(String feedId) {
+    final items = state.items
+        .where((item) => item.feedId != feedId)
+        .toList(growable: false);
+    if (items.length == state.items.length) return;
+
+    final activeItemBelongsToFeed = state.items.any(
+      (item) => item.feedId == feedId && item.stableId == state.activeItemId,
+    );
+    state = state.copyWith(
+      items: items,
+      activeItemId: activeItemBelongsToFeed ? () => null : null,
+    );
+  }
+
   Future<BookshelfOperationOutcome> add({
     required String feedId,
     required String sourceBookId,
@@ -135,14 +154,16 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     state = state.copyWith(activeItemId: () => itemId, error: () => null);
 
     try {
-      final outcome = await ref.read(feedServiceProvider).addToBookshelf(
-        feedId: feedId,
-        sourceBookId: sourceBookId,
-        title: title,
-        author: author,
-        coverUrl: coverUrl,
-        description: description,
-      );
+      final outcome = await ref
+          .read(feedServiceProvider)
+          .addToBookshelf(
+            feedId: feedId,
+            sourceBookId: sourceBookId,
+            title: title,
+            author: author,
+            coverUrl: coverUrl,
+            description: description,
+          );
       await load();
       return outcome;
     } finally {
@@ -169,10 +190,9 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     state = state.copyWith(activeItemId: () => itemId, error: () => null);
 
     try {
-      final outcome = await ref.read(feedServiceProvider).removeFromBookshelf(
-        feedId: feedId,
-        sourceBookId: sourceBookId,
-      );
+      final outcome = await ref
+          .read(feedServiceProvider)
+          .removeFromBookshelf(feedId: feedId, sourceBookId: sourceBookId);
       await load();
       return outcome;
     } finally {
@@ -232,6 +252,8 @@ class BookshelfUpdatesState {
 }
 
 class BookshelfUpdatesNotifier extends Notifier<BookshelfUpdatesState> {
+  int _generation = 0;
+
   @override
   BookshelfUpdatesState build() => const BookshelfUpdatesState();
 
@@ -239,6 +261,7 @@ class BookshelfUpdatesNotifier extends Notifier<BookshelfUpdatesState> {
   /// as each book completes. Running checks are not re-entrant.
   Future<void> check() async {
     if (state.isChecking) return;
+    final generation = ++_generation;
     state = const BookshelfUpdatesState(isChecking: true);
 
     final badges = <String, int>{};
@@ -248,6 +271,7 @@ class BookshelfUpdatesNotifier extends Notifier<BookshelfUpdatesState> {
     try {
       await for (final update
           in ref.read(feedServiceProvider).bookshelfUpdates()) {
+        if (generation != _generation) return;
         final id = '${update.feedId}:${update.sourceBookId}';
         if (update.error != null) {
           failed[id] = update.error!;
@@ -257,8 +281,11 @@ class BookshelfUpdatesNotifier extends Notifier<BookshelfUpdatesState> {
         state = state.copyWith(newChaptersByBook: {...badges});
       }
     } catch (e) {
+      if (generation != _generation) return;
       fatal = e;
     }
+
+    if (generation != _generation) return;
 
     state = BookshelfUpdatesState(
       isChecking: false,
@@ -279,6 +306,26 @@ class BookshelfUpdatesNotifier extends Notifier<BookshelfUpdatesState> {
   /// Drop a book's badge when it is removed from the shelf.
   void remove(String feedId, String sourceBookId) =>
       clear(feedId, sourceBookId);
+
+  /// Drop badges and failures owned by a deleted feed.
+  ///
+  /// Incrementing [_generation] also prevents an update check that was
+  /// already in flight from restoring stale entries after the deletion.
+  void removeFeed(String feedId) {
+    _generation++;
+    final prefix = '$feedId:';
+    state = BookshelfUpdatesState(
+      newChaptersByBook: Map.unmodifiable(
+        Map.of(state.newChaptersByBook)
+          ..removeWhere((id, _) => id.startsWith(prefix)),
+      ),
+      failedBooks: Map.unmodifiable(
+        Map.of(state.failedBooks)
+          ..removeWhere((id, _) => id.startsWith(prefix)),
+      ),
+      lastError: state.lastError,
+    );
+  }
 }
 
 final bookshelfUpdatesProvider =

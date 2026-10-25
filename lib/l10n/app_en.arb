@@ -439,6 +439,8 @@
   },
 
   "feedDeleteError": "Failed to delete feed",
+  "feedToggleError": "Failed to switch feed",
+  "@feedToggleError": { "description": "Pausing/resuming a feed failed" },
   "@feedDeleteError": { "description": "Snackbar prefix for feed deletion failure" },
 
   "feedDeleteBusy": "Another feed operation is in progress",

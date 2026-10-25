@@ -91,6 +91,11 @@ pub struct RemoveFeed {
     pub feed_id: String,
 }
 
+pub struct SetFeedEnabled {
+    pub feed_id: String,
+    pub enabled: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Pending installs
 // ---------------------------------------------------------------------------
@@ -353,6 +358,27 @@ impl RegistryActor {
         self.load_errors.remove(&feed_id);
         Ok(())
     }
+
+    /// Pause or resume a feed. The compiled feed and its cached state are
+    /// untouched — enabling only re-includes the feed in aggregated search
+    /// and background update checks.
+    async fn do_set_enabled(&self, feed_id: String, enabled: bool) -> Result<(), BridgeError> {
+        tracing::debug!(feed_id = %feed_id, enabled, "set feed enabled");
+        let db = self.require_db()?;
+
+        let updated = db
+            .write({
+                let feed_id = feed_id.clone();
+                move |repo| repo.set_feed_enabled(&feed_id, enabled)
+            })
+            .await?;
+        if !updated {
+            return Err(BridgeError::from(langhuan::error::Error::feed_not_found(
+                feed_id,
+            )));
+        }
+        Ok(())
+    }
 }
 
 /// Compare the installed version with the previewed one.
@@ -379,6 +405,7 @@ impl From<FeedRow> for FeedMetaItem {
             name: row.name,
             version: row.version,
             author: row.author,
+            enabled: row.enabled,
             error: None,
         }
     }
@@ -476,6 +503,15 @@ impl Handler<RemoveFeed> for RegistryActor {
 
     async fn handle(&mut self, msg: RemoveFeed, _: &Context<Self>) -> Self::Result {
         self.do_remove(msg.feed_id).await
+    }
+}
+
+#[async_trait]
+impl Handler<SetFeedEnabled> for RegistryActor {
+    type Result = Result<(), BridgeError>;
+
+    async fn handle(&mut self, msg: SetFeedEnabled, _: &Context<Self>) -> Self::Result {
+        self.do_set_enabled(msg.feed_id, msg.enabled).await
     }
 }
 

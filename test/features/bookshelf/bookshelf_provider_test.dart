@@ -1,8 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:langhuan/features/bookshelf/bookshelf_provider.dart';
+import 'package:langhuan/features/feeds/feed_providers.dart';
+import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/rust_init.dart';
 import 'dart:async';
+
+import '../feeds/fake_feed_service.dart';
 
 void main() {
   test('bookshelf provider stays loading while app data bootstraps', () {
@@ -45,5 +49,51 @@ void main() {
     expect(state.error, isA<BookshelfError>());
     final error = state.error as BookshelfError;
     expect(error.type, BookshelfErrorType.loadFailed);
+  });
+
+  test('removeFeed immediately drops every item from that feed', () async {
+    const items = [
+      BookshelfItemModel(
+        feedId: 'removed',
+        sourceBookId: 'book-a',
+        title: 'A',
+        author: 'Author',
+        addedAtUnixMs: 1,
+      ),
+      BookshelfItemModel(
+        feedId: 'kept',
+        sourceBookId: 'book-b',
+        title: 'B',
+        author: 'Author',
+        addedAtUnixMs: 2,
+      ),
+      BookshelfItemModel(
+        feedId: 'removed',
+        sourceBookId: 'book-c',
+        title: 'C',
+        author: 'Author',
+        addedAtUnixMs: 3,
+      ),
+    ];
+    final container = ProviderContainer(
+      overrides: [
+        feedServiceProvider.overrideWithValue(
+          FakeFeedService(listBookshelfHandler: () async => items),
+        ),
+        appDataDirectorySetProvider.overrideWith(
+          (ref) async => const AppDataDirectoryResult(feedCount: 2),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(appDataDirectorySetProvider.future);
+    await container.read(bookshelfProvider.notifier).load();
+    container.read(bookshelfProvider.notifier).removeFeed('removed');
+
+    expect(
+      container.read(bookshelfProvider).items.map((item) => item.stableId),
+      ['kept:book-b'],
+    );
   });
 }

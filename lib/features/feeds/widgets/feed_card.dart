@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/utils/errors.dart';
+import '../../../shared/utils/snackbars.dart';
 import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart';
 import '../feed_providers.dart';
@@ -24,6 +26,8 @@ class FeedCard extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final hasError = feed.error != null;
     final authAsync = ref.watch(feedAuthStatusProvider(feed.id));
+    // Paused feeds keep their data but step back visually.
+    final contentOpacity = feed.enabled ? 1.0 : 0.55;
 
     return Material(
       color: theme.colorScheme.surfaceContainer,
@@ -36,22 +40,25 @@ class FeedCard extends ConsumerWidget {
           child: Row(
             children: [
               // ── Avatar (circle per spec §4.3) ──────────────────────
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: hasError
-                      ? theme.colorScheme.errorContainer
-                      : theme.colorScheme.primaryContainer,
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  feed.name.isNotEmpty ? feed.name[0].toUpperCase() : '?',
-                  style: theme.textTheme.titleMedium?.copyWith(
+              Opacity(
+                opacity: contentOpacity,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
                     color: hasError
-                        ? theme.colorScheme.onErrorContainer
-                        : theme.colorScheme.onPrimaryContainer,
+                        ? theme.colorScheme.errorContainer
+                        : theme.colorScheme.primaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    feed.name.isNotEmpty ? feed.name[0].toUpperCase() : '?',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: hasError
+                          ? theme.colorScheme.onErrorContainer
+                          : theme.colorScheme.onPrimaryContainer,
+                    ),
                   ),
                 ),
               ),
@@ -59,7 +66,9 @@ class FeedCard extends ConsumerWidget {
 
               // ── Text ───────────────────────────────────────────────
               Expanded(
-                child: Column(
+                child: Opacity(
+                  opacity: contentOpacity,
+                  child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
@@ -87,28 +96,50 @@ class FeedCard extends ConsumerWidget {
                       ],
                     ),
                   ],
+                  ),
                 ),
               ),
 
               // ── Trailing ───────────────────────────────────────────
               if (isDeleting)
                 const LanghuanSpinner(size: 20)
-              else if (hasError)
-                Icon(
-                  Icons.error_outline,
-                  size: 20,
-                  color: theme.colorScheme.error,
-                )
-              else
-                Icon(
-                  Icons.chevron_right,
-                  size: 20,
-                  color: theme.colorScheme.onSurfaceVariant.withAlpha(120),
+              else ...[
+                // Pause/resume: paused feeds stay installed and searchable
+                // by explicit choice, but leave aggregated search and
+                // background update checks.
+                Switch(
+                  value: feed.enabled,
+                  onChanged: (value) => _handleToggle(context, ref, value),
                 ),
+                if (hasError)
+                  Icon(
+                    Icons.error_outline,
+                    size: 20,
+                    color: theme.colorScheme.error,
+                  )
+                else
+                  Icon(
+                    Icons.chevron_right,
+                    size: 20,
+                    color: theme.colorScheme.onSurfaceVariant.withAlpha(120),
+                  ),
+              ],
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _handleToggle(BuildContext context, WidgetRef ref, bool value) async {
+    final l10n = AppLocalizations.of(context);
+    final error = await ref
+        .read(feedListProvider.notifier)
+        .setFeedEnabled(feedId: feed.id, enabled: value);
+    if (error == null || !context.mounted) return;
+    showErrorSnack(
+      ScaffoldMessenger.of(context),
+      '${l10n.feedToggleError}: ${normalizeErrorMessage(error)}',
     );
   }
 

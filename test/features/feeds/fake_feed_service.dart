@@ -10,8 +10,10 @@ class FakeFeedService implements FeedService {
     this.searchHandler,
     this.searchAllHandler,
     this.bookshelfUpdatesHandler,
+    this.listBookshelfHandler,
     this.listFeedsHandler,
     this.removeFeedHandler,
+    this.setFeedEnabledHandler,
     this.listBookmarksHandler,
     this.chaptersHandler,
     this.paragraphsHandler,
@@ -26,6 +28,7 @@ class FakeFeedService implements FeedService {
   final Stream<AggregatedSearchEventModel> Function(String keyword)?
   searchAllHandler;
   final Stream<BookshelfUpdateModel> Function()? bookshelfUpdatesHandler;
+  final Future<List<BookshelfItemModel>> Function()? listBookshelfHandler;
   final Future<List<FeedMetaItem>> Function()? listFeedsHandler;
   final Future<void> Function(String feedId)? removeFeedHandler;
 
@@ -60,6 +63,15 @@ class FakeFeedService implements FeedService {
   }
 
   @override
+  Future<List<BookshelfItemModel>> listBookshelf() {
+    final handler = listBookshelfHandler;
+    if (handler == null) {
+      throw UnimplementedError('listBookshelf not configured for this test');
+    }
+    return handler();
+  }
+
+  @override
   Future<List<FeedMetaItem>> listFeeds() {
     final handler = listFeedsHandler;
     if (handler == null) {
@@ -75,6 +87,21 @@ class FakeFeedService implements FeedService {
       throw UnimplementedError('removeFeed not configured for this test');
     }
     return handler(feedId);
+  }
+
+  final Future<void> Function(String feedId, bool enabled)?
+  setFeedEnabledHandler;
+
+  @override
+  Future<void> setFeedEnabled({
+    required String feedId,
+    required bool enabled,
+  }) {
+    final handler = setFeedEnabledHandler;
+    if (handler == null) {
+      throw UnimplementedError('setFeedEnabled not configured for this test');
+    }
+    return handler(feedId, enabled);
   }
 
   final Future<List<BookmarkModel>> Function(String feedId, String bookId)?
@@ -141,7 +168,9 @@ class FakeFeedService implements FeedService {
   }) {
     final handler = markBookshelfSeenHandler;
     if (handler == null) {
-      throw UnimplementedError('markBookshelfSeen not configured for this test');
+      throw UnimplementedError(
+        'markBookshelfSeen not configured for this test',
+      );
     }
     return handler(feedId, sourceBookId, chapterCount);
   }
@@ -187,13 +216,7 @@ class FakeFeedService implements FeedService {
         'setReadingProgress not configured for this test',
       );
     }
-    return handler(
-      feedId,
-      bookId,
-      chapterId,
-      paragraphId,
-      paragraphCharOffset,
-    );
+    return handler(feedId, bookId, chapterId, paragraphId, paragraphCharOffset);
   }
 
   final Future<BookInfoModel> Function(String feedId, String bookId)?

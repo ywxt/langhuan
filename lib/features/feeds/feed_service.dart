@@ -622,6 +622,16 @@ class FeedService {
     return rust_registry.listFeeds();
   }
 
+  /// Pause (`enabled = false`) or resume a feed. Paused feeds are excluded
+  /// from aggregated search and bookshelf update checks; explicit
+  /// single-feed actions keep working.
+  Future<void> setFeedEnabled({
+    required String feedId,
+    required bool enabled,
+  }) {
+    return rust_registry.setFeedEnabled(feedId: feedId, enabled: enabled);
+  }
+
   // -------------------------------------------------------------------------
   // Feed install
   // -------------------------------------------------------------------------

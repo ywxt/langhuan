@@ -16,6 +16,9 @@ pub struct FeedRow {
     pub content_hash: String,
     pub installed_at_ms: i64,
     pub updated_at_ms: i64,
+    /// Paused feeds are excluded from aggregated search and background
+    /// update checks; explicit per-feed actions still work.
+    pub enabled: bool,
 }
 
 /// A script-history row (newest first).
@@ -108,7 +111,7 @@ impl Repo<'_> {
     /// List all registered feeds, oldest install first.
     pub fn list_feeds(&self) -> Result<Vec<FeedRow>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms \
+            "SELECT id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms, enabled \
              FROM feeds ORDER BY installed_at_ms, id",
         )?;
         let rows = stmt
@@ -120,7 +123,7 @@ impl Repo<'_> {
     pub fn get_feed(&self, id: &str) -> Result<Option<FeedRow>> {
         super::maybe_row(
             self.conn,
-            "SELECT id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms \
+            "SELECT id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms, enabled \
              FROM feeds WHERE id = ?1",
             &[&id],
             map_feed_row,
@@ -135,14 +138,14 @@ impl Repo<'_> {
     /// startup.
     pub fn list_feeds_with_scripts(&self) -> Result<Vec<(FeedRow, Option<String>)>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT f.id, f.name, f.version, f.author, f.source_url, f.content_hash, f.installed_at_ms, f.updated_at_ms, s.script \
+            "SELECT f.id, f.name, f.version, f.author, f.source_url, f.content_hash, f.installed_at_ms, f.updated_at_ms, f.enabled, s.script \
              FROM feeds f \
              LEFT JOIN feed_scripts s ON s.feed_id = f.id AND s.version = f.version \
              ORDER BY f.installed_at_ms, f.id",
         )?;
         let rows = stmt
             .query_map([], |row| {
-                Ok((map_feed_row(row)?, row.get::<_, Option<String>>(8)?))
+                Ok((map_feed_row(row)?, row.get::<_, Option<String>>(9)?))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
@@ -171,6 +174,28 @@ impl Repo<'_> {
             .prepare_cached("DELETE FROM feeds WHERE id = ?1")?
             .execute([feed_id])?;
         Ok(deleted > 0)
+    }
+
+    /// Pause (`enabled = false`) or resume a feed. The row is untouched
+    /// otherwise; upgrades and script-history changes never reset it.
+    ///
+    /// Returns `false` when the feed id is unknown.
+    pub fn set_feed_enabled(&self, feed_id: &str, enabled: bool) -> Result<bool> {
+        let updated = self
+            .conn
+            .prepare_cached("UPDATE feeds SET enabled = ?2 WHERE id = ?1")?
+            .execute(tokio_rusqlite::params![feed_id, enabled])?;
+        Ok(updated > 0)
+    }
+
+    /// Ids of all paused feeds (empty when everything is enabled).
+    pub fn disabled_feed_ids(&self) -> Result<Vec<String>> {
+        let mut stmt =
+            self.conn.prepare_cached("SELECT id FROM feeds WHERE enabled = 0 ORDER BY id")?;
+        let ids = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(ids)
     }
 
     /// Script history for `feed_id`, newest first.
@@ -205,6 +230,7 @@ fn map_feed_row(
         content_hash: row.get(5)?,
         installed_at_ms: row.get(6)?,
         updated_at_ms: row.get(7)?,
+        enabled: row.get::<_, i64>(8)? != 0,
     })
 }
 
@@ -278,5 +304,51 @@ mod tests {
     fn delete_feed_returns_false_when_missing() {
         let db = TestDb::new();
         assert!(!db.repo().delete_feed("nope").expect("delete"));
+    }
+
+    #[test]
+    fn feeds_default_to_enabled_and_toggles_persist() {
+        let db = TestDb::new();
+        let repo = db.repo();
+        repo.upsert_feed(&feed_meta("f1", "1.0.0"), None, "h", 1)
+            .expect("install");
+
+        assert!(repo.get_feed("f1").expect("get").unwrap().enabled);
+
+        assert!(repo.set_feed_enabled("f1", false).expect("disable"));
+        assert!(!repo.get_feed("f1").expect("get").unwrap().enabled);
+        assert_eq!(
+            repo.disabled_feed_ids().expect("disabled ids"),
+            vec!["f1".to_owned()]
+        );
+
+        assert!(repo.set_feed_enabled("f1", true).expect("enable"));
+        assert!(repo.get_feed("f1").expect("get").unwrap().enabled);
+        assert!(repo.disabled_feed_ids().expect("disabled ids").is_empty());
+    }
+
+    #[test]
+    fn upgrades_do_not_reset_enabled() {
+        let db = TestDb::new();
+        let repo = db.repo();
+        repo.upsert_feed(&feed_meta("f1", "1.0.0"), None, "h1", 1)
+            .expect("install");
+        repo.set_feed_enabled("f1", false).expect("disable");
+
+        repo.upsert_feed(&feed_meta("f1", "1.1.0"), None, "h2", 2)
+            .expect("upgrade");
+
+        let row = repo.get_feed("f1").expect("get").unwrap();
+        assert_eq!(row.version, "1.1.0");
+        assert!(!row.enabled, "upgrades must not re-enable a paused feed");
+    }
+
+    #[test]
+    fn set_feed_enabled_returns_false_when_missing() {
+        let db = TestDb::new();
+        assert!(!db
+            .repo()
+            .set_feed_enabled("nope", false)
+            .expect("disable"));
     }
 }

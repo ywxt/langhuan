@@ -1,7 +1,9 @@
 use super::types::{BridgeError, FeedMetaItem, FeedPreviewInfo};
 use crate::actors::{
     addresses,
-    registry_actor::{InstallFeed, ListFeeds, PreviewFeedFromFile, PreviewFeedFromUrl, RemoveFeed},
+    registry_actor::{
+        InstallFeed, ListFeeds, PreviewFeedFromFile, PreviewFeedFromUrl, RemoveFeed, SetFeedEnabled,
+    },
 };
 
 pub async fn list_feeds() -> Result<Vec<FeedMetaItem>, BridgeError> {
@@ -38,5 +40,16 @@ pub async fn remove_feed(feed_id: String) -> Result<(), BridgeError> {
         .registry
         .clone()
         .send(RemoveFeed { feed_id })
+        .await?
+}
+
+/// Pause (`enabled = false`) or resume a feed. A paused feed is excluded
+/// from aggregated search and bookshelf update checks; its shelf, progress
+/// and cache stay intact, and explicit single-feed actions keep working.
+pub async fn set_feed_enabled(feed_id: String, enabled: bool) -> Result<(), BridgeError> {
+    addresses()?
+        .registry
+        .clone()
+        .send(SetFeedEnabled { feed_id, enabled })
         .await?
 }

@@ -437,6 +437,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get feedDeleteError => 'Failed to delete feed';
 
   @override
+  String get feedToggleError => 'Failed to switch feed';
+
+  @override
   String get feedDeleteBusy => 'Another feed operation is in progress';
 
   @override

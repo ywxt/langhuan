@@ -172,10 +172,21 @@ const MIGRATIONS: &[Migration] = &[
             ADD COLUMN last_seen_chapters INTEGER NOT NULL DEFAULT -1;
     "#,
     },
+    Migration {
+        version: 4,
+        sql: r#"
+        -- Feed enable/disable --------------------------------------------------
+        -- 0 = paused: excluded from aggregated search and bookshelf update
+        -- checks, but its shelf, progress and cache stay intact and explicit
+        -- actions (single-feed search, reading) keep working.
+        ALTER TABLE feeds
+            ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
+    "#,
+    },
 ];
 
 /// The schema version this build understands (the last migration's version).
-pub(crate) const CURRENT_VERSION: i64 = 3;
+pub(crate) const CURRENT_VERSION: i64 = 4;
 
 /// Apply all pending migrations in order.
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {

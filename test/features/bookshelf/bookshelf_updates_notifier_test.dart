@@ -51,28 +51,31 @@ void main() {
       expect(state.failedBooks, {'f1:b3': 'source unavailable'});
     });
 
-    test('a fatal stream failure preserves badges and records lastError', () async {
-      final c = container(
-        FakeFeedService(
-          bookshelfUpdatesHandler: () async* {
-            yield const BookshelfUpdateModel(
-              feedId: 'f1',
-              sourceBookId: 'b1',
-              newChapters: 5,
-            );
-            throw StateError('boom');
-          },
-        ),
-      );
+    test(
+      'a fatal stream failure preserves badges and records lastError',
+      () async {
+        final c = container(
+          FakeFeedService(
+            bookshelfUpdatesHandler: () async* {
+              yield const BookshelfUpdateModel(
+                feedId: 'f1',
+                sourceBookId: 'b1',
+                newChapters: 5,
+              );
+              throw StateError('boom');
+            },
+          ),
+        );
 
-      await c.read(bookshelfUpdatesProvider.notifier).check();
+        await c.read(bookshelfUpdatesProvider.notifier).check();
 
-      final state = c.read(bookshelfUpdatesProvider);
-      expect(state.isChecking, isFalse);
-      expect(state.lastError, isA<StateError>());
-      expect(state.newChaptersByBook, {'f1:b1': 5});
-      expect(state.failedBooks, isEmpty);
-    });
+        final state = c.read(bookshelfUpdatesProvider);
+        expect(state.isChecking, isFalse);
+        expect(state.lastError, isA<StateError>());
+        expect(state.newChaptersByBook, {'f1:b1': 5});
+        expect(state.failedBooks, isEmpty);
+      },
+    );
 
     test('check is not re-entrant', () async {
       final controller = StreamController<BookshelfUpdateModel>();
@@ -98,7 +101,11 @@ void main() {
       expect(calls, 1, reason: 'the second call returns immediately');
 
       controller.add(
-        const BookshelfUpdateModel(feedId: 'f1', sourceBookId: 'b1', newChapters: 1),
+        const BookshelfUpdateModel(
+          feedId: 'f1',
+          sourceBookId: 'b1',
+          newChapters: 1,
+        ),
       );
       await controller.close();
       await first;
@@ -109,8 +116,16 @@ void main() {
       final c = container(
         FakeFeedService(
           bookshelfUpdatesHandler: () => Stream.fromIterable(const [
-            BookshelfUpdateModel(feedId: 'f1', sourceBookId: 'b1', newChapters: 2),
-            BookshelfUpdateModel(feedId: 'f1', sourceBookId: 'b2', newChapters: 7),
+            BookshelfUpdateModel(
+              feedId: 'f1',
+              sourceBookId: 'b1',
+              newChapters: 2,
+            ),
+            BookshelfUpdateModel(
+              feedId: 'f1',
+              sourceBookId: 'b2',
+              newChapters: 7,
+            ),
           ]),
         ),
       );
@@ -122,14 +137,45 @@ void main() {
       });
 
       notifier.clear('f1', 'b1');
-      expect(
-        c.read(bookshelfUpdatesProvider).newChaptersByBook,
-        {'f1:b2': 7},
-        reason: 'clear removes exactly the seen book',
-      );
+      expect(c.read(bookshelfUpdatesProvider).newChaptersByBook, {
+        'f1:b2': 7,
+      }, reason: 'clear removes exactly the seen book');
 
       notifier.remove('f1', 'b2');
       expect(c.read(bookshelfUpdatesProvider).newChaptersByBook, isEmpty);
+    });
+
+    test('removeFeed clears only that feed badges and failures', () async {
+      final c = container(
+        FakeFeedService(
+          bookshelfUpdatesHandler: () => Stream.fromIterable(const [
+            BookshelfUpdateModel(
+              feedId: 'removed',
+              sourceBookId: 'b1',
+              newChapters: 2,
+            ),
+            BookshelfUpdateModel(
+              feedId: 'removed',
+              sourceBookId: 'b2',
+              newChapters: 0,
+              error: 'offline',
+            ),
+            BookshelfUpdateModel(
+              feedId: 'kept',
+              sourceBookId: 'b3',
+              newChapters: 4,
+            ),
+          ]),
+        ),
+      );
+      final notifier = c.read(bookshelfUpdatesProvider.notifier);
+      await notifier.check();
+
+      notifier.removeFeed('removed');
+
+      final state = c.read(bookshelfUpdatesProvider);
+      expect(state.newChaptersByBook, {'kept:b3': 4});
+      expect(state.failedBooks, isEmpty);
     });
   });
 }

@@ -433,6 +433,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedDeleteError => '刪除書源失敗';
 
   @override
+  String get feedToggleError => '切換書源狀態失敗';
+
+  @override
   String get feedDeleteBusy => '目前有其他書源操作進行中';
 
   @override

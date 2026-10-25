@@ -6,8 +6,8 @@ import 'package:langhuan/src/rust/api/types.dart';
 
 import 'fake_feed_service.dart';
 
-const _feedA = FeedMetaItem(id: 'feed-a', name: 'Source A', version: '1');
-const _feedB = FeedMetaItem(id: 'feed-b', name: 'Source B', version: '1');
+const _feedA = FeedMetaItem(id: 'feed-a', name: 'Source A', version: '1', enabled: true);
+const _feedB = FeedMetaItem(id: 'feed-b', name: 'Source B', version: '1', enabled: true);
 
 void main() {
   ProviderContainer container(FakeFeedService service) {
@@ -97,6 +97,7 @@ void main() {
           .read(feedListProvider.notifier)
           .removeFeed(feedId: 'feed-b');
 
+
       expect(error, isNull);
       expect(c.read(selectedFeedProvider), isA<FeedSelectionOne>());
     });
@@ -120,6 +121,57 @@ void main() {
         ['feed-a', 'feed-b'],
       );
       expect(c.read(feedListProvider).removingFeedId, isNull);
+    });
+
+    test('setFeedEnabled flips the item optimistically', () async {
+      final toggled = <(String, bool)>[];
+      final c = container(
+        FakeFeedService(
+          listFeedsHandler: () async => [_feedA, _feedB],
+          setFeedEnabledHandler: (feedId, enabled) async {
+            toggled.add((feedId, enabled));
+          },
+        ),
+      );
+      await loadFeeds(c);
+      // The notifier's build schedules its own microtask load; let it
+      // settle so it cannot clobber the optimistic flip below.
+      await Future<void>.delayed(Duration.zero);
+
+      final error = await c
+          .read(feedListProvider.notifier)
+          .setFeedEnabled(feedId: 'feed-a', enabled: false);
+
+      expect(error, isNull);
+      expect(toggled, [('feed-a', false)]);
+      final items = c.read(feedListProvider).items;
+      expect(items.first.id, 'feed-a');
+      expect(items.first.enabled, false, reason: 'flipped in place');
+      expect(items.last.enabled, true, reason: 'sibling untouched');
+    });
+
+    test('setFeedEnabled reverts the item when the backend fails', () async {
+      final c = container(
+        FakeFeedService(
+          listFeedsHandler: () async => [_feedA, _feedB],
+          setFeedEnabledHandler: (feedId, enabled) async =>
+              throw StateError('locked'),
+        ),
+      );
+      await loadFeeds(c);
+      // Same double-load drain as above.
+      await Future<void>.delayed(Duration.zero);
+
+      final error = await c
+          .read(feedListProvider.notifier)
+          .setFeedEnabled(feedId: 'feed-a', enabled: false);
+
+      expect(error, isNotNull);
+      expect(
+        c.read(feedListProvider).items.every((feed) => feed.enabled),
+        isTrue,
+        reason: 'the optimistic flip is rolled back',
+      );
     });
   });
 }

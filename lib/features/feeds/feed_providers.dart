@@ -4,6 +4,18 @@ import '../../rust_init.dart';
 import '../../src/rust/api/types.dart';
 import 'feed_service.dart';
 
+/// FRB generates no `copyWith`; the notifier needs to flip `enabled`.
+extension FeedMetaEnabled on FeedMetaItem {
+  FeedMetaItem withEnabled(bool value) => FeedMetaItem(
+        id: id,
+        name: name,
+        version: version,
+        author: author,
+        enabled: value,
+        error: error,
+      );
+}
+
 // ---------------------------------------------------------------------------
 // Service injection
 // ---------------------------------------------------------------------------
@@ -132,6 +144,31 @@ class FeedListNotifier extends Notifier<FeedListState> {
       if (state.removingFeedId == feedId) {
         state = state.copyWith(removingFeedId: () => null);
       }
+    }
+  }
+
+  /// Pause or resume a feed, flipping the item optimistically and reverting
+  /// when the backend rejects it.
+  Future<String?> setFeedEnabled({
+    required String feedId,
+    required bool enabled,
+  }) async {
+    final previous = state.items;
+    state = state.copyWith(
+      items: [
+        for (final item in previous)
+          if (item.id == feedId) item.withEnabled(enabled) else item,
+      ],
+    );
+
+    try {
+      await ref
+          .read(feedServiceProvider)
+          .setFeedEnabled(feedId: feedId, enabled: enabled);
+      return null;
+    } catch (e) {
+      state = state.copyWith(items: previous);
+      return e.toString();
     }
   }
 }

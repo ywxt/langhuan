@@ -95,8 +95,15 @@ impl BookshelfUpdatesStream {
 /// with `error` set — the check continues with the remaining books.
 pub async fn open_bookshelf_updates_stream() -> Result<BookshelfUpdatesStream, BridgeError> {
     // Snapshot the shelf before spawning: each result below is paired with
-    // the last-seen count from this same snapshot.
-    let items = hub_db()?.call(|repo| repo.shelf_items()).await?;
+    // the last-seen count from this same snapshot. Books from paused feeds
+    // are skipped — the check resumes for them when the feed is re-enabled.
+    let (items, disabled_feeds) = hub_db()?
+        .call(|repo| Ok((repo.shelf_items()?, repo.disabled_feed_ids()?)))
+        .await?;
+    let items: Vec<_> = items
+        .into_iter()
+        .filter(|item| !disabled_feeds.contains(&item.feed_id))
+        .collect();
 
     let mut feed_addr = addresses()?.feed.clone();
     let db = hub_db()?;

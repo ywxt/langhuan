@@ -145,6 +145,7 @@
   "feedDeleteCascadeWarning": "這也會刪除該書源的快取書籍、封面、閱讀進度與書籤。",
   "feedDeleteSuccess": "已刪除 {feedName}",
   "feedDeleteError": "刪除書源失敗",
+  "feedToggleError": "切換書源狀態失敗",
   "feedDeleteBusy": "目前有其他書源操作進行中",
   "feedDeleteQueued": "「{feedName}」將被刪除",
   "feedDeleteUndo": "撤銷",

@@ -114,6 +114,9 @@ pub struct FeedMetaItem {
     pub name: String,
     pub version: String,
     pub author: Option<String>,
+    /// Paused feeds are excluded from aggregated search and background
+    /// update checks, but explicit per-feed actions still work.
+    pub enabled: bool,
     pub error: Option<String>,
 }
 

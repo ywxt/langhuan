@@ -878,6 +878,12 @@ abstract class AppLocalizations {
   /// **'Failed to delete feed'**
   String get feedDeleteError;
 
+  /// Pausing/resuming a feed failed
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to switch feed'**
+  String get feedToggleError;
+
   /// Snackbar when user tries delete while another delete is running
   ///
   /// In en, this message translates to:

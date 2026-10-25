@@ -16,6 +16,7 @@ import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/loading.dart';
 import '../../src/rust/api/types.dart';
+import '../bookshelf/bookshelf_provider.dart';
 import 'add_feed_sheet.dart';
 import 'feed_providers.dart';
 import 'widgets/feed_card.dart';
@@ -289,6 +290,13 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
     final error = await ref
         .read(feedListProvider.notifier)
         .removeFeed(feedId: feed.id);
+
+    if (error == null) {
+      // The database cascades the deletion. Mirror it in the long-lived
+      // bookshelf branch even when this page is no longer mounted.
+      ref.read(bookshelfProvider.notifier).removeFeed(feed.id);
+      ref.read(bookshelfUpdatesProvider.notifier).removeFeed(feed.id);
+    }
 
     if (!mounted) return;
 
