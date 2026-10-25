@@ -469,6 +469,53 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
       return;
     }
 
+    final bookState = ref.read(bookInfoProvider);
+    final hasCurrentBook =
+        bookState.feedId == widget.feedId &&
+        bookState.bookId == widget.bookId;
+    final title =
+        hasCurrentBook && bookState.book != null
+            ? bookState.book!.title
+            : widget.initialBook?.title ?? widget.bookId;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: Text(l10n.bookshelfDeleteConfirmTitle),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l10n.bookshelfDeleteConfirmMessage(title)),
+              const SizedBox(height: LanghuanTheme.spaceSm),
+              Text(
+                l10n.bookshelfDeleteCascadeWarning,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(l10n.bookshelfDeleteCancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.error,
+                foregroundColor: theme.colorScheme.onError,
+              ),
+              child: Text(l10n.bookshelfDeleteConfirm),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !context.mounted) return;
+
     final outcome = await ref
         .read(bookshelfProvider.notifier)
         .remove(feedId: widget.feedId, sourceBookId: widget.bookId);

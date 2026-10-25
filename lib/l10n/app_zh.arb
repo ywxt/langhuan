@@ -23,6 +23,8 @@
   "bookshelfDeleteBook": "從書架刪除",
   "bookshelfDeleteConfirmTitle": "刪除書籍？",
   "bookshelfDeleteConfirmMessage": "確定要從書架刪除「{bookTitle}」嗎？",
+  "bookshelfDeleteCascadeWarning": "這也會刪除該書的快取章節、封面、閱讀進度與書籤。",
+  "@bookshelfDeleteCascadeWarning": { "description": "Warning below the book delete dialog body about cascading data removal" },
   "bookshelfDeleteCancel": "取消",
   "bookshelfDeleteConfirm": "刪除",
 

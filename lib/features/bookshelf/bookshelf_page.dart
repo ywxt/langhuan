@@ -236,20 +236,40 @@ class BookshelfPage extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.bookshelfDeleteConfirmTitle),
-        content: Text(l10n.bookshelfDeleteConfirmMessage(item.title)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(l10n.bookshelfDeleteCancel),
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: Text(l10n.bookshelfDeleteConfirmTitle),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l10n.bookshelfDeleteConfirmMessage(item.title)),
+              const SizedBox(height: LanghuanTheme.spaceSm),
+              Text(
+                l10n.bookshelfDeleteCascadeWarning,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(l10n.bookshelfDeleteConfirm),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(l10n.bookshelfDeleteCancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.error,
+                foregroundColor: theme.colorScheme.onError,
+              ),
+              child: Text(l10n.bookshelfDeleteConfirm),
+            ),
+          ],
+        );
+      },
     );
     if (confirmed != true || !context.mounted) return;
 

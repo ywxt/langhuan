@@ -32,7 +32,8 @@ const META_LAST_CLEANUP: &str = "last_cleanup_ms";
 pub struct MaintenanceOutcome {
     /// `true` when the run was skipped by the 24 h throttle.
     pub skipped: bool,
-    /// Rows deleted (cache rows, stale progress, pruned script versions).
+    /// Rows deleted (cache rows, stale progress and bookmarks, pruned
+    /// script versions).
     pub items_removed: u64,
     /// Cache payload bytes removed.
     pub bytes_freed: i64,
@@ -42,7 +43,8 @@ pub struct MaintenanceOutcome {
 
 /// Run the full maintenance pass.
 ///
-/// 1. Remove stale cache data and progress (unshelved, older than 15 days).
+/// 1. Remove stale cache data and user data — progress and bookmarks — for
+///    unshelved books (older than 15 days).
 /// 2. Prune script histories to [`SCRIPT_HISTORY_KEEP`] versions.
 /// 3. Evict least-recently-used unshelved books until under
 ///    [`MAX_CACHE_BYTES`], in chunks so the database thread stays responsive.

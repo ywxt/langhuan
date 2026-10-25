@@ -40,9 +40,9 @@ pub trait MaintenanceRepo {
 
     fn cache_stats(&self) -> Result<CacheStats>;
 
-    /// Delete cache rows for unprotected books that have not been used
-    /// within `cutoff_ms`, plus stale reading progress. Bookmarks are user
-    /// data and are never touched.
+    /// Delete cache rows and user data for unprotected books that have not
+    /// been used within `cutoff_ms`: chapter content, chapter lists,
+    /// covers, book rows, reading progress, and bookmarks.
     ///
     /// Returns the number of removed rows. `bytes_freed` is measured by the
     /// caller via [`MaintenanceRepo::cache_total_bytes`] before/after.
@@ -149,6 +149,10 @@ impl MaintenanceRepo for Connection {
             "DELETE FROM reading_progress WHERE updated_at_ms < ?1 AND NOT EXISTS ( \
                  SELECT 1 FROM bookshelf s \
                  WHERE s.feed_id = reading_progress.feed_id AND s.book_id = reading_progress.book_id)",
+            // Bookmarks — an unshelved book's data goes with the book
+            "DELETE FROM bookmarks WHERE created_at_ms < ?1 AND NOT EXISTS ( \
+                 SELECT 1 FROM bookshelf s \
+                 WHERE s.feed_id = bookmarks.feed_id AND s.book_id = bookmarks.book_id)",
         ];
 
         let mut removed = 0u64;
@@ -224,7 +228,9 @@ impl MaintenanceRepo for Connection {
 mod tests {
     use super::*;
     use crate::db::now_ms;
-    use crate::db::repo::{BookshelfRepo, CacheRepo, FeedsRepo, ProgressRepo};
+    use crate::db::repo::{
+        BookmarkRow, BookmarksRepo, BookshelfRepo, CacheRepo, FeedsRepo, ProgressRepo,
+    };
     use crate::feed::FeedMeta;
 
     fn conn() -> Connection {
@@ -281,6 +287,22 @@ mod tests {
         assert!(s.db_bytes > 0);
     }
 
+    /// Seed a bookmark for book `book_id`, created at `at_ms`.
+    fn bookmark(conn: &Connection, id: &str, book_id: &str, at_ms: i64) {
+        conn.add_bookmark(&BookmarkRow {
+            id: id.to_owned(),
+            feed_id: "f1".to_owned(),
+            book_id: book_id.to_owned(),
+            chapter_id: "c".to_owned(),
+            paragraph_id: "p".to_owned(),
+            paragraph_name: "n".to_owned(),
+            paragraph_preview: "x".to_owned(),
+            label: "l".to_owned(),
+            created_at_ms: at_ms,
+        })
+        .expect("bookmark");
+    }
+
     #[test]
     fn stale_cleanup_protects_shelf_and_drops_old() {
         let conn = conn();
@@ -295,10 +317,13 @@ mod tests {
             .expect("shelf");
         conn.set_progress("f1", "old-plain", "c", "p", 0, old)
             .expect("progress");
+        bookmark(&conn, "k1", "old-plain", old);
+        bookmark(&conn, "k2", "old-shelved", old);
 
         let cutoff = now - 15 * 24 * 3600 * 1000;
         let report = conn.stale_cleanup(cutoff).expect("cleanup");
-        assert!(report.items_removed >= 3); // 2 chapters + book row + progress
+        // 2 chapters + book row + progress + bookmark
+        assert!(report.items_removed >= 4);
 
         let s = conn.cache_stats().expect("stats");
         assert_eq!(s.chapter_count, 4); // shelved + fresh survive
@@ -307,6 +332,18 @@ mod tests {
             conn.get_progress("f1", "old-plain")
                 .expect("progress")
                 .is_none()
+        );
+        // Stale unshelved bookmarks go; shelved ones stay.
+        assert!(
+            conn.list_bookmarks("f1", "old-plain")
+                .expect("bookmarks")
+                .is_empty()
+        );
+        assert_eq!(
+            conn.list_bookmarks("f1", "old-shelved")
+                .expect("bookmarks")
+                .len(),
+            1
         );
     }
 

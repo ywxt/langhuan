@@ -218,6 +218,12 @@ abstract class AppLocalizations {
   /// **'Remove \"{bookTitle}\" from your bookshelf?'**
   String bookshelfDeleteConfirmMessage(String bookTitle);
 
+  /// Warning below the book delete dialog body about cascading data removal
+  ///
+  /// In en, this message translates to:
+  /// **'This also removes the book\'s cached chapters, cover, reading progress, and bookmarks.'**
+  String get bookshelfDeleteCascadeWarning;
+
   /// Cancel bookshelf book deletion
   ///
   /// In en, this message translates to:

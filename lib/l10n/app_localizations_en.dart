@@ -71,6 +71,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get bookshelfDeleteCascadeWarning =>
+      'This also removes the book\'s cached chapters, cover, reading progress, and bookmarks.';
+
+  @override
   String get bookshelfDeleteCancel => 'Cancel';
 
   @override

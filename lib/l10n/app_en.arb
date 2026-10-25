@@ -64,6 +64,9 @@
     "placeholders": { "bookTitle": { "type": "String" } }
   },
 
+  "bookshelfDeleteCascadeWarning": "This also removes the book's cached chapters, cover, reading progress, and bookmarks.",
+  "@bookshelfDeleteCascadeWarning": { "description": "Warning below the book delete dialog body about cascading data removal" },
+
   "bookshelfDeleteCancel": "Cancel",
   "@bookshelfDeleteCancel": { "description": "Cancel bookshelf book deletion" },
 

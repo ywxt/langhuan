@@ -44,9 +44,12 @@ pub trait BookshelfRepo {
         now_ms: i64,
     ) -> Result<bool>;
 
-    /// Remove a book from the shelf (its `books` row and caches stay until
-    /// they go stale or get evicted). Returns `false` when it was not
-    /// shelved.
+    /// Remove a book from the shelf and delete all of its data.
+    ///
+    /// Runs atomically in the caller's transaction: the `bookshelf` entry,
+    /// the `books` row (schema-cascading chapters, chapter lists, and
+    /// covers), reading progress, and bookmarks. Returns `false` when it
+    /// was not shelved.
     fn remove_book(&self, feed_id: &str, book_id: &str) -> Result<bool>;
 
     /// List the shelf, newest first, joined with cached metadata.
@@ -93,10 +96,23 @@ impl BookshelfRepo for Connection {
     }
 
     fn remove_book(&self, feed_id: &str, book_id: &str) -> Result<bool> {
-        let deleted = self
+        let removed = self
             .prepare_cached("DELETE FROM bookshelf WHERE feed_id = ?1 AND book_id = ?2")?
             .execute([feed_id, book_id])?;
-        Ok(deleted > 0)
+        if removed == 0 {
+            return Ok(false);
+        }
+        // Deleting the `books` row schema-cascades chapters, chapter lists,
+        // and covers; progress and bookmarks only cascade from `feeds`.
+        self.prepare_cached("DELETE FROM books WHERE feed_id = ?1 AND book_id = ?2")?
+            .execute([feed_id, book_id])?;
+        self.prepare_cached(
+            "DELETE FROM reading_progress WHERE feed_id = ?1 AND book_id = ?2",
+        )?
+        .execute([feed_id, book_id])?;
+        self.prepare_cached("DELETE FROM bookmarks WHERE feed_id = ?1 AND book_id = ?2")?
+            .execute([feed_id, book_id])?;
+        Ok(true)
     }
 
     fn shelf_items(&self) -> Result<Vec<ShelfItem>> {
@@ -149,7 +165,11 @@ mod tests {
         CREATE TABLE feeds (id TEXT PRIMARY KEY, name TEXT NOT NULL, version TEXT NOT NULL, author TEXT, source_url TEXT, content_hash TEXT NOT NULL, installed_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL) WITHOUT ROWID; \
         CREATE TABLE books (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, title TEXT NOT NULL, author TEXT NOT NULL, description TEXT, cover_url TEXT, cover_state TEXT NOT NULL DEFAULT 'none' CHECK (cover_state IN ('none','pending','downloaded','failed')), cover_fetched_at_ms INTEGER NOT NULL DEFAULT 0, info_fetched_at_ms INTEGER NOT NULL DEFAULT 0, last_used_at_ms INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE) WITHOUT ROWID; \
         CREATE TABLE covers (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, mime TEXT NOT NULL, bytes BLOB NOT NULL, fetched_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
-        CREATE TABLE bookshelf (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, added_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID;";
+        CREATE TABLE bookshelf (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, added_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
+        CREATE TABLE chapter_lists (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapters_json TEXT NOT NULL, cached_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
+        CREATE TABLE chapters (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapter_id TEXT NOT NULL, paragraphs_json TEXT NOT NULL, cached_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id, chapter_id), FOREIGN KEY (feed_id, book_id) REFERENCES books(feed_id, book_id) ON DELETE CASCADE) WITHOUT ROWID; \
+        CREATE TABLE reading_progress (feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapter_id TEXT NOT NULL, paragraph_id TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY (feed_id, book_id), FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE) WITHOUT ROWID; \
+        CREATE TABLE bookmarks (id TEXT PRIMARY KEY, feed_id TEXT NOT NULL, book_id TEXT NOT NULL, chapter_id TEXT NOT NULL, paragraph_id TEXT NOT NULL, paragraph_name TEXT NOT NULL, paragraph_preview TEXT NOT NULL, label TEXT NOT NULL, created_at_ms INTEGER NOT NULL, FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE) WITHOUT ROWID;";
 
     fn conn() -> Connection {
         let conn = Connection::open_in_memory().expect("open");
@@ -198,5 +218,32 @@ mod tests {
         assert!(conn.remove_book("f1", "b1").unwrap());
         assert!(!conn.remove_book("f1", "b1").unwrap());
         assert!(conn.shelf_items().unwrap().is_empty());
+    }
+
+    #[test]
+    fn remove_deletes_book_data() {
+        let conn = conn();
+        let now = now_ms();
+        conn.add_book("f1", "b1", "One", "A", None, None, now)
+            .unwrap();
+        conn.execute_batch(
+            "INSERT INTO chapters VALUES ('f1', 'b1', 'c1', '[]', 1); \
+             INSERT INTO chapter_lists VALUES ('f1', 'b1', '[]', 1); \
+             INSERT INTO covers VALUES ('f1', 'b1', 'image/png', x'00', 1); \
+             INSERT INTO reading_progress VALUES ('f1', 'b1', 'c1', 'p1', 1); \
+             INSERT INTO bookmarks VALUES ('k1', 'f1', 'b1', 'c1', 'p1', 'n', 'x', 'l', 1);",
+        )
+        .expect("seed book data");
+
+        assert!(conn.remove_book("f1", "b1").unwrap());
+
+        let count = |sql: &str| conn.query_row(sql, [], |row| row.get::<_, i64>(0)).unwrap();
+        assert_eq!(count("SELECT COUNT(*) FROM bookshelf"), 0);
+        assert_eq!(count("SELECT COUNT(*) FROM books"), 0);
+        assert_eq!(count("SELECT COUNT(*) FROM chapters"), 0);
+        assert_eq!(count("SELECT COUNT(*) FROM chapter_lists"), 0);
+        assert_eq!(count("SELECT COUNT(*) FROM covers"), 0);
+        assert_eq!(count("SELECT COUNT(*) FROM reading_progress"), 0);
+        assert_eq!(count("SELECT COUNT(*) FROM bookmarks"), 0);
     }
 }

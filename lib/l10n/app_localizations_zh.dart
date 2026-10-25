@@ -71,6 +71,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get bookshelfDeleteCascadeWarning => '這也會刪除該書的快取章節、封面、閱讀進度與書籤。';
+
+  @override
   String get bookshelfDeleteCancel => '取消';
 
   @override
