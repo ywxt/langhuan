@@ -14,6 +14,7 @@ use langhuan::script::lua::LuaFeed;
 use langhuan::transform::TransformChain;
 use messages::prelude::{Actor, Address, Context, Handler};
 use tokio::sync::mpsc;
+use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 
@@ -183,9 +184,16 @@ pub struct OpenParagraphsStream {
 // Actor
 // ---------------------------------------------------------------------------
 
+/// Upper bound on feed searches running at once, shared across every
+/// aggregated search in the session. Each search drives a Lua runtime plus
+/// its network I/O; without a cap, a keyword fired across a dozen feeds
+/// would light them all up simultaneously.
+const MAX_CONCURRENT_FEED_SEARCHES: usize = 4;
+
 pub struct FeedActor {
     registry_addr: Address<RegistryActor>,
     conversion_addr: Address<ConversionActor>,
+    search_permits: Arc<Semaphore>,
 }
 
 impl Actor for FeedActor {}
@@ -195,9 +203,24 @@ impl FeedActor {
         registry_addr: Address<RegistryActor>,
         conversion_addr: Address<ConversionActor>,
     ) -> Self {
+        Self::with_search_permits(
+            registry_addr,
+            conversion_addr,
+            Arc::new(Semaphore::new(MAX_CONCURRENT_FEED_SEARCHES)),
+        )
+    }
+
+    /// Like [`FeedActor::new`], but the search permit pool is owned by the
+    /// caller — used by tests to observe the bound deterministically.
+    pub fn with_search_permits(
+        registry_addr: Address<RegistryActor>,
+        conversion_addr: Address<ConversionActor>,
+        search_permits: Arc<Semaphore>,
+    ) -> Self {
         Self {
             registry_addr,
             conversion_addr,
+            search_permits,
         }
     }
 
@@ -287,15 +310,17 @@ impl Handler<OpenAggregatedSearchStream> for FeedActor {
         // FeedError event for that feed instead of ending the stream; only
         // the initial registry listing can fail the whole request.
         let registry = self.registry_addr.clone();
+        let permits = self.search_permits.clone();
         let keyword = msg.keyword;
         Ok(spawn_pull_stream(move |tx| async move {
             let mut tasks = Vec::with_capacity(feeds.len());
             for meta in feeds {
                 let tx = tx.clone();
                 let registry = registry.clone();
+                let permits = permits.clone();
                 let keyword = keyword.clone();
                 tasks.push(tokio::spawn(async move {
-                    search_one_feed(registry, tx, meta, keyword).await
+                    search_one_feed(registry, tx, permits, meta, keyword).await
                 }));
             }
             // The merged channel closes once every per-feed sender drops.
@@ -312,9 +337,18 @@ impl Handler<OpenAggregatedSearchStream> for FeedActor {
 async fn search_one_feed(
     mut registry: Address<RegistryActor>,
     tx: mpsc::Sender<Result<AggregatedSearchEvent, BridgeError>>,
+    permits: Arc<Semaphore>,
     meta: FeedMetaItem,
     keyword: String,
 ) {
+    // Bound how many feeds are searched at once. Waiting feeds hold their
+    // producer task and start as soon as an in-flight search finishes; the
+    // semaphore is never closed, so the acquire cannot fail.
+    let _permit = permits
+        .acquire()
+        .await
+        .expect("search permit semaphore is never closed");
+
     // Flatten the messaging + resolution results so either failure kind is
     // reported for this feed alone.
     let feed = match registry
@@ -473,6 +507,7 @@ impl Handler<OpenParagraphsStream> for FeedActor {
 mod tests {
     use std::collections::HashSet;
     use std::error::Error;
+    use std::time::Duration;
 
     use langhuan::db::Db;
     use langhuan::feed::FeedMeta;
@@ -622,6 +657,15 @@ return {
     /// Spawn a registry (initialized with [db] via its handler), plus
     /// conversion and feed actors, returning the feed actor's address.
     async fn spawn_feed_actor(db: Db) -> Result<Address<FeedActor>, Box<dyn Error>> {
+        spawn_feed_actor_with_permits(db, Arc::new(Semaphore::new(1))).await
+    }
+
+    /// Like [spawn_feed_actor], but the feed actor's search permit pool is
+    /// owned by the test.
+    async fn spawn_feed_actor_with_permits(
+        db: Db,
+        permits: Arc<Semaphore>,
+    ) -> Result<Address<FeedActor>, Box<dyn Error>> {
         let registry_context = Context::new();
         let mut registry_addr = registry_context.address();
         spawn(registry_context.run(RegistryActor::new(ScriptEngine::new())));
@@ -638,7 +682,11 @@ return {
 
         let feed_context = Context::new();
         let feed_addr = feed_context.address();
-        spawn(feed_context.run(FeedActor::new(registry_addr, conversion_addr)));
+        spawn(feed_context.run(FeedActor::with_search_permits(
+            registry_addr,
+            conversion_addr,
+            permits,
+        )));
         Ok(feed_addr)
     }
 
@@ -829,6 +877,64 @@ return {
         );
         paused_mock.assert();
         active_mock.assert();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn aggregated_search_waits_for_search_permits() -> TestResult {
+        let db = Db::open_in_memory().await?;
+
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/search")
+            .with_body("1")
+            .expect(1)
+            .create();
+        seed_feed(
+            &db,
+            "feed-a",
+            "Feed A",
+            &server.url(),
+            fixture_script("feed-a", "Feed A", &server.url()),
+        )
+        .await?;
+
+        // A single permit, held by the test: the actor's searches cannot
+        // start while it is out, no matter how fast the source is.
+        let permits = Arc::new(Semaphore::new(1));
+        let permit = permits
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|e| format!("acquire: {e}"))?;
+
+        let mut feed_addr = spawn_feed_actor_with_permits(db, permits).await?;
+        let mut stream = feed_addr
+            .send(OpenAggregatedSearchStream {
+                keyword: "kw".to_owned(),
+            })
+            .await
+            .map_err(|e| format!("messaging: {e}"))?
+            .map_err(|e| format!("open: {}", e.message))?;
+
+        let starved = tokio::time::timeout(Duration::from_millis(150), stream.next()).await;
+        assert!(
+            starved.is_err(),
+            "no event may arrive while the only permit is held"
+        );
+
+        drop(permit);
+        let events = tokio::time::timeout(Duration::from_secs(5), collect(stream))
+            .await
+            .map_err(|_| "stream did not finish after the permit was released")?
+            .map_err(|e| e.message)?;
+        assert_eq!(
+            events.len(),
+            1,
+            "the search resumes and yields its single item"
+        );
+
+        mock.assert();
         Ok(())
     }
 
