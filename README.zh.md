@@ -1,14 +1,14 @@
 # 琅嬛 (Langhuan)
 
-一款支持**自定義書源**的跨平台網路小說閱讀器。編寫一個 Lua 腳本，指向任意網站，即可開始閱讀——無需更新應用。
+一款支持**自定義書源**的跨平台網路小說閱讀器。編寫一個沙盒化 JavaScript reducer，指向任意網站，即可開始閱讀——無需更新應用。
 
-使用 Flutter（UI）、Rust（後端）和 Lua（腳本）構建。
+使用 Flutter（UI）、Rust（後端）和隔離的原生 QuickJS 執行環境（腳本）構建。
 
 > [English version](README.md)
 
 ## 功能
 
-- **基於 Lua 的自定義書源** — 通過 Lua 腳本定義如何從任意網站搜索、獲取和解析小說內容。支持需要登錄的書源（基於 WebView 的認證流程）。
+- **沙盒化 JavaScript 書源** — 通過 schema 3 reducer 定義搜索與解析；HTTP 和認證由 Rust 掌控，腳本在無系統能力的原生 QuickJS 執行環境中運行。
 - **緩存管理** — 本地章節緩存，自動清理過期數據；書架中的書籍不會被清理。
 - **本地化** — 支持英文和中文。
 
@@ -19,7 +19,7 @@
 | UI   | Flutter + Riverpod + GoRouter |
 | 橋接 | flutter_rust_bridge v2        |
 | 後端 | Rust + Tokio（Actor 模型）    |
-| 腳本 | Lua 5.4（mlua，沙盒化）       |
+| 腳本 | 原生 QuickJS 沙盒              |
 | HTTP | reqwest + rustls              |
 
 ## 項目結構
@@ -33,7 +33,7 @@ lib/                        # Flutter 前端
 
 native/langhuan/            # Rust 核心庫（純領域邏輯）
 ├── src/
-│   ├── script/             # Lua 腳本引擎與運行時
+│   ├── script/             # 原生 QuickJS 沙盒與書源運行時
 │   ├── cache/              # 緩存存儲
 │   ├── bookshelf/          # 書架持久化
 │   ├── progress/           # 閱讀進度
@@ -93,7 +93,7 @@ flutter run
 
 ## 書源腳本
 
-書源是 Lua 腳本文件，定義了如何從特定網站獲取小說內容。完整的腳本指南、API 參考和示例請見[書源文檔](docs/book-sources/README.md)。
+書源是 schema 3 JavaScript reducer；它返回請求描述，所有 HTTP 均由原生 Rust 執行。完整指南、沙盒契約和示例請見[書源文檔](docs/book-sources/README.md)。
 
 ## 許可證
 

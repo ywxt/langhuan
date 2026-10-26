@@ -1,14 +1,14 @@
 # Langhuan (琅嬛)
 
-A cross-platform web novel reader with **user-defined book sources**. Write a Lua script, point it at any website, and start reading — no app update required.
+A cross-platform web novel reader with **user-defined book sources**. Write a sandboxed JavaScript reducer, point it at any website, and start reading — no app update required.
 
-Built with Flutter (UI), Rust (backend), and Lua (scripting).
+Built with Flutter (UI), Rust (backend), and an isolated native QuickJS runtime (scripting).
 
 > [中文版](README.zh.md)
 
 ## Features
 
-- **Lua-based Book Sources** — Define how to search, fetch, and parse novel content from any website via Lua scripts. Supports sources that require login (WebView-based auth flow).
+- **Sandboxed JavaScript Book Sources** — Define how to search and parse novel content with schema-3 reducers. Rust owns HTTP and authentication; scripts run in a capability-free native QuickJS runtime.
 - **Cache Management** — Local chapter caching with automatic stale data cleanup; bookshelf items are preserved.
 - **Localization** — English and Chinese.
 
@@ -19,7 +19,7 @@ Built with Flutter (UI), Rust (backend), and Lua (scripting).
 | UI        | Flutter + Riverpod + GoRouter |
 | Bridge    | flutter_rust_bridge v2        |
 | Backend   | Rust + Tokio (Actor model)    |
-| Scripting | Lua 5.4 (mlua, sandboxed)     |
+| Scripting | Native QuickJS sandbox          |
 | HTTP      | reqwest + rustls              |
 
 ## Project Structure
@@ -33,7 +33,7 @@ lib/                        # Flutter frontend
 
 native/langhuan/            # Core Rust library (pure domain logic)
 ├── src/
-│   ├── script/             # Lua script engine & runtime
+│   ├── script/             # Native QuickJS sandbox and feed runtime
 │   ├── cache/              # Cache storage
 │   ├── bookshelf/          # Bookshelf persistence
 │   ├── progress/           # Reading progress
@@ -93,7 +93,7 @@ When you later modify the Rust API surface (functions in `native/hub/src/api/`),
 
 ## Book Source Scripts
 
-Book sources are Lua scripts that define how to fetch novel content from a specific website. See the [book source documentation](docs/book-sources/README.md) for the full scripting guide, API reference, and examples.
+Book sources are schema-3 JavaScript reducers that return request descriptors while native Rust owns all HTTP. See the [book source documentation](docs/book-sources/README.md) for the full scripting guide, sandbox contract, and examples.
 
 ## License
 

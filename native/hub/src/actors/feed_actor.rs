@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use langhuan::cache::CachedFeed;
 use langhuan::feed::Feed;
 use langhuan::model::Paragraph;
-use langhuan::script::lua::LuaFeed;
+use langhuan::script::feed::ScriptFeed;
 use langhuan::transform::TransformChain;
 use messages::prelude::{Actor, Address, Context, Handler};
 use tokio::sync::Semaphore;
@@ -185,7 +185,7 @@ pub struct OpenParagraphsStream {
 // ---------------------------------------------------------------------------
 
 /// Upper bound on feed searches running at once, shared across every
-/// aggregated search in the session. Each search drives a Lua runtime plus
+/// aggregated search in the session. Each search drives a sandbox runtime plus
 /// its network I/O; without a cap, a keyword fired across a dozen feeds
 /// would light them all up simultaneously.
 const MAX_CONCURRENT_FEED_SEARCHES: usize = 4;
@@ -227,7 +227,7 @@ impl FeedActor {
     async fn resolve_feed(
         &mut self,
         feed_id: &str,
-    ) -> Result<Arc<CachedFeed<LuaFeed>>, BridgeError> {
+    ) -> Result<Arc<CachedFeed<ScriptFeed>>, BridgeError> {
         let result = self
             .registry_addr
             .send(GetFeed {
@@ -524,94 +524,57 @@ mod tests {
     /// the search endpoint answers with a plain number and the script turns
     /// it into that many items, so a non-numeric body makes the parse fail.
     const FIXTURE_SCRIPT: &str = r#"
--- ==Feed==
--- @id           __ID__
--- @name         __NAME__
--- @version      1.0.0
--- @author       hub-test
--- @description  Fixture feed backed by a mockito server
--- @base_url     __BASE_URL__
--- @access_domain 127.0.0.1
--- @schema_version 1
--- ==/Feed==
-
-return {
-    search = {
-        request = function(keyword, cursor)
-            return {
-                url = meta.base_url .. "/search",
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            local count = tonumber(resp.body or "")
-            if count == nil then
-                error("fixture: invalid search count: " .. tostring(resp.body))
-            end
-            local items = {}
-            for i = 1, count do
-                table.insert(items, {
-                    id = tostring(1000 + i),
-                    title = "Fixture Book " .. tostring(i),
-                    author = "Fixture Author",
-                    description = "Hermetic fixture book.",
-                })
-            end
-            return { items = items, next_cursor = nil }
-        end,
-    },
-
-    book_info = {
-        request = function(id)
-            return {
-                url = meta.base_url .. "/book/" .. tostring(id),
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            return {
-                id = "1001",
-                title = "Fixture Book 1",
-                author = "Fixture Author",
-                description = "Hermetic fixture book.",
-            }
-        end,
-    },
-
-    chapters = {
-        request = function(book_id, cursor)
-            return {
-                url = meta.base_url .. "/chapters/" .. tostring(book_id),
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            return { items = {}, next_cursor = nil }
-        end,
-    },
-
-    paragraphs = {
-        request = function(book_id, chapter_id, cursor)
-            return {
-                url = meta.base_url .. "/paragraphs/" .. tostring(book_id)
-                    .. "/" .. tostring(chapter_id),
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            return {
-                items = {
-                    { type = "text", content = "Fixture paragraph." },
-                },
-                next_cursor = nil,
-            }
-        end,
-    },
-}
+// ==Feed==
+// @id           __ID__
+// @name         __NAME__
+// @version      3.0.0
+// @author       hub-test
+// @description  Fixture feed backed by a mockito server
+// @base_url     __BASE_URL__
+// @access_domain 127.0.0.1
+// @schema_version 3
+// ==/Feed==
+(() => {
+  const request = (path) => ({
+    type: "request",
+    request: { url: meta.base_url + path, method: "GET", headers: {} },
+    next_state: { requested: true },
+  });
+  function search(event) {
+    if (event.state == null) return request("/search");
+    const count = Number(event.response?.body ?? "");
+    if (!Number.isInteger(count)) throw new Error("fixture: invalid search count");
+    return {
+      type: "complete",
+      items: Array.from({ length: count }, (_, index) => ({
+        id: String(1001 + index),
+        title: "Fixture Book " + (index + 1),
+        author: "Fixture Author",
+        description: "Hermetic fixture book.",
+      })),
+    };
+  }
+  function bookInfo(event) {
+    if (event.state == null) return request("/book/" + event.input.bookId);
+    return { type: "complete", value: {
+      id: "1001", title: "Fixture Book 1", author: "Fixture Author",
+      description: "Hermetic fixture book.",
+    }};
+  }
+  function chapters(event) {
+    if (event.state == null) return request("/chapters/" + event.input.bookId);
+    return { type: "complete", items: [] };
+  }
+  function paragraphs(event) {
+    if (event.state == null) {
+      return request("/paragraphs/" + event.input.bookId + "/" + event.input.chapterId);
+    }
+    return { type: "complete", items: [
+      { type: "text", content: "Fixture paragraph." },
+    ] };
+  }
+  return { search, bookInfo, chapters, paragraphs };
+})()
 "#;
 
     fn fixture_script(id: &str, name: &str, base_url: &str) -> String {
@@ -632,7 +595,7 @@ return {
             description: None,
             base_url: base_url.to_owned(),
             access_domains,
-            schema_version: 1,
+            schema_version: 3,
         }
     }
 

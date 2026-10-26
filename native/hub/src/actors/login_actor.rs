@@ -6,7 +6,7 @@ use langhuan::db::Db;
 use langhuan::feed::{
     AuthPageContext, AuthStatus as FeedAuthStatus, CookieEntry as FeedCookieEntry, FeedAuthFlow,
 };
-use langhuan::script::lua::LuaFeed;
+use langhuan::script::feed::ScriptFeed;
 use messages::prelude::{Actor, Address, Context, Handler};
 
 use crate::api::types::{
@@ -91,7 +91,7 @@ impl LoginActor {
         Ok(())
     }
 
-    async fn resolve_feed(&mut self, feed_id: &str) -> Result<Arc<CachedFeed<LuaFeed>>, String> {
+    async fn resolve_feed(&mut self, feed_id: &str) -> Result<Arc<CachedFeed<ScriptFeed>>, String> {
         match self
             .registry_addr
             .send(GetFeed {
@@ -115,7 +115,7 @@ impl LoginActor {
     async fn hydrate_feed_auth(
         &self,
         feed_id: &str,
-        feed: &CachedFeed<LuaFeed>,
+        feed: &CachedFeed<ScriptFeed>,
     ) -> Result<(), String> {
         let Some(support) = feed.supports_auth() else {
             return Ok(());

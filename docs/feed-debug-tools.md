@@ -1,11 +1,11 @@
 # Feed Developer Tools — Plan
 
 > **Status: planning only.** This document designs a developer toolkit for
-> writing and debugging Lua book sources. Nothing below is implemented yet.
+> writing and debugging JavaScript book sources. Nothing below is implemented yet.
 
 ## 1. Motivation
 
-Building `docs/book-sources/qidian.lua` exposed the debugging gaps this
+Building `docs/book-sources/qidian.js` exposed the debugging gaps this
 toolkit should close. Everything below actually happened during that work:
 
 - **The SSR structure had to be discovered outside the app.** The m-site
@@ -39,8 +39,8 @@ toolkit should close. Everything below actually happened during that work:
 
 ### Non-goals
 
-- Breakpoints / step-through Lua debugging (mlua debug hooks are a large
-  detour; the stage runner gives 90% of the value).
+- Breakpoints / step-through JavaScript debugging (native QuickJS inspector
+  hooks are a separate feature; the stage runner gives 90% of the value).
 - Running uninstalled scripts, auto-fixing scripts, or syncing scripts.
 - Performance profiling.
 
@@ -49,7 +49,7 @@ toolkit should close. Everything below actually happened during that work:
 ### F1 — Stage Runner
 
 A page that runs one pipeline stage of a chosen feed with custom input,
-**bypassing cache and the bookshelf pipeline** (direct `LuaFeed`
+**bypassing cache and the bookshelf pipeline** (direct script feed
 invocation):
 
 | Stage | Input | Output |
@@ -66,7 +66,7 @@ invocation):
   `book_info`, pick a chapter from `chapters` to prefill `paragraphs` —
   mirroring the flow of the real reader and of the Rust smoke tests.
 - Errors render with their `ErrorKind` (`ScriptExpected/AuthRequired`,
-  `ScriptRuntime`, …) plus the Lua error message, so classification bugs
+  `ScriptRuntime`, …) plus the JavaScript error message, so classification bugs
   (see commit `8d5d651`) are caught immediately.
 
 ### F2 — HTTP Inspector
@@ -96,7 +96,7 @@ Extends the feed's auth section (detail sheet) with a debug view:
 
 Replace an installed feed's script from pasted text:
 
-1. Paste Lua source → compile + metadata validation (same check as
+1. Paste JavaScript source → compile + metadata validation (same check as
    the add-feed preview).
 2. Show a diff-level summary (metadata before/after).
 3. Upsert into the DB under the **same feed id** — books, reading
@@ -127,7 +127,7 @@ This turns the loop "edit → adb push → file picker → import" into
   - `debugFeedCacheInfo(feedId) / debugClearFeedCache(feedId)`
 - The debug functions route through the existing
   `RegistryActor`/`LoginActor` where possible, constructing a
-  non-cached `LuaFeed` for stage runs.
+  non-cached script feed for stage runs.
 
 ### Flutter
 

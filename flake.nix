@@ -139,6 +139,9 @@
               "armv7-linux-androideabi"
               "i686-linux-android"
               "x86_64-linux-android"
+              # Lets Linux CI/cargo-xwin type-check the native QuickJS path
+              # against the same MSVC ABI used by Flutter Windows builds.
+              "x86_64-pc-windows-msvc"
             ];
           };
 
@@ -345,6 +348,9 @@
               jdk
               rustToolchain # declarative rust: rustc, cargo, clippy, rustfmt
               rustupShim # satisfies cargokit's rustup invocations
+              # rquickjs generates bindings for Android ABIs that do not
+              # have pre-generated bindings in the crate release.
+              pkgs.libclang
               # Binding generator (`flutter_rust_bridge_codegen generate`).
               # Its version must match the flutter_rust_bridge runtime in
               # pubspec.lock; after a nix flake update that bumps this
@@ -373,6 +379,15 @@
             JAVA_HOME = jdk.home;
             ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
             ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk"; # legacy tools still read this
+            LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+
+            # Do not inherit a bare host CC/CXX (for example an unwrapped
+            # clang from the caller). QuickJS compiles bundled C sources and
+            # therefore needs the Nix compiler wrapper to inject libc paths.
+            # Android Native Assets sets target-specific NDK compilers, and
+            # cargo-xwin likewise supplies its own MSVC target toolchain.
+            CC = "${pkgs.stdenv.cc}/bin/cc";
+            CXX = "${pkgs.stdenv.cc}/bin/c++";
 
             # WebKitGTK loads its GIO TLS backend from here; without it every
             # https load in the login window fails with "TLS support is not
@@ -380,6 +395,12 @@
             GIO_EXTRA_MODULES = "${pkgs.glib-networking}/lib/gio/modules";
 
             shellHook = ''
+              # Some packages (notably the unwrapped clang executable used
+              # by Flutter) install setup hooks after mkShell variables and
+              # replace CC/CXX. Restore the wrappers at the final hook stage.
+              export CC="${pkgs.stdenv.cc}/bin/cc"
+              export CXX="${pkgs.stdenv.cc}/bin/c++"
+
               # Tools installed with `cargo install` (e.g.
               # flutter_rust_bridge_codegen) land in ~/.cargo/bin.
               export PATH="''${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"

@@ -279,10 +279,7 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
             Icon(icon, size: 18),
             const SizedBox(width: LanghuanTheme.spaceSm),
             Expanded(
-              child: Text(
-                text,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              child: Text(text, style: Theme.of(context).textTheme.bodySmall),
             ),
           ],
         ),

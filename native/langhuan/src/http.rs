@@ -2,7 +2,7 @@
 //!
 //! This module owns the [`HttpRequest`], [`HttpResponse`], and [`HttpBody`]
 //! data types as well as the runtime helpers that execute requests and convert
-//! them to/from Lua values.
+//! them to/from sandboxed JavaScript values.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -68,9 +68,8 @@ pub fn shared_client() -> &'static Client {
 
 /// A body carried by either an HTTP request or an HTTP response.
 ///
-/// Raw bytes only — all encoding and decoding is the Lua script's responsibility.
-/// On responses, Rust always delivers the raw bytes; Lua can call `json.decode`
-/// or handle the string as needed.
+/// Raw bytes in native code. The JavaScript boundary decodes response bytes as
+/// UTF-8 with replacement so reducers always receive a bounded string.
 #[derive(Debug, Clone)]
 pub struct HttpBody(pub Bytes);
 
@@ -169,10 +168,10 @@ impl<'de> Deserialize<'de> for HttpBody {
 // HttpRequest
 // ---------------------------------------------------------------------------
 
-/// An HTTP request descriptor constructed by a Lua feed script.
+/// An HTTP request descriptor constructed by a JavaScript feed.
 ///
-/// The Lua `*_request` functions return a table that is deserialized into this
-/// struct. Rust then executes the actual HTTP call.
+/// Reducers return this JSON shape. Rust validates it and executes the actual
+/// HTTP call outside the sandbox.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpRequest {
     /// The target URL.
@@ -185,9 +184,8 @@ pub struct HttpRequest {
     pub params: HashMap<String, String>,
     /// Additional HTTP headers.
     ///
-    /// Lua scripts may provide headers as either:
-    /// - A map: `{ ["Content-Type"] = "application/json" }`
-    /// - An array of pairs: `{ {"Content-Type", "application/json"} }`
+    /// Scripts may provide headers as either a string-keyed object or an array
+    /// of name/value pairs.
     ///
     /// Both forms are accepted and normalised to `Vec<(String, String)>`.
     #[serde(
@@ -205,11 +203,10 @@ fn default_method() -> String {
     "GET".to_owned()
 }
 
-/// Serialize request headers as a map. This is important for the Lua auth
+/// Serialize request headers as a map. This is important for the JavaScript auth
 /// hook: feeds naturally patch headers with
 /// `request.headers["Authorization"] = ...`. Serializing the Rust vector as
-/// an array would create a mixed Lua table, whose string keys are lost when it
-/// is deserialized through the sequence representation.
+/// an array would make ordinary property mutation awkward.
 fn serialize_headers<S>(
     headers: &[(String, String)],
     serializer: S,
@@ -228,16 +225,16 @@ where
 
 /// Deserialize HTTP headers from either a map or an array of pairs.
 ///
-/// Lua scripts commonly express headers as a string-keyed table:
+/// JavaScript sources normally express headers as a string-keyed object:
 ///
-/// ```lua
-/// headers = { ["Content-Type"] = "text/html" }
+/// ```js
+/// const headers = { "Content-Type": "text/html" };
 /// ```
 ///
-/// but some older scripts may use an array of two-element arrays:
+/// An array of two-element arrays is also accepted:
 ///
-/// ```lua
-/// headers = { {"Content-Type", "text/html"} }
+/// ```js
+/// const headers = [["Content-Type", "text/html"]];
 /// ```
 ///
 /// This custom deserializer accepts both forms.
@@ -305,7 +302,7 @@ where
 // HttpResponse
 // ---------------------------------------------------------------------------
 
-/// An HTTP response passed from Rust into a Lua `parse_*` function.
+/// An HTTP response passed from Rust into a JavaScript reducer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpResponse {
     /// HTTP status code.
@@ -393,19 +390,11 @@ pub async fn execute(
     tracing::debug!(
         feed_id = %feed_id,
         status,
-        url = %url,
+        url = %redact_url_secrets(&url),
         "received HTTP response"
     );
 
-    let headers: Vec<(String, String)> = response
-        .headers()
-        .iter()
-        .filter_map(|(k, v)| {
-            v.to_str()
-                .ok()
-                .map(|val| (k.as_str().to_owned(), val.to_owned()))
-        })
-        .collect();
+    let headers = collect_response_headers(response.headers());
 
     let body = match response.bytes().await {
         Ok(body) => body,
@@ -427,6 +416,54 @@ pub async fn execute(
         body: HttpBody(body),
         url,
     })
+}
+
+/// Preserve every response header value, including repeated headers such as
+/// `Set-Cookie`. `HeaderMap::iter` only exposes the first value for a name,
+/// which silently discarded the remaining cookies required by authenticated
+/// multi-step feeds.
+fn collect_response_headers(headers: &reqwest::header::HeaderMap) -> Vec<(String, String)> {
+    headers
+        .keys()
+        .flat_map(|name| {
+            headers.get_all(name).iter().filter_map(move |value| {
+                value
+                    .to_str()
+                    .ok()
+                    .map(|value| (name.as_str().to_owned(), value.to_owned()))
+            })
+        })
+        .collect()
+}
+
+/// Mask credential-like query values before a URL is logged or exposed by
+/// developer traces. The real URL remains untouched for redirects and HTTP.
+pub(crate) fn redact_url_secrets(url: &str) -> String {
+    let Ok(mut parsed) = reqwest::Url::parse(url) else {
+        return url.to_owned();
+    };
+    let pairs = parsed
+        .query_pairs()
+        .map(|(name, value)| {
+            let lower = name.to_ascii_lowercase();
+            let sensitive = ["token", "secret", "password", "authorization", "signature"]
+                .iter()
+                .any(|part| lower.contains(part));
+            (
+                name.into_owned(),
+                if sensitive {
+                    "<masked>".to_owned()
+                } else {
+                    value.into_owned()
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    if pairs.is_empty() {
+        return url.to_owned();
+    }
+    parsed.query_pairs_mut().clear().extend_pairs(pairs);
+    parsed.to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -456,7 +493,7 @@ fn domain_allowed(url: &str, access_domains: &HashSet<String>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{HttpBody, shared_client};
+    use super::{HttpBody, collect_response_headers, redact_url_secrets, shared_client};
 
     #[test]
     fn http_body_to_string_roundtrip() {
@@ -482,5 +519,31 @@ mod tests {
         // The shared client must hand out the same instance on every call so
         // all cookie-free callers reuse one connection pool.
         assert!(std::ptr::eq(shared_client(), shared_client()));
+    }
+
+    #[test]
+    fn response_headers_preserve_repeated_set_cookie_values() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.append("set-cookie", "session=one; Path=/".parse().unwrap());
+        headers.append("set-cookie", "device=two; Path=/".parse().unwrap());
+
+        let collected = collect_response_headers(&headers);
+        assert_eq!(
+            collected,
+            [
+                ("set-cookie".to_owned(), "session=one; Path=/".to_owned()),
+                ("set-cookie".to_owned(), "device=two; Path=/".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn logged_urls_mask_secret_query_values() {
+        let masked = redact_url_secrets(
+            "https://example.com/chapter?bookId=42&_csrfToken=secret&signature=signed",
+        );
+        assert!(masked.contains("bookId=42"));
+        assert!(!masked.contains("secret") && !masked.contains("signed"));
+        assert_eq!(masked.matches("%3Cmasked%3E").count(), 2);
     }
 }

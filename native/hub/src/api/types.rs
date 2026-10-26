@@ -27,7 +27,7 @@ pub enum ErrorKind {
     Internal,
     /// Network / HTTP failure (connection, timeout, 5xx).
     Network,
-    /// Lua runtime error (a bug in the script).
+    /// JavaScript runtime error (a bug or sandbox limit in the script).
     ScriptRuntime,
     /// Script configuration / loading error (missing function, bad metadata).
     ScriptConfig,
@@ -102,7 +102,7 @@ impl From<langhuan::error::Error> for BridgeError {
                 };
                 ErrorKind::ScriptExpected { reason }
             }
-            Error::Script(ScriptError::Lua(_)) => ErrorKind::ScriptRuntime,
+            Error::Script(ScriptError::JavaScript(_)) => ErrorKind::ScriptRuntime,
             Error::Script(_) => ErrorKind::ScriptConfig,
             Error::Http(_) => ErrorKind::Network,
             Error::Persistence(_) => ErrorKind::Storage,

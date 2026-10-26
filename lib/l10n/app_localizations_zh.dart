@@ -805,7 +805,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get devScriptLabel => '書源腳本';
 
   @override
-  String get devScriptHint => '貼上 Lua 腳本或從已安裝的書源導入；腳本在此獨立編譯運行，不影響已安裝的書源。';
+  String get devScriptHint =>
+      '貼上 JavaScript 書源或從已安裝的書源導入；腳本在隔離的原生 QuickJS 沙盒中運行，不影響已安裝的書源。';
 
   @override
   String get devScriptImport => '導入';

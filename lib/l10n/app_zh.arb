@@ -266,7 +266,7 @@
   "devDisableConfirmTitle": "關閉開發者模式？",
   "devDisableConfirmMessage": "將隱藏開發者工具入口。",
   "devScriptLabel": "書源腳本",
-  "devScriptHint": "貼上 Lua 腳本或從已安裝的書源導入；腳本在此獨立編譯運行，不影響已安裝的書源。",
+  "devScriptHint": "貼上 JavaScript 書源或從已安裝的書源導入；腳本在隔離的原生 QuickJS 沙盒中運行，不影響已安裝的書源。",
   "devScriptImport": "導入",
   "devScriptImportTitle": "選擇已安裝的書源",
   "devScriptImportEmpty": "沒有已安裝的書源",

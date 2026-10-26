@@ -22,7 +22,7 @@ pub(crate) fn localize_error(e: &langhuan::error::Error) -> String {
     use langhuan::error::{Error, ExpectedErrorCode, PersistenceError, RegistryError, ScriptError};
     match e {
         Error::Script(inner) => match inner {
-            ScriptError::Lua(e) => t!("error.lua", error = e).to_string(),
+            ScriptError::JavaScript(e) => t!("error.javascript", error = e).to_string(),
             ScriptError::MissingFunction { name } => {
                 t!("error.missing_function", name = name).to_string()
             }

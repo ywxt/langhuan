@@ -23,7 +23,7 @@ use std::time::Instant;
 
 use langhuan::feed::{AuthStatus as FeedAuthStatus, Feed, FeedAuthFlow};
 use langhuan::model::Paragraph;
-use langhuan::script::lua::LuaFeed;
+use langhuan::script::feed::ScriptFeed;
 use langhuan::script::runtime::ScriptEngine;
 use langhuan::trace::{TraceEntry, TraceRecorder};
 use tokio_stream::StreamExt;
@@ -36,7 +36,7 @@ use crate::actors::hub_db;
 /// Script engine shared by all debug runs.
 ///
 /// Debug feeds are compiled fresh from the caller's script source on every
-/// run — no cached [`LuaFeed`], no shared state with the production
+/// run — no cached [`ScriptFeed`], no shared state with the production
 /// registry — but the engine (and with it one HTTP client and connection
 /// pool) is reused so repeated runs do not rebuild TLS state.
 static DEBUG_ENGINE: LazyLock<ScriptEngine> = LazyLock::new(ScriptEngine::new);
@@ -176,7 +176,7 @@ struct DebugRunCore {
 }
 
 async fn run_script_stage(script: String, stage: DebugStage) -> DebugRunCore {
-    let feed = match DEBUG_ENGINE.load_feed(&script).await {
+    let feed = match DEBUG_ENGINE.load_script(&script).await {
         Ok(feed) => feed,
         Err(e) => {
             return DebugRunCore {
@@ -265,7 +265,7 @@ async fn load_stored_auth(feed_id: &str) -> Result<Option<serde_json::Value>, Br
 /// Execute one stage on a freshly compiled feed, collecting stream items
 /// until exhaustion or the first error.
 async fn run_stage(
-    feed: &LuaFeed,
+    feed: &ScriptFeed,
     stage: DebugStage,
 ) -> (Option<DebugStageOutput>, Option<BridgeError>) {
     match stage {
@@ -431,51 +431,46 @@ mod tests {
 
     /// Minimal script against a mockito server: search returns a JSON page
     /// with `__IDS__` split into items; book_info echoes the id.
-    fn fixture_script(base_url: &str, search_ids: &str) -> String {
+    fn fixture_script(base_url: &str, _search_ids: &str) -> String {
         format!(
             r#"
--- ==Feed==
--- @id           dbg-fixture
--- @name         Debug Fixture
--- @version      1.0.0
--- @base_url     {base_url}
--- @access_domain 127.0.0.1
--- @schema_version 1
--- ==/Feed==
-local json = require("@langhuan/json")
-return {{
-    search = {{
-        request = function(keyword, cursor)
-            return {{ url = meta.base_url .. "/search" }}
-        end,
-        parse = function(resp)
-            local ids = {search_ids}
-            local items = {{}}
-            for i = 1, #ids do
-                table.insert(items, {{
-                    id = ids[i],
-                    title = "Book " .. ids[i],
-                    author = "Author",
-                }})
-            end
-            return {{ items = items, next_cursor = nil }}
-        end,
-    }},
-    book_info = {{
-        request = function(id) return {{ url = meta.base_url .. "/book/" .. id }} end,
-        parse = function(resp) return json.decode(resp.body) end,
-    }},
-    chapters = {{
-        request = function(book_id, cursor) return {{ url = meta.base_url .. "/chapters" }} end,
-        parse = function(resp) return {{ items = {{}}, next_cursor = nil }} end,
-    }},
-    paragraphs = {{
-        request = function(book_id, chapter_id, cursor)
-            return {{ url = meta.base_url .. "/content" }}
-        end,
-        parse = function(resp) return {{ items = {{}}, next_cursor = nil }} end,
-    }},
-}}
+// ==Feed==
+// @id           dbg-fixture
+// @name         Debug Fixture
+// @version      3.0.0
+// @base_url     {base_url}
+// @access_domain 127.0.0.1
+// @schema_version 3
+// ==/Feed==
+(() => {{
+  const request = (path) => ({{
+    type: "request",
+    request: {{ url: meta.base_url + path, method: "GET" }},
+    next_state: {{ requested: true }},
+  }});
+  function search(event) {{
+    if (event.state == null) return request("/search");
+    const ids = JSON.parse(event.response.body).ids;
+    return {{ type: "complete", items: ids.map((id) => ({{
+      id, title: "Book " + id, author: "Author",
+    }})) }};
+  }}
+  function bookInfo(event) {{
+    if (event.state == null) return request("/book/" + event.input.bookId);
+    return {{ type: "complete", value: JSON.parse(event.response.body) }};
+  }}
+  function chapters(event) {{
+    return event.state == null
+      ? request("/chapters")
+      : {{ type: "complete", items: [] }};
+  }}
+  function paragraphs(event) {{
+    return event.state == null
+      ? request("/content")
+      : {{ type: "complete", items: [] }};
+  }}
+  return {{ search, bookInfo, chapters, paragraphs }};
+}})()
 "#
         )
     }
@@ -495,7 +490,7 @@ return {{
         let mut server = mockito::Server::new_async().await;
         let _mock = mock_search(&mut server, r#"{"ids":["1","2","3"]}"#).await;
         let feed = ScriptEngine::new()
-            .load_feed(&fixture_script(
+            .load_script(&fixture_script(
                 &server.url(),
                 r#"json.decode(resp.body).ids"#,
             ))
@@ -526,7 +521,7 @@ return {{
         let mut server = mockito::Server::new_async().await;
         let _mock = mock_search(&mut server, r#"{"ids":["1","2","2","3"]}"#).await;
         let feed = ScriptEngine::new()
-            .load_feed(&fixture_script(
+            .load_script(&fixture_script(
                 &server.url(),
                 r#"json.decode(resp.body).ids"#,
             ))
@@ -561,7 +556,7 @@ return {{
         let mut server = mockito::Server::new_async().await;
         let _mock = mock_search(&mut server, r#"{"ids":[]}"#).await;
         let feed = ScriptEngine::new()
-            .load_feed(&fixture_script(
+            .load_script(&fixture_script(
                 &server.url(),
                 r#"json.decode(resp.body).ids"#,
             ))
@@ -588,7 +583,7 @@ return {{
     #[tokio::test]
     async fn auth_status_without_login_block_reports_error() -> TestResult {
         let feed = ScriptEngine::new()
-            .load_feed(&fixture_script("http://127.0.0.1:1", "{}"))
+            .load_script(&fixture_script("http://127.0.0.1:1", "{}"))
             .await?;
 
         let (output, error) = run_stage(&feed, DebugStage::AuthStatus).await;
@@ -605,7 +600,7 @@ return {{
         let mut server = mockito::Server::new_async().await;
         let _mock = mock_search(&mut server, r#"{"ids":["1"]}"#).await;
         let feed = ScriptEngine::new()
-            .load_feed(&fixture_script(
+            .load_script(&fixture_script(
                 &server.url(),
                 r#"json.decode(resp.body).ids"#,
             ))

@@ -1,18 +1,16 @@
 use std::collections::HashSet;
 
 // ---------------------------------------------------------------------------
-// Expected error codes (Lua → Rust structured errors)
+// Expected error codes (JavaScript → Rust structured errors)
 // ---------------------------------------------------------------------------
 
-pub(crate) const ERROR_RAISE: &str = "raise";
 pub(crate) const ERROR_AUTH_REQUIRED: &str = "auth_required";
 pub(crate) const ERROR_CF_CHALLENGE: &str = "cf_challenge";
 pub(crate) const ERROR_RATE_LIMITED: &str = "rate_limited";
 pub(crate) const ERROR_CONTENT_NOT_FOUND: &str = "content_not_found";
 pub(crate) const ERROR_SOURCE_UNAVAILABLE: &str = "source_unavailable";
 
-/// Error codes that Lua scripts can raise via `@langhuan/error` to signal
-/// an anticipated condition (as opposed to a runtime bug).
+/// Error codes that scripts can return to signal an anticipated condition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExpectedErrorCode {
     AuthRequired,
@@ -36,26 +34,6 @@ impl ExpectedErrorCode {
     }
 }
 
-pub(crate) const EXPECTED_ERROR_PREFIX: &str = "@langhuan_expected:";
-
-/// Try to extract an expected error from an `mlua::Error`.
-///
-/// Walks through `CallbackError` wrappers to find a `RuntimeError` whose
-/// message starts with `@langhuan_expected:<code>:<message>`.
-pub fn extract_expected_error(e: &mlua::Error) -> Option<(ExpectedErrorCode, String)> {
-    match e {
-        mlua::Error::RuntimeError(msg) => parse_expected_message(msg),
-        mlua::Error::CallbackError { cause, .. } => extract_expected_error(cause),
-        _ => None,
-    }
-}
-
-fn parse_expected_message(msg: &str) -> Option<(ExpectedErrorCode, String)> {
-    let rest = msg.strip_prefix(EXPECTED_ERROR_PREFIX)?;
-    let (code_str, message) = rest.split_once(':')?;
-    Some((ExpectedErrorCode::from_code(code_str), message.to_owned()))
-}
-
 // ---------------------------------------------------------------------------
 // Sub-error: ScriptError — feed script loading / validation
 // ---------------------------------------------------------------------------
@@ -63,9 +41,9 @@ fn parse_expected_message(msg: &str) -> Option<(ExpectedErrorCode, String)> {
 /// Errors related to feed script loading, parsing, and runtime validation.
 #[derive(Debug, thiserror::Error)]
 pub enum ScriptError {
-    /// An error originating from the Lua runtime.
-    #[error("lua error: {0}")]
-    Lua(#[from] mlua::Error),
+    /// An error originating from the JavaScript runtime.
+    #[error("javascript error: {0}")]
+    JavaScript(String),
 
     /// The feed script is missing a required function.
     #[error("missing required function: {name}")]
@@ -103,7 +81,7 @@ pub enum ScriptError {
     #[error("feed {feed_id}: auth status check is not supported by this feed")]
     AuthStatusNotSupported { feed_id: String },
 
-    /// A Lua feed script returned duplicate IDs in a single stream.
+    /// A feed script returned duplicate IDs in a single stream.
     #[error("feed {feed_id}: duplicate {kind} id: {id}")]
     DuplicateId {
         feed_id: String,
@@ -172,7 +150,7 @@ impl Error {
     /// Returns `true` if this error is transient and the operation may be
     /// retried (e.g. network timeouts, connection resets, 5xx responses).
     ///
-    /// Returns `false` for permanent failures such as Lua parse errors,
+    /// Returns `false` for permanent failures such as script parse errors,
     /// invalid feed metadata, or 4xx HTTP responses.
     pub fn is_retryable(&self) -> bool {
         match self {
@@ -197,18 +175,6 @@ impl Error {
 /// A specialized `Result` type for langhuan operations.
 pub type Result<T> = std::result::Result<T, Error>;
 
-// Transitive From: mlua::Error → Error::Script
-// Inspects the error for the `@langhuan_expected:` convention before falling
-// back to `ScriptError::Lua`.
-impl From<mlua::Error> for Error {
-    fn from(e: mlua::Error) -> Self {
-        if let Some((code, message)) = extract_expected_error(&e) {
-            return Error::Script(ScriptError::Expected { code, message });
-        }
-        Error::Script(ScriptError::Lua(e))
-    }
-}
-
 // Transitive From: rusqlite::Error → Error::Persistence
 // Every SQL failure surfaces as `PersistenceError::Database`; callers never
 // need to import rusqlite types themselves.
@@ -227,8 +193,17 @@ impl From<tokio_rusqlite::rusqlite::Error> for Error {
 /// `Error::Script(ScriptError::InvalidFeed { message: … })`.
 impl Error {
     #[inline]
-    pub fn lua(e: mlua::Error) -> Self {
-        ScriptError::Lua(e).into()
+    pub fn javascript(message: impl Into<String>) -> Self {
+        ScriptError::JavaScript(message.into()).into()
+    }
+
+    #[inline]
+    pub fn expected(code: ExpectedErrorCode, message: impl Into<String>) -> Self {
+        ScriptError::Expected {
+            code,
+            message: message.into(),
+        }
+        .into()
     }
 
     #[inline]
@@ -316,8 +291,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lua_error_not_retryable() {
-        let err = Error::lua(mlua::Error::RuntimeError("test".into()));
+    fn javascript_error_not_retryable() {
+        let err = Error::javascript("test");
         assert!(!err.is_retryable());
     }
 
@@ -353,72 +328,6 @@ mod tests {
         let e = result.expect_err("expected connect failure");
         let err = Error::Http(e);
         assert!(err.is_retryable(), "connect errors must be retryable");
-    }
-
-    #[test]
-    fn extract_expected_error_parses_runtime_error() {
-        let lua_err =
-            mlua::Error::RuntimeError("@langhuan_expected:auth_required:please login".into());
-        let result = extract_expected_error(&lua_err);
-        assert_eq!(
-            result,
-            Some((ExpectedErrorCode::AuthRequired, "please login".into()))
-        );
-    }
-
-    #[test]
-    fn extract_expected_error_returns_none_for_plain_runtime() {
-        let lua_err = mlua::Error::RuntimeError("some random error".into());
-        let result = extract_expected_error(&lua_err);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn extract_expected_error_unwraps_callback_error() {
-        let inner =
-            mlua::Error::RuntimeError("@langhuan_expected:cf_challenge:cloudflare blocked".into());
-        let lua_err = mlua::Error::CallbackError {
-            traceback: String::new(),
-            cause: inner.into(),
-        };
-        let result = extract_expected_error(&lua_err);
-        assert_eq!(
-            result,
-            Some((ExpectedErrorCode::CfChallenge, "cloudflare blocked".into()))
-        );
-    }
-
-    #[test]
-    fn extract_expected_error_unknown_code() {
-        let lua_err = mlua::Error::RuntimeError("@langhuan_expected:custom_code:details".into());
-        let result = extract_expected_error(&lua_err);
-        assert_eq!(
-            result,
-            Some((
-                ExpectedErrorCode::Unknown("custom_code".into()),
-                "details".into()
-            ))
-        );
-    }
-
-    #[test]
-    fn from_mlua_error_routes_expected() {
-        let lua_err = mlua::Error::RuntimeError("@langhuan_expected:rate_limited:slow down".into());
-        let err: Error = lua_err.into();
-        assert!(matches!(
-            err,
-            Error::Script(ScriptError::Expected {
-                code: ExpectedErrorCode::RateLimited,
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn from_mlua_error_routes_plain_to_lua() {
-        let lua_err = mlua::Error::RuntimeError("ordinary error".into());
-        let err: Error = lua_err.into();
-        assert!(matches!(err, Error::Script(ScriptError::Lua(_))));
     }
 
     #[test]

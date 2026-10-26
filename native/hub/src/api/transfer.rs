@@ -197,9 +197,9 @@ mod tests {
     /// A minimal script with parseable metadata.
     fn script(id: &str, version: &str) -> String {
         format!(
-            "-- ==Feed==\n-- @id  {id}\n-- @name Feed {id}\n-- @version {version}\n\
-             -- @schema_version 1\n-- @base_url http://127.0.0.1:1/\n\
-             -- @access_domain 127.0.0.1\n-- ==/Feed==\nreturn {{}}\n"
+            "// ==Feed==\n// @id  {id}\n// @name Feed {id}\n// @version {version}\n\
+             // @schema_version 3\n// @base_url http://127.0.0.1:1/\n\
+             // @access_domain 127.0.0.1\n// ==/Feed==\n({{}})\n"
         )
     }
 

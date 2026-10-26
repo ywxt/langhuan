@@ -1,6 +1,6 @@
 // Reader theme integration test.
 //
-// Runs the real app, Rust hub, router, reader and a hermetic Lua feed on an
+// Runs the real app, Rust hub, router, reader and a hermetic JavaScript feed on an
 // Android device. It exercises the real Dark-to-Custom workflow that once
 // failed while the reader theme was changing.
 //

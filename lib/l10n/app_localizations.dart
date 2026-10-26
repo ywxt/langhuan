@@ -1571,7 +1571,7 @@ abstract class AppLocalizations {
   /// Developer page: script editor explanation
   ///
   /// In en, this message translates to:
-  /// **'Paste a Lua feed script or import one from an installed feed. Scripts compile and run here in isolation; installed feeds are untouched.'**
+  /// **'Paste a JavaScript feed or import one from an installed feed. Scripts run in an isolated native QuickJS sandbox; installed feeds are untouched.'**
   String get devScriptHint;
 
   /// Developer page: import-from-installed-feed action

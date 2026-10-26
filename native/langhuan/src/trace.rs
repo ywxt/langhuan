@@ -107,7 +107,7 @@ impl TraceHandle {
     ) {
         let mut entry = self.entry(req, start);
         entry.status = Some(status);
-        entry.final_url = Some(final_url.to_owned());
+        entry.final_url = Some(crate::http::redact_url_secrets(final_url));
         entry.error = Some(error.to_string());
         self.push(entry);
     }
@@ -123,7 +123,7 @@ impl TraceHandle {
     ) {
         let mut entry = self.entry(req, start);
         entry.status = Some(status);
-        entry.final_url = Some(final_url.to_owned());
+        entry.final_url = Some(crate::http::redact_url_secrets(final_url));
         entry.response_size = Some(body.len() as u64);
         entry.body_preview = Some(trace_body_preview(body));
         self.push(entry);

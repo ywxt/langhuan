@@ -1,138 +1,107 @@
-// Shared hermetic fixture for the integration tests: a Lua feed script
-// backed by a local HTTP server, plus the install helper.
-//
-// The script is count-driven: the search and chapters endpoints answer with
-// a plain number and the script turns it into that many items, so a test
-// controls a source's output (or failure, via a non-numeric body) by
-// changing what its server serves. book_info and paragraphs are static.
+// Shared hermetic JavaScript feed fixture for integration tests.
 
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 
-/// Lua feed script backed by one of the test's local HTTP servers.
 String fixtureFeedScript({
   required String id,
   required String name,
   required int port,
 }) =>
     '''
--- ==Feed==
--- @id           $id
--- @name         $name
--- @version      1.0.0
--- @author       integration-test
--- @description  Hermetic fixture feed backed by a local HTTP server
--- @base_url     http://127.0.0.1:$port
--- @access_domain 127.0.0.1
--- @schema_version 1
--- ==/Feed==
+// ==Feed==
+// @id           $id
+// @name         $name
+// @version      3.0.0
+// @author       integration-test
+// @description  Hermetic fixture feed backed by a local HTTP server
+// @base_url     http://127.0.0.1:$port
+// @access_domain 127.0.0.1
+// @schema_version 3
+// ==/Feed==
 
-return {
-    search = {
-        request = function(keyword, cursor)
-            return {
-                url = meta.base_url .. "/search",
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            local count = tonumber(resp.body or "")
-            if count == nil then
-                error("fixture: invalid search count: " .. tostring(resp.body))
-            end
-            local items = {}
-            for i = 1, count do
-                table.insert(items, {
-                    id = tostring(1000 + i),
-                    title = "Fixture Book " .. tostring(i),
-                    author = "Fixture Author",
-                    description = "Hermetic fixture book.",
-                })
-            end
-            return {
-                items = items,
-                next_cursor = nil,
-            }
-        end,
-    },
+(() => {
+  "use strict";
 
-    book_info = {
-        request = function(id)
-            return {
-                url = meta.base_url .. "/book/" .. tostring(id),
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            return {
-                id = "1001",
-                title = "Fixture Book 1",
-                author = "Fixture Author",
-                description = "Hermetic fixture book.",
-            }
-        end,
-    },
+  function request(path, next_state = { requested: true }) {
+    return {
+      type: "request",
+      request: { url: meta.base_url + path, method: "GET", headers: {} },
+      next_state,
+    };
+  }
 
-    chapters = {
-        request = function(book_id, cursor)
-            return {
-                url = meta.base_url .. "/chapters/" .. tostring(book_id),
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            local count = tonumber(resp.body or "")
-            if count == nil then
-                error("fixture: invalid chapter count: " .. tostring(resp.body))
-            end
-            local items = {}
-            for i = 1, count do
-                table.insert(items, {
-                    id = tostring(i),
-                    title = "Chapter " .. tostring(i),
-                })
-            end
-            return {
-                items = items,
-                next_cursor = nil,
-            }
-        end,
-    },
+  function countItems(body, kind) {
+    const raw = String(body ?? "").trim();
+    const count = raw === "" ? Number.NaN : Number(raw);
+    if (!Number.isInteger(count) || count < 0) {
+      throw new Error(`fixture: invalid \${kind} count: \${body}`);
+    }
+    return count;
+  }
 
-    paragraphs = {
-        request = function(book_id, chapter_id, cursor)
-            return {
-                url = meta.base_url .. "/paragraphs/" .. tostring(book_id)
-                    .. "/" .. tostring(chapter_id),
-                method = "GET",
-                headers = {},
-            }
-        end,
-        parse = function(resp)
-            return {
-                items = {
-                    { type = "text", content = "Fixture paragraph." },
-                },
-                next_cursor = nil,
-            }
-        end,
-    },
-}
+  function search(event) {
+    if (event.state == null) return request("/search");
+    const count = countItems(event.response?.body ?? "", "search");
+    return {
+      type: "complete",
+      items: Array.from({ length: count }, (_, index) => ({
+        id: String(1001 + index),
+        title: `Fixture Book \${index + 1}`,
+        author: "Fixture Author",
+        description: "Hermetic fixture book.",
+      })),
+    };
+  }
+
+  function bookInfo(event) {
+    if (event.state == null) return request(`/book/\${event.input.bookId}`);
+    return {
+      type: "complete",
+      value: {
+        id: "1001",
+        title: "Fixture Book 1",
+        author: "Fixture Author",
+        description: "Hermetic fixture book.",
+      },
+    };
+  }
+
+  function chapters(event) {
+    if (event.state == null) return request(`/chapters/\${event.input.bookId}`);
+    const count = countItems(event.response?.body ?? "", "chapter");
+    return {
+      type: "complete",
+      items: Array.from({ length: count }, (_, index) => ({
+        id: String(index + 1),
+        title: `Chapter \${index + 1}`,
+      })),
+    };
+  }
+
+  function paragraphs(event) {
+    if (event.state == null) {
+      return request(`/paragraphs/\${event.input.bookId}/\${event.input.chapterId}`);
+    }
+    return {
+      type: "complete",
+      items: [{ type: "text", content: "Fixture paragraph." }],
+    };
+  }
+
+  return { search, bookInfo, chapters, paragraphs };
+})()
 ''';
 
-/// Install a fixture feed script into [dataDir] and register it.
 Future<void> installFixtureFeed({
   required String id,
   required String name,
   required int port,
   required Directory dataDir,
 }) async {
-  final scriptFile = File('${dataDir.path}/$id.lua')
+  final scriptFile = File('${dataDir.path}/$id.js')
     ..writeAsStringSync(fixtureFeedScript(id: id, name: name, port: port));
   final preview = await FeedService.instance.previewFromFile(scriptFile.path);
   expect(preview.id, id);

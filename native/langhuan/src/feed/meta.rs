@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use serde::Serialize;
 
 /// The current feed script schema version supported by this application.
-pub const FEED_SCHEMA_VERSION: u32 = 1;
+pub const FEED_SCHEMA_VERSION: u32 = 3;
 
 /// Metadata extracted from the `==Feed==` header block of a feed script.
 #[derive(Debug, Clone, Serialize)]
@@ -18,7 +18,7 @@ pub struct FeedMeta {
     pub author: Option<String>,
     /// Short description (default locale).
     pub description: Option<String>,
-    /// Base URL used by the feed. Available in Lua as `meta.base_url`.
+    /// Base URL used by the feed. Available to JavaScript as `meta.base_url`.
     pub base_url: String,
     /// Access domain patterns for HTTP requests made by this feed.
     pub access_domains: HashSet<String>,

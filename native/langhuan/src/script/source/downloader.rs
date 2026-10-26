@@ -3,7 +3,7 @@
 use crate::error::Result;
 use crate::http::shared_client;
 
-/// Download a Lua feed script from `url` and return its content as a string.
+/// Download a JavaScript feed from `url` and return its content as a string.
 ///
 /// Uses the shared cookie-free client from [`shared_client`].  The caller is
 /// responsible for validating the returned content by passing it to

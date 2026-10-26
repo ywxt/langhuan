@@ -20,17 +20,21 @@ use tokio_stream::StreamExt;
 fn load_script_for_server(server: &ServerGuard) -> String {
     let base = server.url(); // e.g. "http://127.0.0.1:PORT"
 
-    let script = include_str!("../../../docs/book-sources/qidian.lua");
+    let script = include_str!("../../../docs/book-sources/qidian.js");
 
     // Replace the base_url header line and remove all @access_domain entries
     // so the domain allowlist is empty (empty list = no restriction).
     script
         .replace(
-            "-- @base_url     https://m.qidian.com",
-            &format!("-- @base_url     {base}"),
+            "// @base_url     https://m.qidian.com",
+            &format!("// @base_url     {base}"),
         )
-        .replace("-- @access_domain m.qidian.com", "")
-        .replace("-- @access_domain www.qidian.com", "")
+        .replace("// @access_domain m.qidian.com", "")
+        .replace("// @access_domain cococdn.qidian.com", "")
+        .replace(
+            "https://cococdn.qidian.com/coco/s12062024/4819793b.qeooxh.js",
+            &format!("{base}/fock.js"),
+        )
 }
 
 /// Wrap a `pageContext` JSON value in the same script tag the live site uses.
@@ -42,10 +46,10 @@ fn ssr_page(page_context_json: &str) -> String {
     )
 }
 
-async fn load_feed(server: &ServerGuard) -> langhuan::script::lua::LuaFeed {
+async fn load_feed(server: &ServerGuard) -> langhuan::script::js::JsFeed {
     let script = load_script_for_server(server);
     let engine = ScriptEngine::new();
-    engine.load_feed(&script).await.expect("load_feed failed")
+    engine.load_js_feed(&script).expect("load_feed failed")
 }
 
 fn cookie(name: &str, value: &str, domain: &str) -> CookieEntry {
@@ -131,6 +135,7 @@ fn chapter_page_json(vip_status: i64, is_buy: i64, logged_in: bool, content: &st
                         .expect("content fixture must be valid JSON"),
                 },
                 "user": {
+                    "id": if logged_in { 67890 } else { 0 },
                     "guid": if logged_in { 12345 } else { 0 },
                     "isLogin": logged_in,
                 },
@@ -497,6 +502,111 @@ async fn paragraphs_vip_purchased_returns_content() {
     assert!(!results.is_empty());
 }
 
+#[tokio::test]
+async fn paragraphs_vip_purchased_fetches_api_and_decrypts_fock_content() {
+    let mut server = mockito::Server::new_async().await;
+    let _chapter = server
+        .mock("GET", "/chapter/1010868264/414074529/")
+        .with_status(200)
+        .with_header("set-cookie", "newstatisticUUID=device-1; Path=/")
+        .with_body(ssr_page(&chapter_page_json(1, 1, true, "\"\"")))
+        .create_async()
+        .await;
+    let _api = server
+        .mock("GET", "/webcommon/chapter/getMChapterInfo")
+        .match_query(mockito::Matcher::AllOf(vec![
+            mockito::Matcher::UrlEncoded("bookId".into(), "1010868264".into()),
+            mockito::Matcher::UrlEncoded("chapterId".into(), "414074529".into()),
+            mockito::Matcher::UrlEncoded("_csrfToken".into(), "csrf-token".into()),
+        ]))
+        .match_header(
+            "Cookie",
+            mockito::Matcher::Regex(
+                r"ywkey=secret-key.*newstatisticUUID=device-1|newstatisticUUID=device-1.*ywkey=secret-key"
+                    .to_owned(),
+            ),
+        )
+        .with_status(200)
+        .with_body(
+            serde_json::json!({
+                "data": {
+                    "chapterInfo": {
+                        "chapterName": "第一章 VIP",
+                        "content": "encrypted-content",
+                        "fkp": "Ow==",
+                        "fEnS": 1,
+                        "cES": 0
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .create_async()
+        .await;
+    let _fock = server
+        .mock("GET", "/fock.js")
+        .with_status(200)
+        .with_body(
+            r#"!function(root, factory) {
+              if (typeof exports === "object" && typeof module !== "undefined") {
+                module.exports = factory();
+              } else {
+                root.Fock = factory();
+              }
+            }(globalThis, function() { return {
+                initialize() {},
+                setupUserKey(value) { globalThis.__fuid = value; },
+                unlock(content, chapterId, callback) {
+                    if (globalThis.__fuid === "67890" && content === "encrypted-content") {
+                        callback(0, "<p>　　已購 VIP 正文。");
+                    } else {
+                        callback(9, "");
+                    }
+                }
+            }; });"#,
+        )
+        .create_async()
+        .await;
+
+    let feed = load_feed(&server).await;
+    let support = feed.supports_auth().expect("qidian feed supports auth");
+    let auth = feed
+        .parse_auth(
+            &support,
+            &AuthPageContext {
+                current_url: "https://m.qidian.com/".to_owned(),
+                response: HttpBody::default(),
+                response_headers: vec![],
+                cookies: vec![
+                    cookie("ywkey", "secret-key", ".qidian.com"),
+                    cookie("ywguid", "12345", ".qidian.com"),
+                    cookie("_csrfToken", "csrf-token", ".qidian.com"),
+                ],
+            },
+        )
+        .expect("parse auth");
+    feed.set_auth_info(&support, Some(auth)).expect("set auth");
+
+    // Run twice against the same persistent QuickJS context. The official UMD
+    // bundle and chapter-key setup must remain safe across reader preloads.
+    for _ in 0..2 {
+        let results = feed
+            .paragraphs("1010868264", "414074529")
+            .collect::<Vec<_>>()
+            .await;
+        assert!(results.iter().all(Result::is_ok), "{results:?}");
+        let texts = results
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter_map(|paragraph| match paragraph {
+                langhuan::model::Paragraph::Text { content, .. } => Some(content),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(texts, ["　　已購 VIP 正文。"]);
+    }
+}
+
 // ── Login flow ──────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -729,9 +839,9 @@ async fn auth_cookie_is_sent_with_content_requests() {
 #[tokio::test]
 #[ignore = "hits real website"]
 async fn search_live_site_smoke() {
-    let script = include_str!("../../../docs/book-sources/qidian.lua");
+    let script = include_str!("../../../docs/book-sources/qidian.js");
     let engine = ScriptEngine::new();
-    let feed = engine.load_feed(script).await.expect("load_feed failed");
+    let feed = engine.load_js_feed(script).expect("load_feed failed");
 
     // Bound runtime to avoid hanging on network issues.
     let collect_future = feed.search("诡秘之主").take(10).collect::<Vec<_>>();
@@ -836,5 +946,154 @@ async fn search_live_site_smoke() {
             })
         ),
         "expected auth_required for logged-out VIP chapter, got: {err:?}"
+    );
+}
+
+/// Authenticated live smoke test for purchased VIP chapters spread throughout
+/// a book. The auth value is deliberately supplied by the caller so
+/// credentials and decrypted text never enter source control or test output.
+#[tokio::test]
+#[ignore = "requires LANGHUAN_QIDIAN_AUTH_JSON and purchased chapters"]
+async fn purchased_vip_live_smoke() {
+    let auth: serde_json::Value = serde_json::from_str(
+        &std::env::var("LANGHUAN_QIDIAN_AUTH_JSON").expect("LANGHUAN_QIDIAN_AUTH_JSON is required"),
+    )
+    .expect("auth JSON must be valid");
+    let book_id =
+        std::env::var("LANGHUAN_QIDIAN_BOOK_ID").unwrap_or_else(|_| "1040109276".to_owned());
+    let default_chapters = [
+        ("798273339", "第101章 秦香莲（感谢盟主徽羽林夕）"),
+        ("801443224", "第127章 山月记"),
+        ("818089552", "第58章 哲学与诗与精油开背揉面艺术"),
+        ("901364015", "第1章 千秋一寸心"),
+        ("935172214", "第62章 焦点"),
+    ];
+    let configured_chapters = std::env::var("LANGHUAN_QIDIAN_CHAPTER_IDS")
+        .ok()
+        .map(|ids| {
+            ids.split(',')
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .map(|id| (id.to_owned(), None))
+                .collect::<Vec<_>>()
+        })
+        .filter(|chapters| !chapters.is_empty());
+    let chapters = configured_chapters.unwrap_or_else(|| {
+        default_chapters
+            .iter()
+            .map(|(id, title)| ((*id).to_owned(), Some(*title)))
+            .collect()
+    });
+
+    let engine = ScriptEngine::new();
+    let feed = engine
+        .load_js_feed(include_str!("../../../docs/book-sources/qidian.js"))
+        .expect("load JavaScript qidian feed");
+    let support = feed.supports_auth().expect("qidian supports auth");
+    feed.set_auth_info(&support, Some(auth)).expect("set auth");
+
+    let mut fingerprints = std::collections::HashSet::new();
+    let mut first_decrypted = None;
+    for (index, (chapter_id, expected_title)) in chapters.iter().enumerate() {
+        let started_at = std::time::Instant::now();
+        let results = tokio::time::timeout(
+            Duration::from_secs(45),
+            feed.paragraphs(&book_id, chapter_id).collect::<Vec<_>>(),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("live VIP request for chapter {chapter_id} timed out"));
+        for result in &results {
+            assert!(
+                result.is_ok(),
+                "live VIP paragraph error for chapter {chapter_id}: {result:?}"
+            );
+        }
+
+        let title = results.iter().find_map(|item| match item {
+            Ok(langhuan::model::Paragraph::Title { text, .. }) => Some(text.as_str()),
+            _ => None,
+        });
+        assert!(
+            title.is_some(),
+            "VIP chapter {chapter_id} must contain a title"
+        );
+        if let Some(expected_title) = expected_title {
+            assert_eq!(title, Some(*expected_title));
+        }
+
+        let text = results
+            .iter()
+            .filter_map(|item| match item {
+                Ok(langhuan::model::Paragraph::Text { content, .. })
+                    if !content.trim().is_empty() =>
+                {
+                    Some(content.trim())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            text.len() >= 5,
+            "VIP chapter {chapter_id} returned too few text paragraphs: {}",
+            text.len()
+        );
+        let text_chars = text
+            .iter()
+            .map(|paragraph| paragraph.chars().count())
+            .sum::<usize>();
+        assert!(
+            text_chars >= 500,
+            "VIP chapter {chapter_id} returned suspiciously little text: {text_chars} characters"
+        );
+        let fingerprint = format!(
+            "{}\n{}\n{}\n{}",
+            title.unwrap_or_default(),
+            text.len(),
+            text.first().copied().unwrap_or_default(),
+            text.last().copied().unwrap_or_default()
+        );
+        assert!(
+            fingerprints.insert(fingerprint),
+            "VIP chapter {chapter_id} duplicated another chapter's decrypted content"
+        );
+        eprintln!(
+            "purchased VIP chapter {}/{} ({chapter_id}) decrypted: {} paragraphs, \
+             {text_chars} characters, {:?}",
+            index + 1,
+            chapters.len(),
+            text.len(),
+            started_at.elapsed()
+        );
+        if index == 0 {
+            first_decrypted = Some(
+                results
+                    .iter()
+                    .map(|item| item.as_ref().expect("results checked above").clone())
+                    .collect::<Vec<_>>(),
+            );
+        }
+    }
+
+    // Revisit the first chapter in the same feed. The official Fock bundle
+    // and returned Feed object must remain reusable in the retained context.
+    let first_id = &chapters[0].0;
+    let repeated = tokio::time::timeout(
+        Duration::from_secs(45),
+        feed.paragraphs(&book_id, first_id).collect::<Vec<_>>(),
+    )
+    .await
+    .unwrap_or_else(|_| panic!("repeat live VIP request for chapter {first_id} timed out"));
+    assert!(
+        repeated.iter().all(Result::is_ok),
+        "repeat live VIP request failed: {repeated:?}"
+    );
+    let repeated = repeated
+        .into_iter()
+        .map(|item| item.expect("results checked above"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        Some(repeated),
+        first_decrypted,
+        "repeat live VIP request returned different decrypted content"
     );
 }

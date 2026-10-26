@@ -1,7 +1,7 @@
 // Bookshelf update-check integration test.
 //
 // Runs the real Rust hub (via Native Assets) against an isolated app-data
-// directory, a self-contained Lua feed script and a local HTTP server, so
+// directory, a self-contained JavaScript feed and a local HTTP server, so
 // no real data or network is involved.
 //
 // On Android, `flutter test integration_test/...` UNINSTALLS the app (and

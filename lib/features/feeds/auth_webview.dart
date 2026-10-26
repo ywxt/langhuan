@@ -39,8 +39,8 @@ abstract class AuthWebviewSession extends ChangeNotifier {
 
   factory AuthWebviewSession.platform() =>
       Platform.isLinux || Platform.isWindows
-          ? _DesktopWindowAuthWebviewSession()
-          : _InlineAuthWebviewSession();
+      ? _DesktopWindowAuthWebviewSession()
+      : _InlineAuthWebviewSession();
 
   /// Whether the login page runs in a separate native window (Linux and
   /// Windows) instead of the embedded [view].
@@ -156,11 +156,11 @@ class _InlineAuthWebviewSession extends AuthWebviewSession {
       for (final cookie in cookies) {
         _capturedCookies['${cookie.domain}|${cookie.path}|${cookie.name}'] =
             CookieEntry(
-          name: cookie.name,
-          value: cookie.value,
-          domain: cookie.domain,
-          path: cookie.path,
-        );
+              name: cookie.name,
+              value: cookie.value,
+              domain: cookie.domain,
+              path: cookie.path,
+            );
       }
     } catch (_) {
       // HTML and URL based auth must still work when cookie access fails.

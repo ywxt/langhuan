@@ -10,7 +10,7 @@ use crate::feed::FeedMeta;
 const HEADER_START: &str = "==Feed==";
 const HEADER_END: &str = "==/Feed==";
 
-/// Parse the `==Feed==` metadata header from a Lua feed script.
+/// Parse the `==Feed==` metadata header from a JavaScript feed.
 ///
 /// Returns the parsed [`FeedMeta`] and the **byte offset** where the header
 /// block ends (i.e. the start of the script body).
@@ -48,12 +48,7 @@ fn extract_header_lines(script: &str) -> Result<(Vec<HeaderEntry>, usize)> {
         let line_num = line_idx + 1;
         let trimmed = line.trim();
 
-        // Strip leading `--` (Lua comment prefix).
-        let content = if let Some(rest) = trimmed.strip_prefix("--") {
-            rest.trim()
-        } else {
-            trimmed
-        };
+        let content = trimmed.strip_prefix("//").unwrap_or(trimmed).trim();
 
         if !in_header {
             if content == HEADER_START {
@@ -218,19 +213,17 @@ mod tests {
     use super::*;
     use crate::error::ScriptError;
 
-    const SAMPLE_SCRIPT: &str = r#"-- ==Feed==
--- @id           example-feed
--- @name         範例書源
--- @version      1.0.0
--- @author       someone
--- @description  一個範例書源
--- @base_url     https://example.com
--- @schema_version 1
--- ==/Feed==
+    const SAMPLE_SCRIPT: &str = r#"// ==Feed==
+// @id           example-feed
+// @name         範例書源
+// @version      1.0.0
+// @author       someone
+// @description  一個範例書源
+// @base_url     https://example.com
+// @schema_version 3
+// ==/Feed==
 
-function search_request(keyword, cursor)
-    return {}
-end
+(() => ({}))()
 "#;
 
     #[test]
@@ -242,29 +235,29 @@ end
         assert_eq!(meta.author.as_deref(), Some("someone"));
         assert_eq!(meta.description.as_deref(), Some("一個範例書源"));
         assert_eq!(meta.base_url, "https://example.com");
-        assert_eq!(meta.schema_version, 1);
+        assert_eq!(meta.schema_version, 3);
         // Body should start after the header.
         assert!(offset > 0);
-        assert!(SAMPLE_SCRIPT[offset..].contains("function search_request"));
+        assert!(SAMPLE_SCRIPT[offset..].contains("(() => ({}))()"));
     }
 
     #[test]
     fn missing_header_start() {
-        let script = "-- just a comment\nfunction foo() end";
+        let script = "// just a comment\nfunction foo() end";
         let err = parse_meta(script).unwrap_err();
         assert!(matches!(err, Error::Script(ScriptError::Parse { .. })));
     }
 
     #[test]
     fn missing_header_end() {
-        let script = "-- ==Feed==\n-- @id test\n-- @name test\n";
+        let script = "// ==Feed==\n// @id test\n// @name test\n";
         let err = parse_meta(script).unwrap_err();
         assert!(matches!(err, Error::Script(ScriptError::Parse { .. })));
     }
 
     #[test]
     fn missing_required_field() {
-        let script = "-- ==Feed==\n-- @id test\n-- ==/Feed==\n";
+        let script = "// ==Feed==\n// @id test\n// ==/Feed==\n";
         let err = parse_meta(script).unwrap_err();
         assert!(matches!(
             err,
@@ -274,13 +267,13 @@ end
 
     #[test]
     fn defaults_for_optional_fields() {
-        let script = r#"-- ==Feed==
--- @id      test
--- @name    Test
--- @version 1.0
--- @base_url https://example.com
--- @schema_version 1
--- ==/Feed==
+        let script = r#"// ==Feed==
+// @id      test
+// @name    Test
+// @version 1.0
+// @base_url https://example.com
+// @schema_version 3
+// ==/Feed==
 "#;
         let (meta, _) = parse_meta(script).unwrap();
         assert!(meta.author.is_none());
@@ -289,15 +282,15 @@ end
 
     #[test]
     fn access_domains_one_per_line() {
-        let script = r#"-- ==Feed==
--- @id      test
--- @name    Test
--- @version 1.0
--- @base_url https://example.com
--- @schema_version 1
--- @access_domain example.com
--- @access_domain cdn.example.com
--- ==/Feed==
+        let script = r#"// ==Feed==
+// @id      test
+// @name    Test
+// @version 1.0
+// @base_url https://example.com
+// @schema_version 3
+// @access_domain example.com
+// @access_domain cdn.example.com
+// ==/Feed==
 "#;
         let (meta, _) = parse_meta(script).unwrap();
         assert_eq!(
@@ -314,14 +307,14 @@ end
 
     #[test]
     fn access_domains_invalid_hostname() {
-        let script = r#"-- ==Feed==
--- @id      test
--- @name    Test
--- @version 1.0
--- @base_url https://example.com
--- @schema_version 1
--- @access_domain not a valid host
--- ==/Feed==
+        let script = r#"// ==Feed==
+// @id      test
+// @name    Test
+// @version 1.0
+// @base_url https://example.com
+// @schema_version 3
+// @access_domain not a valid host
+// ==/Feed==
 "#;
         let err = parse_meta(script).unwrap_err();
         assert!(matches!(
@@ -332,19 +325,19 @@ end
 
     #[test]
     fn access_domains_blank_value_ignored() {
-        let script = "-- ==Feed==\n-- @id test\n-- @name Test\n-- @version 1.0\n-- @base_url https://example.com\n-- @schema_version 1\n-- @access_domain\n-- ==/Feed==\n";
+        let script = "// ==Feed==\n// @id test\n// @name Test\n// @version 1.0\n// @base_url https://example.com\n// @schema_version 3\n// @access_domain\n// ==/Feed==\n";
         let (meta, _) = parse_meta(script).unwrap();
         assert!(meta.access_domains.is_empty());
     }
 
     #[test]
     fn schema_version_missing_returns_error() {
-        let script = r#"-- ==Feed==
--- @id      test
--- @name    Test
--- @version 1.0
--- @base_url https://example.com
--- ==/Feed==
+        let script = r#"// ==Feed==
+// @id      test
+// @name    Test
+// @version 1.0
+// @base_url https://example.com
+// ==/Feed==
 "#;
         let err = parse_meta(script).unwrap_err();
         assert!(matches!(
@@ -355,13 +348,13 @@ end
 
     #[test]
     fn schema_version_invalid_value_returns_error() {
-        let script = r#"-- ==Feed==
--- @id      test
--- @name    Test
--- @version 1.0
--- @base_url https://example.com
--- @schema_version abc
--- ==/Feed==
+        let script = r#"// ==Feed==
+// @id      test
+// @name    Test
+// @version 1.0
+// @base_url https://example.com
+// @schema_version abc
+// ==/Feed==
 "#;
         let err = parse_meta(script).unwrap_err();
         assert!(matches!(
@@ -372,13 +365,13 @@ end
 
     #[test]
     fn schema_version_high_value_parses() {
-        let script = r#"-- ==Feed==
--- @id      test
--- @name    Test
--- @version 1.0
--- @base_url https://example.com
--- @schema_version 999
--- ==/Feed==
+        let script = r#"// ==Feed==
+// @id      test
+// @name    Test
+// @version 1.0
+// @base_url https://example.com
+// @schema_version 999
+// ==/Feed==
 "#;
         let (meta, _) = parse_meta(script).unwrap();
         assert_eq!(meta.schema_version, 999);

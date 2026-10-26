@@ -16,21 +16,21 @@ use tokio_stream::StreamExt;
 fn load_script_for_server(server: &ServerGuard) -> String {
     let base = server.url(); // e.g. "http://127.0.0.1:PORT"
 
-    let script = include_str!("../../../docs/book-sources/biquge-tw.lua");
+    let script = include_str!("../../../docs/book-sources/biquge-tw.js");
 
     // Replace the base_url header line.
     let script = script.replace(
-        "-- @base_url     https://www.biquge.tw",
-        &format!("-- @base_url     {base}"),
+        "// @base_url     https://www.biquge.tw",
+        &format!("// @base_url     {base}"),
     );
 
     // Remove all @access_domain entries so the domain allowlist is empty
     // (empty list = no restriction), allowing requests to the local mock server.
 
     script
-        .replace("-- @access_domain www.biquge.tw", "")
-        .replace("-- @access_domain m.biquge.tw", "")
-        .replace("-- @access_domain img.biquge.tw", "")
+        .replace("// @access_domain www.biquge.tw", "")
+        .replace("// @access_domain m.biquge.tw", "")
+        .replace("// @access_domain img.biquge.tw", "")
 }
 
 /// Build a search-results page that mirrors the live site's `.result-card`
@@ -132,7 +132,10 @@ async fn search_returns_results() {
 
     let script = load_script_for_server(&server);
     let engine = ScriptEngine::new();
-    let feed = engine.load_feed(&script).await.expect("load_feed failed");
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
 
     let results: Vec<_> = feed.search("剛好").collect::<Vec<_>>().await;
 
@@ -225,7 +228,10 @@ async fn paragraphs_returns_title_and_text_items() {
 
     let script = load_script_for_server(&server);
     let engine = ScriptEngine::new();
-    let feed = engine.load_feed(&script).await.expect("load_feed failed");
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
 
     let results: Vec<_> = feed
         .paragraphs("12345", "12345/67890")
@@ -268,7 +274,10 @@ async fn paragraphs_supports_chaptercontent_br_layout() {
 
     let script = load_script_for_server(&server);
     let engine = ScriptEngine::new();
-    let feed = engine.load_feed(&script).await.expect("load_feed failed");
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
 
     let results: Vec<_> = feed
         .paragraphs("12345", "12345/24680")
@@ -310,7 +319,10 @@ async fn search_returns_empty_for_no_matches() {
 
     let script = load_script_for_server(&server);
     let engine = ScriptEngine::new();
-    let feed = engine.load_feed(&script).await.expect("load_feed failed");
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
 
     let results: Vec<_> = feed.search("不存在的書名xyz").collect::<Vec<_>>().await;
 
@@ -345,11 +357,14 @@ async fn search_detects_cloudflare_challenge() {
 
     let script = load_script_for_server(&server);
     let engine = ScriptEngine::new();
-    let feed = engine.load_feed(&script).await.expect("load_feed failed");
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
 
     let results: Vec<_> = feed.search("剛好").collect::<Vec<_>>().await;
 
-    // The Cloudflare check in the Lua script calls `error(...)`, which should
+    // The Cloudflare check returns a structured expected failure, which should
     // surface as an Err in the stream.
     assert!(
         results.iter().any(|r| r.is_err()),
@@ -364,9 +379,12 @@ async fn search_detects_cloudflare_challenge() {
 #[tokio::test]
 #[ignore = "hits real website"]
 async fn search_live_site_smoke() {
-    let script = include_str!("../../../docs/book-sources/biquge-tw.lua");
+    let script = include_str!("../../../docs/book-sources/biquge-tw.js");
     let engine = ScriptEngine::new();
-    let feed = engine.load_feed(script).await.expect("load_feed failed");
+    let feed = engine
+        .load_script(script)
+        .await
+        .expect("load_script failed");
 
     // Bound runtime and result count to avoid hanging/flaky pagination.
     let collect_future = feed.search("剛好").take(10).collect::<Vec<_>>();

@@ -34,7 +34,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ["lua"],
+        allowedExtensions: ["js"],
       );
       if (result.isEmpty) return;
       final path = result.first.path;

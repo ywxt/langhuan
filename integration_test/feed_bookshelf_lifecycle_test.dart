@@ -1,6 +1,6 @@
 // Feed/bookshelf lifecycle integration test.
 //
-// Uses the real Rust hub, SQLite repository and a hermetic Lua feed. Run on
+// Uses the real Rust hub, SQLite repository and a hermetic JavaScript feed. Run on
 // Android without uninstalling the user's app data:
 //
 //   flutter test integration_test/feed_bookshelf_lifecycle_test.dart \

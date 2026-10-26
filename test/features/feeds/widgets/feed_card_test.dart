@@ -17,7 +17,7 @@ const _feedA = FeedMetaItem(
   name: 'Source A',
   version: '1',
   enabled: true,
-  sourceUrl: 'https://example.com/source-a.lua',
+  sourceUrl: 'https://example.com/source-a.js',
   baseUrl: 'https://example.com',
   accessDomains: ['example.com', 'cdn.example.com'],
 );
@@ -198,7 +198,7 @@ void main() {
       expect(find.text('example.com'), findsOneWidget);
       expect(find.text('cdn.example.com'), findsOneWidget);
       expect(find.text('Source'), findsOneWidget);
-      expect(find.text('https://example.com/source-a.lua'), findsOneWidget);
+      expect(find.text('https://example.com/source-a.js'), findsOneWidget);
       expect(find.text('Shelved books'), findsOneWidget);
       expect(find.text('2'), findsOneWidget);
       expect(find.byType(SwitchListTile), findsOneWidget);

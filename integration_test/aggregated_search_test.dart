@@ -1,7 +1,7 @@
 // Aggregated (all-feeds) search integration test.
 //
 // Runs the real Rust hub (via Native Assets) against an isolated app-data
-// directory, two self-contained Lua feed scripts and local HTTP servers, so
+// directory, two self-contained JavaScript feeds and local HTTP servers, so
 // no real data or network is involved. One source fails mid-test to prove
 // that a single feed's failure neither ends the merged stream nor sticks to
 // later runs.

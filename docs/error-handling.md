@@ -1,123 +1,65 @@
-# Error Handling for Lua Feed Scripts
+# Error Handling for JavaScript Feed Sources
 
-Langhuan provides a built-in `@langhuan/error` module that lets feed scripts raise **structured expected errors**. These errors are distinguished from unexpected runtime crashes (nil access, type errors, etc.) and allow the Flutter UI to display appropriate actions — such as a login button for auth errors or a retry button for rate limiting.
+Schema-3 feeds distinguish expected website states from script bugs.
 
-## Quick Start
+## Expected failures
 
-```lua
-local err = require("@langhuan/error")
+Return a `FeedError` value from a reducer:
 
-local function ensure_logged_in(resp)
-    if resp.status == 401 then
-        err.auth_required("Please log in to access this content")
-    end
-end
+```js
+if (!event.auth) {
+  return FeedError.authRequired("This chapter requires login");
+}
 
-local function ensure_not_blocked(resp)
-    if is_cf_challenge(resp.body) then
-        err.cf_challenge("Cloudflare challenge detected")
-    end
-end
-```
-
-## API Reference
-
-### `require("@langhuan/error")`
-
-Returns a table with the following functions:
-
-### Convenience Methods
-
-| Function | Error Code | Description |
-|---|---|---|
-| `err.auth_required(message)` | `auth_required` | Login is required to proceed |
-| `err.cf_challenge(message)` | `cf_challenge` | Cloudflare or anti-bot challenge detected |
-| `err.rate_limited(message)` | `rate_limited` | Too many requests; try again later |
-| `err.content_not_found(message)` | `content_not_found` | The requested content does not exist |
-| `err.source_unavailable(message)` | `source_unavailable` | The source is temporarily down |
-
-All convenience methods take a single `message` string parameter describing the error.
-
-### Generic Method
-
-```lua
-err.raise(code, message)
-```
-
-Raises an expected error with a custom error code. Use this for error conditions not covered by the convenience methods. The `code` parameter is a string identifier; `message` describes the error.
-
-Custom codes are treated as `Unknown` on the Rust/Flutter side and displayed with a generic retry UI.
-
-## How It Works
-
-When a convenience method or `err.raise()` is called, it internally calls Lua's `error()` with a specially formatted message:
-
-```
-@langhuan_expected:<code>:<message>
-```
-
-The Rust runtime intercepts this format during `mlua::Error` → `Error` conversion and produces a `ScriptError::Expected` variant instead of `ScriptError::Lua`. This distinction flows through the bridge layer as `ErrorKind::ScriptExpected { reason }` to Flutter.
-
-Script authors should **never** construct this prefix manually — always use the module API. The wire format is an internal implementation detail and may change without notice in future versions.
-
-## Expected Errors vs `error()`
-
-| | `err.auth_required("msg")` | `error("msg")` |
-|---|---|---|
-| Rust error type | `ScriptError::Expected` | `ScriptError::Lua` |
-| Bridge error kind | `ErrorKind::ScriptExpected` | `ErrorKind::ScriptRuntime` |
-| Flutter UI | Contextual action (login button, retry, etc.) | Generic "script error" message |
-| Retryable | Depends on code (`rate_limited` = yes) | No |
-| Localized | Yes (via `messages.yml`) | No |
-
-Use `error()` for genuine bugs or programming errors. Use `err.*` for anticipated conditions that the user can act on.
-
-## Flutter UI Behavior
-
-| Error Code | Flutter Action |
-|---|---|
-| `auth_required` | Shows login button (navigates to WebView auth flow) |
-| `cf_challenge` | Shows message suggesting browser verification |
-| `rate_limited` | Shows retry button |
-| `content_not_found` | Shows "content not found" message |
-| `source_unavailable` | Shows retry button |
-| Custom / unknown | Shows message with retry button |
-
-## Example: Complete Feed with Error Handling
-
-```lua
-local html = require("@langhuan/html")
-local err = require("@langhuan/error")
-
-local function check_response(resp)
-    if resp.body and resp.body:find("cf_chl_opt", 1, true) then
-        err.cf_challenge("Anti-bot challenge detected")
-    end
-    if resp.status == 401 or resp.status == 403 then
-        err.auth_required("Login required")
-    end
-    if resp.status == 429 then
-        err.rate_limited("Too many requests")
-    end
-    if resp.status == 404 then
-        err.content_not_found("Page not found")
-    end
-    if resp.status >= 500 then
-        err.source_unavailable("Server error: " .. tostring(resp.status))
-    end
-end
-
-return {
-    search = {
-        request = function(keyword, cursor)
-            return { url = meta.base_url .. "/search?q=" .. keyword, method = "GET" }
-        end,
-        parse = function(resp)
-            check_response(resp)
-            -- ... parse search results ...
-            return { items = {}, next_cursor = nil }
-        end,
-    },
-    -- ... other handlers ...
+if (event.response.status === 429) {
+  return FeedError.rateLimited("The source is rate limiting requests");
 }
 ```
+
+| Helper | Code | Meaning |
+| --- | --- | --- |
+| `FeedError.authRequired(message)` | `auth_required` | Login is missing or expired |
+| `FeedError.cfChallenge(message)` | `cf_challenge` | An anti-bot challenge blocked the page |
+| `FeedError.rateLimited(message)` | `rate_limited` | Retryable throttling |
+| `FeedError.contentNotFound(message)` | `content_not_found` | Book or chapter content is unavailable |
+| `FeedError.sourceUnavailable(message)` | `source_unavailable` | Retryable source outage |
+| `FeedError.raise(code, message)` | custom | Source-specific anticipated state |
+
+Rust converts `{ type: "fail", code, message }` into
+`ScriptError::Expected`. The bridge exposes it as `ErrorKind::ScriptExpected`,
+so the UI can present an appropriate action without treating the source as
+broken.
+
+## Runtime failures
+
+Throw an `Error` only for defects or malformed responses the source does not
+know how to handle:
+
+```js
+const payload = JSON.parse(event.response.body);
+if (!Array.isArray(payload.records)) {
+  throw new Error("search response has no records array");
+}
+```
+
+Exceptions, syntax errors, sandbox limits, out-of-memory conditions, and
+deadline exhaustion become `ScriptError::JavaScript` and bridge
+`ErrorKind::ScriptRuntime`.
+
+## Native failures
+
+HTTP execution, redirects, access-domain checks, response-size limits, and
+authentication persistence are owned by Rust. Their errors never need to be
+caught in JavaScript. Retryable native network failures follow the host retry
+policy; permanent failures are returned directly to the UI.
+
+## Debugging guidance
+
+- Use expected failures for normal site states users can act on.
+- Never include cookies, authorization values, tokens, or signed query
+  parameters in messages.
+- Let unexpected exceptions retain their stack; the developer trace view
+  redacts known secrets before display.
+- Persist multi-request state through `next_state`. The returned Feed object is
+  retained while loaded, but closure state is not durable across application
+  restarts or source reloads.

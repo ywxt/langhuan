@@ -1,7 +1,7 @@
 //! [`RegistryActor`] — manages the feed registry and script installation.
 //!
 //! Installed feeds live in the `feeds` / `feed_scripts` tables; this actor
-//! compiles the scripts into [`LuaFeed`] instances at startup and keeps them
+//! compiles the scripts into [`ScriptFeed`] instances at startup and keeps them
 //! in memory. Compilation results and pending (previewed, not installed)
 //! scripts are the only in-memory state.
 
@@ -15,7 +15,7 @@ use langhuan::cache::CachedFeed;
 use langhuan::db::Db;
 use langhuan::db::repo::FeedRow;
 use langhuan::feed::FeedMeta;
-use langhuan::script::lua::LuaFeed;
+use langhuan::script::feed::ScriptFeed;
 use langhuan::script::runtime::ScriptEngine;
 use messages::prelude::{Actor, Context, Handler};
 
@@ -133,7 +133,7 @@ pub struct RegistryActor {
     engine: ScriptEngine,
     db: Option<Db>,
     /// Successfully compiled feeds, keyed by feed id.
-    feeds: HashMap<String, Arc<LuaFeed>>,
+    feeds: HashMap<String, Arc<ScriptFeed>>,
     /// Registered feeds whose script failed to compile (id → user-facing
     /// message). Kept so `ListFeeds` can surface the failure and `GetFeed`
     /// can distinguish "registered but broken" from "unknown".
@@ -185,7 +185,7 @@ impl RegistryActor {
                 );
                 continue;
             };
-            match self.engine.load_feed(&script).await {
+            match self.engine.load_script(&script).await {
                 Err(e) => {
                     load_errors.insert(row.id.clone(), localize_error(&e));
                 }
@@ -332,7 +332,7 @@ impl RegistryActor {
 
         // Compile first — a script that cannot run is never persisted.
         let (meta, _) = langhuan::script::meta::parse_meta(&pending.content)?;
-        let feed = self.engine.load_feed(&pending.content).await?;
+        let feed = self.engine.load_script(&pending.content).await?;
 
         let content_hash = langhuan::hash::sha256_hex(pending.content.as_bytes());
         let now = langhuan::db::now_ms();
@@ -367,7 +367,7 @@ impl RegistryActor {
         let db = self.require_db()?;
 
         // Compile first — a script that cannot run is never persisted.
-        let feed = self.engine.load_feed(&content).await?;
+        let feed = self.engine.load_script(&content).await?;
 
         let content_hash = langhuan::hash::sha256_hex(content.as_bytes());
         let already_installed = db
@@ -532,7 +532,7 @@ impl From<FeedRow> for FeedMetaItem {
 
 #[async_trait]
 impl Handler<GetFeed> for RegistryActor {
-    type Result = Result<Arc<CachedFeed<LuaFeed>>, ResolveError>;
+    type Result = Result<Arc<CachedFeed<ScriptFeed>>, ResolveError>;
 
     async fn handle(&mut self, msg: GetFeed, _: &Context<Self>) -> Self::Result {
         let db = self.db.as_ref().ok_or(ResolveError::DirNotSet)?;
@@ -665,19 +665,23 @@ mod tests {
     /// no-ops (the import only checks that the script compiles).
     fn import_script(id: &str, version: &str) -> String {
         format!(
-            "-- ==Feed==\n-- @id  {id}\n-- @name Feed {id}\n-- @version {version}\n\
-             -- @schema_version 1\n-- @base_url http://127.0.0.1:1/\n\
-             -- @access_domain 127.0.0.1\n-- ==/Feed==\n\
-             return {{\n\
-             \x20   search = {{ request = function(keyword, cursor) return {{}} end,\n\
-             \x20              parse = function(resp) return {{ items = {{}}, next_cursor = nil }} end }},\n\
-             \x20   book_info = {{ request = function(id) return {{}} end,\n\
-             \x20                parse = function(resp) return {{}} end }},\n\
-             \x20   chapters = {{ request = function(book_id, cursor) return {{}} end,\n\
-             \x20               parse = function(resp) return {{ items = {{}}, next_cursor = nil }} end }},\n\
-             \x20   paragraphs = {{ request = function(book_id, chapter_id, cursor) return {{}} end,\n\
-             \x20                 parse = function(resp) return {{ items = {{}}, next_cursor = nil }} end }},\n\
-             }}\n"
+            r#"// ==Feed==
+// @id  {id}
+// @name Feed {id}
+// @version {version}
+// @schema_version 3
+// @base_url http://127.0.0.1:1/
+// @access_domain 127.0.0.1
+// ==/Feed==
+(() => {{
+  const empty = () => ({{ type: "complete", items: [] }});
+  const bookInfo = () => ({{
+    type: "complete",
+    value: {{ id: "0", title: "", author: "" }},
+  }});
+  return {{ search: empty, bookInfo, chapters: empty, paragraphs: empty }};
+}})()
+"#
         )
     }
 
@@ -714,8 +718,7 @@ mod tests {
                     source_url: Some("https://example.com/src".to_owned()),
                 },
                 ImportFeedScript {
-                    script: "-- ==Feed==\n-- no metadata at all\n-- ==/Feed==\nreturn {}"
-                        .to_owned(),
+                    script: "// ==Feed==\n// no metadata at all\n// ==/Feed==\n({})".to_owned(),
                     source_url: None,
                 },
             ])
@@ -782,7 +785,7 @@ mod tests {
         };
         db.write(move |repo| {
             repo.upsert_feed(&meta, None, "hash", 1)?;
-            repo.upsert_script("f1", "1.0.0", "hash", "-- not lua", 1)
+            repo.upsert_script("f1", "1.0.0", "hash", "// not a feed", 1)
         })
         .await?;
 

@@ -10,14 +10,7 @@ crate-type = ["lib"]
 wildcard_imports = "deny"
 
 [dependencies]
-mlua = { version = "0.12", features = [
-    "lua54",
-    "vendored",
-    "async",
-    "send",
-    "serde",
-    "macros",
-] }
+rquickjs = { version = "0.14", features = ["bindgen", "parallel"] }
 reqwest = { version = "0.13", features = [
     "query",
     "gzip",

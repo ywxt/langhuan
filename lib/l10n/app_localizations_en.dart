@@ -831,7 +831,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get devScriptHint =>
-      'Paste a Lua feed script or import one from an installed feed. Scripts compile and run here in isolation; installed feeds are untouched.';
+      'Paste a JavaScript feed or import one from an installed feed. Scripts run in an isolated native QuickJS sandbox; installed feeds are untouched.';
 
   @override
   String get devScriptImport => 'Import';
