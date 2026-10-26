@@ -507,10 +507,12 @@ local login_handlers = {
 
     status = {
         -- Probe a lightweight no-match search page: it embeds the `user`
-        -- object (~25 KB) without any book data.
+        -- object (~25 KB) without any book data. The keyword must not
+        -- contain hyphens: the m-site 302s hyphenated keywords to a bare
+        -- error page that carries no SSR context.
         request = function()
             return {
-                url = meta.base_url .. "/soushu/langhuan-auth-probe.html",
+                url = meta.base_url .. "/soushu/langhuanprobe.html",
                 method = "GET",
                 headers = request_headers(),
             }

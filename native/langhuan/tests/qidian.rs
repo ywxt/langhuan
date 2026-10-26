@@ -603,7 +603,7 @@ async fn auth_status_reflects_user_login_state() {
 
     // Logged-in probe page.
     let _mock_in = server
-        .mock("GET", "/soushu/langhuan-auth-probe.html")
+        .mock("GET", "/soushu/langhuanprobe.html")
         .with_status(200)
         .with_body(ssr_page(&status_page_json(true)))
         .create_async()
@@ -643,7 +643,7 @@ async fn auth_status_expired_when_site_reports_logged_out() {
     let mut server = mockito::Server::new_async().await;
 
     let _mock_out = server
-        .mock("GET", "/soushu/langhuan-auth-probe.html")
+        .mock("GET", "/soushu/langhuanprobe.html")
         .with_status(200)
         .with_body(ssr_page(&status_page_json(false)))
         .create_async()
