@@ -87,8 +87,11 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
 
     // A failed auth probe (for example while offline) must not hide the
     // login action for an auth-capable feed — fall back to "logged out".
-    final authSupported =
-        !authAsync.isLoading && (authAsync.hasError || authAsync.value != null);
+    // A refresh retains the previous value, so the section stays put
+    // instead of flashing away while reloading.
+    final authSupported = authAsync.hasValue
+        ? authAsync.value != null
+        : authAsync.hasError;
     final authStatus = authAsync.hasError
         ? FeedAuthStatusModel.loggedOut
         : authAsync.value;
@@ -265,6 +268,20 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
                     const SizedBox(width: LanghuanTheme.spaceSm),
                     FeedAuthBadge(status: authStatus),
                   ],
+                  const Spacer(),
+                  if (authAsync.isLoading)
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    IconButton(
+                      tooltip: l10n.feedAuthRefresh,
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      onPressed: _refreshAuthStatus,
+                    ),
                 ],
               ),
               const SizedBox(height: LanghuanTheme.spaceMd),
@@ -328,6 +345,12 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
     if (!mounted) return;
     final l10n = AppLocalizations.of(context);
     showSuccessSnack(ScaffoldMessenger.of(context), l10n.feedDetailCopied);
+  }
+
+  /// Re-runs the capability check and status probe, keeping the sheet
+  /// open with the previous state while the fresh one loads.
+  void _refreshAuthStatus() {
+    ref.invalidate(feedAuthStatusProvider(widget.feed.id));
   }
 
   Future<void> _openLoginFlow() async {

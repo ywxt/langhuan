@@ -163,6 +163,7 @@
   "feedAuthNotSupported": "此書源不支持登錄。",
   "feedAuthUpdated": "登錄驗證成功",
   "feedAuthLoggedOut": "已登出",
+  "feedAuthRefresh": "刷新登錄狀態",
   "searchAuthHint": "此書源可能需要先登錄",
   "searchAuthAction": "去登錄",
 

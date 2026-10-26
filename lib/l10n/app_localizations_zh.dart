@@ -497,6 +497,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedAuthLoggedOut => '已登出';
 
   @override
+  String get feedAuthRefresh => '刷新登錄狀態';
+
+  @override
   String get searchAuthHint => '此書源可能需要先登錄';
 
   @override

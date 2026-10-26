@@ -998,6 +998,12 @@ abstract class AppLocalizations {
   /// **'Logged out'**
   String get feedAuthLoggedOut;
 
+  /// Tooltip for the auth status refresh button in the feed detail sheet
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh login status'**
+  String get feedAuthRefresh;
+
   /// Hint shown on search error when feed supports auth
   ///
   /// In en, this message translates to:

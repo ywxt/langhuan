@@ -487,6 +487,9 @@
   "feedAuthLoggedOut": "Logged out",
   "@feedAuthLoggedOut": { "description": "Snackbar after feed auth clear" },
 
+  "feedAuthRefresh": "Refresh login status",
+  "@feedAuthRefresh": { "description": "Tooltip for the auth status refresh button in the feed detail sheet" },
+
   "searchAuthHint": "This source may require login",
   "@searchAuthHint": { "description": "Hint shown on search error when feed supports auth" },
 

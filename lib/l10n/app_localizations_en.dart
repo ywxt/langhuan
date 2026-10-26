@@ -504,6 +504,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get feedAuthLoggedOut => 'Logged out';
 
   @override
+  String get feedAuthRefresh => 'Refresh login status';
+
+  @override
   String get searchAuthHint => 'This source may require login';
 
   @override
