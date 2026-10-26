@@ -119,6 +119,24 @@ class FeedListNotifier extends Notifier<FeedListState> {
     }
   }
 
+  /// Retry the failed layer, not merely the feed query.
+  ///
+  /// A bootstrap failure means the registry is unavailable, so calling
+  /// [load] again can only reproduce "app data directory not ready". Restart
+  /// the bootstrap provider first, then load the list after it succeeds.
+  Future<void> retry() async {
+    final bootstrap = ref.read(appDataDirectorySetProvider);
+    if (bootstrap.hasError || bootstrap.asData?.value == null) {
+      // Invalidating the dependency rebuilds this notifier as loading. Once
+      // bootstrap succeeds, build() schedules the initial list request.
+      _requestedInitialLoad = false;
+      ref.invalidate(appDataDirectorySetProvider);
+      return;
+    }
+
+    await load();
+  }
+
   /// Remove one feed, refresh list, and clear selected feed if needed.
   ///
   /// Returns `null` on success, or a user-facing error message on failure.

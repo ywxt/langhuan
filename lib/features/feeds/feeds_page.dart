@@ -284,7 +284,7 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
         child: ErrorState(
           title: l10n.feedsLoadError,
           message: normalizeErrorMessage(feedState.error!),
-          onRetry: () => ref.read(feedListProvider.notifier).load(),
+          onRetry: () => ref.read(feedListProvider.notifier).retry(),
           retryLabel: l10n.feedsRetry,
         ),
       );

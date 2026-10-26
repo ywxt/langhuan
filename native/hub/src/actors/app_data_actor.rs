@@ -124,10 +124,6 @@ impl AppDataActor {
             "app data directory initialized"
         );
 
-        if let Some(message) = registry_result.warning_message {
-            return Err(BridgeError::from(message));
-        }
-
         self.app_data_dir = Some(path);
 
         Ok(AppDataInitResult {
@@ -258,6 +254,56 @@ mod tests {
             }
             Ok(_) => panic!("expected error for blocked path"),
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn invalid_feed_does_not_fail_or_poison_app_bootstrap() -> TestResult {
+        let dir = tempfile::tempdir()?;
+        let db_path = dir.path().join("langhuan.db");
+        let db = Db::open(&db_path).await?;
+        let meta = langhuan::feed::FeedMeta {
+            id: "legacy-feed".to_owned(),
+            name: "Legacy Feed".to_owned(),
+            version: "1.0.0".to_owned(),
+            author: None,
+            description: None,
+            base_url: "https://example.com".to_owned(),
+            access_domains: Default::default(),
+            schema_version: 1,
+        };
+        db.write(move |repo| {
+            repo.upsert_feed(&meta, None, "legacy-hash", 1)?;
+            repo.upsert_script(
+                "legacy-feed",
+                "1.0.0",
+                "legacy-hash",
+                "-- legacy Lua feed",
+                1,
+            )
+        })
+        .await?;
+        drop(db);
+
+        let mut actor = spawn_actor_tree(dir.path()).await;
+        let path = dir.path().to_string_lossy().into_owned();
+
+        let result = actor.set_data_directory(path.clone()).await;
+        let result = result.map_err(|e| io::Error::other(e.message))?;
+        assert_eq!(result.feed_count, 0);
+
+        // The invalid source remains visible with its per-feed error instead
+        // of preventing the feed list from leaving its loading state.
+        let feeds = actor.registry_addr.send(ListFeeds).await?;
+        assert_eq!(feeds.len(), 1);
+        assert!(feeds[0].error.is_some());
+
+        // A repeated Flutter bootstrap is idempotent, rather than trying to
+        // initialize the already-live registry again.
+        actor
+            .set_data_directory(path)
+            .await
+            .map_err(|e| io::Error::other(e.message))?;
         Ok(())
     }
 }

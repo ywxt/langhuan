@@ -20,6 +20,14 @@ const _feedB = FeedMetaItem(
   enabled: true,
   accessDomains: [],
 );
+const _brokenFeed = FeedMetaItem(
+  id: 'broken-feed',
+  name: 'Broken Source',
+  version: '1',
+  enabled: true,
+  accessDomains: [],
+  error: 'script parse failed',
+);
 
 void main() {
   ProviderContainer container(FakeFeedService service) {
@@ -70,6 +78,70 @@ void main() {
       expect(state.hasError, isTrue);
       expect(state.error, isA<StateError>());
     });
+
+    test(
+      'a broken feed remains listed without keeping the list loading',
+      () async {
+        final c = container(
+          FakeFeedService(listFeedsHandler: () async => [_brokenFeed]),
+        );
+
+        await loadFeeds(c);
+
+        final state = c.read(feedListProvider);
+        expect(state.isLoading, isFalse);
+        expect(state.hasError, isFalse);
+        expect(state.items, [_brokenFeed]);
+        expect(state.items.single.error, 'script parse failed');
+      },
+    );
+
+    test(
+      'bootstrap failure exits loading and retry restarts bootstrap',
+      () async {
+        var bootstrapAttempts = 0;
+        final service = FakeFeedService(listFeedsHandler: () async => [_feedA]);
+        final c = ProviderContainer(
+          overrides: [
+            feedServiceProvider.overrideWithValue(service),
+            appDataDirectorySetProvider.overrideWith((ref) async {
+              bootstrapAttempts++;
+              if (bootstrapAttempts == 1) {
+                throw StateError('database unavailable');
+              }
+              return const AppDataDirectoryResult(feedCount: 1);
+            }),
+          ],
+        );
+        addTearDown(c.dispose);
+
+        // Keep the notifier alive so it observes the asynchronous bootstrap
+        // transition from loading to error.
+        final subscription = c.listen(feedListProvider, (_, _) {});
+        addTearDown(subscription.close);
+        await expectLater(
+          c.read(appDataDirectorySetProvider.future),
+          throwsA(isA<StateError>()),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        var state = c.read(feedListProvider);
+        expect(state.isLoading, isFalse);
+        expect(state.error, isA<StateError>());
+
+        await c.read(feedListProvider.notifier).retry();
+        await c.read(appDataDirectorySetProvider.future);
+        for (var i = 0; i < 10 && c.read(feedListProvider).items.isEmpty; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+
+        state = c.read(feedListProvider);
+        expect(bootstrapAttempts, 2);
+        expect(state.isLoading, isFalse);
+        expect(state.hasError, isFalse);
+        expect(state.items, [_feedA]);
+      },
+    );
 
     test('removeFeed drops the feed and clears a matching selection', () async {
       final c = container(

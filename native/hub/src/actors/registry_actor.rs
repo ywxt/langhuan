@@ -34,7 +34,6 @@ const PENDING_INSTALLS_CAP: usize = 8;
 
 pub struct RegistryInitializationResult {
     pub feed_count: u32,
-    pub warning_message: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -196,27 +195,14 @@ impl RegistryActor {
         }
 
         let feed_count = feeds.len() as u32;
-        let error_summary = if load_errors.is_empty() {
-            None
-        } else {
-            Some(
-                load_errors
-                    .iter()
-                    .map(|(id, e)| format!("{id}: {e}"))
-                    .collect::<Vec<_>>()
-                    .join("; "),
-            )
-        };
+        let load_error_count = load_errors.len();
 
         self.db = Some(db);
         self.feeds = feeds;
         self.load_errors = load_errors;
-        tracing::info!(feed_count = feed_count, "registry actor initialized");
+        tracing::info!(feed_count, load_error_count, "registry actor initialized");
 
-        Ok(RegistryInitializationResult {
-            feed_count,
-            warning_message: error_summary,
-        })
+        Ok(RegistryInitializationResult { feed_count })
     }
 
     fn require_db(&self) -> Result<&Db, BridgeError> {
@@ -793,7 +779,6 @@ mod tests {
         let result = actor.initialize_app_data_directory(db).await?;
         // The seeded script fails to compile, but registration survives.
         assert_eq!(result.feed_count, 0);
-        assert!(result.warning_message.is_some());
         assert!(actor.load_errors.contains_key("f1"));
 
         // A broken script keeps its registry row and, because listing
