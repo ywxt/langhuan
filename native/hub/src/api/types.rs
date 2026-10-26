@@ -58,6 +58,16 @@ impl std::fmt::Display for BridgeError {
 
 impl std::error::Error for BridgeError {}
 
+impl BridgeError {
+    /// Creates an anticipated script error classified by `reason`.
+    pub fn script_expected(reason: ScriptExpectedReason, message: String) -> Self {
+        Self {
+            kind: ErrorKind::ScriptExpected { reason },
+            message,
+        }
+    }
+}
+
 impl From<String> for BridgeError {
     fn from(message: String) -> Self {
         Self {

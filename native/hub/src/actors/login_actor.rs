@@ -10,8 +10,7 @@ use langhuan::script::lua::LuaFeed;
 use messages::prelude::{Actor, Address, Context, Handler};
 
 use crate::api::types::{
-    AuthCapability, AuthEntryInfo, AuthStatus, BridgeError, CookieEntry, ErrorKind,
-    ScriptExpectedReason,
+    AuthCapability, AuthEntryInfo, AuthStatus, BridgeError, CookieEntry, ScriptExpectedReason,
 };
 use crate::localize_error;
 
@@ -205,12 +204,10 @@ impl LoginActor {
             Ok(FeedAuthStatus::Expired | FeedAuthStatus::LoggedOut) => {
                 feed.set_auth_info(&support, stored_auth.clone())
                     .map_err(BridgeError::from)?;
-                return Err(BridgeError {
-                    kind: ErrorKind::ScriptExpected {
-                        reason: ScriptExpectedReason::AuthRequired,
-                    },
-                    message: t!("error.auth_verification_failed").to_string(),
-                });
+                return Err(BridgeError::script_expected(
+                    ScriptExpectedReason::AuthRequired,
+                    t!("error.auth_verification_failed").to_string(),
+                ));
             }
             Err(error) => {
                 feed.set_auth_info(&support, stored_auth.clone())
