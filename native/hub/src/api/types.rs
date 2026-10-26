@@ -119,11 +119,13 @@ pub struct FeedMetaItem {
     pub enabled: bool,
     /// Where the feed script was installed from (URL), when known.
     pub source_url: Option<String>,
-    /// Base URL declared by the feed script. `None` when the script
-    /// failed to compile and its metadata is unavailable.
+    /// Base URL declared by the feed script, cached into the database at
+    /// install time. `None` only for feeds installed before the field was
+    /// persisted.
     pub base_url: Option<String>,
-    /// Access domain patterns declared by the feed script, sorted for
-    /// stable display. Empty when the script failed to compile.
+    /// Access domain patterns declared by the feed script, cached into the
+    /// database at install time and sorted for stable display. Empty when
+    /// the feed declares no restriction.
     pub access_domains: Vec<String>,
     pub error: Option<String>,
 }

@@ -183,10 +183,26 @@ const MIGRATIONS: &[Migration] = &[
             ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
     "#,
     },
+    Migration {
+        version: 5,
+        sql: r#"
+        -- Feed script metadata persisted at install time ------------------
+        -- Cached from the script's ==Feed== header so listing feeds reads
+        -- the database only; scripts are parsed solely in the add/import
+        -- flow. base_url is NULL only for rows installed before this
+        -- migration (until the feed is upgraded). access_domains_json is a
+        -- JSON array of allowed hostnames ('[]' = no restriction), written
+        -- sorted for stable display.
+        ALTER TABLE feeds
+            ADD COLUMN base_url TEXT;
+        ALTER TABLE feeds
+            ADD COLUMN access_domains_json TEXT NOT NULL DEFAULT '[]';
+    "#,
+    },
 ];
 
 /// The schema version this build understands (the last migration's version).
-pub(crate) const CURRENT_VERSION: i64 = 4;
+pub(crate) const CURRENT_VERSION: i64 = 5;
 
 /// Apply all pending migrations in order.
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {

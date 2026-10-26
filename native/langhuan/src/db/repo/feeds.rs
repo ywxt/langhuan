@@ -2,7 +2,7 @@
 
 use super::Repo;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::feed::FeedMeta;
 
 /// One row of the `feeds` table.
@@ -19,6 +19,12 @@ pub struct FeedRow {
     /// Paused feeds are excluded from aggregated search and background
     /// update checks; explicit per-feed actions still work.
     pub enabled: bool,
+    /// Base URL cached from the script header at install time. `None`
+    /// only for rows installed before the column existed.
+    pub base_url: Option<String>,
+    /// Access domains cached from the script header at install time,
+    /// sorted. Empty when the feed declares no restriction.
+    pub access_domains: Vec<String>,
 }
 
 /// A script-history row (newest first).
@@ -36,6 +42,9 @@ impl Repo<'_> {
     ///
     /// `installed_at_ms` is preserved across upgrades (`updated_at_ms`
     /// moves). A `None` `source_url` never erases a previously recorded URL.
+    /// The script header's base URL and access domains are cached here —
+    /// the only place scripts are parsed — so every later read goes to the
+    /// database.
     pub fn upsert_feed(
         &self,
         meta: &FeedMeta,
@@ -43,16 +52,22 @@ impl Repo<'_> {
         content_hash: &str,
         now_ms: i64,
     ) -> Result<()> {
+        let mut domains: Vec<&str> = meta.access_domains.iter().map(String::as_str).collect();
+        domains.sort_unstable();
+        let access_domains_json = serde_json::to_string(&domains)
+            .map_err(|e| Error::database(format!("serialize access domains: {e}")))?;
         self.conn.prepare_cached(
-            "INSERT INTO feeds (id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7) \
+            "INSERT INTO feeds (id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms, base_url, access_domains_json) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9) \
              ON CONFLICT(id) DO UPDATE SET \
                  name = excluded.name, \
                  version = excluded.version, \
                  author = excluded.author, \
                  source_url = COALESCE(excluded.source_url, feeds.source_url), \
                  content_hash = excluded.content_hash, \
-                 updated_at_ms = excluded.updated_at_ms",
+                 updated_at_ms = excluded.updated_at_ms, \
+                 base_url = excluded.base_url, \
+                 access_domains_json = excluded.access_domains_json",
         )?
         .execute(tokio_rusqlite::params![
             meta.id,
@@ -62,6 +77,8 @@ impl Repo<'_> {
             source_url,
             content_hash,
             now_ms,
+            meta.base_url,
+            access_domains_json,
         ])?;
         Ok(())
     }
@@ -111,7 +128,7 @@ impl Repo<'_> {
     /// List all registered feeds, oldest install first.
     pub fn list_feeds(&self) -> Result<Vec<FeedRow>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms, enabled \
+            "SELECT id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms, enabled, base_url, access_domains_json \
              FROM feeds ORDER BY installed_at_ms, id",
         )?;
         let rows = stmt
@@ -123,7 +140,7 @@ impl Repo<'_> {
     pub fn get_feed(&self, id: &str) -> Result<Option<FeedRow>> {
         super::maybe_row(
             self.conn,
-            "SELECT id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms, enabled \
+            "SELECT id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms, enabled, base_url, access_domains_json \
              FROM feeds WHERE id = ?1",
             &[&id],
             map_feed_row,
@@ -138,14 +155,14 @@ impl Repo<'_> {
     /// startup.
     pub fn list_feeds_with_scripts(&self) -> Result<Vec<(FeedRow, Option<String>)>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT f.id, f.name, f.version, f.author, f.source_url, f.content_hash, f.installed_at_ms, f.updated_at_ms, f.enabled, s.script \
+            "SELECT f.id, f.name, f.version, f.author, f.source_url, f.content_hash, f.installed_at_ms, f.updated_at_ms, f.enabled, f.base_url, f.access_domains_json, s.script \
              FROM feeds f \
              LEFT JOIN feed_scripts s ON s.feed_id = f.id AND s.version = f.version \
              ORDER BY f.installed_at_ms, f.id",
         )?;
         let rows = stmt
             .query_map([], |row| {
-                Ok((map_feed_row(row)?, row.get::<_, Option<String>>(9)?))
+                Ok((map_feed_row(row)?, row.get::<_, Option<String>>(11)?))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
@@ -222,6 +239,9 @@ impl Repo<'_> {
 fn map_feed_row(
     row: &tokio_rusqlite::rusqlite::Row<'_>,
 ) -> tokio_rusqlite::rusqlite::Result<FeedRow> {
+    // Corrupt JSON degrades to "no domains" rather than failing the read;
+    // the column is always written by `upsert_feed`'s serializer.
+    let access_domains = serde_json::from_str(&row.get::<_, String>(10)?).unwrap_or_default();
     Ok(FeedRow {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -232,6 +252,8 @@ fn map_feed_row(
         installed_at_ms: row.get(6)?,
         updated_at_ms: row.get(7)?,
         enabled: row.get::<_, i64>(8)? != 0,
+        base_url: row.get(9)?,
+        access_domains,
     })
 }
 
@@ -255,8 +277,35 @@ mod tests {
         assert_eq!(row.content_hash, "h2");
         // source_url preserved across a file-based upgrade (None)
         assert_eq!(row.source_url.as_deref(), Some("https://src"));
+        // Script metadata cached at install time follows the script
+        assert_eq!(row.base_url.as_deref(), Some("https://example.com"));
+        assert!(row.access_domains.is_empty());
         assert_eq!(row.installed_at_ms, now);
         assert_eq!(row.updated_at_ms, now + 10);
+    }
+
+    #[test]
+    fn upsert_feed_caches_access_domains_sorted() {
+        let db = TestDb::new();
+        let conn = db.repo();
+        let mut meta = feed_meta("f1", "1.0.0");
+        meta.access_domains = std::collections::HashSet::from([
+            "z.example".to_owned(),
+            "a.example".to_owned(),
+            "m.example".to_owned(),
+        ]);
+        conn.upsert_feed(&meta, None, "h", 1).expect("install");
+
+        let row = conn.get_feed("f1").expect("get").expect("exists");
+        // HashSet iteration order is random; storage must not be
+        assert_eq!(
+            row.access_domains,
+            vec![
+                "a.example".to_owned(),
+                "m.example".to_owned(),
+                "z.example".to_owned()
+            ]
+        );
     }
 
     #[test]
