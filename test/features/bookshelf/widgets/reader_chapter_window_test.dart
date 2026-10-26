@@ -183,7 +183,7 @@ void main() {
 
       final error = window.stateOf('c3');
       expect(error, isA<ChapterLoadError>());
-      expect((error as ChapterLoadError).message, contains('c3'));
+      expect((error as ChapterLoadError).error.toString(), contains('c3'));
 
       loader.failingChapters.clear();
       window.retry('c3');

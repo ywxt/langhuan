@@ -316,10 +316,7 @@ class ReaderChapterWindow extends ChangeNotifier {
       }
     } catch (error) {
       if (_records.containsKey(chapterId)) {
-        _records[chapterId] = ChapterLoadError(
-          error: error,
-          message: normalizeErrorMessage(error),
-        );
+        _records[chapterId] = ChapterLoadError(error: error);
       }
     } finally {
       _inFlight.remove(chapterId);

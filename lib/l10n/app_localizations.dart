@@ -566,6 +566,42 @@ abstract class AppLocalizations {
   /// **'Retry'**
   String get readerRetry;
 
+  /// No description provided for @errorCategoryAuthRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Login required'**
+  String get errorCategoryAuthRequired;
+
+  /// No description provided for @errorCategoryCfChallenge.
+  ///
+  /// In en, this message translates to:
+  /// **'Cloudflare challenge detected'**
+  String get errorCategoryCfChallenge;
+
+  /// No description provided for @errorCategoryRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate limited'**
+  String get errorCategoryRateLimited;
+
+  /// No description provided for @errorCategoryContentNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Content not found'**
+  String get errorCategoryContentNotFound;
+
+  /// No description provided for @errorCategorySourceUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Source unavailable'**
+  String get errorCategorySourceUnavailable;
+
+  /// No description provided for @errorCategoryScriptError.
+  ///
+  /// In en, this message translates to:
+  /// **'Script error'**
+  String get errorCategoryScriptError;
+
   /// Reader bottom bar button: table of contents
   ///
   /// In en, this message translates to:

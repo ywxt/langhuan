@@ -261,6 +261,13 @@
   "readerRetry": "Retry",
   "@readerRetry": { "description": "Retry action label for chapter loading failures" },
 
+  "errorCategoryAuthRequired": "Login required",
+  "errorCategoryCfChallenge": "Cloudflare challenge detected",
+  "errorCategoryRateLimited": "Rate limited",
+  "errorCategoryContentNotFound": "Content not found",
+  "errorCategorySourceUnavailable": "Source unavailable",
+  "errorCategoryScriptError": "Script error",
+
   "readerToc": "TOC",
   "@readerToc": { "description": "Reader bottom bar button: table of contents" },
 

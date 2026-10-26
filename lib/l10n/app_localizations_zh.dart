@@ -275,6 +275,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerRetry => '重試';
 
   @override
+  String get errorCategoryAuthRequired => '需要登錄';
+
+  @override
+  String get errorCategoryCfChallenge => '觸發了 Cloudflare 驗證';
+
+  @override
+  String get errorCategoryRateLimited => '請求過於頻繁';
+
+  @override
+  String get errorCategoryContentNotFound => '找不到內容';
+
+  @override
+  String get errorCategorySourceUnavailable => '書源暫時不可用';
+
+  @override
+  String get errorCategoryScriptError => '腳本錯誤';
+
+  @override
   String get readerToc => '目錄';
 
   @override

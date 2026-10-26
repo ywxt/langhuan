@@ -277,6 +277,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readerRetry => 'Retry';
 
   @override
+  String get errorCategoryAuthRequired => 'Login required';
+
+  @override
+  String get errorCategoryCfChallenge => 'Cloudflare challenge detected';
+
+  @override
+  String get errorCategoryRateLimited => 'Rate limited';
+
+  @override
+  String get errorCategoryContentNotFound => 'Content not found';
+
+  @override
+  String get errorCategorySourceUnavailable => 'Source unavailable';
+
+  @override
+  String get errorCategoryScriptError => 'Script error';
+
+  @override
   String get readerToc => 'TOC';
 
   @override

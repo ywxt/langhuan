@@ -586,7 +586,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
           child: ChapterStatusBlock(
             kind: ChapterStatusBlockKind.error,
             chapterTitle: _chapterTitleOf(chapterId),
-            message: state.message,
+            error: state.error,
             onRetry: () => widget.window.retry(chapterId),
           ),
         ),

@@ -83,7 +83,7 @@ class _FlatEntry {
     required this.chapterId,
     required this.localPageIndex,
     required this.loading,
-    this.errorMessage,
+    this.error,
   });
 
   final String chapterId;
@@ -92,7 +92,9 @@ class _FlatEntry {
   /// (neighbor chapter still loading / failed).
   final int localPageIndex;
   final bool loading;
-  final String? errorMessage;
+
+  /// Failure cause when this entry stands in for a failed chapter.
+  final Object? error;
 }
 
 class _ChapterContentManagerState extends State<ChapterContentManager> {
@@ -327,7 +329,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
             chapterId: chapterId,
             localPageIndex: -1,
             loading: false,
-            errorMessage: state.message,
+            error: state.error,
           ),
         );
       } else if (state is ChapterLoading) {
@@ -381,11 +383,11 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     if (entry.loading) {
       return ReaderSlotLoading(entry.chapterId, chapterTitle: chapterTitle);
     }
-    if (entry.errorMessage != null) {
+    if (entry.error != null) {
       return ReaderSlotError(
         chapterId: entry.chapterId,
         chapterTitle: chapterTitle,
-        message: entry.errorMessage!,
+        error: entry.error!,
       );
     }
     final pages = _pagesFor(entry.chapterId);

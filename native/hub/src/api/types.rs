@@ -18,6 +18,11 @@ use flutter_rust_bridge::frb;
 pub struct BridgeError {
     pub kind: ErrorKind,
     pub message: String,
+    /// For anticipated script errors ([`ErrorKind::ScriptExpected`]): the
+    /// message the script itself provided, unwrapped from the localized
+    /// presentation in `message`. `None` for every other kind — consumers
+    /// then display `message` in full.
+    pub detail: Option<String>,
 }
 
 /// Classifies the error so Flutter can display appropriate UI.
@@ -47,7 +52,11 @@ pub enum ScriptExpectedReason {
     RateLimited,
     ContentNotFound,
     SourceUnavailable,
-    Other,
+    /// A code the script raised that this app does not know about. The
+    /// code itself is the classification, so it is carried for display.
+    Other {
+        code: String,
+    },
 }
 
 impl std::fmt::Display for BridgeError {
@@ -60,10 +69,14 @@ impl std::error::Error for BridgeError {}
 
 impl BridgeError {
     /// Creates an anticipated script error classified by `reason`.
+    ///
+    /// `message` is an app-side presentation (already localized, not
+    /// script-provided), so no `detail` is attached.
     pub fn script_expected(reason: ScriptExpectedReason, message: String) -> Self {
         Self {
             kind: ErrorKind::ScriptExpected { reason },
             message,
+            detail: None,
         }
     }
 }
@@ -73,6 +86,7 @@ impl From<String> for BridgeError {
         Self {
             kind: ErrorKind::Internal,
             message,
+            detail: None,
         }
     }
 }
@@ -82,6 +96,7 @@ impl From<messages::prelude::SendError> for BridgeError {
         Self {
             kind: ErrorKind::Internal,
             message: format!("internal error: {e}"),
+            detail: None,
         }
     }
 }
@@ -90,26 +105,35 @@ impl From<langhuan::error::Error> for BridgeError {
     fn from(e: langhuan::error::Error) -> Self {
         use langhuan::error::{Error, ExpectedErrorCode, ScriptError};
 
-        let kind = match &e {
-            Error::Script(ScriptError::Expected { code, .. }) => {
+        let (kind, detail) = match &e {
+            Error::Script(ScriptError::Expected { code, message }) => {
                 let reason = match code {
                     ExpectedErrorCode::AuthRequired => ScriptExpectedReason::AuthRequired,
                     ExpectedErrorCode::CfChallenge => ScriptExpectedReason::CfChallenge,
                     ExpectedErrorCode::RateLimited => ScriptExpectedReason::RateLimited,
                     ExpectedErrorCode::ContentNotFound => ScriptExpectedReason::ContentNotFound,
                     ExpectedErrorCode::SourceUnavailable => ScriptExpectedReason::SourceUnavailable,
-                    ExpectedErrorCode::Unknown(_) => ScriptExpectedReason::Other,
+                    ExpectedErrorCode::Unknown(code) => {
+                        ScriptExpectedReason::Other { code: code.clone() }
+                    }
                 };
-                ErrorKind::ScriptExpected { reason }
+                (
+                    ErrorKind::ScriptExpected { reason },
+                    // The script's own words, unwrapped from the localized
+                    // presentation: expected errors are classified data,
+                    // not prose.
+                    Some(message.clone()),
+                )
             }
-            Error::Script(ScriptError::JavaScript(_)) => ErrorKind::ScriptRuntime,
-            Error::Script(_) => ErrorKind::ScriptConfig,
-            Error::Http(_) => ErrorKind::Network,
-            Error::Persistence(_) => ErrorKind::Storage,
-            Error::Registry(_) => ErrorKind::Registry,
+            Error::Script(ScriptError::JavaScript(_)) => (ErrorKind::ScriptRuntime, None),
+            Error::Script(_) => (ErrorKind::ScriptConfig, None),
+            Error::Http(_) => (ErrorKind::Network, None),
+            Error::Persistence(_) => (ErrorKind::Storage, None),
+            Error::Registry(_) => (ErrorKind::Registry, None),
         };
         Self {
             kind,
+            detail,
             message: crate::localize_error(&e),
         }
     }
@@ -448,4 +472,83 @@ pub struct BookmarkItem {
     pub paragraph_preview: String,
     pub label: String,
     pub created_at_ms: i64,
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use langhuan::error::{Error, ExpectedErrorCode};
+
+    use super::*;
+
+    /// Expected script errors carry the script's own message as `detail`,
+    /// classified by reason; the localized `message` still wraps it for
+    /// end-user surfaces.
+    #[test]
+    fn expected_error_carries_script_detail() {
+        let err = BridgeError::from(Error::expected(
+            ExpectedErrorCode::AuthRequired,
+            "VIP chapter needs login",
+        ));
+
+        let ErrorKind::ScriptExpected {
+            reason: ScriptExpectedReason::AuthRequired,
+        } = err.kind
+        else {
+            panic!("expected ScriptExpected/AuthRequired, got {:?}", err.kind);
+        };
+        assert_eq!(err.detail.as_deref(), Some("VIP chapter needs login"));
+        assert!(
+            err.message.contains("VIP chapter needs login"),
+            "localized message still presents the script detail"
+        );
+    }
+
+    /// A code this app does not know survives as `Other { code }` — the
+    /// script's own classification is the display, not a generic "other".
+    #[test]
+    fn unknown_script_code_survives_as_other_with_code() {
+        let err = BridgeError::from(Error::expected(
+            ExpectedErrorCode::Unknown("waf".to_owned()),
+            "blocked",
+        ));
+
+        let ErrorKind::ScriptExpected {
+            reason: ScriptExpectedReason::Other { code },
+        } = err.kind
+        else {
+            panic!("expected ScriptExpected/Other, got {:?}", err.kind);
+        };
+        assert_eq!(code, "waf");
+        assert_eq!(err.detail.as_deref(), Some("blocked"));
+    }
+
+    /// Unexpected errors carry no `detail` — the full localized message is
+    /// the display.
+    #[test]
+    fn unexpected_error_has_no_detail() {
+        let err = BridgeError::from(Error::javascript("boom"));
+        assert!(matches!(err.kind, ErrorKind::ScriptRuntime));
+        assert!(err.detail.is_none());
+    }
+
+    /// The app-side constructor (login verification) is a presentation,
+    /// not script-provided content: no `detail`.
+    #[test]
+    fn app_side_script_expected_has_no_detail() {
+        let err = BridgeError::script_expected(
+            ScriptExpectedReason::AuthRequired,
+            "login could not be verified".to_owned(),
+        );
+        assert!(matches!(
+            err.kind,
+            ErrorKind::ScriptExpected {
+                reason: ScriptExpectedReason::AuthRequired
+            }
+        ));
+        assert!(err.detail.is_none());
+    }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/utils/errors.dart';
 import '../../../shared/widgets/loading.dart';
 
 enum ChapterStatusBlockKind { loading, error }
@@ -17,13 +18,15 @@ class ChapterStatusBlock extends StatelessWidget {
     super.key,
     required this.kind,
     this.chapterTitle,
-    this.message,
+    this.error,
     this.onRetry,
   });
 
   final ChapterStatusBlockKind kind;
   final String? chapterTitle;
-  final String? message;
+
+  /// Failure cause when the fetch failed; drives the classification shown.
+  final Object? error;
   final VoidCallback? onRetry;
 
   @override
@@ -34,7 +37,7 @@ class ChapterStatusBlock extends StatelessWidget {
       ),
       ChapterStatusBlockKind.error => _ErrorBlock(
         chapterTitle: chapterTitle,
-        message: message,
+        error: error,
         onRetry: onRetry,
       ),
     };
@@ -86,10 +89,10 @@ class _LoadingBlock extends StatelessWidget {
 }
 
 class _ErrorBlock extends StatelessWidget {
-  const _ErrorBlock({this.chapterTitle, this.message, this.onRetry});
+  const _ErrorBlock({this.chapterTitle, this.error, this.onRetry});
 
   final String? chapterTitle;
-  final String? message;
+  final Object? error;
   final VoidCallback? onRetry;
 
   @override
@@ -97,9 +100,16 @@ class _ErrorBlock extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final title = chapterTitle;
-    final detail = message;
+    // Anticipated script errors lead with their classification and report
+    // only what the script itself said; everything unexpected keeps the
+    // generic title and carries the full message.
+    final display = describeError(
+      error,
+      l10n,
+      genericTitle: l10n.readerChapterLoadError,
+    );
     final hasTitle = title != null && title.isNotEmpty;
-    final hasDetail = detail != null && detail.isNotEmpty;
+    final hasDetail = display.detail.isNotEmpty;
 
     return Center(
       child: Padding(
@@ -122,10 +132,7 @@ class _ErrorBlock extends StatelessWidget {
               ),
             ),
             const SizedBox(height: LanghuanTheme.spaceLg),
-            Text(
-              l10n.readerChapterLoadError,
-              style: theme.textTheme.titleMedium,
-            ),
+            Text(display.title, style: theme.textTheme.titleMedium),
             if (hasTitle) ...[
               const SizedBox(height: LanghuanTheme.spaceXs),
               Text(
@@ -149,7 +156,7 @@ class _ErrorBlock extends StatelessWidget {
                   borderRadius: BorderRadius.circular(LanghuanTheme.radiusSm),
                 ),
                 child: Text(
-                  detail,
+                  display.detail,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

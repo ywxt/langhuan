@@ -241,7 +241,7 @@ void main() {
       await tester.pumpWidget(
         _host(
           current: ReaderSlotPage(_page('p1', 'page one')),
-          next: const ReaderSlotError(chapterId: 'c2', message: 'boom'),
+          next: const ReaderSlotError(chapterId: 'c2', error: 'boom'),
           onRetryChapter: retryChapters.add,
         ),
       );

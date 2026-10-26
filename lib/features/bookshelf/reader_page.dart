@@ -187,11 +187,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
     if (_screenController.initError != null &&
         _screenController.chapters.isEmpty) {
+      final display = describeError(
+        _screenController.initError,
+        l10n,
+        genericTitle: l10n.readerLoadError,
+      );
       return Scaffold(
         appBar: AppBar(title: Text(l10n.readerTitle)),
         body: ErrorState(
-          title: l10n.readerLoadError,
-          message: normalizeErrorMessage(_screenController.initError!),
+          title: display.title,
+          message: display.detail,
           onRetry: _screenController.initialize,
           retryLabel: l10n.bookDetailRetry,
         ),

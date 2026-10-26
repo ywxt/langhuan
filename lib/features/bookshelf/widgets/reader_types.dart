@@ -44,9 +44,8 @@ final class ChapterLoaded extends ChapterLoadState {
 }
 
 final class ChapterLoadError extends ChapterLoadState {
-  const ChapterLoadError({required this.error, required this.message});
+  const ChapterLoadError({required this.error});
   final Object error;
-  final String message;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,5 +60,5 @@ ErrorKind? extractErrorKind(Object? error) {
 bool isAuthRequiredError(Object? error) {
   final kind = extractErrorKind(error);
   return kind is ErrorKind_ScriptExpected &&
-      kind.reason == ScriptExpectedReason.authRequired;
+      kind.reason is ScriptExpectedReason_AuthRequired;
 }

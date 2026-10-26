@@ -34,12 +34,14 @@ class ReaderSlotError extends ReaderSlot {
   const ReaderSlotError({
     required this.chapterId,
     this.chapterTitle,
-    required this.message,
+    required this.error,
   });
 
   final String chapterId;
   final String? chapterTitle;
-  final String message;
+
+  /// Failure cause of this chapter's load.
+  final Object error;
 }
 
 /// Horizontal paged reader.
@@ -404,16 +406,12 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
             chapterTitle: chapterTitle,
           ),
         );
-      case ReaderSlotError(
-        :final chapterId,
-        :final chapterTitle,
-        :final message,
-      ):
+      case ReaderSlotError(:final chapterId, :final chapterTitle, :final error):
         return Center(
           child: ChapterStatusBlock(
             kind: ChapterStatusBlockKind.error,
             chapterTitle: chapterTitle,
-            message: message,
+            error: error,
             onRetry: widget.onRetryChapter != null
                 ? () => widget.onRetryChapter!(chapterId)
                 : null,

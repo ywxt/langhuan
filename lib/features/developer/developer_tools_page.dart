@@ -768,7 +768,7 @@ class _ErrorCard extends StatelessWidget {
           const SizedBox(height: LanghuanTheme.spaceSm),
           SelectionArea(
             child: Text(
-              error.message,
+              _detailText(),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onErrorContainer,
               ),
@@ -779,6 +779,15 @@ class _ErrorCard extends StatelessWidget {
     );
   }
 
+  /// An anticipated script error reports only what the script itself said
+  /// — the classification lives in the chip above. Everything unexpected
+  /// carries the full localized message.
+  String _detailText() {
+    final detail = error.detail;
+    if (detail != null && detail.isNotEmpty) return detail;
+    return error.message;
+  }
+
   /// Error kinds are a technical classification aimed at script authors —
   /// the raw identifier is more useful than a translated phrase.
   String _errorKindLabel(ErrorKind kind) => switch (kind) {
@@ -786,9 +795,21 @@ class _ErrorCard extends StatelessWidget {
     ErrorKind_Network() => 'Network',
     ErrorKind_ScriptRuntime() => 'ScriptRuntime',
     ErrorKind_ScriptConfig() => 'ScriptConfig',
-    ErrorKind_ScriptExpected(:final reason) => 'ScriptExpected.${reason.name}',
+    ErrorKind_ScriptExpected(:final reason) =>
+      'ScriptExpected.${_reasonLabel(reason)}',
     ErrorKind_Storage() => 'Storage',
     ErrorKind_Registry() => 'Registry',
+  };
+
+  /// Known reasons map to their identifier; a script's custom code is its
+  /// own classification.
+  String _reasonLabel(ScriptExpectedReason reason) => switch (reason) {
+    ScriptExpectedReason_AuthRequired() => 'authRequired',
+    ScriptExpectedReason_CfChallenge() => 'cfChallenge',
+    ScriptExpectedReason_RateLimited() => 'rateLimited',
+    ScriptExpectedReason_ContentNotFound() => 'contentNotFound',
+    ScriptExpectedReason_SourceUnavailable() => 'sourceUnavailable',
+    ScriptExpectedReason_Other(:final code) => code,
   };
 }
 

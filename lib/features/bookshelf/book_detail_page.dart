@@ -156,6 +156,31 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
         ? progressState.progress
         : null;
 
+    // Anticipated script errors surface their classification; everything
+    // unexpected keeps the generic title with the full message.
+    Widget chaptersErrorSliver() {
+      final display = describeError(
+        currentChaptersState.error,
+        l10n,
+        genericTitle: l10n.bookDetailChaptersError,
+      );
+      return SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: LanghuanTheme.spaceLg,
+          ),
+          child: ErrorState(
+            title: display.title,
+            message: display.detail,
+            onRetry: () => ref
+                .read(chaptersProvider.notifier)
+                .retry(feedId: widget.feedId),
+            retryLabel: l10n.bookDetailRetry,
+          ),
+        ),
+      );
+    }
+
     if ((!hasCurrentBook || bookInfoState.isLoading) && currentBook == null) {
       return Scaffold(
         appBar: AppBar(title: Text(l10n.bookDetailTitle)),
@@ -203,11 +228,16 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     }
 
     if (bookInfoState.hasError && bookInfoState.book == null) {
+      final display = describeError(
+        bookInfoState.error,
+        l10n,
+        genericTitle: l10n.bookDetailError,
+      );
       return Scaffold(
         appBar: AppBar(title: Text(l10n.bookDetailTitle)),
         body: ErrorState(
-          title: l10n.bookDetailError,
-          message: normalizeErrorMessage(bookInfoState.error!),
+          title: display.title,
+          message: display.detail,
           onRetry: () async {
             await ref.read(bookInfoProvider.notifier).retry();
             await ref
@@ -363,21 +393,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
             )
           else if (currentChaptersState.hasError &&
               currentChaptersState.items.isEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: LanghuanTheme.spaceLg,
-                ),
-                child: ErrorState(
-                  title: l10n.bookDetailChaptersError,
-                  message: normalizeErrorMessage(currentChaptersState.error!),
-                  onRetry: () => ref
-                      .read(chaptersProvider.notifier)
-                      .retry(feedId: widget.feedId),
-                  retryLabel: l10n.bookDetailRetry,
-                ),
-              ),
-            )
+            chaptersErrorSliver()
           else
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(
