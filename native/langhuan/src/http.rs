@@ -472,7 +472,9 @@ pub(crate) fn redact_url_secrets(url: &str) -> String {
 
 /// Check whether the host of `url` is permitted by `access_domains`.
 ///
-/// Each entry in `access_domains` must be an exact hostname.
+/// Entries are exact hostnames or leftmost-label wildcards such as
+/// `*.example.com`. A wildcard matches one or more subdomain labels but never
+/// the suffix itself, and matching always observes a DNS-label boundary.
 /// Returns `true` if the host is allowed, `false` if the URL cannot be parsed
 /// or the host is not in the list.
 fn domain_allowed(url: &str, access_domains: &HashSet<String>) -> bool {
@@ -481,10 +483,20 @@ fn domain_allowed(url: &str, access_domains: &HashSet<String>) -> bool {
         Err(_) => return false,
     };
     let host = match parsed.host_str() {
-        Some(h) => h,
+        Some(host) => host.trim_end_matches('.').to_ascii_lowercase(),
         None => return false,
     };
-    access_domains.contains(host)
+    access_domains.iter().any(|entry| {
+        let entry = entry.to_ascii_lowercase();
+        match entry.strip_prefix("*.") {
+            Some(suffix) => {
+                host.len() > suffix.len()
+                    && host.ends_with(suffix)
+                    && host.as_bytes().get(host.len() - suffix.len() - 1) == Some(&b'.')
+            }
+            None => host == entry,
+        }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -493,7 +505,11 @@ fn domain_allowed(url: &str, access_domains: &HashSet<String>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{HttpBody, collect_response_headers, redact_url_secrets, shared_client};
+    use std::collections::HashSet;
+
+    use super::{
+        HttpBody, collect_response_headers, domain_allowed, redact_url_secrets, shared_client,
+    };
 
     #[test]
     fn http_body_to_string_roundtrip() {
@@ -506,6 +522,33 @@ mod tests {
     fn http_body_from_string_helper_works() {
         let body = HttpBody::from_string("payload".to_owned());
         assert_eq!(body.as_str().expect("valid utf-8"), "payload");
+    }
+
+    #[test]
+    fn domain_allowlist_supports_boundary_safe_subdomain_wildcards() {
+        let domains = HashSet::from([
+            "api.example.com".to_owned(),
+            "*.image.myqcloud.com".to_owned(),
+        ]);
+
+        assert!(domain_allowed("https://api.example.com/v1", &domains));
+        assert!(domain_allowed(
+            "https://imgservices-1.image.myqcloud.com/a.js",
+            &domains
+        ));
+        assert!(domain_allowed(
+            "https://a.b.image.myqcloud.com/a.js",
+            &domains
+        ));
+        assert!(!domain_allowed("https://image.myqcloud.com/a.js", &domains));
+        assert!(!domain_allowed(
+            "https://image.myqcloud.com.evil.example/a.js",
+            &domains
+        ));
+        assert!(!domain_allowed(
+            "https://notimage.myqcloud.com/a.js",
+            &domains
+        ));
     }
 
     #[test]

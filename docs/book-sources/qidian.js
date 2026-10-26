@@ -1,20 +1,17 @@
 // ==Feed==
 // @id           qidian
 // @name         起點中文網
-// @version      3.0.0
+// @version      3.1.0
 // @author       Langhuan
 // @description  起點中文網書源（m 站），支持登入及已購 VIP 章節
 // @base_url     https://m.qidian.com
 // @access_domain m.qidian.com
-// @access_domain cococdn.qidian.com
+// @access_domain *.image.myqcloud.com
 // @schema_version 3
 // ==/Feed==
 
 (() => {
 "use strict";
-
-const FOCK_URL =
-  "https://cococdn.qidian.com/coco/s12062024/4819793b.qeooxh.js";
 
 const PAGE_CONTEXT_MARKER = 'id="vite-plugin-ssr_pageContext"';
 
@@ -70,7 +67,16 @@ function formatId(value) {
 function absoluteUrl(value) {
   const url = trim(value);
   if (!url) return null;
-  return url.startsWith("//") ? `https:${url}` : url;
+  if (url.startsWith("//")) return `https:${url}`;
+  if (url.startsWith("/")) return `${meta.base_url}${url}`;
+  return url;
+}
+
+function extractFockUrl(html) {
+  const scripts = HTML.parse(String(html ?? "")).select(
+    'script[rel="preload"][as="script"][src*="/coco/"][src$=".js"]',
+  );
+  return scripts.length ? absoluteUrl(scripts.first().attr("src")) : null;
 }
 
 function nav(value, ...path) {
@@ -237,64 +243,84 @@ function mergeCookieHeaders(base, overlay) {
   return [...cookies].map(([name, value]) => `${name}=${value}`).join("; ");
 }
 
-let fockRuntime = null;
-let fockRuntimeSource = null;
-
-function loadFock(source) {
-  if (fockRuntime && fockRuntimeSource === source) return fockRuntime;
-
+const FOCK_ENV_PROGRAM = `
+(() => {
   globalThis.outerHeight = 1000;
   globalThis.innerHeight = 100;
   globalThis.location = {
     protocol: "https:",
     hostname: "vipreader.qidian.com",
   };
+  globalThis.window = globalThis;
+  globalThis.self = globalThis;
+  globalThis.navigator = { userAgent: "Langhuan QuickJS Compute" };
+  globalThis.console = {
+    log() {}, info() {}, warn() {}, error() {}, debug() {}, trace() {}
+  };
+  globalThis.performance = { now() { return Date.now(); } };
+  globalThis.setTimeout = function(callback) {
+    if (typeof callback === "function") callback();
+    return 0;
+  };
+  globalThis.clearTimeout = function() {};
+  globalThis.setInterval = function() { return 0; };
+  globalThis.clearInterval = function() {};
+  globalThis.atob = function(value) {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+    let str = String(value).replace(/=+$/, "");
+    let output = "";
+    if (str.length % 4 === 1) throw new TypeError("invalid base64");
+    for (let bc = 0, bs, buffer, index = 0;
+         (buffer = str.charAt(index++));
+         ~buffer && (bs = bc % 4 ? bs * 64 + buffer : buffer,
+         bc++ % 4) ? output += String.fromCharCode(255 & bs >> (-2 * bc & 6)) : 0) {
+      buffer = chars.indexOf(buffer);
+    }
+    return output;
+  };
+  globalThis.__commonJs = { exports: {} };
+  globalThis.module = globalThis.__commonJs;
+  globalThis.exports = globalThis.__commonJs.exports;
+})();
+`;
 
-  // The official file is a UMD bundle. QuickJS may expose CommonJS-shaped
-  // globals, so capture that export as well as the browser global.
-  const commonJs = { exports: {} };
-  globalThis.module = commonJs;
-  globalThis.exports = commonJs.exports;
-  (0, eval)(source);
-  const loaded =
+const FOCK_INITIALIZE_PROGRAM = `
+(() => {
+  globalThis.__fock =
     typeof globalThis.Fock === "object"
       ? globalThis.Fock
-      : commonJs.exports;
+      : globalThis.__commonJs.exports;
   if (
-    (typeof loaded !== "object" && typeof loaded !== "function") ||
-    typeof loaded.unlock !== "function"
+    (typeof globalThis.__fock !== "object" &&
+      typeof globalThis.__fock !== "function") ||
+    typeof globalThis.__fock.unlock !== "function"
   ) {
-    throw new Error(
-      "Fock was not exported by the official script " +
-        `(global=${typeof globalThis.Fock}, commonjs=${typeof commonJs.exports}, ` +
-        `unlock=${typeof commonJs.exports?.unlock})`,
-    );
+    throw new Error("Fock was not exported by the official script");
   }
+  globalThis.__fock.initialize();
+  globalThis.__fock.setupUserKey(String(input.fuid));
+})();
+`;
 
-  fockRuntime = loaded;
-  fockRuntimeSource = source;
-  return loaded;
-}
-
-function decryptFock(source, encrypted, chapterId, fkp, fuid) {
-  const fock = loadFock(source);
-
-  fock.initialize();
-  fock.setupUserKey(String(fuid));
-  (0, eval)(atob(fkp));
-
+const FOCK_UNLOCK_PROGRAM = `
+(() => {
   let completed = false;
   let result = null;
   let failure = null;
-  fock.unlock(String(encrypted), String(chapterId), (code, value) => {
-    completed = true;
-    if (code === 0) result = value;
-    else failure = new Error(`Fock.unlock failed with code ${code}`);
-  });
+  globalThis.__fock.unlock(
+    String(input.encrypted),
+    String(input.chapterId),
+    (code, value) => {
+      completed = true;
+      if (code === 0) result = value;
+      else failure = new Error("Fock.unlock failed with code " + code);
+    },
+  );
   if (failure) throw failure;
   if (!completed) throw new Error("Fock.unlock did not complete synchronously");
   return String(result ?? "");
-}
+})()
+`;
 
 const EXCLUDED_COOKIES = new Set([
   "HMACCOUNT",
@@ -384,6 +410,7 @@ function paragraphs(event) {
     const context = extractPageContext(event.response.body);
     const chapter = nav(context, "pageProps", "pageData", "chapterInfo");
     const user = nav(context, "pageProps", "pageData", "user");
+    const fockUrl = extractFockUrl(event.response.body);
     if (!chapter) return FeedError.contentNotFound("章節不存在或已下架");
 
     if (chapter.vipStatus === 1) {
@@ -419,6 +446,7 @@ function paragraphs(event) {
         stage: "chapter_api",
         title: chapter.chapterName,
         userId: user?.id,
+        fockUrl,
       },
     };
   }
@@ -442,14 +470,17 @@ function paragraphs(event) {
       );
     }
 
+    if (!event.state.fockUrl) {
+      return FeedError.sourceUnavailable("章節頁未提供 Fock 解密程序地址");
+    }
+
     return {
       type: "request",
       request: {
-        url: FOCK_URL,
+        url: event.state.fockUrl,
         method: "GET",
         headers: requestHeaders(),
       },
-      cache_key: "qidian-fock-4819793b",
       next_state: {
         stage: "fock",
         title: chapter.chapterName ?? event.state.title,
@@ -471,26 +502,39 @@ function paragraphs(event) {
     if (!fuid) {
       return FeedError.authRequired("登入資料缺少起點使用者 ID，請重新登入");
     }
-    let content;
-    try {
-      content = decryptFock(
+    return {
+      type: "compute",
+      programs: [
+        FOCK_ENV_PROGRAM,
         event.response.body,
-        event.state.encrypted,
-        event.input.chapterId,
-        event.state.fkp,
+        FOCK_INITIALIZE_PROGRAM,
+        atob(event.state.fkp),
+        FOCK_UNLOCK_PROGRAM,
+      ],
+      input: {
+        encrypted: event.state.encrypted,
+        chapterId: event.input.chapterId,
         fuid,
-      );
-    } catch (error) {
-      const detail = error?.stack ?? String(error);
-      return FeedError.sourceUnavailable(`VIP 章節解密失敗：${detail}`);
-    }
+      },
+      next_state: {
+        stage: "decrypted",
+        title: event.state.title,
+        ces: event.state.ces,
+      },
+    };
+  }
+
+  if (event.state.stage === "decrypted") {
     if (event.state.ces === 2) {
       return FeedError.raise(
         "unsupported_content",
         "本章使用起點字體加密，當前版本尚未支持",
       );
     }
-    return completeParagraphs(event.state.title, content);
+    if (typeof event.compute !== "string") {
+      return FeedError.sourceUnavailable("VIP 章節解密未返回文字內容");
+    }
+    return completeParagraphs(event.state.title, event.compute);
   }
 
   return FeedError.raise("invalid_state", "未知的起點章節解析狀態");

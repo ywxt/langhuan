@@ -112,6 +112,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rejects_newer_schema() {
+        let error = ScriptEngine::new()
+            .load_script(&source(4, RETURNED_FEED))
+            .await
+            .err()
+            .expect("schema 4 must not be accepted");
+        assert!(matches!(
+            error,
+            Error::Script(ScriptError::SchemaTooNew { .. })
+        ));
+    }
+
+    #[tokio::test]
     async fn rejects_global_feed_registration() {
         let body = format!("globalThis.feed = {RETURNED_FEED}");
         let error = ScriptEngine::new()
@@ -214,6 +227,72 @@ mod tests {
         let second = feed.search("x").collect::<Vec<_>>().await;
         assert_eq!(first[0].as_ref().unwrap().id, "1");
         assert_eq!(second[0].as_ref().unwrap().id, "2");
+    }
+
+    #[tokio::test]
+    async fn feed_realm_cannot_compile_dynamic_code() {
+        let body = r#"(() => {
+          const empty = () => ({ type: "complete", items: [] });
+          function bookInfo() {
+            let constructorResult = "blocked";
+            try {
+              constructorResult = (() => {}).constructor("return 'open'")();
+            } catch (_) {}
+            return {
+              type: "complete",
+              value: {
+                id: "1",
+                title: [typeof eval, typeof Function, constructorResult].join(":"),
+                author: "Test",
+              },
+            };
+          }
+          return { search: empty, bookInfo, chapters: empty, paragraphs: empty };
+        })()"#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(3, body))
+            .await
+            .unwrap();
+
+        let book = feed.book_info("1").await.unwrap();
+        assert_eq!(book.title, "undefined:undefined:blocked");
+    }
+
+    #[tokio::test]
+    async fn compute_runs_in_a_separate_json_only_realm() {
+        let body = r#"(() => {
+          const empty = () => ({ type: "complete", items: [] });
+          function bookInfo(event) {
+            if (event.state == null) {
+              return {
+                type: "compute",
+                programs: [
+                  "globalThis.remoteOnly = eval('input.value + 1')",
+                  "({ title: String(globalThis.remoteOnly), html: typeof HTML, fetch: typeof fetch })",
+                ],
+                input: { value: 41 },
+                next_state: true,
+              };
+            }
+            return {
+              type: "complete",
+              value: {
+                id: event.input.bookId,
+                title: event.compute.title,
+                author: [event.compute.html, event.compute.fetch, typeof globalThis.remoteOnly].join(":"),
+              },
+            };
+          }
+          return { search: empty, bookInfo, chapters: empty, paragraphs: empty };
+        })()"#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(3, body))
+            .await
+            .unwrap();
+
+        let book = feed.book_info("42").await.unwrap();
+        assert_eq!(book.title, "42");
+        assert_eq!(book.author, "undefined:undefined:undefined");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

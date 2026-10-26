@@ -30,17 +30,14 @@ fn load_script_for_server(server: &ServerGuard) -> String {
             &format!("// @base_url     {base}"),
         )
         .replace("// @access_domain m.qidian.com", "")
-        .replace("// @access_domain cococdn.qidian.com", "")
-        .replace(
-            "https://cococdn.qidian.com/coco/s12062024/4819793b.qeooxh.js",
-            &format!("{base}/fock.js"),
-        )
+        .replace("// @access_domain *.image.myqcloud.com", "")
 }
 
 /// Wrap a `pageContext` JSON value in the same script tag the live site uses.
 fn ssr_page(page_context_json: &str) -> String {
     format!(
         r#"<!DOCTYPE html><html><head><meta charset="UTF-8">
+<script rel="preload" as="script" type="text/javascript" src="/coco/current-fock.js"></script>
 <script id="vite-plugin-ssr_pageContext" type="application/json">{{"pageContext":{page_context_json}}}</script>
 </head><body><div class="app"><div id="app"></div></div></body></html>"#
     )
@@ -543,8 +540,9 @@ async fn paragraphs_vip_purchased_fetches_api_and_decrypts_fock_content() {
         )
         .create_async()
         .await;
-    let _fock = server
-        .mock("GET", "/fock.js")
+    let fock = server
+        .mock("GET", "/coco/current-fock.js")
+        .expect(2)
         .with_status(200)
         .with_body(
             r#"!function(root, factory) {
@@ -605,6 +603,7 @@ async fn paragraphs_vip_purchased_fetches_api_and_decrypts_fock_content() {
             .collect::<Vec<_>>();
         assert_eq!(texts, ["　　已購 VIP 正文。"]);
     }
+    fock.assert_async().await;
 }
 
 // ── Login flow ──────────────────────────────────────────────────────────────

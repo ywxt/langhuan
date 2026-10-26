@@ -13,6 +13,8 @@ use crate::error::{Error, Result};
 const QUICKJS_HEAP_LIMIT: usize = 32 * 1024 * 1024;
 const QUICKJS_STACK_LIMIT: usize = 1024 * 1024;
 const MAX_RESULT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_COMPUTE_PROGRAMS: usize = 8;
+const MAX_COMPUTE_SOURCE_BYTES: usize = 4 * 1024 * 1024;
 const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A QuickJS object together with the sandbox that owns its context.
@@ -124,6 +126,14 @@ pub(super) struct Sandbox {
 
 impl Sandbox {
     pub(super) fn new(timeout: Duration) -> Result<Self> {
+        Self::new_with_profile(timeout, SandboxProfile::Feed)
+    }
+
+    fn new_compute(timeout: Duration) -> Result<Self> {
+        Self::new_with_profile(timeout, SandboxProfile::Compute)
+    }
+
+    fn new_with_profile(timeout: Duration, profile: SandboxProfile) -> Result<Self> {
         let runtime = Runtime::new().map_err(sandbox_error)?;
         runtime.set_memory_limit(QUICKJS_HEAP_LIMIT);
         runtime.set_max_stack_size(QUICKJS_STACK_LIMIT);
@@ -136,18 +146,116 @@ impl Sandbox {
                 .map_or(true, |deadline| Instant::now() >= *deadline)
         })));
 
-        // Context::full installs standard ECMAScript intrinsics only. The
-        // bounded HTML API below is the sandbox's sole native callback.
+        // Both profiles need the Eval intrinsic because Rust's Ctx::eval uses
+        // it to load source. The feed profile removes every JavaScript-visible
+        // dynamic compiler below, before any untrusted feed source runs.
         let context = Context::full(&runtime).map_err(sandbox_error)?;
-        context
-            .with(|ctx| CaughtError::catch(&ctx, html::install(&ctx)).map_err(|e| e.to_string()))
-            .map_err(sandbox_error)?;
+        if matches!(profile, SandboxProfile::Feed) {
+            context
+                .with(|ctx| {
+                    CaughtError::catch(&ctx, html::install(&ctx)).map_err(|e| e.to_string())
+                })
+                .map_err(sandbox_error)?;
+        }
+        if matches!(profile, SandboxProfile::Feed) {
+            context
+                .with(|ctx| {
+                    CaughtError::catch(
+                        &ctx,
+                        ctx.eval::<(), _>(
+                            r#"
+                            (() => {
+                              const prototypes = [
+                                Object.getPrototypeOf(function() {}),
+                                Object.getPrototypeOf(async function() {}),
+                                Object.getPrototypeOf(function*() {}),
+                                Object.getPrototypeOf(async function*() {}),
+                              ];
+                              for (const prototype of prototypes) {
+                                Object.defineProperty(prototype, "constructor", {
+                                  value: undefined,
+                                  writable: false,
+                                  configurable: false,
+                                });
+                              }
+                              Object.defineProperty(globalThis, "eval", {
+                                value: undefined,
+                                writable: false,
+                                configurable: false,
+                              });
+                              Object.defineProperty(globalThis, "Function", {
+                                value: undefined,
+                                writable: false,
+                                configurable: false,
+                              });
+                            })();
+                            "#,
+                        ),
+                    )
+                    .map_err(|error| error.to_string())
+                })
+                .map_err(sandbox_error)?;
+        }
         Ok(Self {
             context,
             _runtime: runtime,
             deadline,
             timeout,
         })
+    }
+
+    /// Execute website-provided programs in a fresh, capability-free realm.
+    ///
+    /// The only value crossing into the realm is JSON `input`; the only value
+    /// crossing out is the final program's JSON result. The realm is destroyed
+    /// when this function returns and never shares globals with a feed.
+    pub(super) fn compute(programs: &[String], input: &Value, timeout: Duration) -> Result<Value> {
+        if programs.is_empty() || programs.len() > MAX_COMPUTE_PROGRAMS {
+            return Err(Error::javascript(format!(
+                "compute requires 1..={MAX_COMPUTE_PROGRAMS} programs"
+            )));
+        }
+        let source_bytes = programs.iter().map(String::len).sum::<usize>();
+        if source_bytes > MAX_COMPUTE_SOURCE_BYTES {
+            return Err(Error::javascript("compute source exceeds the size limit"));
+        }
+        let input_json = serde_json::to_string(input)
+            .map_err(|error| Error::javascript(format!("invalid compute input: {error}")))?;
+        if input_json.len() > MAX_RESULT_BYTES {
+            return Err(Error::javascript("compute input exceeds the size limit"));
+        }
+
+        let sandbox = Self::new_compute(timeout)?;
+        sandbox.reset_deadline()?;
+        let output = sandbox
+            .context
+            .with(|ctx| {
+                CaughtError::catch(
+                    &ctx,
+                    (|| {
+                        let input = ctx.json_parse(input_json)?;
+                        ctx.globals().set("input", input)?;
+                        let mut result = JsValue::new_undefined(ctx.clone());
+                        for program in programs {
+                            result = ctx.eval::<JsValue, _>(program.as_bytes())?;
+                        }
+                        ctx.json_stringify(result)?
+                            .ok_or_else(|| {
+                                rquickjs::Error::new_from_js_message(
+                                    "JavaScript value",
+                                    "JSON",
+                                    "compute returned undefined",
+                                )
+                            })?
+                            .to_string()
+                    })(),
+                )
+                .map_err(|error| error.to_string())
+            })
+            .map_err(sandbox_error)?;
+        sandbox.check_result_size(&output)?;
+        serde_json::from_str(&output)
+            .map_err(|error| Error::javascript(format!("invalid compute result: {error}")))
     }
 
     pub(super) fn eval_script(&mut self, code: &str) -> Result<()> {
@@ -237,6 +345,12 @@ impl Sandbox {
     }
 }
 
+#[derive(Clone, Copy)]
+enum SandboxProfile {
+    Feed,
+    Compute,
+}
+
 fn sandbox_error(error: impl std::fmt::Display) -> Error {
     Error::javascript(format!("native QuickJS sandbox: {error}"))
 }
@@ -283,6 +397,89 @@ mod tests {
             result,
             r#"{"fetch":"undefined","process":"undefined","require":"undefined","wasi":"undefined","webAssembly":"undefined","deno":"undefined","bun":"undefined","std":"undefined","os":"undefined"}"#
         );
+    }
+
+    #[test]
+    fn feed_realm_disables_dynamic_code_compilation() {
+        let result = Sandbox::new(Duration::from_secs(5))
+            .unwrap()
+            .eval_json(
+                r#"JSON.stringify({
+                    evalType: typeof eval,
+                    functionType: typeof Function,
+                    constructorCompile: (() => {
+                        try {
+                            return (() => {}).constructor("return 1")();
+                        } catch (_) {
+                            return "blocked";
+                        }
+                    })(),
+                })"#,
+            )
+            .unwrap();
+        assert_eq!(
+            result,
+            r#"{"evalType":"undefined","functionType":"undefined","constructorCompile":"blocked"}"#
+        );
+    }
+
+    #[test]
+    fn compute_uses_a_disposable_capability_free_realm() {
+        let result = Sandbox::compute(
+            &[
+                "globalThis.remoteValue = input.value * 2;".to_owned(),
+                r#"({
+                    value: globalThis.remoteValue,
+                    evalType: typeof eval,
+                    htmlType: typeof HTML,
+                    fetchType: typeof fetch,
+                    processType: typeof process,
+                    authType: typeof auth,
+                    requireType: typeof require,
+                    stdType: typeof std,
+                    osType: typeof os,
+                    webAssemblyType: typeof WebAssembly,
+                })"#
+                .to_owned(),
+            ],
+            &serde_json::json!({ "value": 21 }),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(
+            result,
+            serde_json::json!({
+                "value": 42,
+                "evalType": "function",
+                "htmlType": "undefined",
+                "fetchType": "undefined",
+                "processType": "undefined",
+                "authType": "undefined",
+                "requireType": "undefined",
+                "stdType": "undefined",
+                "osType": "undefined",
+                "webAssemblyType": "undefined",
+            })
+        );
+
+        let next = Sandbox::compute(
+            &["typeof globalThis.remoteValue".to_owned()],
+            &Value::Null,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(next, serde_json::json!("undefined"));
+    }
+
+    #[test]
+    fn compute_interrupts_infinite_loop() {
+        let error = Sandbox::compute(
+            &["while (true) {}".to_owned()],
+            &Value::Null,
+            Duration::from_millis(50),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("interrupt"));
     }
 
     #[test]

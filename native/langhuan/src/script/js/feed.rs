@@ -20,7 +20,8 @@ use crate::http::{self, HttpRequest, HttpResponse};
 use crate::model::{BookInfo, ChapterInfo, Page, Paragraph, RawParagraph, SearchResult};
 
 const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30);
-const MAX_INTERNAL_REQUESTS: usize = 8;
+const COMPUTE_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_INTERNAL_STEPS: usize = 8;
 const MAX_RETRIES: u32 = 3;
 const BASE_DELAY_MS: u64 = 200;
 const BACKOFF_MULTIPLIER: u64 = 3;
@@ -141,9 +142,9 @@ impl JsOperation {
     }
 }
 
-/// A JavaScript-backed feed. Scripts are reducers: they can only return a
-/// request descriptor, a completed value, or a structured failure. Rust owns
-/// every network call and invokes the reducer again with the response.
+/// A JavaScript-backed feed. Scripts are reducers: they can return a request,
+/// an isolated computation, a completed value, or a structured failure. Rust
+/// owns every network call and invokes the reducer again with the result.
 pub struct JsFeed {
     meta: FeedMeta,
     client: reqwest::Client,
@@ -161,6 +162,7 @@ struct JsEvent<'a> {
     cursor: &'a Value,
     state: &'a Value,
     response: Option<JsResponse>,
+    compute: Option<Value>,
     auth: Option<Value>,
 }
 
@@ -192,6 +194,13 @@ enum JsStep {
         next_state: Value,
         #[serde(default)]
         cache_key: Option<String>,
+    },
+    Compute {
+        programs: Vec<String>,
+        #[serde(default)]
+        input: Value,
+        #[serde(default)]
+        next_state: Value,
     },
     Complete {
         #[serde(default)]
@@ -374,7 +383,8 @@ impl JsFeed {
     async fn run_operation(&self, operation: &JsOperation, cursor: &Value) -> Result<Complete> {
         let mut state = Value::Null;
         let mut response = None;
-        let mut requests = 0usize;
+        let mut compute = None;
+        let mut internal_steps = 0usize;
 
         loop {
             let auth = self.auth_info()?;
@@ -383,6 +393,7 @@ impl JsFeed {
                 cursor,
                 state: &state,
                 response: response.take(),
+                compute: compute.take(),
                 auth,
             };
             match self.invoke(operation, &event)? {
@@ -391,10 +402,10 @@ impl JsFeed {
                     next_state,
                     cache_key,
                 } => {
-                    requests += 1;
-                    if requests > MAX_INTERNAL_REQUESTS {
+                    internal_steps += 1;
+                    if internal_steps > MAX_INTERNAL_STEPS {
                         return Err(crate::error::Error::javascript(
-                            "feed operation exceeded the internal request limit",
+                            "feed operation exceeded the internal step limit",
                         ));
                     }
                     let request = self.apply_auth_patch(operation, request)?;
@@ -403,6 +414,27 @@ impl JsFeed {
                         .await?;
                     state = next_state;
                     response = Some(http_response.into());
+                }
+                JsStep::Compute {
+                    programs,
+                    input,
+                    next_state,
+                } => {
+                    internal_steps += 1;
+                    if internal_steps > MAX_INTERNAL_STEPS {
+                        return Err(crate::error::Error::javascript(
+                            "feed operation exceeded the internal step limit",
+                        ));
+                    }
+                    let result = tokio::task::spawn_blocking(move || {
+                        Sandbox::compute(&programs, &input, COMPUTE_TIMEOUT)
+                    })
+                    .await
+                    .map_err(|error| {
+                        crate::error::Error::javascript(format!("compute worker failed: {error}"))
+                    })??;
+                    state = next_state;
+                    compute = Some(result);
                 }
                 JsStep::Complete {
                     items,

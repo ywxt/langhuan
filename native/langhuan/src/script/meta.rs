@@ -171,28 +171,48 @@ impl FeedMetaBuilder {
             description: self.description,
             base_url: require(self.base_url, "base_url")?,
             access_domains: {
-                for entry in &self.access_domains {
-                    if !is_valid_hostname(entry) {
-                        return Err(Error::invalid_feed(format!(
-                            "invalid domain in access_domains: '{entry}'"
-                        )));
-                    }
-                }
                 self.access_domains
+                    .into_iter()
+                    .map(|entry| {
+                        normalize_access_domain(&entry).ok_or_else(|| {
+                            Error::invalid_feed(format!(
+                                "invalid domain in access_domains: '{entry}'"
+                            ))
+                        })
+                    })
+                    .collect::<Result<HashSet<_>>>()?
             },
             schema_version,
         })
     }
 }
 
-/// Return `true` if `s` is a valid hostname accepted by the URL parser.
+/// Validate and normalize an exact hostname or a leftmost-label wildcard.
 ///
-/// Delegates to `reqwest::Url` so the same rules applied to actual HTTP
-/// requests are used here.
-fn is_valid_hostname(s: &str) -> bool {
-    reqwest::Url::parse(&format!("http://{s}/"))
-        .map(|u| u.host_str().is_some_and(|h| h.eq_ignore_ascii_case(s)))
-        .unwrap_or(false)
+/// `*.example.com` matches subdomains only; wildcards in any other position,
+/// bare wildcards, wildcard IP addresses, paths, ports, and credentials are
+/// rejected. Exact IP entries remain valid for local development feeds.
+fn normalize_access_domain(value: &str) -> Option<String> {
+    let (wildcard, hostname) = match value.strip_prefix("*.") {
+        Some(hostname) => (true, hostname),
+        None => (false, value),
+    };
+    if hostname.is_empty() || hostname.contains('*') {
+        return None;
+    }
+    let parsed = reqwest::Url::parse(&format!("http://{hostname}/")).ok()?;
+    let normalized = parsed.host_str()?;
+    if !normalized.eq_ignore_ascii_case(hostname) {
+        return None;
+    }
+    if wildcard && (normalized.parse::<std::net::IpAddr>().is_ok() || !normalized.contains('.')) {
+        return None;
+    }
+    Some(if wildcard {
+        format!("*.{}", normalized.to_ascii_lowercase())
+    } else {
+        normalized.to_ascii_lowercase()
+    })
 }
 
 /// Build a [`FeedMeta`] from raw header entries.
@@ -321,6 +341,39 @@ mod tests {
             err,
             Error::Script(ScriptError::InvalidFeed { .. })
         ));
+    }
+
+    #[test]
+    fn access_domains_accept_and_normalize_subdomain_wildcard() {
+        let script = r#"// ==Feed==
+// @id      test
+// @name    Test
+// @version 1.0
+// @base_url https://example.com
+// @schema_version 3
+// @access_domain *.IMAGE.MyQCloud.com
+// ==/Feed==
+"#;
+        let (meta, _) = parse_meta(script).unwrap();
+        assert_eq!(
+            meta.access_domains,
+            HashSet::from(["*.image.myqcloud.com".to_owned()])
+        );
+    }
+
+    #[test]
+    fn access_domains_reject_invalid_wildcards() {
+        for domain in ["*", "foo.*.example.com", "*.127.0.0.1", "*.localhost"] {
+            let script = format!(
+                "// ==Feed==\n// @id test\n// @name Test\n// @version 1.0\n\
+                 // @base_url https://example.com\n// @schema_version 3\n\
+                 // @access_domain {domain}\n// ==/Feed==\n"
+            );
+            assert!(
+                parse_meta(&script).is_err(),
+                "wildcard should fail: {domain}"
+            );
+        }
     }
 
     #[test]

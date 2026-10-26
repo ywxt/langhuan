@@ -26,14 +26,16 @@ Every file starts with a comment header:
 // @description  Example schema-3 source
 // @base_url     https://example.com
 // @access_domain example.com
-// @access_domain static.example.com
+// @access_domain *.static.example.com
 // @schema_version 3
 // ==/Feed==
 ```
 
 `id`, `name`, `version`, `base_url`, and `schema_version` are required. Declare
-every hostname the Rust host may contact with one `access_domain` line. Domain
-checks apply to every request and redirect.
+every hostname the Rust host may contact with one `access_domain` line. A
+leftmost wildcard such as `*.static.example.com` permits subdomains but not the
+root `static.example.com`; other wildcard positions are rejected. Domain checks
+apply to every request descriptor returned by the source.
 
 The runtime exposes the parsed header as the frozen global `meta` object.
 
@@ -67,7 +69,7 @@ methods. Do not mutate globals to register handlers.
 ## Reducer model
 
 Each operation is a synchronous reducer. It receives an event and returns one
-of three steps:
+of four steps:
 
 ```ts
 type Event = {
@@ -81,21 +83,24 @@ type Event = {
     body: string;
     url: string;
   };
+  compute: unknown | null;
   auth: null | object;
 };
 
 type Step =
   | { type: "request"; request: Request; next_state?: unknown; cache_key?: string }
+  | { type: "compute"; programs: string[]; input?: unknown; next_state?: unknown }
   | { type: "complete"; items?: unknown[]; value?: unknown; next_cursor?: unknown }
   | { type: "fail"; code: string; message: string };
 ```
 
-On the first call, `state` and `response` are `null`. Return a request. Rust
-validates and performs it, then calls the same reducer with the response and the
-provided `next_state`. This can repeat for multi-request flows such as Qidian:
+On the first call, `state`, `response`, and `compute` are `null`. Return a
+request. Rust validates and performs it, then calls the same reducer with the
+response and the provided `next_state`. This can repeat for multi-step flows
+such as Qidian:
 
 ```text
-chapter HTML -> chapter API -> official decryptor bundle -> complete
+chapter HTML -> chapter API -> official decryptor bundle -> isolated compute -> complete
 ```
 
 The script never performs HTTP itself.
@@ -113,9 +118,40 @@ The script never performs HTTP itself.
 ```
 
 Rust enforces the domain allowlist, response-size limits, retry policy, trace
-redaction, and at most eight requests per operation. `cache_key` enables the
-small per-feed response cache and single-flight behavior for immutable helper
-assets such as a decryptor bundle.
+redaction, and at most eight internal request/compute steps per operation.
+`cache_key` enables the small per-feed response cache and single-flight
+behavior for immutable helper assets such as a decryptor bundle.
+Only use it when both the URL and content are immutable. For a script URL
+selected by the current page, discover the URL for each operation and omit
+`cache_key` so an upstream rollout is observed immediately.
+
+### Isolated computation
+
+The persistent Feed realm does not expose `eval`, `Function`, or function
+constructors. A source that must run JavaScript returned by a website can
+request an isolated computation instead:
+
+```js
+return {
+  type: "compute",
+  programs: [
+    event.response.body,
+    "decrypt(input.encrypted, input.key)",
+  ],
+  input: { encrypted, key },
+  next_state: { stage: "decrypted" },
+};
+```
+
+Rust creates a fresh QuickJS realm for each compute step, installs no native
+callbacks, network API, HTML parser, module loader, filesystem, process, or
+environment access, and evaluates `programs` in order. Only JSON `input` enters
+the realm and only the final program's JSON value returns as `event.compute`.
+The realm is destroyed immediately afterwards. It has independent heap, stack,
+execution-time, source-size, program-count, and result-size limits.
+
+Do not pass complete authentication objects to compute. Provide only the
+minimum scalar inputs required by the website algorithm.
 
 ### Operations
 
