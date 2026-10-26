@@ -47,31 +47,6 @@ pub struct CookieEntry {
     pub same_site: Option<String>,
 }
 
-/// Context for auth-aware request patching.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "operation", rename_all = "snake_case")]
-pub(crate) enum RequestPatchContext {
-    Search {
-        feed_id: String,
-    },
-    BookInfo {
-        feed_id: String,
-        book_id: String,
-    },
-    Chapters {
-        feed_id: String,
-        book_id: String,
-    },
-    AuthStatus {
-        feed_id: String,
-    },
-    Paragraphs {
-        feed_id: String,
-        book_id: String,
-        chapter_id: String,
-    },
-}
-
 /// Current auth state for one feed instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthStatus {

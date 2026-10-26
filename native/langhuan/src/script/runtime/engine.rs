@@ -63,7 +63,7 @@ impl Default for ScriptEngine {
 #[cfg(test)]
 mod tests {
     use crate::error::{Error, ScriptError};
-    use crate::feed::Feed;
+    use crate::feed::{Feed, FeedAuthFlow};
     use tokio_stream::StreamExt as _;
 
     use super::*;
@@ -120,6 +120,73 @@ mod tests {
             .err()
             .expect("globalThis.feed registration must be rejected");
         assert!(error.to_string().contains("return its handler object"));
+    }
+
+    #[tokio::test]
+    async fn rejects_partial_login_contract() {
+        let body = RETURNED_FEED.replace(
+            "return { search: complete, bookInfo, chapters: complete, paragraphs: complete };",
+            "return { search: complete, bookInfo, chapters: complete, paragraphs: complete, login: { entry() {} } };",
+        );
+        let error = ScriptEngine::new()
+            .load_script(&source(3, &body))
+            .await
+            .err()
+            .expect("partial login contract must be rejected");
+        assert!(error.to_string().contains("login.entry, login.parse"));
+    }
+
+    #[tokio::test]
+    async fn reducer_and_request_patch_share_one_operation_descriptor() {
+        let mut server = mockito::Server::new_async().await;
+        let _request = server
+            .mock("GET", "/book")
+            .match_header("x-operation", "book_info:42")
+            .with_status(200)
+            .with_body("ok")
+            .create_async()
+            .await;
+        let body = r#"(() => {
+          const empty = () => ({ type: "complete", items: [] });
+          function bookInfo(event) {
+            if (event.state == null) {
+              return {
+                type: "request",
+                request: { url: "__BASE__/book", method: "GET" },
+                next_state: true,
+              };
+            }
+            return {
+              type: "complete",
+              value: { id: event.input.bookId, title: event.response.body, author: "Test" },
+            };
+          }
+          const login = {
+            entry() { return { url: "__BASE__/login" }; },
+            parse() { return {}; },
+            patchRequest(operation, request) {
+              request.headers ??= {};
+              request.headers["X-Operation"] = [
+                operation.operation,
+                operation.input.bookId,
+              ].join(":");
+              return request;
+            },
+          };
+          return { search: empty, bookInfo, chapters: empty, paragraphs: empty, login };
+        })()"#
+            .replace("__BASE__", &server.url());
+        let feed = ScriptEngine::new()
+            .load_script(&source(3, &body))
+            .await
+            .unwrap();
+        let support = feed.supports_auth().unwrap();
+        feed.set_auth_info(&support, Some(serde_json::json!({})))
+            .unwrap();
+
+        let book = feed.book_info("42").await.unwrap();
+        assert_eq!(book.id, "42");
+        assert_eq!(book.title, "ok");
     }
 
     #[tokio::test]

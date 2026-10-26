@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::{Mutex as StdMutex, RwLock};
+use std::sync::RwLock;
 use std::time::Duration;
 
 use async_stream::stream;
@@ -15,7 +15,6 @@ use super::sandbox::{JsObject, Sandbox};
 use crate::error::{ExpectedErrorCode, Result};
 use crate::feed::{
     AuthEntry, AuthInfo, AuthPageContext, AuthStatus, Feed, FeedAuthFlow, FeedMeta, FeedStream,
-    RequestPatchContext,
 };
 use crate::http::{self, HttpRequest, HttpResponse};
 use crate::model::{BookInfo, ChapterInfo, Page, Paragraph, RawParagraph, SearchResult};
@@ -27,6 +26,29 @@ const BASE_DELAY_MS: u64 = 200;
 const BACKOFF_MULTIPLIER: u64 = 3;
 const MAX_CACHED_RESPONSES: usize = 8;
 const MAX_CACHED_RESPONSE_BYTES: usize = 1024 * 1024;
+
+type JsMethodPath = &'static [&'static str];
+
+const SEARCH_HANDLER: JsMethodPath = &["search"];
+const BOOK_INFO_HANDLER: JsMethodPath = &["bookInfo"];
+const CHAPTERS_HANDLER: JsMethodPath = &["chapters"];
+const PARAGRAPHS_HANDLER: JsMethodPath = &["paragraphs"];
+const LOGIN_ENTRY_HANDLER: JsMethodPath = &["login", "entry"];
+const LOGIN_PARSE_HANDLER: JsMethodPath = &["login", "parse"];
+const LOGIN_PATCH_REQUEST_HANDLER: JsMethodPath = &["login", "patchRequest"];
+const LOGIN_STATUS_HANDLER: JsMethodPath = &["login", "status"];
+
+const REQUIRED_HANDLERS: &[JsMethodPath] = &[
+    SEARCH_HANDLER,
+    BOOK_INFO_HANDLER,
+    CHAPTERS_HANDLER,
+    PARAGRAPHS_HANDLER,
+];
+const REQUIRED_LOGIN_HANDLERS: &[JsMethodPath] = &[
+    LOGIN_ENTRY_HANDLER,
+    LOGIN_PARSE_HANDLER,
+    LOGIN_PATCH_REQUEST_HANDLER,
+];
 
 const PRELUDE: &str = r#"
 globalThis.FeedError = Object.freeze({
@@ -84,6 +106,41 @@ globalThis.clearInterval = function() {};
 #[derive(Clone)]
 pub struct JsSupportAuth;
 
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum JsOperationKind {
+    Search,
+    BookInfo,
+    Chapters,
+    Paragraphs,
+    AuthStatus,
+}
+
+impl JsOperationKind {
+    const fn handler(self) -> JsMethodPath {
+        match self {
+            Self::Search => SEARCH_HANDLER,
+            Self::BookInfo => BOOK_INFO_HANDLER,
+            Self::Chapters => CHAPTERS_HANDLER,
+            Self::Paragraphs => PARAGRAPHS_HANDLER,
+            Self::AuthStatus => LOGIN_STATUS_HANDLER,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct JsOperation {
+    #[serde(rename = "operation")]
+    kind: JsOperationKind,
+    input: Value,
+}
+
+impl JsOperation {
+    fn new(kind: JsOperationKind, input: Value) -> Self {
+        Self { kind, input }
+    }
+}
+
 /// A JavaScript-backed feed. Scripts are reducers: they can only return a
 /// request descriptor, a completed value, or a structured failure. Rust owns
 /// every network call and invokes the reducer again with the response.
@@ -94,12 +151,13 @@ pub struct JsFeed {
     has_auth_status: bool,
     auth_info: RwLock<Option<AuthInfo>>,
     response_cache: AsyncMutex<HashMap<String, HttpResponse>>,
-    feed_object: StdMutex<JsObject>,
+    feed_object: JsObject,
 }
 
 #[derive(Serialize)]
 struct JsEvent<'a> {
-    input: &'a Value,
+    #[serde(flatten)]
+    operation: &'a JsOperation,
     cursor: &'a Value,
     state: &'a Value,
     response: Option<JsResponse>,
@@ -163,28 +221,37 @@ impl JsFeed {
         sandbox.eval_script(&format!(
             "{PRELUDE}\nglobalThis.meta = Object.freeze({meta_json});"
         ))?;
-        let mut feed_object = sandbox.eval_object(&format!("({source})"))?;
+        let feed_object = sandbox.eval_object(&format!("({source})"))?;
         if sandbox.has_global("feed")? {
             return Err(crate::error::Error::invalid_feed(
                 "JavaScript feed must return its handler object instead of assigning globalThis.feed",
             ));
         }
-        if !["search", "bookInfo", "chapters", "paragraphs"]
-            .iter()
-            .map(|name| feed_object.has_function(&[*name]))
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .all(|present| present)
-        {
-            return Err(crate::error::Error::invalid_feed(
-                "JavaScript feed must return an object with search, bookInfo, chapters and paragraphs functions",
-            ));
+        if !Self::has_methods(&feed_object, REQUIRED_HANDLERS)? {
+            let names = REQUIRED_HANDLERS
+                .iter()
+                .filter_map(|path| path.last())
+                .copied()
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(crate::error::Error::invalid_feed(format!(
+                "JavaScript feed must return an object with {names} functions"
+            )));
         }
 
-        let has_login = feed_object.has_function(&["login", "entry"])?
-            && feed_object.has_function(&["login", "parse"])?
-            && feed_object.has_function(&["login", "patchRequest"])?;
-        let has_auth_status = feed_object.has_function(&["login", "status"])?;
+        let login_methods = Self::method_presence(&feed_object, REQUIRED_LOGIN_HANDLERS)?;
+        let has_auth_status = feed_object.has_function(LOGIN_STATUS_HANDLER)?;
+        let has_login = login_methods.iter().all(|present| *present);
+        if (login_methods.iter().any(|present| *present) || has_auth_status) && !has_login {
+            let names = REQUIRED_LOGIN_HANDLERS
+                .iter()
+                .map(|path| path.join("."))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(crate::error::Error::invalid_feed(format!(
+                "JavaScript feed login support must define all of: {names}"
+            )));
+        }
 
         Ok(Self {
             meta,
@@ -193,22 +260,42 @@ impl JsFeed {
             has_auth_status,
             auth_info: RwLock::new(None),
             response_cache: AsyncMutex::new(HashMap::new()),
-            feed_object: StdMutex::new(feed_object),
+            feed_object,
         })
     }
 
-    fn call_method(&self, path: &[&str], args: &[Value]) -> Result<Value> {
-        let mut feed_object = self
-            .feed_object
-            .lock()
-            .map_err(|_| crate::error::Error::javascript("QuickJS sandbox lock poisoned"))?;
-        feed_object.call_json(path, args)
+    fn has_methods(object: &JsObject, paths: &[JsMethodPath]) -> Result<bool> {
+        Ok(Self::method_presence(object, paths)?
+            .into_iter()
+            .all(|present| present))
     }
 
-    fn invoke(&self, handler: &[&str], event: &JsEvent<'_>) -> Result<JsStep> {
-        let event = serde_json::to_value(event)
-            .map_err(|e| crate::error::Error::javascript(e.to_string()))?;
-        let value = self.call_method(handler, &[event])?;
+    fn method_presence(object: &JsObject, paths: &[JsMethodPath]) -> Result<Vec<bool>> {
+        paths.iter().map(|path| object.has_function(path)).collect()
+    }
+
+    fn auth_info(&self) -> Result<Option<AuthInfo>> {
+        self.auth_info
+            .read()
+            .map_err(|_| crate::error::Error::invalid_feed("auth state lock poisoned"))
+            .map(|auth| auth.clone())
+    }
+
+    fn to_js_value(value: &impl Serialize, description: &str) -> Result<Value> {
+        serde_json::to_value(value).map_err(|error| {
+            crate::error::Error::javascript(format!(
+                "failed to serialize {description} for JavaScript: {error}"
+            ))
+        })
+    }
+
+    fn call_method(&self, path: JsMethodPath, args: &[Value]) -> Result<Value> {
+        self.feed_object.call_json(path, args)
+    }
+
+    fn invoke(&self, operation: &JsOperation, event: &JsEvent<'_>) -> Result<JsStep> {
+        let event = Self::to_js_value(event, "feed event")?;
+        let value = self.call_method(operation.kind.handler(), &[event])?;
         serde_json::from_value(value)
             .map_err(|e| crate::error::Error::javascript(format!("invalid feed step: {e}")))
     }
@@ -263,25 +350,20 @@ impl JsFeed {
 
     fn apply_auth_patch(
         &self,
-        context: &RequestPatchContext,
+        operation: &JsOperation,
         request: HttpRequest,
     ) -> Result<HttpRequest> {
         if !self.has_login {
             return Ok(request);
         }
-        let auth = self
-            .auth_info
-            .read()
-            .map_err(|_| crate::error::Error::invalid_feed("auth state lock poisoned"))?
-            .clone();
-        let Some(auth) = auth else {
+        let Some(auth) = self.auth_info()? else {
             return Ok(request);
         };
         let value = self.call_method(
-            &["login", "patchRequest"],
+            LOGIN_PATCH_REQUEST_HANDLER,
             &[
-                serde_json::to_value(context).unwrap_or(Value::Null),
-                serde_json::to_value(request).unwrap_or(Value::Null),
+                Self::to_js_value(operation, "operation")?,
+                Self::to_js_value(&request, "HTTP request")?,
                 auth,
             ],
         )?;
@@ -289,31 +371,21 @@ impl JsFeed {
             .map_err(|e| crate::error::Error::javascript(format!("invalid patched request: {e}")))
     }
 
-    async fn run_operation(
-        &self,
-        handler: &[&str],
-        input: &Value,
-        cursor: &Value,
-        patch_context: &RequestPatchContext,
-    ) -> Result<Complete> {
+    async fn run_operation(&self, operation: &JsOperation, cursor: &Value) -> Result<Complete> {
         let mut state = Value::Null;
         let mut response = None;
         let mut requests = 0usize;
 
         loop {
-            let auth = self
-                .auth_info
-                .read()
-                .map_err(|_| crate::error::Error::invalid_feed("auth state lock poisoned"))?
-                .clone();
+            let auth = self.auth_info()?;
             let event = JsEvent {
-                input,
+                operation,
                 cursor,
                 state: &state,
                 response: response.take(),
                 auth,
             };
-            match self.invoke(handler, &event)? {
+            match self.invoke(operation, &event)? {
                 JsStep::Request {
                     request,
                     next_state,
@@ -325,7 +397,7 @@ impl JsFeed {
                             "feed operation exceeded the internal request limit",
                         ));
                     }
-                    let request = self.apply_auth_patch(patch_context, request)?;
+                    let request = self.apply_auth_patch(operation, request)?;
                     let http_response = self
                         .execute_cached_http(&request, cache_key.as_deref())
                         .await?;
@@ -355,14 +427,10 @@ impl JsFeed {
 
     async fn run_page<T: DeserializeOwned>(
         &self,
-        handler: &[&str],
-        input: &Value,
+        operation: &JsOperation,
         cursor: &Value,
-        patch_context: &RequestPatchContext,
     ) -> Result<Page<T, Value>> {
-        let complete = self
-            .run_operation(handler, input, cursor, patch_context)
-            .await?;
+        let complete = self.run_operation(operation, cursor).await?;
         let items = serde_json::from_value(complete.items.unwrap_or(Value::Array(vec![])))
             .map_err(|e| crate::error::Error::javascript(format!("invalid items: {e}")))?;
         Ok(Page {
@@ -371,32 +439,20 @@ impl JsFeed {
         })
     }
 
-    async fn run_value<T: DeserializeOwned>(
-        &self,
-        handler: &[&str],
-        input: &Value,
-        patch_context: &RequestPatchContext,
-    ) -> Result<T> {
-        let complete = self
-            .run_operation(handler, input, &Value::Null, patch_context)
-            .await?;
+    async fn run_value<T: DeserializeOwned>(&self, operation: &JsOperation) -> Result<T> {
+        let complete = self.run_operation(operation, &Value::Null).await?;
         serde_json::from_value(complete.value.unwrap_or(Value::Null))
             .map_err(|e| crate::error::Error::javascript(format!("invalid value: {e}")))
     }
 
-    fn paged_stream<'a, T>(
-        &'a self,
-        handler: &'static [&'static str],
-        input: Value,
-        patch_context: RequestPatchContext,
-    ) -> FeedStream<'a, T>
+    fn paged_stream<'a, T>(&'a self, operation: JsOperation) -> FeedStream<'a, T>
     where
         T: DeserializeOwned + Send + 'a,
     {
         Box::pin(stream! {
             let mut cursor = Value::Null;
             loop {
-                match self.run_page(handler, &input, &cursor, &patch_context).await {
+                match self.run_page(&operation, &cursor).await {
                     Ok(page) => {
                         let next = page.next_cursor;
                         for item in page.items {
@@ -454,30 +510,28 @@ impl JsFeed {
 
 impl Feed for JsFeed {
     fn search<'a>(&'a self, keyword: &'a str) -> FeedStream<'a, SearchResult> {
-        let input = serde_json::json!({ "keyword": keyword });
-        let context = RequestPatchContext::Search {
-            feed_id: self.meta.id.clone(),
-        };
-        let stream = self.paged_stream(&["search"], input, context);
+        let operation = JsOperation::new(
+            JsOperationKind::Search,
+            serde_json::json!({ "keyword": keyword }),
+        );
+        let stream = self.paged_stream(operation);
         self.dedup_stream(stream, "book", |item: &SearchResult| item.id.clone())
     }
 
     async fn book_info(&self, id: &str) -> Result<BookInfo> {
-        let input = serde_json::json!({ "bookId": id });
-        let context = RequestPatchContext::BookInfo {
-            feed_id: self.meta.id.clone(),
-            book_id: id.to_owned(),
-        };
-        self.run_value(&["bookInfo"], &input, &context).await
+        let operation = JsOperation::new(
+            JsOperationKind::BookInfo,
+            serde_json::json!({ "bookId": id }),
+        );
+        self.run_value(&operation).await
     }
 
     fn chapters<'a>(&'a self, book_id: &'a str) -> FeedStream<'a, ChapterInfo> {
-        let input = serde_json::json!({ "bookId": book_id });
-        let context = RequestPatchContext::Chapters {
-            feed_id: self.meta.id.clone(),
-            book_id: book_id.to_owned(),
-        };
-        let stream = self.paged_stream(&["chapters"], input, context);
+        let operation = JsOperation::new(
+            JsOperationKind::Chapters,
+            serde_json::json!({ "bookId": book_id }),
+        );
+        let stream = self.paged_stream(operation);
         self.dedup_stream(stream, "chapter", |item: &ChapterInfo| item.id.clone())
     }
 
@@ -486,16 +540,14 @@ impl Feed for JsFeed {
         book_id: &'a str,
         chapter_id: &'a str,
     ) -> FeedStream<'a, Paragraph> {
-        let input = serde_json::json!({
-            "bookId": book_id,
-            "chapterId": chapter_id,
-        });
-        let context = RequestPatchContext::Paragraphs {
-            feed_id: self.meta.id.clone(),
-            book_id: book_id.to_owned(),
-            chapter_id: chapter_id.to_owned(),
-        };
-        let raw: FeedStream<'a, RawParagraph> = self.paged_stream(&["paragraphs"], input, context);
+        let operation = JsOperation::new(
+            JsOperationKind::Paragraphs,
+            serde_json::json!({
+                "bookId": book_id,
+                "chapterId": chapter_id,
+            }),
+        );
+        let raw: FeedStream<'a, RawParagraph> = self.paged_stream(operation);
         let indexed: FeedStream<'a, Paragraph> = Box::pin(stream! {
             let mut index = 0usize;
             let mut raw = std::pin::pin!(raw);
@@ -530,15 +582,14 @@ impl FeedAuthFlow for JsFeed {
     }
 
     fn auth_entry(&self, _support: &Self::SupportAuth) -> Result<AuthEntry> {
-        let value = self.call_method(&["login", "entry"], &[])?;
+        let value = self.call_method(LOGIN_ENTRY_HANDLER, &[])?;
         serde_json::from_value(value)
             .map_err(|e| crate::error::Error::javascript(format!("invalid auth entry: {e}")))
     }
 
     fn parse_auth(&self, _support: &Self::SupportAuth, page: &AuthPageContext) -> Result<AuthInfo> {
-        let page = serde_json::to_value(page)
-            .map_err(|e| crate::error::Error::javascript(e.to_string()))?;
-        let value = self.call_method(&["login", "parse"], &[page])?;
+        let page = Self::to_js_value(page, "authentication page")?;
+        let value = self.call_method(LOGIN_PARSE_HANDLER, &[page])?;
         if value.get("type").and_then(Value::as_str) == Some("fail") {
             return Err(crate::error::Error::expected(
                 ExpectedErrorCode::from_code(
@@ -567,27 +618,18 @@ impl FeedAuthFlow for JsFeed {
     }
 
     async fn auth_status(&self, _support: &Self::SupportAuth) -> Result<AuthStatus> {
-        let has_auth = self
-            .auth_info
-            .read()
-            .map_err(|_| crate::error::Error::invalid_feed("auth state lock poisoned"))?
-            .is_some();
+        let has_auth = self.auth_info()?.is_some();
         if !has_auth {
             return Ok(AuthStatus::LoggedOut);
         }
         if !self.has_auth_status {
             return Ok(AuthStatus::LoggedIn);
         }
-        let context = RequestPatchContext::AuthStatus {
-            feed_id: self.meta.id.clone(),
-        };
-        let valid: bool = self
-            .run_value(
-                &["login", "status"],
-                &Value::Object(Default::default()),
-                &context,
-            )
-            .await?;
+        let operation = JsOperation::new(
+            JsOperationKind::AuthStatus,
+            Value::Object(Default::default()),
+        );
+        let valid: bool = self.run_value(&operation).await?;
         Ok(if valid {
             AuthStatus::LoggedIn
         } else {

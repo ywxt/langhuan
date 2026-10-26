@@ -538,7 +538,7 @@ const login = {
     };
   },
 
-  patchRequest(context, request, auth) {
+  patchRequest(operation, request, auth) {
     request.headers ??= {};
     const dynamicCookies = request.headers.Cookie ?? request.headers.cookie ?? "";
     request.headers.Cookie = mergeCookieHeaders(auth.cookie_header, dynamicCookies);
@@ -547,7 +547,7 @@ const login = {
     const csrfToken =
       auth.csrf_token ?? cookieMap(auth.cookie_header).get("_csrfToken");
     if (
-      context.operation === "paragraphs" &&
+      operation.operation === "paragraphs" &&
       request.url.includes("/webcommon/chapter/getMChapterInfo") &&
       csrfToken
     ) {

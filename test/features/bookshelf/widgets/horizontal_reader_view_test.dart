@@ -83,7 +83,7 @@ void main() {
       );
 
       await tester.tapAt(const Offset(600, 300));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(nextCalls, 1);
     });
@@ -99,7 +99,7 @@ void main() {
       );
 
       await tester.tapAt(const Offset(100, 300));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(prevCalls, 1);
     });

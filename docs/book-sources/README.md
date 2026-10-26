@@ -71,6 +71,7 @@ of three steps:
 
 ```ts
 type Event = {
+  operation: "search" | "book_info" | "chapters" | "paragraphs" | "auth_status";
   input: object;
   cursor: unknown;
   state: unknown;
@@ -195,7 +196,7 @@ const login = {
     return { cookie_header: `session=${session.value}` };
   },
 
-  patchRequest(context, request, auth) {
+  patchRequest(operation, request, auth) {
     request.headers ??= {};
     request.headers.Cookie = auth.cookie_header;
     return request;
@@ -217,7 +218,10 @@ const login = {
 `entry`, `parse`, and `patchRequest` are required when `login` is present.
 `status` is optional. Authentication data is persisted by the host and supplied
 as `event.auth`; scripts should retain only the minimum cookies or tokens they
-need.
+need. `patchRequest` receives the same operation descriptor used to construct
+the reducer event: `{ operation, input }`. Request parameters such as `bookId`
+and `chapterId` therefore have one canonical location under `input`; source
+metadata remains available through the frozen global `meta` object.
 
 ## Sandbox guarantees and limits
 

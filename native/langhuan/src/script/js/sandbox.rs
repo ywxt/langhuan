@@ -17,20 +17,25 @@ const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A QuickJS object together with the sandbox that owns its context.
 pub(super) struct JsObject {
+    state: Mutex<JsObjectState>,
+}
+
+struct JsObjectState {
     inner: Persistent<Object<'static>>,
     // Keep the sandbox after the persistent value so the value is dropped first.
     sandbox: Sandbox,
 }
 
 // `rquickjs` makes Runtime and Context movable with its `parallel` feature, but
-// does not propagate Send to Persistent values. JsObject is deliberately
-// opaque and JsFeed keeps it behind a mutex, so its persistent value and cloned
-// sandbox always move and execute as one exclusively accessed unit.
-unsafe impl Send for JsObject {}
+// does not propagate Send to Persistent values. JsObjectState is deliberately
+// private and can only be reached through JsObject's mutex, so its persistent
+// value and cloned sandbox always move and execute as one exclusive unit.
+unsafe impl Send for JsObjectState {}
 
 impl JsObject {
-    pub(super) fn has_function(&mut self, path: &[&str]) -> Result<bool> {
-        let Self { inner, sandbox } = self;
+    pub(super) fn has_function(&self, path: &[&str]) -> Result<bool> {
+        let mut state = self.lock_state()?;
+        let JsObjectState { inner, sandbox } = &mut *state;
         sandbox.with_object(inner, |_, object| {
             let Some((owner, name)) = resolve_owner(object, path)? else {
                 return Ok(false);
@@ -39,10 +44,11 @@ impl JsObject {
         })
     }
 
-    pub(super) fn call_json(&mut self, path: &[&str], arguments: &[Value]) -> Result<Value> {
+    pub(super) fn call_json(&self, path: &[&str], arguments: &[Value]) -> Result<Value> {
         let arguments = serde_json::to_string(arguments)
             .map_err(|error| Error::javascript(error.to_string()))?;
-        let Self { inner, sandbox } = self;
+        let mut state = self.lock_state()?;
+        let JsObjectState { inner, sandbox } = &mut *state;
         let json = sandbox.with_object(inner, |ctx, object| {
             let (owner, name) = resolve_owner(object, path)?.ok_or_else(|| {
                 rquickjs::Error::new_from_js_message(
@@ -75,6 +81,12 @@ impl JsObject {
         sandbox.check_result_size(&json)?;
         serde_json::from_str(&json)
             .map_err(|error| Error::javascript(format!("invalid JavaScript result: {error}")))
+    }
+
+    fn lock_state(&self) -> Result<std::sync::MutexGuard<'_, JsObjectState>> {
+        self.state
+            .lock()
+            .map_err(|_| Error::javascript("QuickJS object lock poisoned"))
     }
 }
 
@@ -154,8 +166,10 @@ impl Sandbox {
             .with(move |ctx| {
                 CaughtError::catch(&ctx, ctx.eval::<Object, _>(code))
                     .map(|object| JsObject {
-                        inner: Persistent::save(&ctx, object),
-                        sandbox,
+                        state: Mutex::new(JsObjectState {
+                            inner: Persistent::save(&ctx, object),
+                            sandbox,
+                        }),
                     })
                     .map_err(|error| error.to_string())
             })
@@ -234,7 +248,7 @@ mod tests {
     #[test]
     fn evaluates_and_keeps_a_javascript_object() {
         let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
-        let mut object = sandbox
+        let object = sandbox
             .eval_object("({ value: 40, next() { this.value += 1; return this.value; } })")
             .unwrap();
         assert_eq!(
