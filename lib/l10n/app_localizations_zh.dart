@@ -774,4 +774,181 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsClearCacheError => '清除快取失敗';
+
+  @override
+  String get settingsDeveloper => '開發者';
+
+  @override
+  String get devToolsTitle => '開發者工具';
+
+  @override
+  String get devToolsEntryDescription => '書源腳本調試環境';
+
+  @override
+  String devUnlockCountdown(int count) {
+    return '再點擊 $count 次開啟開發者模式';
+  }
+
+  @override
+  String get devUnlocked => '已開啟開發者模式';
+
+  @override
+  String get devDisable => '關閉開發者模式';
+
+  @override
+  String get devDisableConfirmTitle => '關閉開發者模式？';
+
+  @override
+  String get devDisableConfirmMessage => '將隱藏開發者工具入口。';
+
+  @override
+  String get devScriptLabel => '書源腳本';
+
+  @override
+  String get devScriptHint => '貼上 Lua 腳本或從已安裝的書源導入；腳本在此獨立編譯運行，不影響已安裝的書源。';
+
+  @override
+  String get devScriptImport => '導入';
+
+  @override
+  String get devScriptImportTitle => '選擇已安裝的書源';
+
+  @override
+  String get devScriptImportEmpty => '沒有已安裝的書源';
+
+  @override
+  String get devScriptClear => '清空';
+
+  @override
+  String get devScriptClearConfirmTitle => '清空腳本？';
+
+  @override
+  String get devScriptClearConfirmMessage => '將清空編輯器中的腳本內容。';
+
+  @override
+  String get devScriptMissing => '請先貼上或導入腳本';
+
+  @override
+  String devScriptImported(String name) {
+    return '已導入「$name」';
+  }
+
+  @override
+  String get devScriptLoadError => '讀取書源腳本失敗';
+
+  @override
+  String get devAuthApplied => '已套用存儲登錄態';
+
+  @override
+  String get devAuthMissing => '無存儲登錄態';
+
+  @override
+  String get devAuthNotSupported => '腳本未定義登錄';
+
+  @override
+  String get debugStageSearch => '搜索';
+
+  @override
+  String get debugStageBookInfo => '書籍詳情';
+
+  @override
+  String get debugStageChapters => '章節目錄';
+
+  @override
+  String get debugStageParagraphs => '正文段落';
+
+  @override
+  String get debugStageAuthStatus => '登錄狀態';
+
+  @override
+  String get debugInputKeyword => '關鍵詞';
+
+  @override
+  String get debugInputBookId => '書籍 ID';
+
+  @override
+  String get debugInputChapterId => '章節 ID';
+
+  @override
+  String debugInputMissing(String field) {
+    return '請填寫：$field';
+  }
+
+  @override
+  String get debugRun => '運行';
+
+  @override
+  String get debugSummaryOk => '成功';
+
+  @override
+  String get debugSummaryFailed => '失敗';
+
+  @override
+  String debugDurationMs(int ms) {
+    return '$ms ms';
+  }
+
+  @override
+  String get debugErrorTitle => '錯誤';
+
+  @override
+  String get debugOutputTitle => '輸出';
+
+  @override
+  String get debugResultEmpty => '0 項結果';
+
+  @override
+  String get debugEmptyHint =>
+      '貼上或導入書源腳本，選擇流水線階段並運行。解析輸出、錯誤（如有）與 HTTP 請求記錄會顯示在這裏；運行結果會保存在本次會話的歷史中。';
+
+  @override
+  String get debugChainBookInfo => '書籍詳情';
+
+  @override
+  String get debugChainParagraphs => '正文段落';
+
+  @override
+  String get debugFieldId => 'ID';
+
+  @override
+  String get debugFieldTitle => '標題';
+
+  @override
+  String get debugFieldAuthor => '作者';
+
+  @override
+  String get debugFieldCover => '封面';
+
+  @override
+  String get debugFieldDescription => '簡介';
+
+  @override
+  String get debugImageParagraph => '圖片';
+
+  @override
+  String debugTraceTitle(int count) {
+    return 'HTTP 追蹤（$count）';
+  }
+
+  @override
+  String get debugTraceEmpty => '沒有發生 HTTP 請求。';
+
+  @override
+  String debugTraceDropped(int count) {
+    return '另有 $count 個請求未被記錄（已達追蹤上限）。';
+  }
+
+  @override
+  String get debugTraceSize => '響應大小';
+
+  @override
+  String get debugTraceHeaders => '請求頭';
+
+  @override
+  String get debugTraceBodyPreview => '響應體預覽';
+
+  @override
+  String debugHistoryTitle(int count) {
+    return '歷史（$count）';
+  }
 }

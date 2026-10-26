@@ -798,4 +798,183 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsClearCacheError => 'Failed to clear cache';
+
+  @override
+  String get settingsDeveloper => 'Developer';
+
+  @override
+  String get devToolsTitle => 'Developer tools';
+
+  @override
+  String get devToolsEntryDescription => 'Feed script debugging environment';
+
+  @override
+  String devUnlockCountdown(int count) {
+    return '$count more taps to enable developer tools';
+  }
+
+  @override
+  String get devUnlocked => 'Developer tools enabled';
+
+  @override
+  String get devDisable => 'Turn off developer tools';
+
+  @override
+  String get devDisableConfirmTitle => 'Turn off developer tools?';
+
+  @override
+  String get devDisableConfirmMessage =>
+      'This hides the developer tools entry.';
+
+  @override
+  String get devScriptLabel => 'Feed script';
+
+  @override
+  String get devScriptHint =>
+      'Paste a Lua feed script or import one from an installed feed. Scripts compile and run here in isolation; installed feeds are untouched.';
+
+  @override
+  String get devScriptImport => 'Import';
+
+  @override
+  String get devScriptImportTitle => 'Pick an installed feed';
+
+  @override
+  String get devScriptImportEmpty => 'No installed feeds';
+
+  @override
+  String get devScriptClear => 'Clear';
+
+  @override
+  String get devScriptClearConfirmTitle => 'Clear the script?';
+
+  @override
+  String get devScriptClearConfirmMessage => 'This empties the editor.';
+
+  @override
+  String get devScriptMissing => 'Paste or import a script first';
+
+  @override
+  String devScriptImported(String name) {
+    return 'Imported \"$name\"';
+  }
+
+  @override
+  String get devScriptLoadError => 'Failed to load the feed script';
+
+  @override
+  String get devAuthApplied => 'Using stored login';
+
+  @override
+  String get devAuthMissing => 'No stored login';
+
+  @override
+  String get devAuthNotSupported => 'Script has no login block';
+
+  @override
+  String get debugStageSearch => 'Search';
+
+  @override
+  String get debugStageBookInfo => 'Book info';
+
+  @override
+  String get debugStageChapters => 'Chapters';
+
+  @override
+  String get debugStageParagraphs => 'Paragraphs';
+
+  @override
+  String get debugStageAuthStatus => 'Auth status';
+
+  @override
+  String get debugInputKeyword => 'Keyword';
+
+  @override
+  String get debugInputBookId => 'Book ID';
+
+  @override
+  String get debugInputChapterId => 'Chapter ID';
+
+  @override
+  String debugInputMissing(String field) {
+    return 'Please fill in: $field';
+  }
+
+  @override
+  String get debugRun => 'Run';
+
+  @override
+  String get debugSummaryOk => 'OK';
+
+  @override
+  String get debugSummaryFailed => 'Failed';
+
+  @override
+  String debugDurationMs(int ms) {
+    return '$ms ms';
+  }
+
+  @override
+  String get debugErrorTitle => 'Error';
+
+  @override
+  String get debugOutputTitle => 'Output';
+
+  @override
+  String get debugResultEmpty => '0 items';
+
+  @override
+  String get debugEmptyHint =>
+      'Paste or import a feed script, pick a pipeline stage and run. The typed output, the error (if any) and the recorded HTTP traffic appear here; runs accumulate in the history below.';
+
+  @override
+  String get debugChainBookInfo => 'Book info';
+
+  @override
+  String get debugChainParagraphs => 'Paragraphs';
+
+  @override
+  String get debugFieldId => 'ID';
+
+  @override
+  String get debugFieldTitle => 'Title';
+
+  @override
+  String get debugFieldAuthor => 'Author';
+
+  @override
+  String get debugFieldCover => 'Cover';
+
+  @override
+  String get debugFieldDescription => 'Description';
+
+  @override
+  String get debugImageParagraph => 'image';
+
+  @override
+  String debugTraceTitle(int count) {
+    return 'HTTP trace ($count)';
+  }
+
+  @override
+  String get debugTraceEmpty => 'No HTTP requests were made.';
+
+  @override
+  String debugTraceDropped(int count) {
+    return '$count further requests were not recorded (trace limit reached).';
+  }
+
+  @override
+  String get debugTraceSize => 'Response size';
+
+  @override
+  String get debugTraceHeaders => 'Request headers';
+
+  @override
+  String get debugTraceBodyPreview => 'Body preview';
+
+  @override
+  String debugHistoryTitle(int count) {
+    return 'History ($count)';
+  }
 }

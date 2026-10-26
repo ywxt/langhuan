@@ -760,5 +760,169 @@
   "@settingsClearCacheNothing": { "description": "Snackbar when there was nothing in the cache" },
 
   "settingsClearCacheError": "Failed to clear cache",
-  "@settingsClearCacheError": { "description": "Snackbar when clearing the cache fails" }
+  "@settingsClearCacheError": { "description": "Snackbar when clearing the cache fails" },
+
+  "settingsDeveloper": "Developer",
+  "@settingsDeveloper": { "description": "Settings section header for developer tools" },
+
+  "devToolsTitle": "Developer tools",
+  "@devToolsTitle": { "description": "Developer tools page title and settings entry label" },
+
+  "devToolsEntryDescription": "Feed script debugging environment",
+  "@devToolsEntryDescription": { "description": "Subtitle of the developer tools entry in settings" },
+
+  "devUnlockCountdown": "{count} more taps to enable developer tools",
+  "@devUnlockCountdown": {
+    "description": "Snackbar while tapping the version row towards unlocking",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "devUnlocked": "Developer tools enabled",
+  "@devUnlocked": { "description": "Snackbar when the version-row unlock completes" },
+
+  "devDisable": "Turn off developer tools",
+  "@devDisable": { "description": "Settings row hiding the developer tools again" },
+
+  "devDisableConfirmTitle": "Turn off developer tools?",
+  "@devDisableConfirmTitle": { "description": "Confirm dialog title for disabling developer tools" },
+
+  "devDisableConfirmMessage": "This hides the developer tools entry.",
+  "@devDisableConfirmMessage": { "description": "Confirm dialog message for disabling developer tools" },
+
+  "devScriptLabel": "Feed script",
+  "@devScriptLabel": { "description": "Developer page: script editor section label" },
+
+  "devScriptHint": "Paste a Lua feed script or import one from an installed feed. Scripts compile and run here in isolation; installed feeds are untouched.",
+  "@devScriptHint": { "description": "Developer page: script editor explanation" },
+
+  "devScriptImport": "Import",
+  "@devScriptImport": { "description": "Developer page: import-from-installed-feed action" },
+
+  "devScriptImportTitle": "Pick an installed feed",
+  "@devScriptImportTitle": { "description": "Developer page: import picker sheet title" },
+
+  "devScriptImportEmpty": "No installed feeds",
+  "@devScriptImportEmpty": { "description": "Snackbar when the import picker has nothing to offer" },
+
+  "devScriptClear": "Clear",
+  "@devScriptClear": { "description": "Developer page: clear-script action" },
+
+  "devScriptClearConfirmTitle": "Clear the script?",
+  "@devScriptClearConfirmTitle": { "description": "Confirm dialog title for clearing the script editor" },
+
+  "devScriptClearConfirmMessage": "This empties the editor.",
+  "@devScriptClearConfirmMessage": { "description": "Confirm dialog message for clearing the script editor" },
+
+  "devScriptMissing": "Paste or import a script first",
+  "@devScriptMissing": { "description": "Snackbar when running without a script" },
+
+  "devScriptImported": "Imported \"{name}\"",
+  "@devScriptImported": {
+    "description": "Snackbar after a script was imported into the editor",
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "devScriptLoadError": "Failed to load the feed script",
+  "@devScriptLoadError": { "description": "Snackbar when reading an installed feed's script fails" },
+
+  "devAuthApplied": "Using stored login",
+  "@devAuthApplied": { "description": "Run summary chip: stored auth was hydrated" },
+
+  "devAuthMissing": "No stored login",
+  "@devAuthMissing": { "description": "Run summary chip: no auth stored for the feed id" },
+
+  "devAuthNotSupported": "Script has no login block",
+  "@devAuthNotSupported": { "description": "Run summary chip: script declares no login block" },
+
+  "debugStageSearch": "Search",
+  "@debugStageSearch": { "description": "Stage runner: search stage" },
+  "debugStageBookInfo": "Book info",
+  "@debugStageBookInfo": { "description": "Stage runner: book_info stage" },
+  "debugStageChapters": "Chapters",
+  "@debugStageChapters": { "description": "Stage runner: chapters stage" },
+  "debugStageParagraphs": "Paragraphs",
+  "@debugStageParagraphs": { "description": "Stage runner: paragraphs stage" },
+  "debugStageAuthStatus": "Auth status",
+  "@debugStageAuthStatus": { "description": "Stage runner: auth status probe stage" },
+
+  "debugInputKeyword": "Keyword",
+  "@debugInputKeyword": { "description": "Stage runner input: search keyword" },
+  "debugInputBookId": "Book ID",
+  "@debugInputBookId": { "description": "Stage runner input: book id" },
+  "debugInputChapterId": "Chapter ID",
+  "@debugInputChapterId": { "description": "Stage runner input: chapter id" },
+
+  "debugInputMissing": "Please fill in: {field}",
+  "@debugInputMissing": {
+    "description": "Snackbar when a stage input is empty",
+    "placeholders": { "field": { "type": "String" } }
+  },
+
+  "debugRun": "Run",
+  "@debugRun": { "description": "Stage runner: run button" },
+
+  "debugSummaryOk": "OK",
+  "@debugSummaryOk": { "description": "Run summary chip: succeeded" },
+  "debugSummaryFailed": "Failed",
+  "@debugSummaryFailed": { "description": "Run summary chip: errored" },
+
+  "debugDurationMs": "{ms} ms",
+  "@debugDurationMs": {
+    "description": "Run/entry duration",
+    "placeholders": { "ms": { "type": "int" } }
+  },
+
+  "debugErrorTitle": "Error",
+  "@debugErrorTitle": { "description": "Error card title" },
+  "debugOutputTitle": "Output",
+  "@debugOutputTitle": { "description": "Typed output section title" },
+  "debugResultEmpty": "0 items",
+  "@debugResultEmpty": { "description": "Empty list output of a clean run" },
+
+  "debugEmptyHint": "Paste or import a feed script, pick a pipeline stage and run. The typed output, the error (if any) and the recorded HTTP traffic appear here; runs accumulate in the history below.",
+  "@debugEmptyHint": { "description": "Placeholder before the first run" },
+
+  "debugChainBookInfo": "Book info",
+  "@debugChainBookInfo": { "description": "Chain action: use this result's id as the book_info input" },
+  "debugChainParagraphs": "Paragraphs",
+  "@debugChainParagraphs": { "description": "Chain action: use this chapter's id as the paragraphs input" },
+
+  "debugFieldId": "ID",
+  "@debugFieldId": { "description": "Book info output field label: id" },
+  "debugFieldTitle": "Title",
+  "@debugFieldTitle": { "description": "Book info output field label: title" },
+  "debugFieldAuthor": "Author",
+  "@debugFieldAuthor": { "description": "Book info output field label: author" },
+  "debugFieldCover": "Cover",
+  "@debugFieldCover": { "description": "Book info output field label: cover URL" },
+  "debugFieldDescription": "Description",
+  "@debugFieldDescription": { "description": "Book info output field label: description" },
+
+  "debugImageParagraph": "image",
+  "@debugImageParagraph": { "description": "Prefix marking an image paragraph in the paragraphs output" },
+
+  "debugTraceTitle": "HTTP trace ({count})",
+  "@debugTraceTitle": {
+    "description": "HTTP trace section title",
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "debugTraceEmpty": "No HTTP requests were made.",
+  "@debugTraceEmpty": { "description": "HTTP trace section when nothing was recorded" },
+  "debugTraceDropped": "{count} further requests were not recorded (trace limit reached).",
+  "@debugTraceDropped": {
+    "description": "HTTP trace note when the entry limit was hit",
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "debugTraceSize": "Response size",
+  "@debugTraceSize": { "description": "Trace detail row label: response body size" },
+  "debugTraceHeaders": "Request headers",
+  "@debugTraceHeaders": { "description": "Trace detail row label: request headers" },
+  "debugTraceBodyPreview": "Body preview",
+  "@debugTraceBodyPreview": { "description": "Trace detail label: response body preview" },
+
+  "debugHistoryTitle": "History ({count})",
+  "@debugHistoryTitle": {
+    "description": "Run history section title",
+    "placeholders": { "count": { "type": "int" } }
+  }
 }

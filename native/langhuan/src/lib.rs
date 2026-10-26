@@ -6,4 +6,5 @@ pub mod hash;
 pub mod http;
 pub mod model;
 pub mod script;
+pub mod trace;
 pub mod transform;

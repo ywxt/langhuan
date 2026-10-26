@@ -4,12 +4,14 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../shared/app_service.dart';
 import '../../shared/cache_stats_provider.dart';
 import '../../shared/constants.dart';
+import '../../shared/developer_mode_provider.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/format_bytes.dart';
 import '../../shared/utils/snackbars.dart';
@@ -28,12 +30,52 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
+  static const _kUnlockTaps = 7;
+
   bool _isCleaning = false;
   bool _isClearing = false;
   bool _isBackingUp = false;
+  int _versionTaps = 0;
 
   String _statText(CacheStats? stats, String Function(CacheStats) read) {
     return stats == null ? '—' : read(stats);
+  }
+
+  // -------------------------------------------------------------------------
+  // Developer tools unlock
+  // -------------------------------------------------------------------------
+
+  /// The About → version row is the hidden gate to the developer tools:
+  /// seven taps unlock them, after which the Developer section (below)
+  /// carries the one entry. The row itself stays inert before and after
+  /// unlocking, so normal settings behavior is unmodified.
+  void _onVersionTap() {
+    if (ref.read(developerModeProvider)) return;
+    final l10n = AppLocalizations.of(context);
+    _versionTaps += 1;
+    final remaining = _kUnlockTaps - _versionTaps;
+    if (remaining <= 0) {
+      _versionTaps = 0;
+      ref.read(developerModeProvider.notifier).setEnabled(true);
+      showSuccessSnack(ScaffoldMessenger.of(context), l10n.devUnlocked);
+    } else if (remaining <= 4) {
+      showSuccessSnack(
+        ScaffoldMessenger.of(context),
+        l10n.devUnlockCountdown(remaining),
+      );
+    }
+  }
+
+  Future<void> _disableDeveloperMode() async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showConfirmDialog(
+      context,
+      title: l10n.devDisableConfirmTitle,
+      message: l10n.devDisableConfirmMessage,
+      confirmLabel: l10n.devDisable,
+    );
+    if (!confirmed || !mounted) return;
+    ref.read(developerModeProvider.notifier).setEnabled(false);
   }
 
   Future<void> _cleanupCache() async {
@@ -271,6 +313,37 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
                   const SizedBox(height: LanghuanTheme.spaceLg),
 
+                  // ── Developer section — hidden until unlocked via the
+                  // About version row; normal users never see it. ──
+                  if (ref.watch(developerModeProvider)) ...[
+                    _SectionLabel(label: l10n.settingsDeveloper),
+                    const SizedBox(height: LanghuanTheme.spaceSm),
+                    _SettingsCard(
+                      children: [
+                        _SettingsRow(
+                          icon: Icons.bug_report_outlined,
+                          label: l10n.devToolsTitle,
+                          subtitle: l10n.devToolsEntryDescription,
+                          trailing: Icon(
+                            Icons.chevron_right,
+                            size: 20,
+                            color: theme.colorScheme.onSurfaceVariant.withAlpha(
+                              120,
+                            ),
+                          ),
+                          onTap: () => context.pushNamed('developer-tools'),
+                        ),
+                        const _SettingsDivider(),
+                        _SettingsRow(
+                          icon: Icons.lock_outline_rounded,
+                          label: l10n.devDisable,
+                          onTap: _disableDeveloperMode,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: LanghuanTheme.spaceLg),
+                  ],
+
                   // ── About section ──────────────────────────────────────────
                   _SectionLabel(label: l10n.settingsAbout),
                   const SizedBox(height: LanghuanTheme.spaceSm),
@@ -285,6 +358,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
+                        onTap: _onVersionTap,
                       ),
                       _SettingsDivider(),
                       _SettingsRow(

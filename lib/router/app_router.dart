@@ -6,9 +6,11 @@ import '../features/bookshelf/bookshelf_page.dart';
 import '../features/bookshelf/book_detail_page.dart';
 import '../features/bookshelf/reader_page.dart';
 import '../features/bookshelf/search_page.dart';
+import '../features/developer/developer_tools_page.dart';
 import '../features/feeds/feed_auth_page.dart';
 import '../features/feeds/feeds_page.dart';
 import '../features/settings/settings_page.dart';
+import '../shared/developer_mode_provider.dart';
 import '../shared/theme/fade_slide_page_transitions_builder.dart';
 import '../shared/widgets/animated_branch_container.dart';
 import '../shared/widgets/main_scaffold.dart';
@@ -146,6 +148,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             ],
           ),
         ],
+      ),
+      // The developer tools live outside the shell: a standalone
+      // environment, invisible until unlocked (see settings' version row)
+      // and rendered above the bottom navigation.
+      GoRoute(
+        path: '/developer',
+        name: 'developer-tools',
+        parentNavigatorKey: _rootNavigatorKey,
+        redirect: (context, state) =>
+            ref.read(developerModeProvider) ? null : '/settings',
+        pageBuilder: (context, state) =>
+            _transitionPage(state, const DeveloperToolsPage()),
       ),
     ],
   );

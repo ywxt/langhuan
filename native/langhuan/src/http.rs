@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock};
+use std::time::Instant;
 
 use bytes::Bytes;
 use reqwest::Client;
@@ -325,13 +326,21 @@ pub struct HttpResponse {
 /// [`HttpResponse`].
 ///
 /// `feed_id` and `access_domains` are used for domain allowlist enforcement
-/// and tracing.
+/// and tracing. When a trace recorder is active for the current task
+/// (developer tools only — see [`crate::trace`]), the request and its
+/// outcome are recorded, including requests blocked by the allowlist.
 pub async fn execute(
     client: &Client,
     feed_id: &str,
     access_domains: &HashSet<String>,
     req: &HttpRequest,
 ) -> Result<HttpResponse> {
+    // Developer tools: while a trace recorder is active for this task,
+    // report this request's outcome to it. Outside a debug run this is one
+    // task-local lookup and nothing else.
+    let trace = crate::trace::active();
+    let start = trace.is_some().then(Instant::now);
+
     // Enforce access_domains before making any network call.
     if !access_domains.is_empty() && !domain_allowed(&req.url, access_domains) {
         tracing::warn!(
@@ -339,6 +348,9 @@ pub async fn execute(
             url = %req.url,
             "blocked request by access_domains"
         );
+        if let Some(trace) = &trace {
+            trace.record_blocked(req, start);
+        }
         return Err(crate::error::Error::domain_not_allowed(
             req.url.clone(),
             access_domains.clone(),
@@ -366,7 +378,15 @@ pub async fn execute(
         builder = builder.body(body.0.clone());
     }
 
-    let response = builder.send().await?;
+    let response = match builder.send().await {
+        Ok(response) => response,
+        Err(e) => {
+            if let Some(trace) = &trace {
+                trace.record_send_error(req, start, &e);
+            }
+            return Err(e.into());
+        }
+    };
 
     let status = response.status().as_u16();
     let url = response.url().to_string();
@@ -387,12 +407,24 @@ pub async fn execute(
         })
         .collect();
 
-    let body = HttpBody(response.bytes().await?);
+    let body = match response.bytes().await {
+        Ok(body) => body,
+        Err(e) => {
+            if let Some(trace) = &trace {
+                trace.record_body_error(req, status, &url, start, &e);
+            }
+            return Err(e.into());
+        }
+    };
+
+    if let Some(trace) = &trace {
+        trace.record_response(req, status, &url, &body, start);
+    }
 
     Ok(HttpResponse {
         status,
         headers,
-        body,
+        body: HttpBody(body),
         url,
     })
 }

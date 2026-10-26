@@ -1513,6 +1513,330 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to clear cache'**
   String get settingsClearCacheError;
+
+  /// Settings section header for developer tools
+  ///
+  /// In en, this message translates to:
+  /// **'Developer'**
+  String get settingsDeveloper;
+
+  /// Developer tools page title and settings entry label
+  ///
+  /// In en, this message translates to:
+  /// **'Developer tools'**
+  String get devToolsTitle;
+
+  /// Subtitle of the developer tools entry in settings
+  ///
+  /// In en, this message translates to:
+  /// **'Feed script debugging environment'**
+  String get devToolsEntryDescription;
+
+  /// Snackbar while tapping the version row towards unlocking
+  ///
+  /// In en, this message translates to:
+  /// **'{count} more taps to enable developer tools'**
+  String devUnlockCountdown(int count);
+
+  /// Snackbar when the version-row unlock completes
+  ///
+  /// In en, this message translates to:
+  /// **'Developer tools enabled'**
+  String get devUnlocked;
+
+  /// Settings row hiding the developer tools again
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off developer tools'**
+  String get devDisable;
+
+  /// Confirm dialog title for disabling developer tools
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off developer tools?'**
+  String get devDisableConfirmTitle;
+
+  /// Confirm dialog message for disabling developer tools
+  ///
+  /// In en, this message translates to:
+  /// **'This hides the developer tools entry.'**
+  String get devDisableConfirmMessage;
+
+  /// Developer page: script editor section label
+  ///
+  /// In en, this message translates to:
+  /// **'Feed script'**
+  String get devScriptLabel;
+
+  /// Developer page: script editor explanation
+  ///
+  /// In en, this message translates to:
+  /// **'Paste a Lua feed script or import one from an installed feed. Scripts compile and run here in isolation; installed feeds are untouched.'**
+  String get devScriptHint;
+
+  /// Developer page: import-from-installed-feed action
+  ///
+  /// In en, this message translates to:
+  /// **'Import'**
+  String get devScriptImport;
+
+  /// Developer page: import picker sheet title
+  ///
+  /// In en, this message translates to:
+  /// **'Pick an installed feed'**
+  String get devScriptImportTitle;
+
+  /// Snackbar when the import picker has nothing to offer
+  ///
+  /// In en, this message translates to:
+  /// **'No installed feeds'**
+  String get devScriptImportEmpty;
+
+  /// Developer page: clear-script action
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get devScriptClear;
+
+  /// Confirm dialog title for clearing the script editor
+  ///
+  /// In en, this message translates to:
+  /// **'Clear the script?'**
+  String get devScriptClearConfirmTitle;
+
+  /// Confirm dialog message for clearing the script editor
+  ///
+  /// In en, this message translates to:
+  /// **'This empties the editor.'**
+  String get devScriptClearConfirmMessage;
+
+  /// Snackbar when running without a script
+  ///
+  /// In en, this message translates to:
+  /// **'Paste or import a script first'**
+  String get devScriptMissing;
+
+  /// Snackbar after a script was imported into the editor
+  ///
+  /// In en, this message translates to:
+  /// **'Imported \"{name}\"'**
+  String devScriptImported(String name);
+
+  /// Snackbar when reading an installed feed's script fails
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load the feed script'**
+  String get devScriptLoadError;
+
+  /// Run summary chip: stored auth was hydrated
+  ///
+  /// In en, this message translates to:
+  /// **'Using stored login'**
+  String get devAuthApplied;
+
+  /// Run summary chip: no auth stored for the feed id
+  ///
+  /// In en, this message translates to:
+  /// **'No stored login'**
+  String get devAuthMissing;
+
+  /// Run summary chip: script declares no login block
+  ///
+  /// In en, this message translates to:
+  /// **'Script has no login block'**
+  String get devAuthNotSupported;
+
+  /// Stage runner: search stage
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get debugStageSearch;
+
+  /// Stage runner: book_info stage
+  ///
+  /// In en, this message translates to:
+  /// **'Book info'**
+  String get debugStageBookInfo;
+
+  /// Stage runner: chapters stage
+  ///
+  /// In en, this message translates to:
+  /// **'Chapters'**
+  String get debugStageChapters;
+
+  /// Stage runner: paragraphs stage
+  ///
+  /// In en, this message translates to:
+  /// **'Paragraphs'**
+  String get debugStageParagraphs;
+
+  /// Stage runner: auth status probe stage
+  ///
+  /// In en, this message translates to:
+  /// **'Auth status'**
+  String get debugStageAuthStatus;
+
+  /// Stage runner input: search keyword
+  ///
+  /// In en, this message translates to:
+  /// **'Keyword'**
+  String get debugInputKeyword;
+
+  /// Stage runner input: book id
+  ///
+  /// In en, this message translates to:
+  /// **'Book ID'**
+  String get debugInputBookId;
+
+  /// Stage runner input: chapter id
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter ID'**
+  String get debugInputChapterId;
+
+  /// Snackbar when a stage input is empty
+  ///
+  /// In en, this message translates to:
+  /// **'Please fill in: {field}'**
+  String debugInputMissing(String field);
+
+  /// Stage runner: run button
+  ///
+  /// In en, this message translates to:
+  /// **'Run'**
+  String get debugRun;
+
+  /// Run summary chip: succeeded
+  ///
+  /// In en, this message translates to:
+  /// **'OK'**
+  String get debugSummaryOk;
+
+  /// Run summary chip: errored
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get debugSummaryFailed;
+
+  /// Run/entry duration
+  ///
+  /// In en, this message translates to:
+  /// **'{ms} ms'**
+  String debugDurationMs(int ms);
+
+  /// Error card title
+  ///
+  /// In en, this message translates to:
+  /// **'Error'**
+  String get debugErrorTitle;
+
+  /// Typed output section title
+  ///
+  /// In en, this message translates to:
+  /// **'Output'**
+  String get debugOutputTitle;
+
+  /// Empty list output of a clean run
+  ///
+  /// In en, this message translates to:
+  /// **'0 items'**
+  String get debugResultEmpty;
+
+  /// Placeholder before the first run
+  ///
+  /// In en, this message translates to:
+  /// **'Paste or import a feed script, pick a pipeline stage and run. The typed output, the error (if any) and the recorded HTTP traffic appear here; runs accumulate in the history below.'**
+  String get debugEmptyHint;
+
+  /// Chain action: use this result's id as the book_info input
+  ///
+  /// In en, this message translates to:
+  /// **'Book info'**
+  String get debugChainBookInfo;
+
+  /// Chain action: use this chapter's id as the paragraphs input
+  ///
+  /// In en, this message translates to:
+  /// **'Paragraphs'**
+  String get debugChainParagraphs;
+
+  /// Book info output field label: id
+  ///
+  /// In en, this message translates to:
+  /// **'ID'**
+  String get debugFieldId;
+
+  /// Book info output field label: title
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get debugFieldTitle;
+
+  /// Book info output field label: author
+  ///
+  /// In en, this message translates to:
+  /// **'Author'**
+  String get debugFieldAuthor;
+
+  /// Book info output field label: cover URL
+  ///
+  /// In en, this message translates to:
+  /// **'Cover'**
+  String get debugFieldCover;
+
+  /// Book info output field label: description
+  ///
+  /// In en, this message translates to:
+  /// **'Description'**
+  String get debugFieldDescription;
+
+  /// Prefix marking an image paragraph in the paragraphs output
+  ///
+  /// In en, this message translates to:
+  /// **'image'**
+  String get debugImageParagraph;
+
+  /// HTTP trace section title
+  ///
+  /// In en, this message translates to:
+  /// **'HTTP trace ({count})'**
+  String debugTraceTitle(int count);
+
+  /// HTTP trace section when nothing was recorded
+  ///
+  /// In en, this message translates to:
+  /// **'No HTTP requests were made.'**
+  String get debugTraceEmpty;
+
+  /// HTTP trace note when the entry limit was hit
+  ///
+  /// In en, this message translates to:
+  /// **'{count} further requests were not recorded (trace limit reached).'**
+  String debugTraceDropped(int count);
+
+  /// Trace detail row label: response body size
+  ///
+  /// In en, this message translates to:
+  /// **'Response size'**
+  String get debugTraceSize;
+
+  /// Trace detail row label: request headers
+  ///
+  /// In en, this message translates to:
+  /// **'Request headers'**
+  String get debugTraceHeaders;
+
+  /// Trace detail label: response body preview
+  ///
+  /// In en, this message translates to:
+  /// **'Body preview'**
+  String get debugTraceBodyPreview;
+
+  /// Run history section title
+  ///
+  /// In en, this message translates to:
+  /// **'History ({count})'**
+  String debugHistoryTitle(int count);
 }
 
 class _AppLocalizationsDelegate
