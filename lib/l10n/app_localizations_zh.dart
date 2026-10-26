@@ -417,10 +417,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedDetailId => 'ID';
 
   @override
-  String get feedDetailVersion => '版本';
+  String get feedDetailBaseUrl => '主站網址';
 
   @override
-  String get feedDetailAuthor => '作者';
+  String get feedDetailAccessDomains => '允許訪問的域名';
+
+  @override
+  String get feedDetailNoDomainRestriction => '無域名限制';
+
+  @override
+  String get feedDetailSource => '來源';
 
   @override
   String get feedDetailEnabled => '啟用書源';

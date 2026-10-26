@@ -12,6 +12,9 @@ extension FeedMetaEnabled on FeedMetaItem {
     version: version,
     author: author,
     enabled: value,
+    sourceUrl: sourceUrl,
+    baseUrl: baseUrl,
+    accessDomains: accessDomains,
     error: error,
   );
 }

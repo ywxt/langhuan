@@ -137,8 +137,10 @@
   "feedsRetry": "重試",
 
   "feedDetailId": "ID",
-  "feedDetailVersion": "版本",
-  "feedDetailAuthor": "作者",
+  "feedDetailBaseUrl": "主站網址",
+  "feedDetailAccessDomains": "允許訪問的域名",
+  "feedDetailNoDomainRestriction": "無域名限制",
+  "feedDetailSource": "來源",
   "feedDetailEnabled": "啟用書源",
   "feedDetailEnabledHint": "暫停的書源不參與聚合搜索與更新檢查。",
   "feedDetailBooksLabel": "書架書籍",

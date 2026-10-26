@@ -422,10 +422,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get feedDetailId => 'ID';
 
   @override
-  String get feedDetailVersion => 'Version';
+  String get feedDetailBaseUrl => 'Base URL';
 
   @override
-  String get feedDetailAuthor => 'Author';
+  String get feedDetailAccessDomains => 'Access domains';
+
+  @override
+  String get feedDetailNoDomainRestriction => 'No domain restrictions';
+
+  @override
+  String get feedDetailSource => 'Source';
 
   @override
   String get feedDetailEnabled => 'Enabled';

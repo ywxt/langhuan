@@ -16,12 +16,14 @@ const _feedA = FeedMetaItem(
   name: 'Source A',
   version: '1',
   enabled: true,
+  accessDomains: [],
 );
 const _feedB = FeedMetaItem(
   id: 'feed-b',
   name: 'Source B',
   version: '1',
   enabled: true,
+  accessDomains: [],
 );
 
 const _resultA1 = SearchResultModel(

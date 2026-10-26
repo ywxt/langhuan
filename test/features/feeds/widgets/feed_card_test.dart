@@ -17,6 +17,9 @@ const _feedA = FeedMetaItem(
   name: 'Source A',
   version: '1',
   enabled: true,
+  sourceUrl: 'https://example.com/source-a.lua',
+  baseUrl: 'https://example.com',
+  accessDomains: ['example.com', 'cdn.example.com'],
 );
 
 const _feedAPaused = FeedMetaItem(
@@ -24,6 +27,7 @@ const _feedAPaused = FeedMetaItem(
   name: 'Source A',
   version: '1',
   enabled: false,
+  accessDomains: [],
 );
 
 Widget _testApp(Widget child) {
@@ -188,7 +192,13 @@ void main() {
       // The sheet carries the metadata and actions the card omits.
       expect(find.text('ID'), findsOneWidget);
       expect(find.text('feed-a'), findsOneWidget);
-      expect(find.text('Version'), findsOneWidget);
+      expect(find.text('Base URL'), findsOneWidget);
+      expect(find.text('https://example.com'), findsOneWidget);
+      expect(find.text('Access domains'), findsOneWidget);
+      expect(find.text('example.com'), findsOneWidget);
+      expect(find.text('cdn.example.com'), findsOneWidget);
+      expect(find.text('Source'), findsOneWidget);
+      expect(find.text('https://example.com/source-a.lua'), findsOneWidget);
       expect(find.text('Shelved books'), findsOneWidget);
       expect(find.text('2'), findsOneWidget);
       expect(find.byType(SwitchListTile), findsOneWidget);

@@ -117,6 +117,14 @@ pub struct FeedMetaItem {
     /// Paused feeds are excluded from aggregated search and background
     /// update checks, but explicit per-feed actions still work.
     pub enabled: bool,
+    /// Where the feed script was installed from (URL), when known.
+    pub source_url: Option<String>,
+    /// Base URL declared by the feed script. `None` when the script
+    /// failed to compile and its metadata is unavailable.
+    pub base_url: Option<String>,
+    /// Access domain patterns declared by the feed script, sorted for
+    /// stable display. Empty when the script failed to compile.
+    pub access_domains: Vec<String>,
     pub error: Option<String>,
 }
 

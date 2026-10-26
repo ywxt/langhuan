@@ -409,11 +409,17 @@
   "feedDetailId": "ID",
   "@feedDetailId": { "description": "Feed detail sheet: ID label" },
 
-  "feedDetailVersion": "Version",
-  "@feedDetailVersion": { "description": "Feed detail sheet: version label" },
+  "feedDetailBaseUrl": "Base URL",
+  "@feedDetailBaseUrl": { "description": "Feed detail sheet: base URL label" },
 
-  "feedDetailAuthor": "Author",
-  "@feedDetailAuthor": { "description": "Feed detail sheet: author label" },
+  "feedDetailAccessDomains": "Access domains",
+  "@feedDetailAccessDomains": { "description": "Feed detail sheet: access domains label" },
+
+  "feedDetailNoDomainRestriction": "No domain restrictions",
+  "@feedDetailNoDomainRestriction": { "description": "Feed detail sheet: shown when the feed declares no access domain" },
+
+  "feedDetailSource": "Source",
+  "@feedDetailSource": { "description": "Feed detail sheet: label for the URL the feed was installed from" },
 
   "feedDetailEnabled": "Enabled",
   "@feedDetailEnabled": { "description": "Feed detail sheet: enabled switch label" },

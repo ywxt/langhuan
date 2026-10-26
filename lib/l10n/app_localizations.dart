@@ -842,17 +842,29 @@ abstract class AppLocalizations {
   /// **'ID'**
   String get feedDetailId;
 
-  /// Feed detail sheet: version label
+  /// Feed detail sheet: base URL label
   ///
   /// In en, this message translates to:
-  /// **'Version'**
-  String get feedDetailVersion;
+  /// **'Base URL'**
+  String get feedDetailBaseUrl;
 
-  /// Feed detail sheet: author label
+  /// Feed detail sheet: access domains label
   ///
   /// In en, this message translates to:
-  /// **'Author'**
-  String get feedDetailAuthor;
+  /// **'Access domains'**
+  String get feedDetailAccessDomains;
+
+  /// Feed detail sheet: shown when the feed declares no access domain
+  ///
+  /// In en, this message translates to:
+  /// **'No domain restrictions'**
+  String get feedDetailNoDomainRestriction;
+
+  /// Feed detail sheet: label for the URL the feed was installed from
+  ///
+  /// In en, this message translates to:
+  /// **'Source'**
+  String get feedDetailSource;
 
   /// Feed detail sheet: enabled switch label
   ///

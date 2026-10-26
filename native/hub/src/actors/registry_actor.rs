@@ -15,6 +15,7 @@ use langhuan::cache::CachedFeed;
 use langhuan::db::Db;
 use langhuan::db::repo::FeedRow;
 use langhuan::feed::FeedMeta;
+use langhuan::feed::traits::Feed as _;
 use langhuan::script::lua::LuaFeed;
 use langhuan::script::runtime::ScriptEngine;
 use messages::prelude::{Actor, Context, Handler};
@@ -237,9 +238,26 @@ impl RegistryActor {
             }
         };
         rows.into_iter()
-            .map(|row| FeedMetaItem {
-                error: self.load_errors.get(&row.id).cloned(),
-                ..row.into()
+            .map(|row| {
+                // Script metadata (base URL, access domains) exists only
+                // for feeds that compiled successfully; a broken script
+                // keeps its registry row with the fields left empty.
+                let (base_url, access_domains) = match self.feeds.get(&row.id) {
+                    Some(feed) => {
+                        let meta = feed.meta();
+                        let mut domains: Vec<String> =
+                            meta.access_domains.iter().cloned().collect();
+                        domains.sort();
+                        (Some(meta.base_url.clone()), domains)
+                    }
+                    None => (None, Vec::new()),
+                };
+                FeedMetaItem {
+                    error: self.load_errors.get(&row.id).cloned(),
+                    base_url,
+                    access_domains,
+                    ..row.into()
+                }
             })
             .collect()
     }
@@ -504,8 +522,9 @@ pub(crate) fn classify_version_change(current: Option<&str>, new: &str) -> Versi
 
 /// Map a stored feed row to its bridge representation.
 ///
-/// The `error` field (script failed to compile) is actor state and is
-/// overwritten by the caller after conversion.
+/// The `error` field (script failed to compile) and the script metadata
+/// (`base_url`, `access_domains`) are actor state and are overwritten by
+/// the caller after conversion.
 impl From<FeedRow> for FeedMetaItem {
     fn from(row: FeedRow) -> Self {
         FeedMetaItem {
@@ -514,6 +533,9 @@ impl From<FeedRow> for FeedMetaItem {
             version: row.version,
             author: row.author,
             enabled: row.enabled,
+            source_url: row.source_url,
+            base_url: None,
+            access_domains: Vec::new(),
             error: None,
         }
     }
@@ -729,6 +751,17 @@ mod tests {
             Some("https://example.com/src")
         );
 
+        // Listed metadata carries the compiled script's base URL and
+        // access domains, plus the recorded source URL.
+        let items = actor.do_list_feeds().await;
+        let f2_item = items.iter().find(|item| item.id == "f2").expect("f2 item");
+        assert_eq!(f2_item.base_url.as_deref(), Some("http://127.0.0.1:1/"));
+        assert_eq!(f2_item.access_domains, vec!["127.0.0.1".to_owned()]);
+        assert_eq!(
+            f2_item.source_url.as_deref(),
+            Some("https://example.com/src")
+        );
+
         // Re-importing the same set: nothing new installs, both valid
         // entries skip, the broken one keeps failing.
         let outcome = actor
@@ -774,6 +807,14 @@ mod tests {
         assert_eq!(result.feed_count, 0);
         assert!(result.warning_message.is_some());
         assert!(actor.load_errors.contains_key("f1"));
+
+        // A broken script keeps its registry row, but its script metadata
+        // (base URL, access domains) stays unavailable.
+        let items = actor.do_list_feeds().await;
+        let broken = items.iter().find(|item| item.id == "f1").expect("f1 item");
+        assert!(broken.error.is_some());
+        assert!(broken.base_url.is_none());
+        assert!(broken.access_domains.is_empty());
         Ok(())
     }
 

@@ -199,25 +199,31 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
             const SizedBox(height: LanghuanTheme.spaceMd),
 
             // ── Metadata ──────────────────────────────────────────────
-            MetaRow(
-              icon: Icons.tag,
-              label: l10n.feedDetailVersion,
-              value: feed.version,
-            ),
-            if (feed.author != null) ...[
-              const SizedBox(height: LanghuanTheme.spaceMd),
-              MetaRow(
-                icon: Icons.person_outline,
-                label: l10n.feedDetailAuthor,
-                value: feed.author!,
-              ),
-            ],
-            const SizedBox(height: LanghuanTheme.spaceMd),
+            // Version and author live in the header; this section carries
+            // what the header does not.
             MetaRow(
               icon: Icons.auto_stories_outlined,
               label: l10n.feedDetailBooksLabel,
               value: l10n.feedDetailBookCount(bookCount),
             ),
+            if (feed.baseUrl case final baseUrl?) ...[
+              const SizedBox(height: LanghuanTheme.spaceMd),
+              MetaRow(
+                icon: Icons.link,
+                label: l10n.feedDetailBaseUrl,
+                value: baseUrl,
+              ),
+              const SizedBox(height: LanghuanTheme.spaceMd),
+              _AccessDomains(domains: feed.accessDomains),
+            ],
+            if (feed.sourceUrl case final sourceUrl?) ...[
+              const SizedBox(height: LanghuanTheme.spaceMd),
+              MetaRow(
+                icon: Icons.download_outlined,
+                label: l10n.feedDetailSource,
+                value: sourceUrl,
+              ),
+            ],
             const SizedBox(height: LanghuanTheme.spaceMd),
             Row(
               children: [
@@ -362,5 +368,75 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
     final onDelete = widget.onDelete;
     Navigator.of(context).pop();
     if (onDelete != null) await onDelete();
+  }
+}
+
+/// Labelled chip row of the feed's access-domain patterns, mirroring the
+/// add-feed preview. An empty list means the feed declared no domain
+/// restriction.
+class _AccessDomains extends StatelessWidget {
+  const _AccessDomains({required this.domains});
+
+  final List<String> domains;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.verified_user_outlined,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: LanghuanTheme.spaceSm),
+            Text(
+              l10n.feedDetailAccessDomains,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: LanghuanTheme.spaceSm),
+        if (domains.isEmpty)
+          Text(
+            l10n.feedDetailNoDomainRestriction,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontStyle: FontStyle.italic,
+            ),
+          )
+        else
+          Wrap(
+            spacing: LanghuanTheme.spaceSm,
+            runSpacing: LanghuanTheme.spaceXs,
+            children: [
+              for (final domain in domains)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: LanghuanTheme.spaceSm,
+                    vertical: LanghuanTheme.spaceXs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.secondaryContainer,
+                    borderRadius: LanghuanTheme.borderRadiusSm,
+                  ),
+                  child: Text(
+                    domain,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSecondaryContainer,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+      ],
+    );
   }
 }
