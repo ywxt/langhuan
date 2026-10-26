@@ -485,6 +485,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedAuthInstructions => '請在此網頁完成登錄，然後點擊「驗證登錄」。';
 
   @override
+  String get feedAuthDesktopInstructions =>
+      '已在單獨的窗口中打開登錄頁。請在該窗口完成登錄，保持窗口開啟，然後回到本頁點擊「驗證登錄」。';
+
+  @override
+  String get feedAuthDesktopWindowHint => '登錄窗口保持開啟中。完成登錄後，點擊右上角的「驗證登錄」。';
+
+  @override
+  String get feedAuthWindowClosed => '登錄窗口已關閉。驗證登錄需要讀取窗口中的頁面與 cookies，請重新打開。';
+
+  @override
+  String get feedAuthReopenWindow => '重新打開登錄窗口';
+
+  @override
   String get feedAuthVerifying => '正在驗證登錄…';
 
   @override

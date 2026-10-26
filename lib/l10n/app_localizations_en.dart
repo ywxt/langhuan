@@ -492,6 +492,21 @@ class AppLocalizationsEn extends AppLocalizations {
       'Sign in on this page, then tap Verify when finished.';
 
   @override
+  String get feedAuthDesktopInstructions =>
+      'A login window has opened. Sign in there, keep it open, then come back and tap Verify.';
+
+  @override
+  String get feedAuthDesktopWindowHint =>
+      'The login window stays open. After signing in, tap Verify in the top bar.';
+
+  @override
+  String get feedAuthWindowClosed =>
+      'The login window was closed. Verification needs the page and cookies from that window — please reopen it.';
+
+  @override
+  String get feedAuthReopenWindow => 'Reopen login window';
+
+  @override
   String get feedAuthVerifying => 'Verifying login…';
 
   @override

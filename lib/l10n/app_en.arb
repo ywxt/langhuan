@@ -475,6 +475,18 @@
   "feedAuthInstructions": "Sign in on this page, then tap Verify when finished.",
   "@feedAuthInstructions": { "description": "Instructions shown above the feed login WebView" },
 
+  "feedAuthDesktopInstructions": "A login window has opened. Sign in there, keep it open, then come back and tap Verify.",
+  "@feedAuthDesktopInstructions": { "description": "Instructions on the feed login page when the login page runs in a separate native window (Linux/Windows)" },
+
+  "feedAuthDesktopWindowHint": "The login window stays open. After signing in, tap Verify in the top bar.",
+  "@feedAuthDesktopWindowHint": { "description": "Hint shown while the native login window is open" },
+
+  "feedAuthWindowClosed": "The login window was closed. Verification needs the page and cookies from that window — please reopen it.",
+  "@feedAuthWindowClosed": { "description": "Shown when the native login window has been closed" },
+
+  "feedAuthReopenWindow": "Reopen login window",
+  "@feedAuthReopenWindow": { "description": "Button that reopens the native login window" },
+
   "feedAuthVerifying": "Verifying login…",
   "@feedAuthVerifying": { "description": "Status shown while feed auth is extracted and verified" },
 

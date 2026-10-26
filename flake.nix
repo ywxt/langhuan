@@ -63,8 +63,8 @@
           # Every platform AGP must find to compile the app and the
           # Android plugins: the app's compileSdk (36) plus the level the
           # jni plugins declare themselves (35; they arrive transitively
-          # via path_provider_android). flutter_inappwebview_android and
-          # shared_preferences_android follow flutter.compileSdkVersion.
+          # via path_provider_android). shared_preferences_android follows
+          # flutter.compileSdkVersion.
           # Nothing declares 34 any more — flutter_inappwebview_android
           # switched to flutter.compileSdkVersion in 6.2.0 and the last
           # fixed-34 plugin (fluttertoast) was replaced with a pure
@@ -365,11 +365,19 @@
               pkgs.pcre
               pkgs.pkg-config
               pkgs.gtk3
+              # desktop_webview_window (the Linux login window) builds
+              # against WebKitGTK 4.1: pkg-config webkit2gtk-4.1 + libsoup-3.0.
+              pkgs.webkitgtk_4_1
             ];
 
             JAVA_HOME = jdk.home;
             ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
             ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk"; # legacy tools still read this
+
+            # WebKitGTK loads its GIO TLS backend from here; without it every
+            # https load in the login window fails with "TLS support is not
+            # available" (glib-networking is not part of the default profile).
+            GIO_EXTRA_MODULES = "${pkgs.glib-networking}/lib/gio/modules";
 
             shellHook = ''
               # Tools installed with `cargo install` (e.g.

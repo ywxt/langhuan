@@ -974,6 +974,30 @@ abstract class AppLocalizations {
   /// **'Sign in on this page, then tap Verify when finished.'**
   String get feedAuthInstructions;
 
+  /// Instructions on the feed login page when the login page runs in a separate native window (Linux/Windows)
+  ///
+  /// In en, this message translates to:
+  /// **'A login window has opened. Sign in there, keep it open, then come back and tap Verify.'**
+  String get feedAuthDesktopInstructions;
+
+  /// Hint shown while the native login window is open
+  ///
+  /// In en, this message translates to:
+  /// **'The login window stays open. After signing in, tap Verify in the top bar.'**
+  String get feedAuthDesktopWindowHint;
+
+  /// Shown when the native login window has been closed
+  ///
+  /// In en, this message translates to:
+  /// **'The login window was closed. Verification needs the page and cookies from that window — please reopen it.'**
+  String get feedAuthWindowClosed;
+
+  /// Button that reopens the native login window
+  ///
+  /// In en, this message translates to:
+  /// **'Reopen login window'**
+  String get feedAuthReopenWindow;
+
   /// Status shown while feed auth is extracted and verified
   ///
   /// In en, this message translates to:

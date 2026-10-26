@@ -6,7 +6,16 @@ import 'package:langhuan/shared/app_service.dart';
 import 'package:path_provider/path_provider.dart';
 
 Future<Directory> _getAppDataDirectory() async {
-  return getApplicationDocumentsDirectory();
+  // App-private data (database, feed scripts, cache). On Android and iOS the
+  // documents directory is already app-private and holds the existing
+  // database, so it stays. On desktop it maps to user-visible locations
+  // (~/Documents, ~/Library/... in Finder) or fails outright when
+  // xdg-user-dirs is unconfigured — the support directory is the correct
+  // app-private location there.
+  if (Platform.isAndroid || Platform.isIOS) {
+    return getApplicationDocumentsDirectory();
+  }
+  return getApplicationSupportDirectory();
 }
 
 void _sendLocale() {

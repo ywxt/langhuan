@@ -1,14 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/loading.dart';
-import '../../src/rust/api/types.dart';
+import 'auth_webview.dart';
 import 'feed_providers.dart';
 import 'feed_service.dart';
 
+/// Login flow for a feed that requires authentication.
+///
+/// The platform WebView lives behind [AuthWebviewSession]: an embedded view
+/// on Android, iOS and macOS, a native browser window on Linux and Windows.
+/// Verification is always manual — the user taps Verify, which collects the
+/// current URL, the page HTML and the accumulated cookies and submits them
+/// to the feed's auth parser.
 class FeedAuthPage extends ConsumerStatefulWidget {
   const FeedAuthPage({super.key, required this.feedId});
 
@@ -19,26 +27,28 @@ class FeedAuthPage extends ConsumerStatefulWidget {
 }
 
 class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
-  InAppWebViewController? _controller;
-  bool _isSubmitting = false;
+  FeedAuthEntryModel? _entry;
+  AuthWebviewSession? _session;
   bool _isLoadingEntry = true;
-  bool _isPageLoading = false;
-  double _pageProgress = 0;
   String? _error;
   String? _submitError;
-  FeedAuthEntryModel? _entry;
-
-  /// Cookies are accumulated across redirects because OAuth and other login
-  /// flows commonly finish on a different host from the page that set them.
-  final Map<String, CookieEntry> _capturedCookies = {};
+  bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
-    _loadEntry();
+    unawaited(_loadEntry());
+  }
+
+  @override
+  void dispose() {
+    _session?.dispose();
+    super.dispose();
   }
 
   Future<void> _loadEntry() async {
+    _session?.dispose();
+    _session = null;
     setState(() {
       _isLoadingEntry = true;
       _error = null;
@@ -59,10 +69,12 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
         return;
       }
 
+      final session = AuthWebviewSession.platform();
+      session.addListener(_onSessionChanged);
       _entry = entry;
-      setState(() {
-        _isLoadingEntry = false;
-      });
+      _session = session;
+      setState(() => _isLoadingEntry = false);
+      await session.open(entry.url, title: entry.title);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -72,8 +84,13 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
     }
   }
 
+  void _onSessionChanged() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _submitPage() async {
-    if (_isSubmitting || _controller == null) return;
+    final session = _session;
+    if (session == null || !session.canVerify) return;
 
     setState(() {
       _isSubmitting = true;
@@ -81,35 +98,23 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
     });
 
     try {
-      final controller = _controller!;
-      final currentUrl =
-          (await controller.getUrl())?.toString() ?? _entry?.url ?? '';
-
-      final html =
-          await controller.evaluateJavascript(
-                source: 'document.documentElement.outerHTML',
-              )
-              as String? ??
-          '';
-
-      final url = await controller.getUrl();
-      if (url != null) await _captureCookiesBestEffort(url);
-
+      final snapshot = await session.snapshot();
       await ref
           .read(feedServiceProvider)
           .submitFeedAuthPage(
             feedId: widget.feedId,
-            currentUrl: currentUrl,
-            response: html,
-            // WebView does not expose successful main-frame response headers on
-            // every platform. Re-fetching the URL here is unsafe for one-time
-            // OAuth callbacks, so feeds should prefer page content and cookies.
+            currentUrl: snapshot.currentUrl,
+            response: snapshot.html,
+            // Neither WebView flavor exposes main-frame response headers;
+            // feeds parse auth from page content and cookies.
             responseHeaders: const [],
-            cookies: _capturedCookies.values.toList(growable: false),
+            cookies: snapshot.cookies,
           );
 
       if (!mounted) return;
       ref.invalidate(feedAuthStatusProvider(widget.feedId));
+      await session.close();
+      if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
@@ -125,18 +130,34 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
     }
   }
 
+  Future<void> _reopenWindow() async {
+    final entry = _entry;
+    final session = _session;
+    if (entry == null || session == null) return;
+    try {
+      await session.open(entry.url, title: entry.title);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    }
+  }
+
+  bool get _canVerify =>
+      !_isSubmitting && !_isLoadingEntry && (_session?.canVerify ?? false);
+
+  // ── UI ────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final session = _session;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(_entry?.title ?? l10n.feedAuthPageTitle),
         actions: [
           TextButton(
-            onPressed: _isSubmitting || _isLoadingEntry || _controller == null
-                ? null
-                : () => _submitPage(),
+            onPressed: _canVerify ? _submitPage : null,
             child: _isSubmitting
                 ? const LanghuanSpinner(size: 16)
                 : Text(l10n.feedAuthDone),
@@ -147,159 +168,155 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
       body: _isLoadingEntry
           ? const LoadingState()
           : _error != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(_error!, textAlign: TextAlign.center),
-                    const SizedBox(height: LanghuanTheme.spaceMd),
-                    FilledButton.icon(
-                      onPressed: _loadEntry,
-                      icon: const Icon(Icons.refresh),
-                      label: Text(l10n.searchRetry),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          : Column(
-              children: [
-                if (_isPageLoading)
-                  LinearProgressIndicator(value: _pageProgress),
-                Material(
-                  color: Theme.of(context).colorScheme.surfaceContainer,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: LanghuanTheme.spaceMd,
-                      vertical: LanghuanTheme.spaceSm,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _isSubmitting ? Icons.sync : Icons.info_outline,
-                          size: 18,
-                        ),
-                        const SizedBox(width: LanghuanTheme.spaceSm),
-                        Expanded(
-                          child: Text(
-                            _isSubmitting
-                                ? l10n.feedAuthVerifying
-                                : l10n.feedAuthInstructions,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (_submitError != null)
-                  Material(
-                    color: Theme.of(context).colorScheme.errorContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: LanghuanTheme.spaceMd,
-                        vertical: LanghuanTheme.spaceSm,
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.error_outline,
-                            size: 18,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onErrorContainer,
-                          ),
-                          const SizedBox(width: LanghuanTheme.spaceSm),
-                          Expanded(
-                            child: Text(
-                              _submitError!,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onErrorContainer,
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                Expanded(
-                  child: InAppWebView(
-                    initialUrlRequest: URLRequest(url: WebUri(_entry!.url)),
-                    initialSettings: InAppWebViewSettings(
-                      javaScriptEnabled: true,
-                      domStorageEnabled: true,
-                      thirdPartyCookiesEnabled: true,
-                    ),
-                    onWebViewCreated: (controller) {
-                      _controller = controller;
-                      if (mounted) setState(() {});
-                    },
-                    onLoadStart: (_, _) {
-                      if (!mounted) return;
-                      setState(() {
-                        _isPageLoading = true;
-                        _pageProgress = 0;
-                        _submitError = null;
-                      });
-                    },
-                    onProgressChanged: (_, progress) {
-                      if (!mounted) return;
-                      setState(() {
-                        _pageProgress = progress / 100;
-                      });
-                    },
-                    onLoadStop: _onLoadStop,
-                  ),
-                ),
-              ],
-            ),
+          ? _buildErrorState(l10n)
+          : session!.usesSeparateWindow
+          ? _buildWindowBody(l10n, session)
+          : _buildInlineBody(l10n, session),
     );
   }
 
-  Future<void> _onLoadStop(InAppWebViewController _, WebUri? url) async {
-    if (mounted) {
-      setState(() {
-        _isPageLoading = false;
-        _pageProgress = 1;
-      });
-    }
-    if (url == null) return;
-
-    // Cookies are still captured on every page load so that OAuth flows
-    // finishing on a different host are not lost; verification itself is
-    // manual via the Verify action.
-    await _captureCookiesBestEffort(url);
+  Widget _buildErrorState(AppLocalizations l10n) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_error!, textAlign: TextAlign.center),
+            const SizedBox(height: LanghuanTheme.spaceMd),
+            FilledButton.icon(
+              onPressed: _loadEntry,
+              icon: const Icon(Icons.refresh),
+              label: Text(l10n.searchRetry),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
-  Future<void> _captureCookies(WebUri url) async {
-    final cookies = await CookieManager.instance().getCookies(url: url);
-    for (final cookie in cookies) {
-      final item = CookieEntry(
-        name: cookie.name,
-        value: cookie.value.toString(),
-        domain: cookie.domain,
-        path: cookie.path,
-        expires: cookie.expiresDate?.toString(),
-        secure: cookie.isSecure,
-        httpOnly: cookie.isHttpOnly,
-        sameSite: cookie.sameSite?.toNativeValue(),
-      );
-      final key = '${item.domain ?? url.host}|${item.path ?? '/'}|${item.name}';
-      _capturedCookies[key] = item;
-    }
+  Widget _buildInlineBody(AppLocalizations l10n, AuthWebviewSession session) {
+    return Column(
+      children: [
+        if (session.isPageLoading)
+          LinearProgressIndicator(value: session.pageProgress),
+        _buildInfoBanner(
+          icon: _isSubmitting ? Icons.sync : Icons.info_outline,
+          text: _isSubmitting
+              ? l10n.feedAuthVerifying
+              : l10n.feedAuthInstructions,
+        ),
+        if (_submitError != null) _buildSubmitError(),
+        Expanded(child: session.view ?? const LoadingState()),
+      ],
+    );
   }
 
-  Future<void> _captureCookiesBestEffort(WebUri url) async {
-    try {
-      await _captureCookies(url);
-    } catch (_) {
-      // HTML and URL based auth must still work on platforms that cannot
-      // expose all WebView cookies.
-    }
+  Widget _buildWindowBody(AppLocalizations l10n, AuthWebviewSession session) {
+    return Column(
+      children: [
+        _buildInfoBanner(
+          icon: _isSubmitting ? Icons.sync : Icons.open_in_new,
+          text: _isSubmitting
+              ? l10n.feedAuthVerifying
+              : l10n.feedAuthDesktopInstructions,
+        ),
+        if (_submitError != null) _buildSubmitError(),
+        if (session.isWindowOpen)
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
+                child: Text(
+                  l10n.feedAuthDesktopWindowHint,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.desktop_windows_outlined,
+                  size: 40,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(height: LanghuanTheme.spaceMd),
+                Text(
+                  session.isOpeningWindow ? '' : l10n.feedAuthWindowClosed,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: LanghuanTheme.spaceMd),
+                OutlinedButton.icon(
+                  onPressed: session.isOpeningWindow ? null : _reopenWindow,
+                  icon: const Icon(Icons.open_in_new),
+                  label: Text(l10n.feedAuthReopenWindow),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildInfoBanner({required IconData icon, required String text}) {
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: LanghuanTheme.spaceMd,
+          vertical: LanghuanTheme.spaceSm,
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18),
+            const SizedBox(width: LanghuanTheme.spaceSm),
+            Expanded(
+              child: Text(
+                text,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubmitError() {
+    return Material(
+      color: Theme.of(context).colorScheme.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: LanghuanTheme.spaceMd,
+          vertical: LanghuanTheme.spaceSm,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 18,
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+            const SizedBox(width: LanghuanTheme.spaceSm),
+            Expanded(
+              child: Text(
+                _submitError!,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onErrorContainer,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
