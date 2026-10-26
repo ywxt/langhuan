@@ -268,25 +268,20 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
                 ],
               ),
               const SizedBox(height: LanghuanTheme.spaceMd),
-              Row(
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: authAsync.isLoading ? null : _openLoginFlow,
-                    icon: const Icon(Icons.login),
-                    label: Text(l10n.feedAuthLogin),
-                  ),
-                  const SizedBox(width: LanghuanTheme.spaceSm),
-                  OutlinedButton.icon(
-                    onPressed:
-                        authAsync.isLoading ||
-                            authStatus == FeedAuthStatusModel.loggedOut
-                        ? null
-                        : _logout,
-                    icon: const Icon(Icons.logout),
-                    label: Text(l10n.feedAuthLogout),
-                  ),
-                ],
-              ),
+              // Exactly one action, matching the current state: re-login
+              // covers both logged-out and expired sessions.
+              if (authStatus == FeedAuthStatusModel.loggedIn)
+                OutlinedButton.icon(
+                  onPressed: authAsync.isLoading ? null : _logout,
+                  icon: const Icon(Icons.logout),
+                  label: Text(l10n.feedAuthLogout),
+                )
+              else
+                ElevatedButton.icon(
+                  onPressed: authAsync.isLoading ? null : _openLoginFlow,
+                  icon: const Icon(Icons.login),
+                  label: Text(l10n.feedAuthLogin),
+                ),
             ],
 
             // ── Danger zone ───────────────────────────────────────────
