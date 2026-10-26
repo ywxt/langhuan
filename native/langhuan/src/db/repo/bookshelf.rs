@@ -20,6 +20,8 @@ pub struct ShelfItem {
     pub feed_enabled: bool,
     pub progress_current_chapter: Option<i64>,
     pub progress_total_chapters: Option<i64>,
+    /// Title of the chapter the reader last stopped at, when known.
+    pub progress_chapter_title: Option<String>,
     pub progress_current_paragraph: Option<i64>,
     pub progress_total_paragraphs: Option<i64>,
 }
@@ -113,7 +115,7 @@ impl Repo<'_> {
                 let paragraph_id = row.get::<_, Option<String>>(10)?;
                 let chapters_json = row.get::<_, Option<String>>(11)?;
                 let paragraphs_json = row.get::<_, Option<String>>(12)?;
-                let (progress_current_chapter, progress_total_chapters) =
+                let (progress_current_chapter, progress_total_chapters, progress_chapter_title) =
                     chapter_progress(chapter_id.as_deref(), chapters_json.as_deref());
                 let (progress_current_paragraph, progress_total_paragraphs) =
                     paragraph_progress(paragraph_id.as_deref(), paragraphs_json.as_deref());
@@ -129,6 +131,7 @@ impl Repo<'_> {
                     feed_enabled: row.get::<_, i64>(8)? != 0,
                     progress_current_chapter,
                     progress_total_chapters,
+                    progress_chapter_title,
                     progress_current_paragraph,
                     progress_total_paragraphs,
                 })
@@ -172,24 +175,35 @@ impl Repo<'_> {
     }
 }
 
+/// Chapter-level progress derived from the reading progress row and the
+/// cached chapter list: the 1-based position of the current chapter, the
+/// total, and the current chapter's title.
 fn chapter_progress(
     current_chapter_id: Option<&str>,
     chapters_json: Option<&str>,
-) -> (Option<i64>, Option<i64>) {
+) -> (Option<i64>, Option<i64>, Option<String>) {
     let (Some(current_chapter_id), Some(chapters_json)) = (current_chapter_id, chapters_json)
     else {
-        return (None, None);
+        return (None, None, None);
     };
     let Ok(chapters) = serde_json::from_str::<Vec<crate::model::ChapterInfo>>(chapters_json) else {
-        return (None, None);
+        return (None, None, None);
     };
     let Some(index) = chapters
         .iter()
         .position(|chapter| chapter.id == current_chapter_id)
     else {
-        return (None, None);
+        return (None, None, None);
     };
-    (Some(index as i64 + 1), Some(chapters.len() as i64))
+    let title = {
+        let trimmed = chapters[index].title.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_owned())
+        }
+    };
+    (Some(index as i64 + 1), Some(chapters.len() as i64), title)
 }
 
 fn paragraph_progress(
@@ -304,6 +318,7 @@ mod tests {
         let item = &conn.shelf_items().unwrap()[0];
         assert_eq!(item.progress_current_chapter, Some(2));
         assert_eq!(item.progress_total_chapters, Some(3));
+        assert_eq!(item.progress_chapter_title.as_deref(), Some("Two"));
         assert_eq!(item.progress_current_paragraph, Some(3));
         assert_eq!(item.progress_total_paragraphs, Some(3));
     }

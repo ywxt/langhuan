@@ -100,6 +100,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String bookshelfReadingProgressWithChapter(String chapter, int percent) {
+    return '$chapter · $percent%';
+  }
+
+  @override
   String get bookshelfFeedPaused => '書源已暫停';
 
   @override
@@ -416,6 +421,32 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get feedDetailAuthor => '作者';
+
+  @override
+  String get feedDetailEnabled => '啟用書源';
+
+  @override
+  String get feedDetailEnabledHint => '暫停的書源不參與聚合搜索與更新檢查。';
+
+  @override
+  String get feedDetailBooksLabel => '書架書籍';
+
+  @override
+  String feedDetailBookCount(int count) {
+    return '$count 本';
+  }
+
+  @override
+  String get feedDetailCopyId => '複製 ID';
+
+  @override
+  String get feedDetailCopied => '已複製';
+
+  @override
+  String get feedDetailDelete => '刪除書源';
+
+  @override
+  String get feedItemPaused => '已暫停';
 
   @override
   String get feedAuthLabel => '登錄';

@@ -225,12 +225,9 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                                       if (item.progressFraction
                                           case final value?)
                                         _ReadingProgress(
+                                          item: item,
                                           value: value,
-                                          label: l10n.bookshelfReadingProgress(
-                                            item.progressCurrentChapter!,
-                                            item.progressTotalChapters!,
-                                            (value * 100).round(),
-                                          ),
+                                          l10n: l10n,
                                         ),
                                     ],
                                   ),
@@ -370,36 +367,40 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
   }
 }
 
+/// Where the reader stopped: the current chapter's title plus the overall
+/// percentage, e.g. "Frostfall · 34%".
 class _ReadingProgress extends StatelessWidget {
-  const _ReadingProgress({required this.value, required this.label});
+  const _ReadingProgress({
+    required this.item,
+    required this.value,
+    required this.l10n,
+  });
 
+  final BookshelfItemModel item;
   final double value;
-  final String label;
+  final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final percent = (value * 100).round();
+    final chapterTitle = item.progressChapterTitleOrNull;
+    final label = chapterTitle != null
+        ? l10n.bookshelfReadingProgressWithChapter(chapterTitle, percent)
+        : l10n.bookshelfReadingProgress(
+            item.progressCurrentChapter!,
+            item.progressTotalChapters!,
+            percent,
+          );
+
     return Padding(
       padding: const EdgeInsets.only(top: LanghuanTheme.spaceXs),
-      child: Semantics(
-        label: label,
-        value: '${(value * 100).round()}%',
-        child: Row(
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(LanghuanTheme.radiusXl),
-                child: LinearProgressIndicator(value: value, minHeight: 3),
-              ),
-            ),
-            const SizedBox(width: LanghuanTheme.spaceSm),
-            Text(
-              label,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
     );

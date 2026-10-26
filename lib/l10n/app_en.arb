@@ -85,6 +85,9 @@
 
   "bookshelfReadingProgress": "Chapter {current} of {total} · {percent}%",
   "@bookshelfReadingProgress": { "description": "Chapter-level reading progress shown on a bookshelf card", "placeholders": { "current": { "type": "int" }, "total": { "type": "int" }, "percent": { "type": "int" } } },
+
+  "bookshelfReadingProgressWithChapter": "{chapter} · {percent}%",
+  "@bookshelfReadingProgressWithChapter": { "description": "Reading progress on a bookshelf card showing the current chapter title", "placeholders": { "chapter": { "type": "String" }, "percent": { "type": "int" } } },
   "bookshelfFeedPaused": "Feed paused",
   "bookshelfFeedPausedHint": "This feed is paused. The saved book remains readable, but update checks are skipped.",
 
@@ -411,6 +414,30 @@
 
   "feedDetailAuthor": "Author",
   "@feedDetailAuthor": { "description": "Feed detail sheet: author label" },
+
+  "feedDetailEnabled": "Enabled",
+  "@feedDetailEnabled": { "description": "Feed detail sheet: enabled switch label" },
+
+  "feedDetailEnabledHint": "Paused feeds are excluded from aggregated search and update checks.",
+  "@feedDetailEnabledHint": { "description": "Feed detail sheet: helper text under the enabled switch" },
+
+  "feedDetailBooksLabel": "Shelved books",
+  "@feedDetailBooksLabel": { "description": "Feed detail sheet: label for the count of shelved books from this feed" },
+
+  "feedDetailBookCount": "{count}",
+  "@feedDetailBookCount": { "description": "Feed detail sheet: shelved book count value", "placeholders": { "count": { "type": "int" } } },
+
+  "feedDetailCopyId": "Copy ID",
+  "@feedDetailCopyId": { "description": "Feed detail sheet: copy-ID button tooltip" },
+
+  "feedDetailCopied": "Copied",
+  "@feedDetailCopied": { "description": "Snackbar shown after copying the feed ID" },
+
+  "feedDetailDelete": "Delete feed",
+  "@feedDetailDelete": { "description": "Feed detail sheet: delete button label" },
+
+  "feedItemPaused": "Paused",
+  "@feedItemPaused": { "description": "Badge on a feed list card whose feed is paused" },
 
   "feedAuthLabel": "Auth",
   "@feedAuthLabel": { "description": "Feed detail auth section label" },

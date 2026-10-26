@@ -203,6 +203,8 @@ pub struct BookshelfListItem {
     pub feed_enabled: bool,
     pub progress_current_chapter: Option<i64>,
     pub progress_total_chapters: Option<i64>,
+    /// Title of the chapter the reader last stopped at, when known.
+    pub progress_chapter_title: Option<String>,
     pub progress_current_paragraph: Option<i64>,
     pub progress_total_paragraphs: Option<i64>,
 }

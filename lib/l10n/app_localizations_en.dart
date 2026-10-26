@@ -101,6 +101,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String bookshelfReadingProgressWithChapter(String chapter, int percent) {
+    return '$chapter · $percent%';
+  }
+
+  @override
   String get bookshelfFeedPaused => 'Feed paused';
 
   @override
@@ -421,6 +426,33 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get feedDetailAuthor => 'Author';
+
+  @override
+  String get feedDetailEnabled => 'Enabled';
+
+  @override
+  String get feedDetailEnabledHint =>
+      'Paused feeds are excluded from aggregated search and update checks.';
+
+  @override
+  String get feedDetailBooksLabel => 'Shelved books';
+
+  @override
+  String feedDetailBookCount(int count) {
+    return '$count';
+  }
+
+  @override
+  String get feedDetailCopyId => 'Copy ID';
+
+  @override
+  String get feedDetailCopied => 'Copied';
+
+  @override
+  String get feedDetailDelete => 'Delete feed';
+
+  @override
+  String get feedItemPaused => 'Paused';
 
   @override
   String get feedAuthLabel => 'Auth';

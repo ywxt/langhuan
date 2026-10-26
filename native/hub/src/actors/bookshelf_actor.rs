@@ -152,6 +152,7 @@ impl From<ShelfItem> for BookshelfListItem {
             feed_enabled: item.feed_enabled,
             progress_current_chapter: item.progress_current_chapter,
             progress_total_chapters: item.progress_total_chapters,
+            progress_chapter_title: item.progress_chapter_title,
             progress_current_paragraph: item.progress_current_paragraph,
             progress_total_paragraphs: item.progress_total_paragraphs,
         }

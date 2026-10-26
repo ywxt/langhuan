@@ -333,18 +333,14 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
               dismissKey: ValueKey('feed-${feed.id}'),
               enabled: !isBusy,
               confirmDismiss: (_) async {
-                final confirmed =
-                    await _confirmDelete(context, feed, l10n) == true;
-                if (confirmed && context.mounted) {
-                  final messenger = ScaffoldMessenger.of(context);
-                  _handleDeleteWithUndo(feed, l10n, messenger);
-                }
+                await _confirmAndDelete(feed, l10n);
                 return false;
               },
               child: FeedCard(
                 feed: feed,
                 isDeleting: isDeleting,
                 borderRadius: BorderRadius.zero,
+                onDelete: () => _confirmAndDelete(feed, l10n),
               ),
             ),
           );
@@ -411,6 +407,17 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
         ? l10n.feedDeleteBusy
         : '${l10n.feedDeleteError}: ${normalizeErrorMessage(error)}';
     showErrorSnack(cur, message);
+  }
+
+  /// Shared delete entry point for the swipe action and the detail
+  /// sheet's delete button: confirm, then run the undoable deletion.
+  Future<void> _confirmAndDelete(
+    FeedMetaItem feed,
+    AppLocalizations l10n,
+  ) async {
+    final confirmed = await _confirmDelete(context, feed, l10n) == true;
+    if (!confirmed || !mounted) return;
+    _handleDeleteWithUndo(feed, l10n, ScaffoldMessenger.of(context));
   }
 
   Future<bool> _confirmDelete(

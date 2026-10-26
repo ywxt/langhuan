@@ -4,6 +4,7 @@ import 'package:langhuan/features/bookshelf/bookshelf_provider.dart';
 import 'package:langhuan/features/feeds/feed_providers.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/rust_init.dart';
+import 'package:langhuan/src/rust/api/types.dart';
 import 'dart:async';
 
 import '../feeds/fake_feed_service.dart';
@@ -125,4 +126,87 @@ void main() {
       );
     },
   );
+
+  test('shelved books follow feed pause and resume toggles', () async {
+    const items = [
+      BookshelfItemModel(
+        feedId: 'feed-a',
+        sourceBookId: 'book-1',
+        title: 'One',
+        author: 'Author',
+        addedAtUnixMs: 1,
+      ),
+      BookshelfItemModel(
+        feedId: 'feed-b',
+        sourceBookId: 'book-2',
+        title: 'Two',
+        author: 'Author',
+        addedAtUnixMs: 2,
+      ),
+    ];
+    final container = ProviderContainer(
+      overrides: [
+        feedServiceProvider.overrideWithValue(
+          FakeFeedService(
+            listFeedsHandler: () async => const [
+              FeedMetaItem(
+                id: 'feed-a',
+                name: 'Source A',
+                version: '1',
+                enabled: true,
+              ),
+              FeedMetaItem(
+                id: 'feed-b',
+                name: 'Source B',
+                version: '1',
+                enabled: true,
+              ),
+            ],
+            listBookshelfHandler: () async => items,
+            setFeedEnabledHandler: (feedId, enabled) async {},
+          ),
+        ),
+        appDataDirectorySetProvider.overrideWith(
+          (ref) async => const AppDataDirectoryResult(feedCount: 2),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    // Keep both providers alive: the bookshelf listens to the feed list.
+    container.listen(bookshelfProvider, (_, _) {});
+    container.listen(feedListProvider, (_, _) {});
+
+    await container.read(appDataDirectorySetProvider.future);
+    await container.read(bookshelfProvider.notifier).load();
+    await container.read(feedListProvider.notifier).load();
+
+    // Pausing a feed flips its books' pause flag without a shelf reload.
+    await container
+        .read(feedListProvider.notifier)
+        .setFeedEnabled(feedId: 'feed-a', enabled: false);
+    await Future<void>.delayed(Duration.zero);
+
+    var shelfItems = container.read(bookshelfProvider).items;
+    expect(
+      shelfItems.firstWhere((item) => item.feedId == 'feed-a').feedEnabled,
+      isFalse,
+    );
+    expect(
+      shelfItems.firstWhere((item) => item.feedId == 'feed-b').feedEnabled,
+      isTrue,
+    );
+
+    // Resuming restores it.
+    await container
+        .read(feedListProvider.notifier)
+        .setFeedEnabled(feedId: 'feed-a', enabled: true);
+    await Future<void>.delayed(Duration.zero);
+
+    shelfItems = container.read(bookshelfProvider).items;
+    expect(
+      shelfItems.firstWhere((item) => item.feedId == 'feed-a').feedEnabled,
+      isTrue,
+    );
+  });
 }

@@ -10,21 +10,30 @@ import '../../../src/rust/api/types.dart';
 import '../feed_providers.dart';
 import '../feed_service.dart';
 import 'feed_detail_sheet.dart';
+import 'feed_visuals.dart';
 
-/// Card-style feed list item with avatar, name, version, author, and status.
+/// Card-style feed list item: identity plus live status at a glance.
 ///
-/// Avatar uses a 40px **circle** per the Wise design spec §4.3.
+/// The card answers "what is this source and can I use it right now" —
+/// name, source meta, pause state, auth state, and load errors. The full
+/// metadata and management actions live in the detail sheet (tap the
+/// card).
 class FeedCard extends ConsumerWidget {
   const FeedCard({
     super.key,
     required this.feed,
     this.isDeleting = false,
     this.borderRadius = LanghuanTheme.borderRadiusMd,
+    this.onDelete,
   });
 
   final FeedMetaItem feed;
   final bool isDeleting;
   final BorderRadius borderRadius;
+
+  /// Handed to the detail sheet so its delete action can hand control
+  /// back to the page-level delete flow (confirm dialog + undo).
+  final Future<void> Function()? onDelete;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -40,7 +49,9 @@ class FeedCard extends ConsumerWidget {
       borderRadius: borderRadius,
       child: InkWell(
         borderRadius: borderRadius,
-        onTap: isDeleting ? null : () => showFeedDetailSheet(context, feed),
+        onTap: isDeleting
+            ? null
+            : () => showFeedDetailSheet(context, feed, onDelete: onDelete),
         child: Padding(
           padding: const EdgeInsets.all(LanghuanTheme.spaceMd),
           child: Row(
@@ -48,25 +59,7 @@ class FeedCard extends ConsumerWidget {
               // ── Avatar (circle per spec §4.3) ──────────────────────
               Opacity(
                 opacity: contentOpacity,
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: hasError
-                        ? theme.colorScheme.errorContainer
-                        : theme.colorScheme.primaryContainer,
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    feed.name.isNotEmpty ? feed.name[0].toUpperCase() : '?',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: hasError
-                          ? theme.colorScheme.onErrorContainer
-                          : theme.colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
+                child: FeedAvatar(feed: feed),
               ),
               const SizedBox(width: LanghuanTheme.spaceMd),
 
@@ -98,7 +91,14 @@ class FeedCard extends ConsumerWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          _buildAuthBadge(authAsync, theme, l10n),
+                          if (!feed.enabled)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                left: LanghuanTheme.spaceSm,
+                              ),
+                              child: FeedStatusChip(label: l10n.feedItemPaused),
+                            ),
+                          _buildAuthBadge(authAsync, theme),
                         ],
                       ),
                     ],
@@ -123,6 +123,7 @@ class FeedCard extends ConsumerWidget {
                     Icons.error_outline,
                     size: 20,
                     color: theme.colorScheme.error,
+                    semanticLabel: l10n.feedItemLoadError,
                   )
                 else
                   Icon(
@@ -158,7 +159,6 @@ class FeedCard extends ConsumerWidget {
   Widget _buildAuthBadge(
     AsyncValue<FeedAuthStatusModel?> authAsync,
     ThemeData theme,
-    AppLocalizations l10n,
   ) {
     return authAsync.when(
       loading: () => Padding(
@@ -169,50 +169,12 @@ class FeedCard extends ConsumerWidget {
         ),
       ),
       error: (_, _) => const SizedBox.shrink(),
-      data: (status) {
-        if (status == null) return const SizedBox.shrink();
-
-        final (label, color, bgColor) = switch (status) {
-          FeedAuthStatusModel.loggedIn => (
-            l10n.feedAuthStatusLoggedIn,
-            theme.colorScheme.onTertiaryContainer,
-            theme.colorScheme.tertiaryContainer,
-          ),
-          FeedAuthStatusModel.expired => (
-            l10n.feedAuthStatusExpired,
-            theme.colorScheme.onErrorContainer,
-            theme.colorScheme.errorContainer,
-          ),
-          FeedAuthStatusModel.loggedOut => (
-            l10n.feedAuthStatusLoggedOut,
-            theme.colorScheme.onSurfaceVariant,
-            theme.colorScheme.surfaceContainerHighest,
-          ),
-          FeedAuthStatusModel.unsupported => (
-            l10n.feedAuthStatusUnsupported,
-            theme.colorScheme.onSurfaceVariant,
-            theme.colorScheme.surfaceContainerHighest,
-          ),
-        };
-
-        return Padding(
-          padding: const EdgeInsets.only(left: LanghuanTheme.spaceSm),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(4),
+      data: (status) => status == null
+          ? const SizedBox.shrink()
+          : Padding(
+              padding: const EdgeInsets.only(left: LanghuanTheme.spaceSm),
+              child: FeedAuthBadge(status: status),
             ),
-            child: Text(
-              label,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: color,
-                fontSize: 10,
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }

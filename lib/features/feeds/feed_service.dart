@@ -175,6 +175,7 @@ class BookshelfItemModel {
     this.description,
     this.progressCurrentChapter,
     this.progressTotalChapters,
+    this.progressChapterTitle,
     this.progressCurrentParagraph,
     this.progressTotalParagraphs,
   });
@@ -189,8 +190,29 @@ class BookshelfItemModel {
   final String? description;
   final int? progressCurrentChapter;
   final int? progressTotalChapters;
+  final String? progressChapterTitle;
   final int? progressCurrentParagraph;
   final int? progressTotalParagraphs;
+
+  /// A copy with the feed's enabled flag replaced.
+  ///
+  /// Used to keep shelved books in sync when their feed is paused or
+  /// resumed without re-fetching the whole shelf.
+  BookshelfItemModel withFeedEnabled(bool value) => BookshelfItemModel(
+    feedId: feedId,
+    sourceBookId: sourceBookId,
+    title: title,
+    author: author,
+    addedAtUnixMs: addedAtUnixMs,
+    feedEnabled: value,
+    coverUrl: coverUrl,
+    description: description,
+    progressCurrentChapter: progressCurrentChapter,
+    progressTotalChapters: progressTotalChapters,
+    progressChapterTitle: progressChapterTitle,
+    progressCurrentParagraph: progressCurrentParagraph,
+    progressTotalParagraphs: progressTotalParagraphs,
+  );
 
   double? get progressFraction {
     final current = progressCurrentChapter;
@@ -209,6 +231,12 @@ class BookshelfItemModel {
 
   String get stableId => '$feedId:$sourceBookId';
 
+  /// Chapter title of the last read position, when cached and non-blank.
+  String? get progressChapterTitleOrNull {
+    final title = progressChapterTitle?.trim();
+    return (title == null || title.isEmpty) ? null : title;
+  }
+
   factory BookshelfItemModel.fromRust(BookshelfListItem item) =>
       BookshelfItemModel(
         feedId: item.feedId,
@@ -221,6 +249,7 @@ class BookshelfItemModel {
         description: item.descriptionSnapshot,
         progressCurrentChapter: item.progressCurrentChapter,
         progressTotalChapters: item.progressTotalChapters,
+        progressChapterTitle: item.progressChapterTitle,
         progressCurrentParagraph: item.progressCurrentParagraph,
         progressTotalParagraphs: item.progressTotalParagraphs,
       );

@@ -260,6 +260,12 @@ abstract class AppLocalizations {
   /// **'Chapter {current} of {total} · {percent}%'**
   String bookshelfReadingProgress(int current, int total, int percent);
 
+  /// Reading progress on a bookshelf card showing the current chapter title
+  ///
+  /// In en, this message translates to:
+  /// **'{chapter} · {percent}%'**
+  String bookshelfReadingProgressWithChapter(String chapter, int percent);
+
   /// No description provided for @bookshelfFeedPaused.
   ///
   /// In en, this message translates to:
@@ -847,6 +853,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Author'**
   String get feedDetailAuthor;
+
+  /// Feed detail sheet: enabled switch label
+  ///
+  /// In en, this message translates to:
+  /// **'Enabled'**
+  String get feedDetailEnabled;
+
+  /// Feed detail sheet: helper text under the enabled switch
+  ///
+  /// In en, this message translates to:
+  /// **'Paused feeds are excluded from aggregated search and update checks.'**
+  String get feedDetailEnabledHint;
+
+  /// Feed detail sheet: label for the count of shelved books from this feed
+  ///
+  /// In en, this message translates to:
+  /// **'Shelved books'**
+  String get feedDetailBooksLabel;
+
+  /// Feed detail sheet: shelved book count value
+  ///
+  /// In en, this message translates to:
+  /// **'{count}'**
+  String feedDetailBookCount(int count);
+
+  /// Feed detail sheet: copy-ID button tooltip
+  ///
+  /// In en, this message translates to:
+  /// **'Copy ID'**
+  String get feedDetailCopyId;
+
+  /// Snackbar shown after copying the feed ID
+  ///
+  /// In en, this message translates to:
+  /// **'Copied'**
+  String get feedDetailCopied;
+
+  /// Feed detail sheet: delete button label
+  ///
+  /// In en, this message translates to:
+  /// **'Delete feed'**
+  String get feedDetailDelete;
+
+  /// Badge on a feed list card whose feed is paused
+  ///
+  /// In en, this message translates to:
+  /// **'Paused'**
+  String get feedItemPaused;
 
   /// Feed detail auth section label
   ///

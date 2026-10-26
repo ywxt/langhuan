@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../rust_init.dart';
+import '../../src/rust/api/types.dart';
 import '../feeds/feed_providers.dart';
 import '../feeds/feed_service.dart';
 import 'bookshelf_operation.dart';
@@ -78,6 +79,14 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   BookshelfState build() {
     final bootstrap = ref.watch(appDataDirectorySetProvider);
 
+    // Feeds can be paused or resumed from anywhere (feeds tab, feed detail
+    // sheet). Listening — rather than watching — keeps this provider's
+    // loaded items intact while the per-book pause flags stay in sync.
+    ref.listen(
+      feedListProvider,
+      (_, next) => _syncFeedEnabledFlags(next.items),
+    );
+
     if (bootstrap.hasError) {
       return BookshelfState(
         error: BookshelfError(
@@ -132,6 +141,27 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
       items: items,
       activeItemId: activeItemBelongsToFeed ? () => null : null,
     );
+  }
+
+  /// Patch the per-book `feedEnabled` flags after the feed registry changed
+  /// (pause/resume toggle, import, reload) without re-fetching the shelf.
+  ///
+  /// An empty registry is ignored: it appears while the feed list reloads
+  /// and must not mark every shelved book as paused.
+  void _syncFeedEnabledFlags(List<FeedMetaItem> feeds) {
+    if (feeds.isEmpty) return;
+    final enabledByFeed = {for (final feed in feeds) feed.id: feed.enabled};
+    var changed = false;
+    final items = state.items
+        .map((item) {
+          final enabled = enabledByFeed[item.feedId];
+          if (enabled == null || enabled == item.feedEnabled) return item;
+          changed = true;
+          return item.withFeedEnabled(enabled);
+        })
+        .toList(growable: false);
+    if (!changed) return;
+    state = state.copyWith(items: items);
   }
 
   Future<BookshelfAddResult> add({

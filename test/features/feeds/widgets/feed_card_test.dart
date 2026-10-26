@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:langhuan/features/feeds/feed_providers.dart';
+import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/features/feeds/widgets/feed_card.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
 import 'package:langhuan/rust_init.dart';
@@ -17,6 +18,26 @@ const _feedA = FeedMetaItem(
   version: '1',
   enabled: true,
 );
+
+const _feedAPaused = FeedMetaItem(
+  id: 'feed-a',
+  name: 'Source A',
+  version: '1',
+  enabled: false,
+);
+
+Widget _testApp(Widget child) {
+  return MaterialApp(
+    localizationsDelegates: const [
+      AppLocalizations.delegate,
+      GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate,
+      GlobalCupertinoLocalizations.delegate,
+    ],
+    supportedLocales: AppLocalizations.supportedLocales,
+    home: Scaffold(body: child),
+  );
+}
 
 void main() {
   testWidgets('the status button pauses a feed through the notifier', (
@@ -77,4 +98,111 @@ void main() {
       reason: 'avatar and text column dim while paused',
     );
   });
+
+  testWidgets('a paused feed shows the paused badge', (tester) async {
+    final service = FakeFeedService(
+      listFeedsHandler: () async => [_feedAPaused],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          feedServiceProvider.overrideWithValue(service),
+          feedAuthStatusProvider.overrideWith((ref, feedId) => null),
+          appDataDirectorySetProvider.overrideWith(
+            (ref) async => const AppDataDirectoryResult(feedCount: 1),
+          ),
+        ],
+        child: _testApp(
+          Consumer(
+            builder: (context, ref, _) {
+              final items = ref.watch(feedListProvider).items;
+              if (items.isEmpty) return const SizedBox.shrink();
+              return ListView(children: [FeedCard(feed: items.first)]);
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Paused'), findsOneWidget);
+  });
+
+  testWidgets(
+    'tapping the card opens the detail sheet with metadata and actions',
+    (tester) async {
+      final service = FakeFeedService(
+        listFeedsHandler: () async => [_feedA],
+        listBookshelfHandler: () async => const [
+          BookshelfItemModel(
+            feedId: 'feed-a',
+            sourceBookId: 'book-1',
+            title: 'Book one',
+            author: 'Author',
+            addedAtUnixMs: 1,
+          ),
+          BookshelfItemModel(
+            feedId: 'feed-a',
+            sourceBookId: 'book-2',
+            title: 'Book two',
+            author: 'Author',
+            addedAtUnixMs: 2,
+          ),
+        ],
+      );
+      var deleteRequested = false;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            feedServiceProvider.overrideWithValue(service),
+            feedAuthStatusProvider.overrideWith((ref, feedId) => null),
+            appDataDirectorySetProvider.overrideWith(
+              (ref) async => const AppDataDirectoryResult(feedCount: 1),
+            ),
+          ],
+          child: _testApp(
+            Consumer(
+              builder: (context, ref, _) {
+                final items = ref.watch(feedListProvider).items;
+                if (items.isEmpty) return const SizedBox.shrink();
+                return ListView(
+                  children: [
+                    FeedCard(
+                      feed: items.first,
+                      onDelete: () async => deleteRequested = true,
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Source A'));
+      await tester.pumpAndSettle();
+
+      // The sheet carries the metadata and actions the card omits.
+      expect(find.text('ID'), findsOneWidget);
+      expect(find.text('feed-a'), findsOneWidget);
+      expect(find.text('Version'), findsOneWidget);
+      expect(find.text('Shelved books'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+      expect(find.byType(SwitchListTile), findsOneWidget);
+      expect(find.text('Delete feed'), findsOneWidget);
+
+      // Auth is unsupported in this harness: no auth section.
+      expect(find.text('Login'), findsNothing);
+
+      // The delete button closes the sheet and hands over to the page.
+      await tester.tap(find.text('Delete feed'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Delete feed'), findsNothing);
+      expect(deleteRequested, isTrue);
+    },
+  );
 }

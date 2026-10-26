@@ -21,6 +21,7 @@ const _book = BookshelfItemModel(
   progressTotalChapters: 5,
   progressCurrentParagraph: 4,
   progressTotalParagraphs: 10,
+  progressChapterTitle: 'Frostfall',
   feedEnabled: false,
 );
 
@@ -30,6 +31,8 @@ const _otherBook = BookshelfItemModel(
   title: 'Book two',
   author: 'Author two',
   addedAtUnixMs: 1,
+  progressCurrentChapter: 1,
+  progressTotalChapters: 4,
 );
 
 class _TestBookshelfNotifier extends BookshelfNotifier {
@@ -101,11 +104,22 @@ void main() {
       await tester.pumpWidget(_testApp(router, _TestUpdatesNotifier()));
       await tester.pumpAndSettle();
 
-      expect(find.text('Chapter 2 of 5 · 28%'), findsOneWidget);
-      final progress = tester.widget<LinearProgressIndicator>(
-        find.byType(LinearProgressIndicator),
-      );
-      expect(progress.value, closeTo(0.28, 0.001));
+      // The progress line is led by the chapter title, and no bar is
+      // rendered on the card.
+      expect(find.text('Frostfall · 28%'), findsOneWidget);
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'progress without a cached chapter title falls back to chapter numbers',
+    (tester) async {
+      final router = _router();
+      addTearDown(router.dispose);
+      await tester.pumpWidget(_testApp(router, _TestUpdatesNotifier()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Chapter 1 of 4 · 25%'), findsOneWidget);
     },
   );
 
