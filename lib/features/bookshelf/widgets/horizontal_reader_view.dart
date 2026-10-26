@@ -49,8 +49,8 @@ class ReaderSlotError extends ReaderSlot {
 /// are frozen (snapshot), and the offset resets atomically in the build that
 /// delivers the new page after a turn — no intermediate-frame flash.
 ///
-/// Tap zones: left third = previous page, right third = next page, middle
-/// third toggles the reader controls.
+/// Tap zones: left third = previous page, right third = next page (both
+/// animated like a swipe settle), middle third toggles the reader controls.
 class HorizontalReaderView extends StatefulWidget {
   const HorizontalReaderView({
     super.key,
@@ -209,9 +209,17 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
     if (_busy) return;
     final dx = details.localPosition.dx;
     if (dx < pageWidth / 3) {
-      if (_canGoPrev) widget.onPrevPage();
+      // Animate the strip exactly like a swipe settle so tap turns and
+      // drag turns share one motion language.
+      if (_canGoPrev) {
+        _settleDir = 1;
+        _animateTo(pageWidth, pageWidth);
+      }
     } else if (dx > pageWidth * 2 / 3) {
-      if (_canGoNext) widget.onNextPage();
+      if (_canGoNext) {
+        _settleDir = -1;
+        _animateTo(-pageWidth, pageWidth);
+      }
     } else {
       widget.onToggleControls();
     }
