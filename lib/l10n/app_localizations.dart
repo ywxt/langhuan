@@ -971,7 +971,7 @@ abstract class AppLocalizations {
   /// Instructions shown above the feed login WebView
   ///
   /// In en, this message translates to:
-  /// **'Sign in on this page. Login will be detected automatically, or tap Verify when finished.'**
+  /// **'Sign in on this page, then tap Verify when finished.'**
   String get feedAuthInstructions;
 
   /// Status shown while feed auth is extracted and verified

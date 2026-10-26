@@ -482,7 +482,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedAuthDone => '驗證登錄';
 
   @override
-  String get feedAuthInstructions => '請在此網頁完成登錄。成功後會自動驗證，也可點擊「驗證登錄」。';
+  String get feedAuthInstructions => '請在此網頁完成登錄，然後點擊「驗證登錄」。';
 
   @override
   String get feedAuthVerifying => '正在驗證登錄…';

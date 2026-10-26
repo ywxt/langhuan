@@ -472,7 +472,7 @@
   "feedAuthDone": "Verify",
   "@feedAuthDone": { "description": "Feed auth submit button label" },
 
-  "feedAuthInstructions": "Sign in on this page. Login will be detected automatically, or tap Verify when finished.",
+  "feedAuthInstructions": "Sign in on this page, then tap Verify when finished.",
   "@feedAuthInstructions": { "description": "Instructions shown above the feed login WebView" },
 
   "feedAuthVerifying": "Verifying login…",

@@ -489,7 +489,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get feedAuthInstructions =>
-      'Sign in on this page. Login will be detected automatically, or tap Verify when finished.';
+      'Sign in on this page, then tap Verify when finished.';
 
   @override
   String get feedAuthVerifying => 'Verifying login…';

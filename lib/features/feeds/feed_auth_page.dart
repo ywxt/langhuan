@@ -23,7 +23,6 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
   bool _isSubmitting = false;
   bool _isLoadingEntry = true;
   bool _isPageLoading = false;
-  bool _hasCompletedInitialLoad = false;
   double _pageProgress = 0;
   String? _error;
   String? _submitError;
@@ -73,12 +72,12 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
     }
   }
 
-  Future<void> _submitPage({bool automatic = false}) async {
+  Future<void> _submitPage() async {
     if (_isSubmitting || _controller == null) return;
 
     setState(() {
       _isSubmitting = true;
-      if (!automatic) _submitError = null;
+      _submitError = null;
     });
 
     try {
@@ -114,11 +113,9 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      if (!automatic) {
-        setState(() {
-          _submitError = e.toString();
-        });
-      }
+      setState(() {
+        _submitError = e.toString();
+      });
     } finally {
       if (mounted) {
         setState(() {
@@ -273,18 +270,10 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
     }
     if (url == null) return;
 
+    // Cookies are still captured on every page load so that OAuth flows
+    // finishing on a different host are not lost; verification itself is
+    // manual via the Verify action.
     await _captureCookiesBestEffort(url);
-    if (!mounted) return;
-
-    // The first page is the login form itself. Later main-frame loads usually
-    // mean a form submission or OAuth redirect, so let the Feed extract and
-    // verify auth automatically. A manual Verify action remains available for
-    // single-page login flows that do not navigate.
-    if (!_hasCompletedInitialLoad) {
-      _hasCompletedInitialLoad = true;
-      return;
-    }
-    await _submitPage(automatic: true);
   }
 
   Future<void> _captureCookies(WebUri url) async {
