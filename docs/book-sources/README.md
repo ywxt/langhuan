@@ -5,6 +5,7 @@ Book sources are Lua scripts that tell Langhuan how to fetch novel content from 
 ## Files in This Directory
 
 - [`biquge-tw.lua`](biquge-tw.lua) — A complete feed source for biquge.tw.
+- [`qidian.lua`](qidian.lua) — A feed source for 起点中文网 (m.qidian.com) with WebView-based login support; VIP chapters require a logged-in account that has purchased the chapter.
 - [`login-handler-example.lua`](login-handler-example.lua) — A template snippet demonstrating the login flow hooks.
 - [`../error-handling.md`](../error-handling.md) — Error handling API for the `@langhuan/error` module.
 
