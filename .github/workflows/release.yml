@@ -225,7 +225,10 @@ jobs:
   windows:
     name: Windows x64
     needs: bindings
-    runs-on: windows-2025
+    # Flutter 3.47's native-assets toolchain expects the Visual Studio 2022
+    # environment. windows-2025 has moved to Visual Studio 18 and fails while
+    # compiling the flutter_rust_bridge native hook.
+    runs-on: windows-2022
     timeout-minutes: 60
     env:
       LIBCLANG_PATH: C:\Program Files\LLVM\bin
@@ -250,6 +253,8 @@ jobs:
         env:
           VERSION: ${{ needs.bindings.outputs.version }}
         run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           flutter pub get
           flutter build windows --release `
             --build-name "$env:VERSION" `
