@@ -1,0 +1,297 @@
+name: Release packages
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: "3.47.4"
+  FRB_VERSION: "2.13.0"
+
+jobs:
+  bindings:
+    name: Generate bindings
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate release tag
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag must use the vX.Y.Z format; got $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install flutter_rust_bridge code generator
+        run: cargo install flutter_rust_bridge_codegen --version "$FRB_VERSION" --locked
+
+      - name: Resolve Dart packages and generate bindings
+        run: |
+          flutter pub get
+          flutter_rust_bridge_codegen generate
+
+      - name: Upload generated bindings
+        uses: actions/upload-artifact@v7
+        with:
+          name: generated-bindings
+          path: |
+            lib/src/rust
+            native/hub/src/frb_generated.rs
+          if-no-files-found: error
+          retention-days: 1
+
+  android:
+    name: Android APKs
+    needs: bindings
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang cmake ninja-build
+          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> "$GITHUB_ENV"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: generated-bindings
+          path: .
+
+      - name: Build release APKs
+        env:
+          VERSION: ${{ needs.bindings.outputs.version }}
+        run: |
+          flutter pub get
+          flutter build apk --release --split-per-abi \
+            --build-name "$VERSION" \
+            --build-number "${{ github.run_number }}"
+          mkdir -p dist
+          for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
+            abi="$(basename "$apk" | sed -E 's/^app-(.*)-release\.apk$/\1/')"
+            cp "$apk" "dist/langhuan-${VERSION}-android-${abi}.apk"
+          done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-android
+          path: dist/*.apk
+          if-no-files-found: error
+
+  linux:
+    name: Linux x64
+    needs: bindings
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            clang cmake ninja-build pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: generated-bindings
+          path: .
+
+      - name: Build and package Linux bundle
+        env:
+          VERSION: ${{ needs.bindings.outputs.version }}
+        run: |
+          flutter pub get
+          flutter build linux --release \
+            --build-name "$VERSION" \
+            --build-number "${{ github.run_number }}"
+          mkdir -p staging
+          cp -a build/linux/x64/release/bundle staging/langhuan
+          mkdir -p dist
+          tar -C staging -czf "dist/langhuan-${VERSION}-linux-x64.tar.gz" langhuan
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-linux
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    needs: bindings
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+          - runner: macos-15
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure libclang
+        shell: bash
+        run: |
+          llvm_prefix="$(brew --prefix llvm@18)"
+          echo "$llvm_prefix/bin" >> "$GITHUB_PATH"
+          echo "LIBCLANG_PATH=$llvm_prefix/lib" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: generated-bindings
+          path: .
+
+      - name: Build and package macOS app
+        env:
+          VERSION: ${{ needs.bindings.outputs.version }}
+        run: |
+          flutter pub get
+          flutter build macos --release \
+            --build-name "$VERSION" \
+            --build-number "${{ github.run_number }}"
+          app="build/macos/Build/Products/Release/langhuan.app"
+          test -d "$app"
+          codesign --force --deep --sign - "$app"
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$app" "dist/langhuan-${VERSION}-macos-${{ matrix.arch }}.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-macos-${{ matrix.arch }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  windows:
+    name: Windows x64
+    needs: bindings
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: generated-bindings
+          path: .
+
+      - name: Build and package Windows bundle
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.bindings.outputs.version }}
+        run: |
+          flutter pub get
+          flutter build windows --release `
+            --build-name "$env:VERSION" `
+            --build-number "${{ github.run_number }}"
+          New-Item -ItemType Directory -Force staging\langhuan, dist | Out-Null
+          Copy-Item build\windows\x64\runner\Release\* staging\langhuan -Recurse
+          Compress-Archive `
+            -Path staging\langhuan `
+            -DestinationPath "dist\langhuan-$env:VERSION-windows-x64.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-windows
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [bindings, android, linux, macos, windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --generate-notes \
+              --title "Langhuan ${{ needs.bindings.outputs.version }}"
+          fi
