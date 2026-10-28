@@ -10,7 +10,11 @@
 # would pull a > 4 GB image for every build platform; the split keeps the
 # image list pinned to what the AVD actually boots. A mutable SDK would
 # auto-install the extra platforms on demand; the read-only nix store
-# cannot, so they are declared here.
+# cannot, so they are declared here. The AVDs themselves are store
+# artifacts too: avdmanager runs at build time against the emulator-side
+# SDK and the shell materializes the read-only result into a writable AVD
+# home, because the emulator must create lock files, userdata and
+# snapshots inside each .avd directory.
 # The Rust toolchain is fully declarative: oxalica/rust-overlay provides a
 # prebuilt stable toolchain (pinned by flake.lock) with the Android
 # cross-targets the Native Assets build hook compiles for, and a small
@@ -108,7 +112,8 @@
             "mips-android-sysimage-license"
           ];
 
-          # AVDs provisioned automatically on first entry.
+          # AVDs built by nix (see androidAvds) and materialized into the
+          # AVD home on first shell entry.
           # `avdmanager list device` prints all available device ids.
           avds = [
             {
@@ -309,6 +314,40 @@
             ln -s ${cmake3221} "$out/libexec/android-sdk/cmake/3.22.1"
           '';
 
+          # The AVDs above, built at build time rather than created
+          # imperatively at shell entry. The avdmanager on PATH is the
+          # merged SDK's, whose wrapper hard-codes --sdk_root at the
+          # build-side composition — a root without system images, so
+          # package validation can never succeed there ("Valid system
+          # image paths are: null"); the shellHook used to call it and
+          # always failed. The emulator-side SDK's own wrapper points at
+          # the composition that carries the image, so creation runs
+          # against that side instead. An AVD is only a config.ini plus a
+          # 3-line pointer .ini (the emulator generates userdata inside
+          # the materialized copy on first boot); image.sysdir.1 stays a
+          # path relative to the SDK root, which both compositions
+          # resolve. The "Could not load devices from .../devices.xml"
+          # messages avdmanager prints are noise: this image ships no
+          # devices.xml, so avdmanager falls back to the definitions
+          # bundled with cmdline-tools and -d pixel_7 still applies.
+          androidAvds = pkgs.runCommand "android-avds"
+            {
+              # The gradle-style launcher inside cmdline-tools looks for
+              # java via `which`, which the build sandbox does not put on
+              # PATH; a set JAVA_HOME makes it use $JAVA_HOME/bin/java
+              # directly and skip that check.
+              JAVA_HOME = jdk.home;
+            }
+            ''
+              export HOME="$PWD/.home" # java needs a writable $HOME
+              mkdir -p "$HOME" "$out"
+              export ANDROID_AVD_HOME="$out"
+              ${lib.concatMapStrings (avd: ''
+                echo no | ${androidSdkEmulator}/bin/avdmanager create avd \
+                  -n "${avd.name}" -k "${avd.package}" -d "${avd.device}"
+              '') avds}
+            '';
+
           # nixpkgs' flutter wrapper ships a Groovy settings shim for the
           # flutter_tools/gradle includeBuild that redirects the plugin's
           # project and build directories into ~/.cache (the SDK itself is
@@ -349,8 +388,17 @@
               rustToolchain # declarative rust: rustc, cargo, clippy, rustfmt
               rustupShim # satisfies cargokit's rustup invocations
               # rquickjs generates bindings for Android ABIs that do not
-              # have pre-generated bindings in the crate release.
-              pkgs.libclang
+              # have pre-generated bindings in the crate release. bindgen
+              # only needs libclang.so, which it finds through
+              # LIBCLANG_PATH below — the package itself must NOT go on
+              # PATH: it propagates the *unwrapped* clang binaries, which
+              # would sit ahead of the wrapped pkgs.clang and win every
+              # `clang++` PATH lookup. flutter_tools hard-codes
+              # CC=clang/CXX=clang++ for its CMake invocation
+              # (build_linux.dart), so an unwrapped clang++ picked up that
+              # way cannot link anything on NixOS (no glibc crt files or
+              # libstdc++ paths) and the build dies at the compiler test
+              # with "cannot find Scrt1.o" / "-lstdc++".
               # Binding generator (`flutter_rust_bridge_codegen generate`).
               # Its version must match the flutter_rust_bridge runtime in
               # pubspec.lock; after a nix flake update that bumps this
@@ -363,7 +411,11 @@
               pkgs.cargo-expand
             ]
             ++ lib.optionals linuxDesktop [
-              # `flutter run -d linux` build dependencies
+              # `flutter run -d linux` build dependencies. pkgs.clang is
+              # the *wrapped* compiler: flutter_tools forces CXX=clang++
+              # for its CMake invocation, so the first clang++ on PATH
+              # must be this one (or the identical wrapper the nixpkgs
+              # flutter wrapper suffixes to PATH), never a raw LLVM clang.
               pkgs.clang
               pkgs.cmake
               pkgs.libepoxy
@@ -379,6 +431,8 @@
             JAVA_HOME = jdk.home;
             ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
             ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk"; # legacy tools still read this
+            # bindgen (rquickjs) loads libclang.so from here — see the
+            # note in `packages` for why libclang stays off PATH.
             LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
 
             # Do not inherit a bare host CC/CXX (for example an unwrapped
@@ -395,9 +449,9 @@
             GIO_EXTRA_MODULES = "${pkgs.glib-networking}/lib/gio/modules";
 
             shellHook = ''
-              # Some packages (notably the unwrapped clang executable used
-              # by Flutter) install setup hooks after mkShell variables and
-              # replace CC/CXX. Restore the wrappers at the final hook stage.
+              # Some packages (notably the clang wrapper used by Flutter)
+              # install setup hooks after mkShell variables and replace
+              # CC/CXX. Restore the wrappers at the final hook stage.
               export CC="${pkgs.stdenv.cc}/bin/cc"
               export CXX="${pkgs.stdenv.cc}/bin/c++"
 
@@ -418,13 +472,24 @@
               export ANDROID_AVD_HOME="''${ANDROID_AVD_HOME:-$project_root/.avd}"
               mkdir -p "$ANDROID_AVD_HOME"
 
-              # Create declared AVDs that do not exist yet. The
-              # composition carries the emulator and the system images
-              # ANDROID_HOME points at, so plain avdmanager works.
+              # Materialize the nix-built AVDs (see androidAvds) into the
+              # writable AVD home: the emulator creates lock files,
+              # userdata and snapshots inside each .avd directory, so the
+              # read-only store copies cannot be used in place.
+              # avdmanager bakes the store path into the pointer .ini,
+              # so the materialized copy gets its path line rewritten.
+              # Materialization happens when an AVD directory is missing;
+              # delete .avd/<name>.avd to re-materialize it from the
+              # current nix definition.
               ${lib.concatMapStrings (avd: ''
                 if [ ! -d "$ANDROID_AVD_HOME/${avd.name}.avd" ]; then
-                  echo "Creating AVD ${avd.name}..."
-                  echo no | avdmanager create avd -n "${avd.name}" -k "${avd.package}" -d "${avd.device}"
+                  echo "Materializing AVD ${avd.name}..."
+                  sed "s|^path=.*|path=$ANDROID_AVD_HOME/${avd.name}.avd|" \
+                    "${androidAvds}/${avd.name}.ini" \
+                    > "$ANDROID_AVD_HOME/${avd.name}.ini"
+                  cp -R "${androidAvds}/${avd.name}.avd" \
+                    "$ANDROID_AVD_HOME/${avd.name}.avd"
+                  chmod -R u+w "$ANDROID_AVD_HOME/${avd.name}.avd"
                 fi
               '') avds}
             '';
