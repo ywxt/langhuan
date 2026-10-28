@@ -1,7 +1,7 @@
 //! WebView verification prompts: the app opens one prompt stream at
 //! startup and answers each prompt by completing or canceling it.
 
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::Receiver;
 
 use crate::actors::{
     addresses,
@@ -12,7 +12,7 @@ use super::types::{BridgeError, CookieEntry, WebviewPrompt};
 
 /// A pull-based stream of WebView verification prompts.
 pub struct WebviewPromptStream {
-    receiver: UnboundedReceiver<WebviewPrompt>,
+    receiver: Receiver<WebviewPrompt>,
 }
 
 impl WebviewPromptStream {

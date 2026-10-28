@@ -22,6 +22,13 @@ use langhuan::feed::{
 
 use crate::api::types::{BridgeError, CookieEntry, WebviewPrompt};
 
+/// Capacity of the prompt channel towards the UI listener. Prompts are
+/// rare (at most one per gated operation) and are presented one at a time;
+/// a bound keeps a stuck listener from buffering work without limit. A
+/// full queue fails the newest prompt instead of blocking the actor, which
+/// would deadlock Dart-side completes waiting behind the send.
+const PROMPT_CHANNEL_CAPACITY: usize = 32;
+
 /// Message from a feed's webview handler: open a verification page.
 pub struct OpenWebview {
     pub request: WebviewRequest,
@@ -49,7 +56,7 @@ pub struct WebviewActor {
     /// Parked operations awaiting a UI verdict, keyed by prompt id.
     pending: HashMap<u32, oneshot::Sender<Result<WebviewSnapshot, String>>>,
     /// The single Dart-side prompt listener.
-    listener: Option<mpsc::UnboundedSender<WebviewPrompt>>,
+    listener: Option<mpsc::Sender<WebviewPrompt>>,
 }
 
 impl WebviewActor {
@@ -83,12 +90,24 @@ impl Handler<OpenWebview> for WebviewActor {
             url: message.request.url,
             title: message.request.title,
         };
-        if listener.send(prompt).is_err() {
+        // try_send keeps the actor non-blocking: an awaiting send would
+        // queue Dart-side completes behind it and deadlock the flow.
+        if let Err(error) = listener.try_send(prompt) {
             self.pending.remove(&request_id);
-            tracing::warn!("webview prompt listener closed while prompting");
-            return Err(BridgeError::from(
-                "WebView prompt stream is closed".to_owned(),
-            ));
+            match error {
+                mpsc::error::TrySendError::Full(_) => {
+                    tracing::warn!("webview prompt queue is full");
+                    return Err(BridgeError::from(
+                        "too many pending WebView verifications".to_owned(),
+                    ));
+                }
+                mpsc::error::TrySendError::Closed(_) => {
+                    tracing::warn!("webview prompt listener closed while prompting");
+                    return Err(BridgeError::from(
+                        "WebView prompt stream is closed".to_owned(),
+                    ));
+                }
+            }
         }
         tracing::debug!(request_id, "webview verification requested");
         Ok(receiver)
@@ -97,10 +116,10 @@ impl Handler<OpenWebview> for WebviewActor {
 
 #[async_trait]
 impl Handler<SubscribeWebviewPrompts> for WebviewActor {
-    type Result = Result<mpsc::UnboundedReceiver<WebviewPrompt>, BridgeError>;
+    type Result = Result<mpsc::Receiver<WebviewPrompt>, BridgeError>;
 
     async fn handle(&mut self, _: SubscribeWebviewPrompts, _: &Context<Self>) -> Self::Result {
-        let (sender, receiver) = mpsc::unbounded_channel();
+        let (sender, receiver) = mpsc::channel(PROMPT_CHANNEL_CAPACITY);
         self.listener = Some(sender);
         tracing::debug!("webview prompt listener attached");
         Ok(receiver)
@@ -317,5 +336,56 @@ mod tests {
             .expect("cancel");
         let error = receiver.await.expect("sender alive").expect_err("canceled");
         assert_eq!(error, "verification canceled");
+    }
+
+    #[tokio::test]
+    async fn prompt_queue_is_bounded() {
+        let request = || WebviewRequest {
+            feed_id: "fanqie".into(),
+            feed_name: "番茄小說".into(),
+            url: "https://example.com/verify".into(),
+            title: None,
+        };
+
+        // An unanswered listener accumulates up to the channel capacity…
+        let mut saturated = WebviewActor::new();
+        let mut prompts = saturated
+            .handle(SubscribeWebviewPrompts, &Context::new())
+            .await
+            .expect("subscribe");
+        for _ in 0..super::PROMPT_CHANNEL_CAPACITY {
+            saturated
+                .handle(
+                    OpenWebview {
+                        request: request(),
+                    },
+                    &Context::new(),
+                )
+                .await
+                .expect("open within capacity");
+        }
+        // …and the next prompt fails the operation instead of buffering.
+        let error = saturated
+            .handle(
+                OpenWebview {
+                    request: request(),
+                },
+                &Context::new(),
+            )
+            .await
+            .expect_err("queue must be full");
+        assert!(error.message.contains("too many pending WebView verifications"));
+
+        // The listener consuming one prompt frees a slot.
+        prompts.recv().await.expect("one prompt consumed");
+        saturated
+            .handle(
+                OpenWebview {
+                    request: request(),
+                },
+                &Context::new(),
+            )
+            .await
+            .expect("slot freed after consumption");
     }
 }
