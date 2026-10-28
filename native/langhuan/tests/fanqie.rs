@@ -341,6 +341,7 @@ impl langhuan::feed::WebviewHandler for TestWebview {
                     current_url: "https://fanqienovel.com/library".into(),
                     html: "<html>ok</html>".into(),
                     cookies,
+                    user_agent: Some("TestWebView/1.0".into()),
                 }),
                 None => Err(Error::expected(
                     ExpectedErrorCode::AuthRequired,

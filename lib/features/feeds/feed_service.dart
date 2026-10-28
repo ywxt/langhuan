@@ -763,6 +763,7 @@ class FeedService {
     required String response,
     required List<(String, String)> responseHeaders,
     required List<CookieEntry> cookies,
+    String? userAgent,
   }) {
     return rust_auth.feedAuthSubmitPage(
       feedId: feedId,
@@ -770,6 +771,7 @@ class FeedService {
       response: response,
       responseHeaders: responseHeaders,
       cookies: cookies,
+      userAgent: userAgent,
     );
   }
 
@@ -804,12 +806,14 @@ class FeedService {
     required String currentUrl,
     required String html,
     required List<CookieEntry> cookies,
+    String? userAgent,
   }) {
     return rust_webview.completeWebview(
       requestId: requestId,
       currentUrl: currentUrl,
       html: html,
       cookies: cookies,
+      userAgent: userAgent,
     );
   }
 

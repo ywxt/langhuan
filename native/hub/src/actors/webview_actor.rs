@@ -44,6 +44,9 @@ pub struct CompleteWebview {
     pub current_url: String,
     pub html: String,
     pub cookies: Vec<CookieEntry>,
+    /// User-Agent of the WebView, so the feed can replay requests under
+    /// the exact string the page's credentials were issued under.
+    pub user_agent: Option<String>,
 }
 
 /// Message from Dart: the user abandoned the WebView.
@@ -138,6 +141,7 @@ impl Handler<CompleteWebview> for WebviewActor {
         let snapshot = WebviewSnapshot {
             current_url: message.current_url,
             html: message.html,
+            user_agent: message.user_agent,
             cookies: message
                 .cookies
                 .into_iter()
@@ -294,6 +298,7 @@ mod tests {
                         http_only: None,
                         same_site: None,
                     }],
+                    user_agent: Some("TestWebView/2.1".into()),
                 },
                 &Context::new(),
             )
@@ -303,6 +308,7 @@ mod tests {
         let snapshot = receiver.await.expect("sender alive").expect("snapshot");
         assert_eq!(snapshot.current_url, "https://example.com/done");
         assert_eq!(snapshot.cookies[0].value, "tok");
+        assert_eq!(snapshot.user_agent.as_deref(), Some("TestWebView/2.1"));
 
         // Unknown ids report false instead of erroring.
         let unknown = actor

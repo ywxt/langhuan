@@ -16,11 +16,17 @@ class AuthPageSnapshot {
     required this.currentUrl,
     required this.html,
     required this.cookies,
+    this.userAgent,
   });
 
   final String currentUrl;
   final String html;
   final List<CookieEntry> cookies;
+
+  /// User-Agent of the WebView, for replaying requests under the exact
+  /// string the page's credentials were issued under. Null when the
+  /// WebView could not report it.
+  final String? userAgent;
 }
 
 /// One login session in the platform WebView.
@@ -172,6 +178,9 @@ class _InlineAuthWebviewSession extends AuthWebviewSession {
     final controller = _controller;
     if (controller == null) throw StateError('webview is not open');
     final currentUrl = await controller.currentUrl() ?? _url ?? '';
+    final userAgent = _decodeJsStringResult(
+      await controller.runJavaScriptReturningResult('navigator.userAgent'),
+    );
     final result = await controller.runJavaScriptReturningResult(
       'document.documentElement.outerHTML',
     );
@@ -179,6 +188,7 @@ class _InlineAuthWebviewSession extends AuthWebviewSession {
       currentUrl: currentUrl,
       html: _decodeJsStringResult(result),
       cookies: _capturedCookies.values.toList(growable: false),
+      userAgent: userAgent.isEmpty ? null : userAgent,
     );
   }
 
@@ -309,6 +319,9 @@ class _DesktopWindowAuthWebviewSession extends AuthWebviewSession {
       throw StateError('login window is closed');
     }
     final currentUrl = webview.navigationState.value.url ?? _url ?? '';
+    final userAgentResult = await webview.evaluateJavaScript(
+      'navigator.userAgent',
+    );
     final result = await webview.evaluateJavaScript(
       'document.documentElement.outerHTML',
     );
@@ -327,10 +340,15 @@ class _DesktopWindowAuthWebviewSession extends AuthWebviewSession {
           ),
         )
         .toList();
+    final userAgent =
+        userAgentResult is String && userAgentResult.isNotEmpty
+        ? userAgentResult
+        : null;
     return AuthPageSnapshot(
       currentUrl: currentUrl,
       html: result is String ? result : '',
       cookies: cookies,
+      userAgent: userAgent,
     );
   }
 

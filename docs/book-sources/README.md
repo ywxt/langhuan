@@ -94,6 +94,7 @@ type Event = {
     current_url: string;
     html: string;
     cookies: { name: string; value: string; domain?: string }[];
+    user_agent?: string;
   };
 };
 
@@ -182,9 +183,9 @@ return {
 
 The host opens the page in a platform WebView (embedded on Android, iOS and
 macOS; a separate window on Linux and Windows), the user completes the
-interaction, and the page snapshot — final URL, HTML, and the cookies
-collected so far — comes back as `event.webview` with `next_state`, letting
-the reducer continue:
+interaction, and the page snapshot — final URL, HTML, the cookies collected
+so far, and the WebView's User-Agent — comes back as `event.webview` with
+`next_state`, letting the reducer continue:
 
 ```js
 if (event.webview != null) {
@@ -194,11 +195,20 @@ if (event.webview != null) {
     .join("; ");
   return {
     type: "request",
-    request: { url: "...", method: "POST", headers: { Cookie: cookies } },
+    request: {
+      url: "...",
+      method: "POST",
+      headers: { Cookie: cookies, "User-Agent": event.webview.user_agent },
+    },
     next_state: { stage: "results" },
   };
 }
 ```
+
+Replays should reuse `event.webview.user_agent` verbatim: cookie-based
+clearances (for example Cloudflare's `cf_clearance`) are issued for the
+User-Agent that solved the challenge, and a replay under a different string
+can be rejected even with the right cookies.
 
 Notes:
 
@@ -287,15 +297,16 @@ const login = {
   },
 
   parse(page) {
-    // page: { current_url, response, response_headers, cookies }
+    // page: { current_url, response, response_headers, cookies, user_agent? }
     const session = page.cookies.find((cookie) => cookie.name === "session");
     if (!session) return FeedError.authRequired("Login is incomplete");
-    return { cookie_header: `session=${session.value}` };
+    return { cookie_header: `session=${session.value}`, user_agent: page.user_agent ?? null };
   },
 
   patchRequest(operation, request, auth) {
     request.headers ??= {};
     request.headers.Cookie = auth.cookie_header;
+    if (auth.user_agent) request.headers["User-Agent"] = auth.user_agent;
     return request;
   },
 
@@ -319,6 +330,10 @@ need. `patchRequest` receives the same operation descriptor used to construct
 the reducer event: `{ operation, input }`. Request parameters such as `bookId`
 and `chapterId` therefore have one canonical location under `input`; source
 metadata remains available through the frozen global `meta` object.
+
+`page.user_agent` carries the WebView's User-Agent for the same reason as the
+webview step: sessions captured in a browser are bound to the User-Agent they
+were issued under, so `parse` should store it and `patchRequest` replay it.
 
 ## Sandbox guarantees and limits
 

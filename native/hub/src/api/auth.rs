@@ -29,6 +29,7 @@ pub async fn feed_auth_submit_page(
     response: String,
     response_headers: Vec<(String, String)>,
     cookies: Vec<CookieEntry>,
+    user_agent: Option<String>,
 ) -> Result<(), BridgeError> {
     addresses()?
         .login
@@ -39,6 +40,7 @@ pub async fn feed_auth_submit_page(
             response,
             response_headers,
             cookies,
+            user_agent,
         })
         .await?
 }

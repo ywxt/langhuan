@@ -396,6 +396,7 @@ mod tests {
                 http_only: Some(false),
                 same_site: None,
             }],
+            user_agent: Some("TestWebView/1.0".into()),
         }
     }
 
@@ -416,6 +417,9 @@ mod tests {
               const cookie = event.webview.cookies.find((c) => c.name === "msToken");
               if (event.webview.current_url !== "https://example.com/verify") {
                 return { type: "fail", code: "source_unavailable", message: "bad url" };
+              }
+              if (event.webview.user_agent !== "TestWebView/1.0") {
+                return { type: "fail", code: "source_unavailable", message: "bad user agent" };
               }
               return {
                 type: "complete",

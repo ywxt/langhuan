@@ -110,6 +110,7 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
             // feeds parse auth from page content and cookies.
             responseHeaders: const [],
             cookies: snapshot.cookies,
+            userAgent: snapshot.userAgent,
           );
 
       if (!mounted) return;

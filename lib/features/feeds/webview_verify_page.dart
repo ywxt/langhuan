@@ -77,6 +77,7 @@ class _WebviewVerifyPageState extends State<WebviewVerifyPage> {
         currentUrl: snapshot.currentUrl,
         html: snapshot.html,
         cookies: snapshot.cookies,
+        userAgent: snapshot.userAgent,
       );
 
       if (!mounted) return;

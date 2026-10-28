@@ -1,7 +1,7 @@
 // ==Feed==
 // @id           qidian
 // @name         起點中文網
-// @version      3.1.0
+// @version      3.2.0
 // @author       Langhuan
 // @description  起點中文網書源（m 站），支持登入及已購 VIP 章節
 // @base_url     https://m.qidian.com
@@ -579,6 +579,7 @@ const login = {
       captured_url: page.current_url,
       fuid,
       csrf_token: csrfToken,
+      user_agent: page.user_agent ?? null,
     };
   },
 
@@ -587,6 +588,13 @@ const login = {
     const dynamicCookies = request.headers.Cookie ?? request.headers.cookie ?? "";
     request.headers.Cookie = mergeCookieHeaders(auth.cookie_header, dynamicCookies);
     delete request.headers.cookie;
+
+    // Replay under the exact User-Agent the login session was issued in:
+    // cookie-based clearances validate the pair together, so a different
+    // User-Agent can invalidate the session cookies.
+    if (auth.user_agent) {
+      request.headers["User-Agent"] = auth.user_agent;
+    }
 
     const csrfToken =
       auth.csrf_token ?? cookieMap(auth.cookie_header).get("_csrfToken");
