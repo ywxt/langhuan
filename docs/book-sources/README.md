@@ -9,6 +9,9 @@ Current examples:
 - [`biquge-tw.js`](biquge-tw.js) — ordinary HTML pages.
 - [`qidian.js`](qidian.js) — login, additional API requests, and purchased VIP
   chapter decryption using the site's official JavaScript bundle.
+- [`fanqie.js`](fanqie.js) — server-rendered pages whose text is font-obfuscated
+  (decoded through an embedded glyph table pinned to the served font), with
+  URL-paste search because the official search API is captcha-gated.
 
 There is no legacy runtime compatibility. Schema 3 sources must use `.js` and
 must return their Feed object. Assigning `globalThis.feed` is not supported.
