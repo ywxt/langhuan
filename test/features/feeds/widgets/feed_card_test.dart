@@ -20,6 +20,7 @@ const _feedA = FeedMetaItem(
   sourceUrl: 'https://example.com/source-a.js',
   baseUrl: 'https://example.com',
   accessDomains: ['example.com', 'cdn.example.com'],
+  description: 'A fixture source for tests.',
 );
 
 const _feedAPaused = FeedMetaItem(
@@ -190,6 +191,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // The sheet carries the metadata and actions the card omits.
+      expect(find.text('A fixture source for tests.'), findsOneWidget);
       expect(find.text('ID'), findsOneWidget);
       expect(find.text('feed-a'), findsOneWidget);
       expect(find.text('Base URL'), findsOneWidget);

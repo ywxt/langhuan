@@ -199,10 +199,22 @@ const MIGRATIONS: &[Migration] = &[
             ADD COLUMN access_domains_json TEXT NOT NULL DEFAULT '[]';
     "#,
     },
+    Migration {
+        version: 6,
+        sql: r#"
+        -- Feed description persisted at install time ---------------------
+        -- Cached from the script's ==Feed== header like base_url, so the
+        -- feed detail page can show it without re-parsing scripts. NULL
+        -- for rows installed before this migration (until the feed is
+        -- upgraded) and for scripts that declare no description.
+        ALTER TABLE feeds
+            ADD COLUMN description TEXT;
+    "#,
+    },
 ];
 
 /// The schema version this build understands (the last migration's version).
-pub(crate) const CURRENT_VERSION: i64 = 5;
+pub(crate) const CURRENT_VERSION: i64 = 6;
 
 /// Apply all pending migrations in order.
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {

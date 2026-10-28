@@ -143,6 +143,20 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
               ],
             ),
 
+            // ── Description ──────────────────────────────────────────
+            // The script's @description, cached at install time; shown in
+            // full because sources embed usage notes here (e.g. how to
+            // paste book IDs when a site has no usable search).
+            if (feed.description case final description?) ...[
+              const SizedBox(height: LanghuanTheme.spaceMd),
+              Text(
+                description,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+
             if (hasError) ...[
               const SizedBox(height: LanghuanTheme.spaceMd),
               Container(

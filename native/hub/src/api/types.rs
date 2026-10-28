@@ -167,6 +167,10 @@ pub struct FeedMetaItem {
     /// database at install time and sorted for stable display. Empty when
     /// the feed declares no restriction.
     pub access_domains: Vec<String>,
+    /// Description declared by the feed script, cached into the database
+    /// at install time. `None` for feeds installed before the field was
+    /// persisted and for scripts that declare none.
+    pub description: Option<String>,
     pub error: Option<String>,
 }
 

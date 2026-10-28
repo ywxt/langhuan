@@ -507,6 +507,7 @@ impl From<FeedRow> for FeedMetaItem {
             source_url: row.source_url,
             base_url: row.base_url,
             access_domains: row.access_domains,
+            description: row.description,
             error: None,
         }
     }
@@ -764,7 +765,7 @@ mod tests {
             name: "Feed One".to_owned(),
             version: "1.0.0".to_owned(),
             author: None,
-            description: None,
+            description: Some("One extraordinary feed.".to_owned()),
             base_url: "https://example.com".to_owned(),
             access_domains: Default::default(),
             schema_version: 1,
@@ -789,6 +790,10 @@ mod tests {
         assert!(broken.error.is_some());
         assert_eq!(broken.base_url.as_deref(), Some("https://example.com"));
         assert!(broken.access_domains.is_empty());
+        assert_eq!(
+            broken.description.as_deref(),
+            Some("One extraordinary feed.")
+        );
         Ok(())
     }
 

@@ -25,6 +25,10 @@ pub struct FeedRow {
     /// Access domains cached from the script header at install time,
     /// sorted. Empty when the feed declares no restriction.
     pub access_domains: Vec<String>,
+    /// Description cached from the script header at install time.
+    /// `None` for rows installed before the column existed and for
+    /// scripts that declare no description.
+    pub description: Option<String>,
 }
 
 /// A script-history row (newest first).
@@ -57,8 +61,8 @@ impl Repo<'_> {
         let access_domains_json = serde_json::to_string(&domains)
             .map_err(|e| Error::database(format!("serialize access domains: {e}")))?;
         self.conn.prepare_cached(
-            "INSERT INTO feeds (id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms, base_url, access_domains_json) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9) \
+            "INSERT INTO feeds (id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms, base_url, access_domains_json, description) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9, ?10) \
              ON CONFLICT(id) DO UPDATE SET \
                  name = excluded.name, \
                  version = excluded.version, \
@@ -67,7 +71,8 @@ impl Repo<'_> {
                  content_hash = excluded.content_hash, \
                  updated_at_ms = excluded.updated_at_ms, \
                  base_url = excluded.base_url, \
-                 access_domains_json = excluded.access_domains_json",
+                 access_domains_json = excluded.access_domains_json, \
+                 description = excluded.description",
         )?
         .execute(tokio_rusqlite::params![
             meta.id,
@@ -79,6 +84,7 @@ impl Repo<'_> {
             now_ms,
             meta.base_url,
             access_domains_json,
+            meta.description,
         ])?;
         Ok(())
     }
@@ -128,7 +134,7 @@ impl Repo<'_> {
     /// List all registered feeds, oldest install first.
     pub fn list_feeds(&self) -> Result<Vec<FeedRow>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms, enabled, base_url, access_domains_json \
+            "SELECT id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms, enabled, base_url, access_domains_json, description \
              FROM feeds ORDER BY installed_at_ms, id",
         )?;
         let rows = stmt
@@ -140,7 +146,7 @@ impl Repo<'_> {
     pub fn get_feed(&self, id: &str) -> Result<Option<FeedRow>> {
         super::maybe_row(
             self.conn,
-            "SELECT id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms, enabled, base_url, access_domains_json \
+            "SELECT id, name, version, author, source_url, content_hash, installed_at_ms, updated_at_ms, enabled, base_url, access_domains_json, description \
              FROM feeds WHERE id = ?1",
             &[&id],
             map_feed_row,
@@ -155,14 +161,14 @@ impl Repo<'_> {
     /// startup.
     pub fn list_feeds_with_scripts(&self) -> Result<Vec<(FeedRow, Option<String>)>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT f.id, f.name, f.version, f.author, f.source_url, f.content_hash, f.installed_at_ms, f.updated_at_ms, f.enabled, f.base_url, f.access_domains_json, s.script \
+            "SELECT f.id, f.name, f.version, f.author, f.source_url, f.content_hash, f.installed_at_ms, f.updated_at_ms, f.enabled, f.base_url, f.access_domains_json, f.description, s.script \
              FROM feeds f \
              LEFT JOIN feed_scripts s ON s.feed_id = f.id AND s.version = f.version \
              ORDER BY f.installed_at_ms, f.id",
         )?;
         let rows = stmt
             .query_map([], |row| {
-                Ok((map_feed_row(row)?, row.get::<_, Option<String>>(11)?))
+                Ok((map_feed_row(row)?, row.get::<_, Option<String>>(12)?))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
@@ -254,6 +260,7 @@ fn map_feed_row(
         enabled: row.get::<_, i64>(8)? != 0,
         base_url: row.get(9)?,
         access_domains,
+        description: row.get(11)?,
     })
 }
 
@@ -267,9 +274,13 @@ mod tests {
         let db = TestDb::new();
         let conn = db.repo();
         let now = now_ms();
-        conn.upsert_feed(&feed_meta("f1", "1.0.0"), Some("https://src"), "h1", now)
+        let mut meta = feed_meta("f1", "1.0.0");
+        meta.description = Some("An ordinary feed.".to_owned());
+        conn.upsert_feed(&meta, Some("https://src"), "h1", now)
             .expect("install");
-        conn.upsert_feed(&feed_meta("f1", "1.1.0"), None, "h2", now + 10)
+        let mut meta = feed_meta("f1", "1.1.0");
+        meta.description = Some("Now with search.".to_owned());
+        conn.upsert_feed(&meta, None, "h2", now + 10)
             .expect("upgrade");
 
         let row = conn.get_feed("f1").expect("get").expect("exists");
@@ -280,6 +291,7 @@ mod tests {
         // Script metadata cached at install time follows the script
         assert_eq!(row.base_url.as_deref(), Some("https://example.com"));
         assert!(row.access_domains.is_empty());
+        assert_eq!(row.description.as_deref(), Some("Now with search."));
         assert_eq!(row.installed_at_ms, now);
         assert_eq!(row.updated_at_ms, now + 10);
     }

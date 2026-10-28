@@ -15,6 +15,7 @@ extension FeedMetaEnabled on FeedMetaItem {
     sourceUrl: sourceUrl,
     baseUrl: baseUrl,
     accessDomains: accessDomains,
+    description: description,
     error: error,
   );
 }
