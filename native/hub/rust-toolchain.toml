@@ -5,14 +5,16 @@
 # native_toolchain_rust, which drives `cargo build` for Native Assets,
 # requires an exact channel and an explicit target list to validate
 # the crate before building. `targets` mirrors exactly the std
-# targets the flake toolchain carries (four Android ABIs plus the
-# Linux host used by `flutter test`).
+# targets the flake toolchain carries plus every desktop release host.
 [toolchain]
 channel = "1.99.1"
 targets = [
+    "aarch64-apple-darwin",
     "aarch64-linux-android",
     "armv7-linux-androideabi",
     "i686-linux-android",
+    "x86_64-apple-darwin",
     "x86_64-linux-android",
     "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
 ]
