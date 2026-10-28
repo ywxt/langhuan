@@ -634,10 +634,7 @@ mod tests {
         let mut registry_addr = registry_context.address();
         let webview_context = Context::new();
         let webview_addr = webview_context.address();
-        spawn(registry_context.run(RegistryActor::new(
-            ScriptEngine::new(),
-            webview_addr,
-        )));
+        spawn(registry_context.run(RegistryActor::new(ScriptEngine::new(), webview_addr)));
         spawn(webview_context.run(WebviewActor::new()));
 
         registry_addr

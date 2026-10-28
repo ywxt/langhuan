@@ -13,7 +13,9 @@ Current examples:
   (decoded through an embedded glyph table pinned to the served font), with
   keyword search via the site's JSON API (POST with query-string parameters;
   plain GETs are risk-control challenged) and an interactive WebView
-  verification fallback for when the search endpoint is risk-gated.
+  verification fallback for when the search endpoint is risk-gated. The
+  source also persists WebView login cookies for chapters that require a
+  logged-in account and verifies them against the reader user endpoint.
 
 There is no legacy runtime compatibility. Schema 3 sources must use `.js` and
 must return their Feed object. Assigning `globalThis.feed` is not supported.

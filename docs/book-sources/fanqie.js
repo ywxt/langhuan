@@ -1,9 +1,9 @@
 // ==Feed==
 // @id           fanqie
 // @name         番茄小說
-// @version      1.2.0
+// @version      1.3.0
 // @author       Langhuan
-// @description  番茄小說官網書源（fanqienovel.com）：支持關鍵詞搜尋（也可直接貼書籍連結或 ID），正文採用字體混淆，內置字形映射表解碼；搜索被風控攔截時可經內嵌驗證頁完成人機驗證後重試
+// @description  番茄小說官網書源（fanqienovel.com）：支持關鍵詞搜尋（也可直接貼書籍連結或 ID）、帳號登入與網頁畅读；正文採用字體混淆，內置字形映射表解碼
 // @base_url     https://fanqienovel.com
 // @access_domain fanqienovel.com
 // @access_domain *.byteimg.com
@@ -164,9 +164,25 @@
       if (!name || name.startsWith("Hm_")) continue;
       const domain = String(cookie?.domain ?? "");
       if (domain && !isFanqieDomain(domain)) continue;
-      parts.push(`${name}=${cookie.value ?? ""}`);
+      const value = String(cookie?.value ?? "");
+      if (!value || /[;,\x00-\x1f\x7f]/.test(value)) continue;
+      parts.push(`${name}=${value}`);
     }
     return parts.length > 0 ? parts.join("; ") : null;
+  }
+
+  function mergeCookieHeaders(...headersToMerge) {
+    const cookies = new Map();
+    for (const header of headersToMerge) {
+      for (const part of String(header ?? "").split(";")) {
+        const separator = part.indexOf("=");
+        if (separator <= 0) continue;
+        const name = part.slice(0, separator).trim();
+        const value = part.slice(separator + 1).trim();
+        if (name && value) cookies.set(name, value);
+      }
+    }
+    return Array.from(cookies, ([name, value]) => `${name}=${value}`).join("; ");
   }
 
   function searchRequest(keyword, pageIndex) {
@@ -487,8 +503,80 @@
     }
     const failure = ensureAvailable(event.response);
     if (failure) return failure;
+    const body = String(event.response?.body ?? "");
+    if (
+      body.includes("muye-to-vip-login") ||
+      body.includes("会员登录后，可在网页畅读全文")
+    ) {
+      if (event.auth == null) {
+        return FeedError.authRequired("本章只返回試讀內容，請先登入番茄小說");
+      }
+      return FeedError.contentNotFound(
+        "登入後仍只返回試讀內容；網頁畅读需要有效的番茄 SVIP 權益",
+      );
+    }
     return parseParagraphs(event.response);
   }
 
-  return { search, bookInfo, chapters, paragraphs };
+  const login = {
+    entry() {
+      return {
+        url: `${meta.base_url}/`,
+        title: "番茄小說登錄",
+        user_agent: USER_AGENT,
+      };
+    },
+
+    parse(page) {
+      const cookieHeader = cookieHeaderFromSnapshot(page.cookies);
+      if (cookieHeader == null) {
+        return FeedError.authRequired("登錄尚未完成：未檢測到番茄小說 Cookie");
+      }
+      return {
+        cookie_header: cookieHeader,
+        captured_url: page.current_url,
+      };
+    },
+
+    patchRequest(_operation, request, auth) {
+      request.headers ??= {};
+      const dynamicCookies = request.headers.Cookie ?? request.headers.cookie ?? "";
+      request.headers.Cookie = mergeCookieHeaders(
+        auth.cookie_header,
+        dynamicCookies,
+      );
+      delete request.headers.cookie;
+      request.headers["User-Agent"] = USER_AGENT;
+      return request;
+    },
+
+    status(event) {
+      if (event.state == null) {
+        return {
+          type: "request",
+          request: {
+            url: `${meta.base_url}/api/reader/user/info`,
+            method: "GET",
+            headers: {
+              ...headers(),
+              Accept: "application/json, text/plain, */*",
+              Referer: `${meta.base_url}/`,
+            },
+          },
+          next_state: { requested: true },
+        };
+      }
+      if (event.response?.status !== 200) {
+        return { type: "complete", value: false };
+      }
+      try {
+        const payload = JSON.parse(event.response.body ?? "");
+        return { type: "complete", value: payload?.code === 0 };
+      } catch (_) {
+        return { type: "complete", value: false };
+      }
+    },
+  };
+
+  return { search, bookInfo, chapters, paragraphs, login };
 })()

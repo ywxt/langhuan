@@ -7,7 +7,8 @@
 /// codepoints that the site's custom font obfuscation substitutes for the
 /// most frequent characters (see the FONT_MAP comment in the script).
 use langhuan::error::{Error, ExpectedErrorCode, ScriptError};
-use langhuan::feed::Feed;
+use langhuan::feed::{AuthPageContext, Feed, FeedAuthFlow};
+use langhuan::http::HttpBody;
 use langhuan::script::runtime::ScriptEngine;
 use mockito::ServerGuard;
 use std::sync::{Arc, Mutex};
@@ -114,6 +115,20 @@ fn reader_page_html(font_hash: &str) -> String {
 </div>
 </body>
 </html>"#
+    )
+}
+
+/// The live site returns only a short preview to logged-out users and appends
+/// this membership gate after the reader content. It must never be mistaken
+/// for a complete chapter.
+fn preview_reader_page_html() -> String {
+    reader_page_html(FONT_HASH).replace(
+        "<div class=\"muye-reader-btns\">",
+        r#"<div class="muye-to-vip-login">
+          <div>下载「番茄小说APP」可免费阅读全文</div>
+          <div class="muye-to-vip-login-btn">会员登录后，可在网页畅读全文</div>
+        </div>
+        <div class="muye-reader-btns">"#,
     )
 }
 
@@ -822,12 +837,181 @@ async fn paragraphs_report_missing_chapter() {
     assert_expected_code(&err, ExpectedErrorCode::ContentNotFound);
 }
 
+#[tokio::test]
+async fn paragraphs_preview_requires_login_instead_of_returning_partial_text() {
+    let mut server = mockito::Server::new_async().await;
+    let _mock = server
+        .mock("GET", format!("/reader/{CHAPTER_1_ID}").as_str())
+        .with_status(200)
+        .with_body(preview_reader_page_html())
+        .create_async()
+        .await;
+
+    let script = load_script_for_server(&server);
+    let engine = ScriptEngine::new();
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
+
+    let results = feed
+        .paragraphs(BOOK_ID, CHAPTER_1_ID)
+        .collect::<Vec<_>>()
+        .await;
+    assert_eq!(results.len(), 1);
+    let error = results.into_iter().next().unwrap().unwrap_err();
+    assert_expected_code(&error, ExpectedErrorCode::AuthRequired);
+}
+
+// ── Login flow ─────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn login_entry_and_parser_capture_fanqie_cookies() {
+    let server = mockito::Server::new_async().await;
+    let script = load_script_for_server(&server);
+    let engine = ScriptEngine::new();
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
+    let support = feed.supports_auth().expect("fanqie supports login");
+
+    let entry = feed.auth_entry(&support).expect("auth entry");
+    assert_eq!(entry.url, format!("{}/", server.url()));
+    assert_eq!(entry.title.as_deref(), Some("番茄小說登錄"));
+
+    let auth = feed
+        .parse_auth(
+            &support,
+            &AuthPageContext {
+                current_url: server.url(),
+                response: HttpBody::default(),
+                response_headers: vec![],
+                cookies: vec![
+                    cookie("sessionid", "account-session", ".fanqienovel.com"),
+                    cookie("ttwid", "device-id", ".fanqienovel.com"),
+                    cookie("Hm_lvt_9706", "tracking", ".fanqienovel.com"),
+                    cookie("foreign", "ignored", ".example.org"),
+                ],
+            },
+        )
+        .expect("parse auth");
+    let header = auth["cookie_header"].as_str().expect("cookie header");
+    assert!(header.contains("sessionid=account-session"));
+    assert!(header.contains("ttwid=device-id"));
+    assert!(!header.contains("Hm_lvt"));
+    assert!(!header.contains("foreign"));
+}
+
+#[tokio::test]
+async fn authenticated_reader_request_uses_cookie_and_returns_full_chapter() {
+    let mut server = mockito::Server::new_async().await;
+    let _mock = server
+        .mock("GET", format!("/reader/{CHAPTER_1_ID}").as_str())
+        .match_header(
+            "Cookie",
+            mockito::Matcher::Regex(r"sessionid=account-session".to_owned()),
+        )
+        .with_status(200)
+        .with_body(reader_page_html(FONT_HASH))
+        .create_async()
+        .await;
+
+    let script = load_script_for_server(&server);
+    let engine = ScriptEngine::new();
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
+    let support = feed.supports_auth().expect("fanqie supports login");
+    feed.set_auth_info(
+        &support,
+        Some(serde_json::json!({ "cookie_header": "sessionid=account-session" })),
+    )
+    .expect("set auth");
+
+    let results = feed
+        .paragraphs(BOOK_ID, CHAPTER_1_ID)
+        .collect::<Vec<_>>()
+        .await;
+    assert!(results.iter().all(Result::is_ok), "{results:?}");
+    assert_eq!(results.len(), 3);
+}
+
+#[tokio::test]
+async fn authenticated_preview_reports_missing_svip_access() {
+    let mut server = mockito::Server::new_async().await;
+    let _mock = server
+        .mock("GET", format!("/reader/{CHAPTER_1_ID}").as_str())
+        .with_status(200)
+        .with_body(preview_reader_page_html())
+        .create_async()
+        .await;
+
+    let script = load_script_for_server(&server);
+    let engine = ScriptEngine::new();
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
+    let support = feed.supports_auth().expect("fanqie supports login");
+    feed.set_auth_info(
+        &support,
+        Some(serde_json::json!({ "cookie_header": "sessionid=account-session" })),
+    )
+    .expect("set auth");
+
+    let results = feed
+        .paragraphs(BOOK_ID, CHAPTER_1_ID)
+        .collect::<Vec<_>>()
+        .await;
+    assert_eq!(results.len(), 1);
+    let error = results.into_iter().next().unwrap().unwrap_err();
+    assert_expected_code(&error, ExpectedErrorCode::ContentNotFound);
+}
+
+#[tokio::test]
+async fn auth_status_uses_reader_user_endpoint() {
+    let mut server = mockito::Server::new_async().await;
+    let _mock = server
+        .mock("GET", "/api/reader/user/info")
+        .match_header(
+            "Cookie",
+            mockito::Matcher::Regex(r"sessionid=account-session".to_owned()),
+        )
+        .with_status(200)
+        .with_body(r#"{"code":0,"message":"success","data":{"user_id":"123"}}"#)
+        .create_async()
+        .await;
+
+    let script = load_script_for_server(&server);
+    let engine = ScriptEngine::new();
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
+    let support = feed.supports_auth().expect("fanqie supports login");
+    assert_eq!(
+        feed.auth_status(&support).await.unwrap(),
+        langhuan::feed::AuthStatus::LoggedOut
+    );
+    feed.set_auth_info(
+        &support,
+        Some(serde_json::json!({ "cookie_header": "sessionid=account-session" })),
+    )
+    .expect("set auth");
+    assert_eq!(
+        feed.auth_status(&support).await.unwrap(),
+        langhuan::feed::AuthStatus::LoggedIn
+    );
+}
+
 // ── Live site ───────────────────────────────────────────────────────────────
 
 /// Real-site smoke test against https://fanqienovel.com.
 ///
 /// Ignored by default because it depends on external network, target-site
-/// availability, and the current obfuscation font staying in rotation.
+/// availability and current site behavior.
 #[tokio::test]
 #[ignore = "hits real website"]
 async fn live_site_smoke() {
@@ -906,38 +1090,20 @@ async fn live_site_smoke() {
         assert!(c.is_ok(), "live chapters yielded error: {c:?}");
     }
     let chapters: Vec<_> = chapters.into_iter().filter_map(|c| c.ok()).collect();
-    let first_chapter = chapters.first().expect("expected a first chapter");
+    // A late chapter currently returns only a short preview to logged-out
+    // visitors. The source must surface an authentication requirement rather
+    // than silently presenting that preview as the complete chapter.
+    let late_chapter = chapters.get(499).expect("expected at least 500 chapters");
 
     let paragraphs_future = feed
-        .paragraphs(&book.id, &first_chapter.id)
+        .paragraphs(&book.id, &late_chapter.id)
         .take(200)
         .collect::<Vec<_>>();
     let paragraphs = tokio::time::timeout(Duration::from_secs(30), paragraphs_future)
         .await
         .expect("live paragraphs timed out after 30s");
 
-    assert!(!paragraphs.is_empty(), "live paragraphs returned no items");
-    for p in &paragraphs {
-        assert!(p.is_ok(), "live paragraphs yielded error: {p:?}");
-    }
-    let paragraphs: Vec<_> = paragraphs.into_iter().filter_map(|p| p.ok()).collect();
-
-    let mut text_count = 0usize;
-    for paragraph in &paragraphs {
-        let content = match paragraph {
-            langhuan::model::Paragraph::Text { content, .. } => content,
-            langhuan::model::Paragraph::Title { text, .. } => text,
-            langhuan::model::Paragraph::Image { .. } => continue,
-        };
-        assert!(
-            !content
-                .chars()
-                .any(|c| ('\u{e000}'..='\u{f8ff}').contains(&c)),
-            "live paragraph still contains undecoded private-use codepoints: {content:?}"
-        );
-        if matches!(paragraph, langhuan::model::Paragraph::Text { .. }) {
-            text_count += 1;
-        }
-    }
-    assert!(text_count > 0, "expected decoded text paragraphs");
+    assert_eq!(paragraphs.len(), 1, "expected one auth error");
+    let error = paragraphs.into_iter().next().unwrap().unwrap_err();
+    assert_expected_code(&error, ExpectedErrorCode::AuthRequired);
 }

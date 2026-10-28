@@ -17,7 +17,7 @@ use langhuan::db::repo::FeedRow;
 use langhuan::feed::FeedMeta;
 use langhuan::script::feed::ScriptFeed;
 use langhuan::script::runtime::ScriptEngine;
-use messages::prelude::{Actor, Context, Handler, Address};
+use messages::prelude::{Actor, Address, Context, Handler};
 
 use crate::api::types::{
     BridgeError, FeedImportFailure, FeedImportOutcome, FeedMetaItem, FeedPreviewInfo, VersionChange,
@@ -25,7 +25,7 @@ use crate::api::types::{
 use crate::localize_error;
 
 use super::app_data_actor::InitializeAppDataDirectory;
-use super::webview_actor::{attach_webview_handler, WebviewActor};
+use super::webview_actor::{WebviewActor, attach_webview_handler};
 
 /// How many script versions are kept per feed.
 const SCRIPT_HISTORY_KEEP: usize = langhuan::db::maintenance::SCRIPT_HISTORY_KEEP;
@@ -160,10 +160,7 @@ impl RegistryActor {
 
     /// Compile a script into a feed with the hub's webview handler attached,
     /// so its reducers can request interactive verification.
-    async fn compile_feed(
-        &self,
-        script: &str,
-    ) -> Result<ScriptFeed, langhuan::error::Error> {
+    async fn compile_feed(&self, script: &str) -> Result<ScriptFeed, langhuan::error::Error> {
         let feed = self.engine.load_script(script).await?;
         attach_webview_handler(&feed, &self.webview_addr)?;
         Ok(feed)
