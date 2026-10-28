@@ -16,10 +16,11 @@ class ErrorPresentation {
 /// Strips common exception prefixes (e.g. `BridgeError: …`) from an error so
 /// only the human-readable message remains.
 String normalizeErrorMessage(Object? error) {
-  // Bridge errors already render their message alone (see the Dart
-  // `toString` defined on the Rust side); take the field directly so
-  // localized category prefixes inside the message (`网络错误: …`) are
-  // not cut off by the generic first-colon strip below.
+  // Bridge errors take the `message` field directly: their `toString`
+  // keeps the full `BridgeError($kind)` form for developer surfaces, and
+  // the generic first-colon strip below would cut into localized category
+  // prefixes inside the message (`网络错误: …`), or even into the wrapper
+  // itself for kinds whose rendering contains a colon.
   if (error is BridgeError) {
     final message = error.message.trim();
     return message.isEmpty ? 'Unknown error' : message;

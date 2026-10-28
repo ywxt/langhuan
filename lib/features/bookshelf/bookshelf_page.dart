@@ -7,6 +7,7 @@ import '../../shared/constants.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/always_disabled_focus_node.dart';
 import '../../shared/utils/delete_with_undo.dart';
+import '../../shared/utils/errors.dart';
 import '../../shared/utils/snackbars.dart';
 import '../../shared/widgets/confirm_dialog.dart';
 import '../../shared/widgets/cover_placeholder.dart';
@@ -120,7 +121,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                         child: EmptyState(
                           icon: Icons.error_outline,
                           title: l10n.bookshelfLoadError,
-                          subtitle: state.error.toString(),
+                          subtitle: normalizeErrorMessage(state.error),
                         ),
                       )
                     else if (visibleItems.isEmpty)

@@ -11,15 +11,15 @@ use flutter_rust_bridge::frb;
 ///
 /// FRB translates `Result<T, BridgeError>` into Dart exceptions automatically.
 ///
-/// The Dart `toString` shows the message alone — the classification is data
-/// for UI logic (snackbars, error sheets), not prose to print. Only
-/// unclassified internal errors keep the full `BridgeError($kind)` prefix so
-/// unexplained failures stay identifiable in logs.
+/// The Dart `toString` keeps the full `BridgeError($kind)` form: it is what
+/// developer surfaces print — logs, `debugPrint`, Flutter's error panel,
+/// uncaught-exception dumps — where the classification matters. User-facing
+/// surfaces show the message alone through `normalizeErrorMessage` or the
+/// structured fields.
 #[derive(Debug, Clone)]
 #[frb(dart_code = r"
   @override
-  String toString() =>
-      kind is ErrorKind_Internal ? 'BridgeError($kind): $message' : message;
+  String toString() => 'BridgeError($kind): $message';
 ")]
 pub struct BridgeError {
     pub kind: ErrorKind,

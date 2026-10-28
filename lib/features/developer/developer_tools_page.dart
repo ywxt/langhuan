@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../shared/theme/app_theme.dart';
+import '../../shared/utils/errors.dart';
 import '../../shared/utils/snackbars.dart';
 import '../../shared/widgets/confirm_dialog.dart';
 import '../../shared/widgets/loading.dart';
@@ -165,7 +166,7 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
       showSuccessSnack(messenger, message);
     } catch (e) {
       if (!mounted) return;
-      showErrorSnack(ScaffoldMessenger.of(context), '$e');
+      showErrorSnack(ScaffoldMessenger.of(context), normalizeErrorMessage(e));
     } finally {
       if (mounted) setState(() => _importing = false);
     }
@@ -218,7 +219,7 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
       });
     } catch (e) {
       if (!mounted) return;
-      showErrorSnack(ScaffoldMessenger.of(context), '$e');
+      showErrorSnack(ScaffoldMessenger.of(context), normalizeErrorMessage(e));
     } finally {
       if (mounted) setState(() => _running = false);
     }

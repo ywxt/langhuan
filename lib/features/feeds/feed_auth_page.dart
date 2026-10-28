@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../shared/theme/app_theme.dart';
+import '../../shared/utils/errors.dart';
 import '../../shared/widgets/loading.dart';
 import 'auth_webview.dart';
 import 'feed_providers.dart';
@@ -78,7 +79,7 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = normalizeErrorMessage(e);
         _isLoadingEntry = false;
       });
     }
@@ -119,7 +120,7 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _submitError = e.toString();
+        _submitError = normalizeErrorMessage(e);
       });
     } finally {
       if (mounted) {
@@ -138,7 +139,7 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
       await session.open(entry.url, title: entry.title);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = normalizeErrorMessage(e));
     }
   }
 
