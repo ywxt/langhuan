@@ -14,6 +14,44 @@ struct _MyApplication {
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
+// WebKitGTK 2.54 (nixpkgs) derives the webview's page scale from the
+// GtkSettings "gtk-xft-dpi" property: in GTK3 builds
+// SystemSettingsManagerProxy::xftDPI() returns
+// gdk_screen_get_resolution() * 1024, multiplying the documented "unset"
+// value -1 unchecked (Source/WebKit/UIProcess/gtk/
+// SystemSettingsManagerProxyGtk.cpp). On Wayland compositors without an
+// XSETTINGS daemon (niri, sway, ...) the resolution stays -1, which becomes
+// fontDPI = -1 and a NEGATIVE page scale of -1/96. Layout then computes at
+// absurd sizes (window.innerWidth -105600, body width ~1.1e9 px): every
+// stylesheet downloads correctly, but nothing renders properly (the page
+// looks unstyled / half-styled).
+//
+// Writing an explicit value fixes the scale. The property uses XSETTINGS
+// encoding (dpi * 1024). 96 DPI is what GTK itself defaults to for Wayland
+// font rendering and what a GNOME session provides; the Xft/DPI value
+// deliberately excludes the monitor scale factor (GNOME keeps 96 at 200%
+// display scaling) because the monitor scale reaches the webview through
+// the widget's own device scale — multiplying it in here would double-count
+// it. Setting the property (rather than gdk_screen_set_resolution()) also
+// keeps GTK's own logic (e.g. GDK_DPI_SCALE) in charge. Applied only when
+// the value is still "unset", so sessions that provide a real DPI
+// (X11 XSETTINGS, GNOME/KDE) are left untouched.
+//
+// Independently confirmed, and fixed the same way, in magpie (Wails/GTK3):
+// https://github.com/yetone/magpie/issues/1371
+static void ensure_font_dpi() {
+  GtkSettings* settings = gtk_settings_get_default();
+  if (settings == nullptr) {
+    return;
+  }
+  gint xft_dpi = -1;
+  g_object_get(settings, "gtk-xft-dpi", &xft_dpi, nullptr);
+  if (xft_dpi != -1) {
+    return;
+  }
+  g_object_set(settings, "gtk-xft-dpi", 96 * 1024, nullptr);
+}
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
@@ -24,6 +62,11 @@ static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+
+  // The webview plugin (desktop_webview_window) creates its WebKitGTK window
+  // in this same process, later than this point; fix its DPI-derived page
+  // scale before any webview can exist. Safe now that the display is open.
+  ensure_font_dpi();
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu
