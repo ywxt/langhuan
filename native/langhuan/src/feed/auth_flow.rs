@@ -14,6 +14,9 @@ pub struct AuthEntry {
     pub url: String,
     #[serde(default)]
     pub title: Option<String>,
+    /// User-Agent selected by the feed and applied before the first WebView
+    /// navigation. The same value is replayed by authenticated requests.
+    pub user_agent: String,
 }
 
 /// Page context submitted after WebView-based login completes.
@@ -26,11 +29,6 @@ pub struct AuthPageContext {
     pub response_headers: Vec<(String, String)>,
     #[serde(default)]
     pub cookies: Vec<CookieEntry>,
-    /// User-Agent of the WebView the login happened in, so subsequent
-    /// requests can replay the session under the exact string it was
-    /// issued under (cookie-based clearances validate against it).
-    #[serde(default)]
-    pub user_agent: Option<String>,
 }
 
 /// Structured cookie item parsed from WebView/cookie manager.

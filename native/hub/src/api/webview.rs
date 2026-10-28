@@ -45,7 +45,6 @@ pub async fn complete_webview(
     current_url: String,
     html: String,
     cookies: Vec<CookieEntry>,
-    user_agent: Option<String>,
 ) -> Result<bool, BridgeError> {
     addresses()?
         .webview
@@ -55,7 +54,6 @@ pub async fn complete_webview(
             current_url,
             html,
             cookies,
-            user_agent,
         })
         .await?
 }

@@ -153,6 +153,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn auth_entry_rejects_unsafe_user_agent() {
+        let body = r#"(() => {
+          const complete = () => ({ type: "complete", items: [] });
+          const bookInfo = () => ({
+            type: "complete", value: { id: "1", title: "One", author: "Author" },
+          });
+          const login = {
+            entry: () => ({ url: "https://example.com/login", user_agent: "Bad\nAgent" }),
+            parse: () => ({}),
+            patchRequest: (_operation, request) => request,
+          };
+          return { search: complete, bookInfo, chapters: complete, paragraphs: complete, login };
+        })()"#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(3, body))
+            .await
+            .expect("feed should compile");
+        let support = feed.supports_auth().expect("login should be supported");
+        let error = feed
+            .auth_entry(&support)
+            .expect_err("control characters must be rejected");
+        assert!(error.to_string().contains("control characters"));
+    }
+
+    #[tokio::test]
     async fn reducer_and_request_patch_share_one_operation_descriptor() {
         let mut server = mockito::Server::new_async().await;
         let _request = server
@@ -396,7 +421,6 @@ mod tests {
                 http_only: Some(false),
                 same_site: None,
             }],
-            user_agent: Some("TestWebView/1.0".into()),
         }
     }
 
@@ -410,6 +434,7 @@ mod tests {
                 type: "webview",
                 url: "https://example.com/verify",
                 title: "Verify",
+                user_agent: "TestWebView/1.0",
                 next_state: { stage: 1 },
               };
             }
@@ -417,9 +442,6 @@ mod tests {
               const cookie = event.webview.cookies.find((c) => c.name === "msToken");
               if (event.webview.current_url !== "https://example.com/verify") {
                 return { type: "fail", code: "source_unavailable", message: "bad url" };
-              }
-              if (event.webview.user_agent !== "TestWebView/1.0") {
-                return { type: "fail", code: "source_unavailable", message: "bad user agent" };
               }
               return {
                 type: "complete",
@@ -456,6 +478,7 @@ mod tests {
         assert_eq!(requests[0].title.as_deref(), Some("Verify"));
         assert_eq!(requests[0].feed_id, "test");
         assert_eq!(requests[0].feed_name, "Test");
+        assert_eq!(requests[0].user_agent, "TestWebView/1.0");
     }
 
     #[tokio::test]
@@ -466,6 +489,7 @@ mod tests {
             return {
               type: "webview",
               url: "https://example.com/verify",
+              user_agent: "TestWebView/1.0",
               next_state: {},
             };
           }
@@ -502,6 +526,7 @@ mod tests {
             return {
               type: "webview",
               url: "https://example.com/verify",
+              user_agent: "TestWebView/1.0",
               next_state: {},
             };
           }

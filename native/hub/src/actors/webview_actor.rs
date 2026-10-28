@@ -16,8 +16,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use langhuan::error::{Error as FeedError, ExpectedErrorCode};
 use langhuan::feed::{
-    CookieEntry as FeedCookieEntry, WebviewFuture, WebviewHandler, WebviewRequest,
-    WebviewSnapshot,
+    CookieEntry as FeedCookieEntry, WebviewFuture, WebviewHandler, WebviewRequest, WebviewSnapshot,
 };
 
 use crate::api::types::{BridgeError, CookieEntry, WebviewPrompt};
@@ -44,9 +43,6 @@ pub struct CompleteWebview {
     pub current_url: String,
     pub html: String,
     pub cookies: Vec<CookieEntry>,
-    /// User-Agent of the WebView, so the feed can replay requests under
-    /// the exact string the page's credentials were issued under.
-    pub user_agent: Option<String>,
 }
 
 /// Message from Dart: the user abandoned the WebView.
@@ -80,7 +76,9 @@ impl Handler<OpenWebview> for WebviewActor {
 
     async fn handle(&mut self, message: OpenWebview, _: &Context<Self>) -> Self::Result {
         let listener = self.listener.as_ref().ok_or_else(|| {
-            BridgeError::from("no WebView listener attached — open a prompt stream first".to_owned())
+            BridgeError::from(
+                "no WebView listener attached — open a prompt stream first".to_owned(),
+            )
         })?;
         let request_id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
@@ -92,6 +90,7 @@ impl Handler<OpenWebview> for WebviewActor {
             feed_name: message.request.feed_name,
             url: message.request.url,
             title: message.request.title,
+            user_agent: message.request.user_agent,
         };
         // try_send keeps the actor non-blocking: an awaiting send would
         // queue Dart-side completes behind it and deadlock the flow.
@@ -141,7 +140,6 @@ impl Handler<CompleteWebview> for WebviewActor {
         let snapshot = WebviewSnapshot {
             current_url: message.current_url,
             html: message.html,
-            user_agent: message.user_agent,
             cookies: message
                 .cookies
                 .into_iter()
@@ -174,11 +172,12 @@ impl Handler<CancelWebview> for WebviewActor {
         let Some(sender) = sender else {
             return Ok(false);
         };
-        let delivered = sender
-            .send(Err("verification canceled".to_owned()))
-            .is_ok();
+        let delivered = sender.send(Err("verification canceled".to_owned())).is_ok();
         if delivered {
-            tracing::debug!(request_id = message.request_id, "webview verification canceled");
+            tracing::debug!(
+                request_id = message.request_id,
+                "webview verification canceled"
+            );
         }
         Ok(delivered)
     }
@@ -226,7 +225,9 @@ pub(crate) fn attach_webview_handler(
     feed: &langhuan::script::feed::ScriptFeed,
     address: &Address<WebviewActor>,
 ) -> langhuan::error::Result<()> {
-    feed.set_webview_handler(Some(std::sync::Arc::new(WebviewBridge::new(address.clone()))))
+    feed.set_webview_handler(Some(std::sync::Arc::new(WebviewBridge::new(
+        address.clone(),
+    ))))
 }
 
 #[cfg(test)]
@@ -254,6 +255,7 @@ mod tests {
                         feed_name: "Feed".into(),
                         url: "https://example.com/v".into(),
                         title: None,
+                        user_agent: "TestWebView/1.0".into(),
                     },
                 },
                 &Context::new(),
@@ -271,6 +273,7 @@ mod tests {
                         feed_name: "番茄小說".into(),
                         url: "https://example.com/verify".into(),
                         title: Some("Verify".into()),
+                        user_agent: "TestWebView/2.1".into(),
                     },
                 },
                 &Context::new(),
@@ -281,6 +284,7 @@ mod tests {
         assert_eq!(prompt.feed_id, "fanqie");
         assert_eq!(prompt.url, "https://example.com/verify");
         assert_eq!(prompt.title.as_deref(), Some("Verify"));
+        assert_eq!(prompt.user_agent, "TestWebView/2.1");
 
         let delivered = actor
             .handle(
@@ -298,7 +302,6 @@ mod tests {
                         http_only: None,
                         same_site: None,
                     }],
-                    user_agent: Some("TestWebView/2.1".into()),
                 },
                 &Context::new(),
             )
@@ -308,14 +311,10 @@ mod tests {
         let snapshot = receiver.await.expect("sender alive").expect("snapshot");
         assert_eq!(snapshot.current_url, "https://example.com/done");
         assert_eq!(snapshot.cookies[0].value, "tok");
-        assert_eq!(snapshot.user_agent.as_deref(), Some("TestWebView/2.1"));
 
         // Unknown ids report false instead of erroring.
         let unknown = actor
-            .handle(
-                CancelWebview { request_id: 9999 },
-                &Context::new(),
-            )
+            .handle(CancelWebview { request_id: 9999 }, &Context::new())
             .await
             .expect("cancel");
         assert!(!unknown);
@@ -329,6 +328,7 @@ mod tests {
                         feed_name: "番茄小說".into(),
                         url: "https://example.com/verify".into(),
                         title: None,
+                        user_agent: "TestWebView/1.0".into(),
                     },
                 },
                 &Context::new(),
@@ -337,7 +337,12 @@ mod tests {
             .expect("open");
         let prompt = prompts.recv().await.expect("prompt delivered");
         actor
-            .handle(CancelWebview { request_id: prompt.request_id }, &Context::new())
+            .handle(
+                CancelWebview {
+                    request_id: prompt.request_id,
+                },
+                &Context::new(),
+            )
             .await
             .expect("cancel");
         let error = receiver.await.expect("sender alive").expect_err("canceled");
@@ -351,6 +356,7 @@ mod tests {
             feed_name: "番茄小說".into(),
             url: "https://example.com/verify".into(),
             title: None,
+            user_agent: "TestWebView/1.0".into(),
         };
 
         // An unanswered listener accumulates up to the channel capacity…
@@ -361,36 +367,25 @@ mod tests {
             .expect("subscribe");
         for _ in 0..super::PROMPT_CHANNEL_CAPACITY {
             saturated
-                .handle(
-                    OpenWebview {
-                        request: request(),
-                    },
-                    &Context::new(),
-                )
+                .handle(OpenWebview { request: request() }, &Context::new())
                 .await
                 .expect("open within capacity");
         }
         // …and the next prompt fails the operation instead of buffering.
         let error = saturated
-            .handle(
-                OpenWebview {
-                    request: request(),
-                },
-                &Context::new(),
-            )
+            .handle(OpenWebview { request: request() }, &Context::new())
             .await
             .expect_err("queue must be full");
-        assert!(error.message.contains("too many pending WebView verifications"));
+        assert!(
+            error
+                .message
+                .contains("too many pending WebView verifications")
+        );
 
         // The listener consuming one prompt frees a slot.
         prompts.recv().await.expect("one prompt consumed");
         saturated
-            .handle(
-                OpenWebview {
-                    request: request(),
-                },
-                &Context::new(),
-            )
+            .handle(OpenWebview { request: request() }, &Context::new())
             .await
             .expect("slot freed after consumption");
     }

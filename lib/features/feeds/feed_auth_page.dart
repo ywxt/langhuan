@@ -13,8 +13,8 @@ import 'feed_service.dart';
 
 /// Login flow for a feed that requires authentication.
 ///
-/// The platform WebView lives behind [AuthWebviewSession]: an embedded view
-/// on Android, iOS and macOS, a native browser window on Linux and Windows.
+/// The platform WebView lives behind [AuthWebviewSession] and is embedded on
+/// every supported native platform.
 /// Verification is always manual — the user taps Verify, which collects the
 /// current URL, the page HTML and the accumulated cookies and submits them
 /// to the feed's auth parser.
@@ -75,7 +75,7 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
       _entry = entry;
       _session = session;
       setState(() => _isLoadingEntry = false);
-      await session.open(entry.url, title: entry.title);
+      await session.open(entry.url, userAgent: entry.userAgent);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -110,7 +110,6 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
             // feeds parse auth from page content and cookies.
             responseHeaders: const [],
             cookies: snapshot.cookies,
-            userAgent: snapshot.userAgent,
           );
 
       if (!mounted) return;
@@ -129,18 +128,6 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
           _isSubmitting = false;
         });
       }
-    }
-  }
-
-  Future<void> _reopenWindow() async {
-    final entry = _entry;
-    final session = _session;
-    if (entry == null || session == null) return;
-    try {
-      await session.open(entry.url, title: entry.title);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = normalizeErrorMessage(e));
     }
   }
 
@@ -171,9 +158,7 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
           ? const LoadingState()
           : _error != null
           ? _buildErrorState(l10n)
-          : session!.usesSeparateWindow
-          ? _buildWindowBody(l10n, session)
-          : _buildInlineBody(l10n, session),
+          : _buildInlineBody(l10n, session!),
     );
   }
 
@@ -210,60 +195,6 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
         ),
         if (_submitError != null) _buildSubmitError(),
         Expanded(child: session.view ?? const LoadingState()),
-      ],
-    );
-  }
-
-  Widget _buildWindowBody(AppLocalizations l10n, AuthWebviewSession session) {
-    return Column(
-      children: [
-        _buildInfoBanner(
-          icon: _isSubmitting ? Icons.sync : Icons.open_in_new,
-          text: _isSubmitting
-              ? l10n.feedAuthVerifying
-              : l10n.feedAuthDesktopInstructions,
-        ),
-        if (_submitError != null) _buildSubmitError(),
-        if (session.isWindowOpen)
-          Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
-                child: Text(
-                  l10n.feedAuthDesktopWindowHint,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          )
-        else
-          Padding(
-            padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.desktop_windows_outlined,
-                  size: 40,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(height: LanghuanTheme.spaceMd),
-                Text(
-                  session.isOpeningWindow ? '' : l10n.feedAuthWindowClosed,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: LanghuanTheme.spaceMd),
-                OutlinedButton.icon(
-                  onPressed: session.isOpeningWindow ? null : _reopenWindow,
-                  icon: const Icon(Icons.open_in_new),
-                  label: Text(l10n.feedAuthReopenWindow),
-                ),
-              ],
-            ),
-          ),
       ],
     );
   }

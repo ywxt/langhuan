@@ -94,14 +94,13 @@ type Event = {
     current_url: string;
     html: string;
     cookies: { name: string; value: string; domain?: string }[];
-    user_agent?: string;
   };
 };
 
 type Step =
   | { type: "request"; request: Request; next_state?: unknown; cache_key?: string }
   | { type: "compute"; programs: string[]; input?: unknown; next_state?: unknown }
-  | { type: "webview"; url: string; title?: string; next_state?: unknown }
+  | { type: "webview"; url: string; user_agent: string; title?: string; next_state?: unknown }
   | { type: "complete"; items?: unknown[]; value?: unknown; next_cursor?: unknown }
   | { type: "fail"; code: string; message: string };
 ```
@@ -177,15 +176,16 @@ return {
   type: "webview",
   url: `${meta.base_url}/library`,   // page that triggers the challenge
   title: "番茄小說驗證",               // optional UI title
+  user_agent: USER_AGENT,            // applied before the first navigation
   next_state: { stage: "verified" },
 };
 ```
 
-The host opens the page in a platform WebView (embedded on Android, iOS and
-macOS; a separate window on Linux and Windows), the user completes the
-interaction, and the page snapshot — final URL, HTML, the cookies collected
-so far, and the WebView's User-Agent — comes back as `event.webview` with
-`next_state`, letting the reducer continue:
+The host applies `user_agent` before the first navigation and opens the page
+in an embedded platform WebView. After the user completes the interaction,
+the page snapshot — final URL, HTML, collected cookies, and the same
+script-selected User-Agent — comes back as `event.webview` with `next_state`,
+letting the reducer continue:
 
 ```js
 if (event.webview != null) {
@@ -198,17 +198,18 @@ if (event.webview != null) {
     request: {
       url: "...",
       method: "POST",
-      headers: { Cookie: cookies, "User-Agent": event.webview.user_agent },
+      headers: { Cookie: cookies, "User-Agent": USER_AGENT },
     },
     next_state: { stage: "results" },
   };
 }
 ```
 
-Replays should reuse `event.webview.user_agent` verbatim: cookie-based
-clearances (for example Cloudflare's `cf_clearance`) are issued for the
-User-Agent that solved the challenge, and a replay under a different string
-can be rejected even with the right cookies.
+Replays should reuse the same `USER_AGENT` supplied by the `webview` step:
+cookie-based clearances (for example Cloudflare's `cf_clearance`) can be
+issued for that User-Agent and rejected under a different string. The host
+does not return the value in `event.webview`, because the source already owns
+it.
 
 Notes:
 
@@ -293,20 +294,24 @@ The optional `login` object contains:
 ```js
 const login = {
   entry() {
-    return { url: "https://example.com/login", title: "Sign in" };
+    return {
+      url: "https://example.com/login",
+      title: "Sign in",
+      user_agent: USER_AGENT,
+    };
   },
 
   parse(page) {
-    // page: { current_url, response, response_headers, cookies, user_agent? }
+    // page: { current_url, response, response_headers, cookies }
     const session = page.cookies.find((cookie) => cookie.name === "session");
     if (!session) return FeedError.authRequired("Login is incomplete");
-    return { cookie_header: `session=${session.value}`, user_agent: page.user_agent ?? null };
+    return { cookie_header: `session=${session.value}` };
   },
 
   patchRequest(operation, request, auth) {
     request.headers ??= {};
     request.headers.Cookie = auth.cookie_header;
-    if (auth.user_agent) request.headers["User-Agent"] = auth.user_agent;
+    request.headers["User-Agent"] = USER_AGENT;
     return request;
   },
 
@@ -331,9 +336,10 @@ the reducer event: `{ operation, input }`. Request parameters such as `bookId`
 and `chapterId` therefore have one canonical location under `input`; source
 metadata remains available through the frozen global `meta` object.
 
-`page.user_agent` carries the WebView's User-Agent for the same reason as the
-webview step: sessions captured in a browser are bound to the User-Agent they
-were issued under, so `parse` should store it and `patchRequest` replay it.
+`entry.user_agent` is required and the host applies it before navigating. It
+does not read `navigator.userAgent` or return the value in `page`; the source
+already owns it. Sessions captured in a browser can be bound to this
+User-Agent, so `patchRequest` should replay the same source constant.
 
 ## Sandbox guarantees and limits
 

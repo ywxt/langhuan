@@ -32,6 +32,10 @@
 (() => {
   "use strict";
 
+  const USER_AGENT =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
+    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
   const FONT_HASH = "dc027189e0ba4cd";
 
   // PUA 碼位 → 真實字元。按碼位升序排列。
@@ -131,9 +135,7 @@
 
   function headers() {
     return {
-      "User-Agent":
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      "User-Agent": USER_AGENT,
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "zh-CN,zh;q=0.9",
     };
@@ -419,6 +421,7 @@
         type: "webview",
         url: `${meta.base_url}/library`,
         title: "番茄小說驗證",
+        user_agent: USER_AGENT,
         next_state: { pageIndex: event.state.pageIndex ?? 0 },
       };
     }

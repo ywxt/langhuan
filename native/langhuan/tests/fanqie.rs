@@ -287,7 +287,10 @@ async fn search_follows_pagination_cursor() {
         .match_query(query("1"))
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(search_page_json(15, &[("1000000000000000003", "深空三号", "作者三")]))
+        .with_body(search_page_json(
+            15,
+            &[("1000000000000000003", "深空三号", "作者三")],
+        ))
         .create_async()
         .await;
 
@@ -307,7 +310,11 @@ async fn search_follows_pagination_cursor() {
     let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
     assert_eq!(
         ids,
-        vec!["1000000000000000001", "1000000000000000002", "1000000000000000003"],
+        vec![
+            "1000000000000000001",
+            "1000000000000000002",
+            "1000000000000000003"
+        ],
         "expected both pages in order"
     );
 }
@@ -341,7 +348,6 @@ impl langhuan::feed::WebviewHandler for TestWebview {
                     current_url: "https://fanqienovel.com/library".into(),
                     html: "<html>ok</html>".into(),
                     cookies,
-                    user_agent: Some("TestWebView/1.0".into()),
                 }),
                 None => Err(Error::expected(
                     ExpectedErrorCode::AuthRequired,
@@ -436,6 +442,11 @@ async fn search_verifies_in_webview_and_retries_with_cookies() {
     assert_eq!(requests.len(), 1, "exactly one verification round-trip");
     assert!(requests[0].url.ends_with("/library"), "unexpected url");
     assert_eq!(requests[0].title.as_deref(), Some("番茄小說驗證"));
+    assert_eq!(
+        requests[0].user_agent,
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
+         (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    );
     assert_eq!(requests[0].feed_id, "fanqie");
     assert_eq!(requests[0].feed_name, "番茄小說");
 }
@@ -639,7 +650,11 @@ async fn book_info_parses_metadata() {
     assert_eq!(info.id, BOOK_ID);
     assert_eq!(info.title, "皇后重生要谋反");
     assert_eq!(info.author, "流心蜜糖");
-    assert!(info.cover_url.as_deref().is_some_and(|u| u.starts_with("https://")));
+    assert!(
+        info.cover_url
+            .as_deref()
+            .is_some_and(|u| u.starts_with("https://"))
+    );
 }
 
 #[tokio::test]
@@ -736,7 +751,9 @@ async fn paragraphs_decode_font_obfuscation() {
     );
     for content in &contents {
         assert!(
-            !content.chars().any(|c| ('\u{e000}'..='\u{f8ff}').contains(&c)),
+            !content
+                .chars()
+                .any(|c| ('\u{e000}'..='\u{f8ff}').contains(&c)),
             "decoded paragraph still contains private-use codepoints: {content:?}"
         );
     }
@@ -831,7 +848,10 @@ async fn live_site_smoke() {
         .into_iter()
         .collect::<Result<Vec<_>, _>>()
         .expect("live keyword search yielded an error");
-    assert!(!keyword_items.is_empty(), "keyword search returned no items");
+    assert!(
+        !keyword_items.is_empty(),
+        "keyword search returned no items"
+    );
     for item in &keyword_items {
         assert!(!item.title.trim().is_empty(), "empty title: {item:?}");
         assert!(!item.author.trim().is_empty(), "empty author: {item:?}");
@@ -910,7 +930,9 @@ async fn live_site_smoke() {
             langhuan::model::Paragraph::Image { .. } => continue,
         };
         assert!(
-            !content.chars().any(|c| ('\u{e000}'..='\u{f8ff}').contains(&c)),
+            !content
+                .chars()
+                .any(|c| ('\u{e000}'..='\u{f8ff}').contains(&c)),
             "live paragraph still contains undecoded private-use codepoints: {content:?}"
         );
         if matches!(paragraph, langhuan::model::Paragraph::Text { .. }) {

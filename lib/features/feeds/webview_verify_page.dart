@@ -50,7 +50,7 @@ class _WebviewVerifyPageState extends State<WebviewVerifyPage> {
       session.addListener(_onSessionChanged);
       _session = session;
       if (mounted) setState(() {});
-      await session.open(widget.prompt.url, title: widget.prompt.title);
+      await session.open(widget.prompt.url, userAgent: widget.prompt.userAgent);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = normalizeErrorMessage(e));
@@ -77,7 +77,6 @@ class _WebviewVerifyPageState extends State<WebviewVerifyPage> {
         currentUrl: snapshot.currentUrl,
         html: snapshot.html,
         cookies: snapshot.cookies,
-        userAgent: snapshot.userAgent,
       );
 
       if (!mounted) return;
@@ -106,17 +105,6 @@ class _WebviewVerifyPageState extends State<WebviewVerifyPage> {
       // The operation was already gone; nothing else to do.
     }
     _session?.close();
-  }
-
-  Future<void> _reopenWindow() async {
-    final session = _session;
-    if (session == null) return;
-    try {
-      await session.open(widget.prompt.url, title: widget.prompt.title);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = normalizeErrorMessage(e));
-    }
   }
 
   bool get _canVerify =>
@@ -154,8 +142,6 @@ class _WebviewVerifyPageState extends State<WebviewVerifyPage> {
             ? _buildErrorState(l10n)
             : session == null
             ? const LoadingState()
-            : session.usesSeparateWindow
-            ? _buildWindowBody(l10n, session)
             : _buildInlineBody(l10n, session),
       ),
     );
@@ -194,60 +180,6 @@ class _WebviewVerifyPageState extends State<WebviewVerifyPage> {
         ),
         if (_submitError != null) _buildSubmitError(),
         Expanded(child: session.view ?? const LoadingState()),
-      ],
-    );
-  }
-
-  Widget _buildWindowBody(AppLocalizations l10n, AuthWebviewSession session) {
-    return Column(
-      children: [
-        _buildInfoBanner(
-          icon: _isSubmitting ? Icons.sync : Icons.open_in_new,
-          text: _isSubmitting
-              ? l10n.webviewVerifySubmitting
-              : l10n.webviewVerifyDesktopInstructions,
-        ),
-        if (_submitError != null) _buildSubmitError(),
-        if (session.isWindowOpen)
-          Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
-                child: Text(
-                  l10n.webviewVerifyDesktopWindowHint,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          )
-        else
-          Padding(
-            padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.desktop_windows_outlined,
-                  size: 40,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(height: LanghuanTheme.spaceMd),
-                Text(
-                  session.isOpeningWindow ? '' : l10n.webviewVerifyWindowClosed,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: LanghuanTheme.spaceMd),
-                OutlinedButton.icon(
-                  onPressed: session.isOpeningWindow ? null : _reopenWindow,
-                  icon: const Icon(Icons.open_in_new),
-                  label: Text(l10n.webviewVerifyReopenWindow),
-                ),
-              ],
-            ),
-          ),
       ],
     );
   }

@@ -434,6 +434,7 @@ pub enum AuthCapability {
 pub struct AuthEntryInfo {
     pub url: String,
     pub title: Option<String>,
+    pub user_agent: String,
 }
 
 pub enum AuthStatus {
@@ -464,6 +465,7 @@ pub struct WebviewPrompt {
     pub feed_name: String,
     pub url: String,
     pub title: Option<String>,
+    pub user_agent: String,
 }
 
 // ---------------------------------------------------------------------------

@@ -14,12 +14,13 @@
 "use strict";
 
 const PAGE_CONTEXT_MARKER = 'id="vite-plugin-ssr_pageContext"';
+const USER_AGENT =
+  "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
 
 function requestHeaders() {
   return {
-    "User-Agent":
-      "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+    "User-Agent": USER_AGENT,
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "zh-CN,zh;q=0.9",
   };
@@ -547,6 +548,7 @@ const login = {
         "https://passport.qidian.com/?returnurl=" +
         encodeURIComponent("https://m.qidian.com/"),
       title: "起點中文網登錄",
+      user_agent: USER_AGENT,
     };
   },
 
@@ -579,7 +581,6 @@ const login = {
       captured_url: page.current_url,
       fuid,
       csrf_token: csrfToken,
-      user_agent: page.user_agent ?? null,
     };
   },
 
@@ -589,12 +590,8 @@ const login = {
     request.headers.Cookie = mergeCookieHeaders(auth.cookie_header, dynamicCookies);
     delete request.headers.cookie;
 
-    // Replay under the exact User-Agent the login session was issued in:
-    // cookie-based clearances validate the pair together, so a different
-    // User-Agent can invalidate the session cookies.
-    if (auth.user_agent) {
-      request.headers["User-Agent"] = auth.user_agent;
-    }
+    // Use the same source-selected UA as the login WebView.
+    request.headers["User-Agent"] = USER_AGENT;
 
     const csrfToken =
       auth.csrf_token ?? cookieMap(auth.cookie_header).get("_csrfToken");

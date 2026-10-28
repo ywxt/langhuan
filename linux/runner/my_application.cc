@@ -63,9 +63,8 @@ static void my_application_activate(GApplication* application) {
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
-  // The webview plugin (desktop_webview_window) creates its WebKitGTK window
-  // in this same process, later than this point; fix its DPI-derived page
-  // scale before any webview can exist. Safe now that the display is open.
+  // Fix WebKitGTK's DPI-derived page scale before an embedded WebView can be
+  // created. Safe now that the display is open.
   ensure_font_dpi();
 
   // Use a header bar when running in GNOME as this is the common style used

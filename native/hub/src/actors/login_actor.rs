@@ -35,8 +35,6 @@ pub struct FeedAuthSubmitPageMsg {
     pub response: String,
     pub response_headers: Vec<(String, String)>,
     pub cookies: Vec<CookieEntry>,
-    /// User-Agent of the WebView the login happened in.
-    pub user_agent: Option<String>,
 }
 
 pub struct FeedAuthStatusMsg {
@@ -153,6 +151,7 @@ impl LoginActor {
             Ok(entry) => Ok(Some(AuthEntryInfo {
                 url: entry.url,
                 title: entry.title,
+                user_agent: entry.user_agent,
             })),
             Err(e) => Err(BridgeError::from(e)),
         }
@@ -169,7 +168,6 @@ impl LoginActor {
             current_url: msg.current_url,
             response: msg.response.into(),
             response_headers: msg.response_headers,
-            user_agent: msg.user_agent,
             cookies: msg
                 .cookies
                 .into_iter()

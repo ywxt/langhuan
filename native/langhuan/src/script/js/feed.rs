@@ -23,6 +23,7 @@ use crate::model::{BookInfo, ChapterInfo, Page, Paragraph, RawParagraph, SearchR
 const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30);
 const COMPUTE_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_INTERNAL_STEPS: usize = 8;
+const MAX_USER_AGENT_BYTES: usize = 512;
 const MAX_RETRIES: u32 = 3;
 const BASE_DELAY_MS: u64 = 200;
 const BACKOFF_MULTIPLIER: u64 = 3;
@@ -209,6 +210,7 @@ enum JsStep {
         url: String,
         #[serde(default)]
         title: Option<String>,
+        user_agent: String,
         #[serde(default)]
         next_state: Value,
     },
@@ -233,6 +235,25 @@ struct Complete {
 }
 
 impl JsFeed {
+    fn validate_user_agent(user_agent: &str) -> Result<()> {
+        if user_agent.is_empty() {
+            return Err(crate::error::Error::javascript(
+                "user_agent must not be empty",
+            ));
+        }
+        if user_agent.len() > MAX_USER_AGENT_BYTES {
+            return Err(crate::error::Error::javascript(format!(
+                "user_agent exceeds {MAX_USER_AGENT_BYTES} bytes"
+            )));
+        }
+        if user_agent.chars().any(char::is_control) {
+            return Err(crate::error::Error::javascript(
+                "user_agent must not contain control characters",
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) fn new(source: String, meta: FeedMeta, client: reqwest::Client) -> Result<Self> {
         let meta_json = serde_json::to_string(&meta)
             .map_err(|error| crate::error::Error::javascript(error.to_string()))?;
@@ -470,8 +491,10 @@ impl JsFeed {
                 JsStep::Webview {
                     url,
                     title,
+                    user_agent,
                     next_state,
                 } => {
+                    Self::validate_user_agent(&user_agent)?;
                     internal_steps += 1;
                     if internal_steps > MAX_INTERNAL_STEPS {
                         return Err(crate::error::Error::javascript(
@@ -489,6 +512,7 @@ impl JsFeed {
                         feed_name: self.meta.name.clone(),
                         url,
                         title,
+                        user_agent,
                     };
                     let snapshot = handler.open(request).await?;
                     state = next_state;
@@ -673,8 +697,10 @@ impl FeedAuthFlow for JsFeed {
 
     fn auth_entry(&self, _support: &Self::SupportAuth) -> Result<AuthEntry> {
         let value = self.call_method(LOGIN_ENTRY_HANDLER, &[])?;
-        serde_json::from_value(value)
-            .map_err(|e| crate::error::Error::javascript(format!("invalid auth entry: {e}")))
+        let entry: AuthEntry = serde_json::from_value(value)
+            .map_err(|e| crate::error::Error::javascript(format!("invalid auth entry: {e}")))?;
+        Self::validate_user_agent(&entry.user_agent)?;
+        Ok(entry)
     }
 
     fn parse_auth(&self, _support: &Self::SupportAuth, page: &AuthPageContext) -> Result<AuthInfo> {

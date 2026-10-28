@@ -1,10 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
 
-import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:flutter/widgets.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_all/webview_all.dart';
 
 import '../../src/rust/api/types.dart';
 
@@ -16,79 +14,49 @@ class AuthPageSnapshot {
     required this.currentUrl,
     required this.html,
     required this.cookies,
-    this.userAgent,
   });
 
   final String currentUrl;
   final String html;
   final List<CookieEntry> cookies;
-
-  /// User-Agent of the WebView, for replaying requests under the exact
-  /// string the page's credentials were issued under. Null when the
-  /// WebView could not report it.
-  final String? userAgent;
 }
 
 /// One login session in the platform WebView.
 ///
-/// Two flavors implement this interface; both are created through
-/// [AuthWebviewSession.platform] and the login page treats them uniformly:
-///
-/// - Android, iOS and macOS embed the official webview_flutter widget.
-///   Cookies are captured on every finished page load because login flows
-///   finish on a different host from the page that set them.
-/// - Linux and Windows open a native browser window via
-///   desktop_webview_window; [snapshot] reads the URL, page HTML and cookies
-///   from that window.
+/// [webview_all] supplies the same embedded controller/widget API on every
+/// supported native platform. Cookies are captured after each page load
+/// because login flows can finish on a different host from the entry page.
 abstract class AuthWebviewSession extends ChangeNotifier {
   AuthWebviewSession();
 
-  factory AuthWebviewSession.platform() =>
-      Platform.isLinux || Platform.isWindows
-      ? _DesktopWindowAuthWebviewSession()
-      : _InlineAuthWebviewSession();
+  factory AuthWebviewSession.platform() => _InlineAuthWebviewSession();
 
-  /// Whether the login page runs in a separate native window (Linux and
-  /// Windows) instead of the embedded [view].
-  bool get usesSeparateWindow;
-
-  /// The embedded login view, once [open] succeeded. Always null when
-  /// [usesSeparateWindow] is true.
+  /// The embedded login view, once [open] succeeded.
   Widget? get view;
 
-  /// Whether a page is loading in the embedded view (inline flavor only).
+  /// Whether a page is loading.
   bool get isPageLoading;
 
-  /// Load progress of the embedded view, 0..1 (inline flavor only).
+  /// Load progress, 0..1.
   double get pageProgress;
-
-  /// Whether [open] is currently creating the native window
-  /// (separate-window flavor only).
-  bool get isOpeningWindow;
-
-  /// Whether the native window is open (separate-window flavor only).
-  bool get isWindowOpen;
 
   /// Whether [snapshot] can succeed right now.
   bool get canVerify;
 
-  /// Starts — or, after the native window was closed, restarts — the
-  /// session at [url]. [title] names the native window where applicable.
-  Future<void> open(String url, {String? title});
+  /// Starts the session at [url].
+  Future<void> open(String url, {required String userAgent});
 
   /// Collects the login context for manual verification.
   Future<AuthPageSnapshot> snapshot();
 
-  /// Closes the native window, if there is one.
+  /// Releases session resources where the platform exposes an explicit close.
   Future<void> close();
 }
 
 class _InlineAuthWebviewSession extends AuthWebviewSession {
   WebViewController? _controller;
 
-  /// Lazily created: WebViewCookieManager asserts that a WebViewPlatform
-  /// implementation exists, which is only true on Android, iOS and macOS —
-  /// the platforms this flavor runs on.
+  /// Lazily created after the platform implementation has registered.
   WebViewCookieManager? _cookieManager;
   Widget? _view;
   String? _url;
@@ -100,9 +68,6 @@ class _InlineAuthWebviewSession extends AuthWebviewSession {
   final Map<String, CookieEntry> _capturedCookies = {};
 
   @override
-  bool get usesSeparateWindow => false;
-
-  @override
   Widget? get view => _view;
 
   @override
@@ -112,46 +77,44 @@ class _InlineAuthWebviewSession extends AuthWebviewSession {
   double get pageProgress => _pageProgress;
 
   @override
-  bool get isOpeningWindow => false;
-
-  @override
-  bool get isWindowOpen => false;
-
-  @override
   bool get canVerify => _controller != null;
 
   @override
-  Future<void> open(String url, {String? title}) async {
+  Future<void> open(String url, {required String userAgent}) async {
     if (_controller != null || _disposed) return;
     _url = url;
-    final controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (progress) {
-            if (_disposed) return;
-            _pageProgress = progress / 100;
-            notifyListeners();
-          },
-          onPageStarted: (_) {
-            if (_disposed) return;
-            _pageLoading = true;
-            notifyListeners();
-          },
-          onPageFinished: (url) {
-            if (_disposed) return;
-            _pageLoading = false;
-            notifyListeners();
-            final uri = Uri.tryParse(url);
-            if (uri != null) unawaited(_captureCookies(uri));
-          },
-        ),
-      )
-      ..loadRequest(Uri.parse(url));
+    final controller = WebViewController();
+    await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+    await controller.setNavigationDelegate(
+      NavigationDelegate(
+        onProgress: (progress) {
+          if (_disposed) return;
+          _pageProgress = progress / 100;
+          notifyListeners();
+        },
+        onPageStarted: (_) {
+          if (_disposed) return;
+          _pageLoading = true;
+          notifyListeners();
+        },
+        onPageFinished: (url) {
+          if (_disposed) return;
+          _pageLoading = false;
+          notifyListeners();
+          final uri = Uri.tryParse(url);
+          if (uri != null) unawaited(_captureCookies(uri));
+        },
+      ),
+    );
+    // The feed owns this value. Apply it before the first navigation so
+    // cookies and anti-bot credentials are issued for the same UA later used
+    // by the feed's HTTP requests.
+    await controller.setUserAgent(userAgent);
     _controller = controller;
     _view = WebViewWidget(controller: controller);
     if (_disposed) return;
     notifyListeners();
+    await controller.loadRequest(Uri.parse(url));
   }
 
   Future<void> _captureCookies(Uri uri) async {
@@ -178,9 +141,6 @@ class _InlineAuthWebviewSession extends AuthWebviewSession {
     final controller = _controller;
     if (controller == null) throw StateError('webview is not open');
     final currentUrl = await controller.currentUrl() ?? _url ?? '';
-    final userAgent = _decodeJsStringResult(
-      await controller.runJavaScriptReturningResult('navigator.userAgent'),
-    );
     final result = await controller.runJavaScriptReturningResult(
       'document.documentElement.outerHTML',
     );
@@ -188,7 +148,6 @@ class _InlineAuthWebviewSession extends AuthWebviewSession {
       currentUrl: currentUrl,
       html: _decodeJsStringResult(result),
       cookies: _capturedCookies.values.toList(growable: false),
-      userAgent: userAgent.isEmpty ? null : userAgent,
     );
   }
 
@@ -216,151 +175,5 @@ class _InlineAuthWebviewSession extends AuthWebviewSession {
       }
     }
     return result;
-  }
-}
-
-class _DesktopWindowAuthWebviewSession extends AuthWebviewSession {
-  Webview? _webview;
-  String? _url;
-  bool _opening = false;
-  bool _closed = true;
-  bool _disposed = false;
-
-  /// Hosts the window navigated to; at snapshot time only cookies for these
-  /// hosts are submitted, mirroring the per-page capture of the inline
-  /// flavor.
-  final Set<String> _visitedHosts = {};
-
-  @override
-  bool get usesSeparateWindow => true;
-
-  @override
-  Widget? get view => null;
-
-  @override
-  bool get isPageLoading => false;
-
-  @override
-  double get pageProgress => 0;
-
-  @override
-  bool get isOpeningWindow => _opening;
-
-  @override
-  bool get isWindowOpen => _webview != null && !_closed;
-
-  @override
-  bool get canVerify => isWindowOpen;
-
-  @override
-  Future<void> open(String url, {String? title}) async {
-    if (_disposed || _opening || isWindowOpen) return;
-    _url = url;
-    _opening = true;
-    if (!_disposed) notifyListeners();
-    try {
-      final webview = await WebviewWindow.create(
-        configuration: CreateConfiguration(
-          title: title ?? '',
-          windowWidth: 1100,
-          windowHeight: 720,
-        ),
-      );
-      if (_disposed) {
-        unawaited(webview.close());
-        return;
-      }
-      webview.navigationState.addListener(_onNavigationChanged);
-      unawaited(
-        webview.onClose.then((_) {
-          if (_disposed) return;
-          _closed = true;
-          notifyListeners();
-        }),
-      );
-      _webview = webview;
-      _closed = false;
-      // A window closed during creation completes onClose as a microtask;
-      // let that run so the closed state wins before the entry URL loads.
-      await Future<void>.delayed(Duration.zero);
-      if (!_closed && !_disposed) {
-        await webview.launch(url);
-      }
-    } finally {
-      if (!_disposed) {
-        _opening = false;
-        notifyListeners();
-      }
-    }
-  }
-
-  void _onNavigationChanged() {
-    final url = _webview?.navigationState.value.url;
-    if (url == null) return;
-    final host = Uri.tryParse(url)?.host;
-    if (host != null && host.isNotEmpty) _visitedHosts.add(host);
-  }
-
-  /// Whether [domain] (cookie form, possibly `.example.com`) belongs to a
-  /// host the window actually visited.
-  bool _matchesVisitedHosts(String domain) {
-    final stripped = domain.startsWith('.') ? domain.substring(1) : domain;
-    if (stripped.isEmpty) return false;
-    for (final host in _visitedHosts) {
-      if (host == stripped || host.endsWith('.$stripped')) return true;
-    }
-    return false;
-  }
-
-  @override
-  Future<AuthPageSnapshot> snapshot() async {
-    final webview = _webview;
-    if (webview == null || _closed) {
-      throw StateError('login window is closed');
-    }
-    final currentUrl = webview.navigationState.value.url ?? _url ?? '';
-    final userAgentResult = await webview.evaluateJavaScript(
-      'navigator.userAgent',
-    );
-    final result = await webview.evaluateJavaScript(
-      'document.documentElement.outerHTML',
-    );
-    final all = await webview.getAllCookies();
-    final cookies = all
-        .where((cookie) => _matchesVisitedHosts(cookie.domain))
-        .map(
-          (cookie) => CookieEntry(
-            name: cookie.name,
-            value: cookie.value,
-            domain: cookie.domain,
-            path: cookie.path,
-            expires: cookie.expires?.toIso8601String(),
-            secure: cookie.secure,
-            httpOnly: cookie.httpOnly,
-          ),
-        )
-        .toList();
-    final userAgent =
-        userAgentResult is String && userAgentResult.isNotEmpty
-        ? userAgentResult
-        : null;
-    return AuthPageSnapshot(
-      currentUrl: currentUrl,
-      html: result is String ? result : '',
-      cookies: cookies,
-      userAgent: userAgent,
-    );
-  }
-
-  @override
-  Future<void> close() async {
-    await _webview?.close();
-  }
-
-  @override
-  void dispose() {
-    _disposed = true;
-    unawaited(close());
-    super.dispose();
   }
 }

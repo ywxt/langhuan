@@ -364,6 +364,7 @@ class WebviewPromptModel {
     required this.feedId,
     required this.feedName,
     required this.url,
+    required this.userAgent,
     this.title,
   });
 
@@ -371,6 +372,7 @@ class WebviewPromptModel {
   final String feedId;
   final String feedName;
   final String url;
+  final String userAgent;
   final String? title;
 
   factory WebviewPromptModel.fromRust(WebviewPrompt prompt) =>
@@ -379,15 +381,21 @@ class WebviewPromptModel {
         feedId: prompt.feedId,
         feedName: prompt.feedName,
         url: prompt.url,
+        userAgent: prompt.userAgent,
         title: prompt.title,
       );
 }
 
 @immutable
 class FeedAuthEntryModel {
-  const FeedAuthEntryModel({required this.url, this.title});
+  const FeedAuthEntryModel({
+    required this.url,
+    required this.userAgent,
+    this.title,
+  });
 
   final String url;
+  final String userAgent;
   final String? title;
 }
 
@@ -754,7 +762,11 @@ class FeedService {
   Future<FeedAuthEntryModel?> getFeedAuthEntry(String feedId) async {
     final entry = await rust_auth.feedAuthEntry(feedId: feedId);
     if (entry == null) return null;
-    return FeedAuthEntryModel(url: entry.url, title: entry.title);
+    return FeedAuthEntryModel(
+      url: entry.url,
+      userAgent: entry.userAgent,
+      title: entry.title,
+    );
   }
 
   Future<void> submitFeedAuthPage({
@@ -763,7 +775,6 @@ class FeedService {
     required String response,
     required List<(String, String)> responseHeaders,
     required List<CookieEntry> cookies,
-    String? userAgent,
   }) {
     return rust_auth.feedAuthSubmitPage(
       feedId: feedId,
@@ -771,7 +782,6 @@ class FeedService {
       response: response,
       responseHeaders: responseHeaders,
       cookies: cookies,
-      userAgent: userAgent,
     );
   }
 
@@ -806,14 +816,12 @@ class FeedService {
     required String currentUrl,
     required String html,
     required List<CookieEntry> cookies,
-    String? userAgent,
   }) {
     return rust_webview.completeWebview(
       requestId: requestId,
       currentUrl: currentUrl,
       html: html,
       cookies: cookies,
-      userAgent: userAgent,
     );
   }
 

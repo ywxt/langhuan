@@ -15,6 +15,9 @@ use tokio_stream::StreamExt;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+const QIDIAN_USER_AGENT: &str = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 \
+     (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+
 /// Load the qidian source script and replace its base_url / access_domain
 /// so that all URLs point to the given mockito server.
 fn load_script_for_server(server: &ServerGuard) -> String {
@@ -523,8 +526,8 @@ async fn paragraphs_vip_purchased_fetches_api_and_decrypts_fock_content() {
                     .to_owned(),
             ),
         )
-        // The auth replay must use the WebView's User-Agent verbatim.
-        .match_header("User-Agent", "TestWebView/2.1")
+        // Authenticated requests reuse the UA declared by login.entry().
+        .match_header("User-Agent", QIDIAN_USER_AGENT)
         .with_status(200)
         .with_body(
             serde_json::json!({
@@ -582,7 +585,6 @@ async fn paragraphs_vip_purchased_fetches_api_and_decrypts_fock_content() {
                     cookie("ywguid", "12345", ".qidian.com"),
                     cookie("_csrfToken", "csrf-token", ".qidian.com"),
                 ],
-                user_agent: Some("TestWebView/2.1".to_owned()),
             },
         )
         .expect("parse auth");
@@ -632,6 +634,7 @@ async fn login_entry_points_to_passport() {
         entry.url
     );
     assert_eq!(entry.title.as_deref(), Some("起點中文網登錄"));
+    assert_eq!(entry.user_agent, QIDIAN_USER_AGENT);
 }
 
 #[tokio::test]
@@ -645,7 +648,6 @@ async fn login_parse_rejects_incomplete_login() {
         response: HttpBody::from("<html>login form</html>"),
         response_headers: vec![],
         cookies: vec![cookie("fu", "1", ".qidian.com")],
-        user_agent: None,
     };
 
     let err = feed
@@ -685,7 +687,6 @@ async fn login_parse_captures_cookie_header() {
             // Cookies from other domains must be excluded.
             cookie("sso_token", "other", ".yuewen.com"),
         ],
-        user_agent: Some("TestWebView/3.0".to_owned()),
     };
 
     let auth = feed.parse_auth(&support, &page).expect("parse_auth failed");
@@ -697,11 +698,6 @@ async fn login_parse_captures_cookie_header() {
     assert!(header.contains("ywkey=secret-key"), "header: {header}");
     assert!(header.contains("ywguid=12345"), "header: {header}");
     assert!(header.contains("_csrfToken=token"), "header: {header}");
-    // The WebView's User-Agent rides along for cookie-consistent replays.
-    assert_eq!(
-        auth.get("user_agent").and_then(|v| v.as_str()),
-        Some("TestWebView/3.0")
-    );
     for excluded in [
         "Hm_lvt",
         "HMACCOUNT",
@@ -746,7 +742,6 @@ async fn auth_status_reflects_user_login_state() {
             cookie("ywkey", "secret-key", ".qidian.com"),
             cookie("ywguid", "12345", ".qidian.com"),
         ],
-        user_agent: None,
     };
     let auth = feed.parse_auth(&support, &page).expect("parse_auth failed");
     feed.set_auth_info(&support, Some(auth))
@@ -780,7 +775,6 @@ async fn auth_status_expired_when_site_reports_logged_out() {
             cookie("ywkey", "stale-key", ".qidian.com"),
             cookie("ywguid", "12345", ".qidian.com"),
         ],
-        user_agent: None,
     };
     let auth = feed.parse_auth(&support, &page).expect("parse_auth failed");
     feed.set_auth_info(&support, Some(auth))
@@ -825,7 +819,6 @@ async fn auth_cookie_is_sent_with_content_requests() {
             cookie("ywkey", "secret-key", ".qidian.com"),
             cookie("ywguid", "12345", ".qidian.com"),
         ],
-        user_agent: None,
     };
     let auth = feed.parse_auth(&support, &page).expect("parse_auth failed");
     feed.set_auth_info(&support, Some(auth))

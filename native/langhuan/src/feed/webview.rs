@@ -28,6 +28,8 @@ pub struct WebviewRequest {
     pub url: String,
     /// Optional UI title for the verification surface.
     pub title: Option<String>,
+    /// User-Agent selected by the feed and applied before navigation.
+    pub user_agent: String,
 }
 
 /// The page snapshot delivered back to the reducer once the user
@@ -40,12 +42,6 @@ pub struct WebviewSnapshot {
     pub html: String,
     /// Cookies visible to the visited hosts after the interaction.
     pub cookies: Vec<CookieEntry>,
-    /// User-Agent of the WebView, for replaying requests with the exact
-    /// string the page's credentials were issued under. Cookie-based
-    /// clearances (for example Cloudflare's `cf_clearance`) are bound to
-    /// the User-Agent, so replays must reuse it verbatim.
-    #[serde(default)]
-    pub user_agent: Option<String>,
 }
 
 /// Future returned by [`WebviewHandler::open`].
