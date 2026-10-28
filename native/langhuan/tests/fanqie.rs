@@ -36,6 +36,7 @@ fn load_script_for_server(server: &ServerGuard) -> String {
         )
         .replace("// @access_domain fanqienovel.com", "")
         .replace("// @access_domain *.byteimg.com", "")
+        .replace("// @access_domain *.fqnovelpic.com", "")
 }
 
 /// A book page mirroring the live site's layout: one `h1` title, a cover
@@ -175,11 +176,50 @@ async fn search_resolves_pasted_book_url() {
     );
 }
 
+/// A search API response mirroring the live JSON: `search_book_data_list`
+/// entries with plain-text fields, plus `total_count` for pagination.
+fn search_page_json(total: u32, books: &[(&str, &str, &str)]) -> String {
+    let items: Vec<String> = books
+        .iter()
+        .map(|(id, name, author)| {
+            format!(
+                r#"{{"book_id":"{id}","book_name":"{name}","author":"{author}","book_abstract":"这是{name}的简介。","category":"科幻末世","word_count":123456,"thumb_url":"https://p3-reading-sign.fqnovelpic.com/novel-pic/{id}.image"}}"#
+            )
+        })
+        .collect();
+    format!(
+        r#"{{"code":0,"message":"success","data":{{"search_author_data_list":[],"search_book_data_list":[{}],"total_count":{total}}}}}"#,
+        items.join(",")
+    )
+}
+
 #[tokio::test]
-async fn search_rejects_plain_keywords() {
+async fn search_queries_by_keyword() {
     let mut server = mockito::Server::new_async().await;
 
-    // No mock is installed: a rejected keyword must fail before any request.
+    // The search API only escapes the risk gate when the parameters travel
+    // as a POST query string (see the script header).
+    let _mock = server
+        .mock("POST", "/api/author/search/search_book/v1")
+        .match_query(mockito::Matcher::AllOf(vec![
+            mockito::Matcher::UrlEncoded("filter".into(), "127,127,127,127".into()),
+            mockito::Matcher::UrlEncoded("page_count".into(), "10".into()),
+            mockito::Matcher::UrlEncoded("page_index".into(), "0".into()),
+            mockito::Matcher::UrlEncoded("query_type".into(), "0".into()),
+            mockito::Matcher::UrlEncoded("query_word".into(), "深空".into()),
+        ]))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(search_page_json(
+            10,
+            &[
+                ("7649785550819314712", "深空底噪", "张大样"),
+                ("7668191234912963608", "深空诡域", "沉静的大喵"),
+            ],
+        ))
+        .create_async()
+        .await;
+
     let script = load_script_for_server(&server);
     let engine = ScriptEngine::new();
     let feed = engine
@@ -187,11 +227,88 @@ async fn search_rejects_plain_keywords() {
         .await
         .expect("load_script failed");
 
-    let results: Vec<_> = feed.search("深空彼岸").collect::<Vec<_>>().await;
+    let results: Vec<_> = feed.search("深空").collect::<Vec<_>>().await;
 
-    assert_eq!(results.len(), 1, "expected a single error item");
-    let err = results.into_iter().next().unwrap().unwrap_err();
-    assert_expected_code(&err, ExpectedErrorCode::Unknown("search_unsupported".into()));
+    // total_count == page size → a single page, exactly the mocked items.
+    let items: Vec<_> = results
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("search stream yielded an error");
+    assert_eq!(items.len(), 2, "expected the 2 mocked books");
+
+    assert_eq!(items[0].id, "7649785550819314712");
+    assert_eq!(items[0].title, "深空底噪");
+    assert_eq!(items[0].author, "张大样");
+    assert_eq!(
+        items[0].cover_url.as_deref(),
+        Some("https://p3-reading-sign.fqnovelpic.com/novel-pic/7649785550819314712.image")
+    );
+    assert!(
+        items[1]
+            .description
+            .as_deref()
+            .is_some_and(|d| d.contains("深空诡域")),
+        "description should come from book_abstract: {:?}",
+        items[1].description
+    );
+}
+
+#[tokio::test]
+async fn search_follows_pagination_cursor() {
+    let mut server = mockito::Server::new_async().await;
+
+    let query = |page_index: &'static str| {
+        mockito::Matcher::AllOf(vec![
+            mockito::Matcher::UrlEncoded("page_count".into(), "10".into()),
+            mockito::Matcher::UrlEncoded("page_index".into(), page_index.into()),
+            mockito::Matcher::UrlEncoded("query_word".into(), "深空".into()),
+        ])
+    };
+
+    // Page 0: 2 books, total 15 → cursor 1. Page 1: 1 more book, total 15
+    // → (1+1)*10 >= 15 → no further cursor.
+    let _page0 = server
+        .mock("POST", "/api/author/search/search_book/v1")
+        .match_query(query("0"))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(search_page_json(
+            15,
+            &[
+                ("1000000000000000001", "深空一号", "作者一"),
+                ("1000000000000000002", "深空二号", "作者二"),
+            ],
+        ))
+        .create_async()
+        .await;
+    let _page1 = server
+        .mock("POST", "/api/author/search/search_book/v1")
+        .match_query(query("1"))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(search_page_json(15, &[("1000000000000000003", "深空三号", "作者三")]))
+        .create_async()
+        .await;
+
+    let script = load_script_for_server(&server);
+    let engine = ScriptEngine::new();
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
+
+    let results: Vec<_> = feed.search("深空").collect::<Vec<_>>().await;
+
+    let items: Vec<_> = results
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("search stream yielded an error");
+    let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["1000000000000000001", "1000000000000000002", "1000000000000000003"],
+        "expected both pages in order"
+    );
 }
 
 // ── Book info & chapters ────────────────────────────────────────────────────
@@ -402,21 +519,54 @@ async fn live_site_smoke() {
         .await
         .expect("load_script failed");
 
-    // 皇后重生要谋反 — a completed book with a large SSR directory.
-    let search_future = feed
-        .search("https://fanqienovel.com/page/6823667291557727235")
-        .take(5)
-        .collect::<Vec<_>>();
+    // 1. Real keyword search against the live API.
+    let search_future = feed.search("深空").take(10).collect::<Vec<_>>();
     let results = tokio::time::timeout(Duration::from_secs(30), search_future)
         .await
         .expect("live search timed out after 30s");
 
-    assert_eq!(results.len(), 1, "expected exactly one search result");
-    let book = results
+    let keyword_items: Vec<_> = results
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("live keyword search yielded an error");
+    assert!(!keyword_items.is_empty(), "keyword search returned no items");
+    for item in &keyword_items {
+        assert!(!item.title.trim().is_empty(), "empty title: {item:?}");
+        assert!(!item.author.trim().is_empty(), "empty author: {item:?}");
+        assert!(
+            !item
+                .title
+                .chars()
+                .any(|c| ('\u{e000}'..='\u{f8ff}').contains(&c)),
+            "search title contains private-use codepoints: {:?}",
+            item.title
+        );
+    }
+    assert!(
+        keyword_items[0]
+            .cover_url
+            .as_deref()
+            .is_some_and(|url| url.starts_with("http")),
+        "expected a cover URL on the first result: {:?}",
+        keyword_items[0].cover_url
+    );
+
+    // 2. Pasting a book URL still resolves directly to that book.
+    // 皇后重生要谋反 — a completed book with a large SSR directory.
+    let direct_future = feed
+        .search("https://fanqienovel.com/page/6823667291557727235")
+        .take(5)
+        .collect::<Vec<_>>();
+    let direct = tokio::time::timeout(Duration::from_secs(30), direct_future)
+        .await
+        .expect("live direct search timed out after 30s");
+
+    assert_eq!(direct.len(), 1, "expected exactly one direct search result");
+    let book = direct
         .into_iter()
         .next()
         .unwrap()
-        .expect("live search yielded an error");
+        .expect("live direct search yielded an error");
     assert_eq!(book.title, "皇后重生要谋反");
     assert!(!book.author.trim().is_empty());
 

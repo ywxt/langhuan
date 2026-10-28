@@ -1,12 +1,13 @@
 // ==Feed==
 // @id           fanqie
 // @name         番茄小說
-// @version      1.0.0
+// @version      1.1.0
 // @author       Langhuan
-// @description  番茄小說官網書源（fanqienovel.com）：正文採用字體混淆，內置字形映射表解碼；官網搜尋需要驗證碼，請在搜尋框貼上書籍連結或書籍 ID
+// @description  番茄小說官網書源（fanqienovel.com）：支持關鍵詞搜尋（也可直接貼書籍連結或 ID），正文採用字體混淆，內置字形映射表解碼
 // @base_url     https://fanqienovel.com
 // @access_domain fanqienovel.com
 // @access_domain *.byteimg.com
+// @access_domain *.fqnovelpic.com
 // @schema_version 3
 // ==/Feed==
 
@@ -16,8 +17,11 @@
 // OCR 猜測）。番茄偶爾會輪換字體：FONT_HASH 固定本表對應的字體版本，輪換後
 // 會明確報錯而不是解出亂碼。更新字體時兩者必須一起更新。
 //
-// 官網搜尋 API 由字節風控（bdturing 滑塊驗證碼）保護，腳本無法通過，因此
-// search 只接受書籍頁連結或書籍 ID，並以明確的錯誤信息引導使用者。
+// 官網搜尋 API（/api/author/search/search_book/v1）位於字節 BDMS 簽名保護的
+// /api 命名空間下，且參數必須以 POST 查詢串發送：未簽名的 GET 會被風控以空
+// 響應加 bdturing 滑塊挑戰攔截，而同樣參數的 POST（無 body、無簽名、無
+// cookie）可以直接到達端點並返回明文 JSON。若番茄日後封堵此通路，搜尋會以
+// search_failed 錯誤明確暴露。
 
 (() => {
   "use strict";
@@ -167,7 +171,7 @@
     return /^\d{6,21}$/.test(id) ? id : null;
   }
 
-  // 使用者可能在搜尋框貼入完整連結、純 ID，或無效的關鍵詞。
+  // 使用者可能在搜尋框貼入完整連結或純 ID：直接解析該書；否則按關鍵詞搜尋。
   function bookIdFromKeyword(keyword) {
     const text = String(keyword ?? "").trim();
     const fromUrl = text.match(/fanqienovel\.com\/page\/(\d{6,})/i);
@@ -175,15 +179,6 @@
     const bare = text.match(/^(\d{15,21})$/);
     if (bare) return bare[1];
     return null;
-  }
-
-  function searchUnsupported() {
-    return FeedError.raise(
-      "search_unsupported",
-      "番茄官網搜尋需要通過驗證碼；請在瀏覽器開啟 fanqienovel.com，" +
-        "將書籍頁連結（如 https://fanqienovel.com/page/7146230612570047006）" +
-        "或書籍 ID 貼入搜尋框",
-    );
   }
 
   // ── 頁面解析 ────────────────────────────────────────────────────────────────
@@ -205,6 +200,36 @@
       cover_url: absoluteUrl(cover?.attr("src")),
       description: description || null,
     };
+  }
+
+  function parseSearchResults(body, pageIndex) {
+    const payload = JSON.parse(body);
+    if (payload.code !== 0) {
+      return FeedError.raise(
+        "search_failed",
+        `番茄搜索返回錯誤 ${payload.code}：${payload.message ?? "未知錯誤"}`,
+      );
+    }
+    const data = payload.data ?? {};
+    const books = Array.isArray(data.search_book_data_list)
+      ? data.search_book_data_list
+      : [];
+    const items = [];
+    for (const book of books) {
+      const id = String(book?.book_id ?? "");
+      const title = decode(book?.book_name ?? "").trim();
+      if (!id || !title) continue;
+      items.push({
+        id,
+        title,
+        author: decode(book?.author ?? "").trim() || "未知",
+        cover_url: book?.thumb_url ?? null,
+        description: decode(book?.book_abstract ?? "").trim() || null,
+      });
+    }
+    const total = Number(data.total_count ?? 0);
+    const nextCursor = (pageIndex + 1) * 10 < total ? pageIndex + 1 : null;
+    return { type: "complete", items, next_cursor: nextCursor };
   }
 
   function parseChapters(response) {
@@ -272,24 +297,51 @@
 
   function search(event) {
     if (event.state == null) {
-      const bookId = bookIdFromKeyword(event.input.keyword);
-      if (!bookId) return searchUnsupported();
+      const keyword = String(event.input.keyword ?? "").trim();
+      if (!keyword) return { type: "complete", items: [] };
+      const direct = bookIdFromKeyword(keyword);
+      if (direct) {
+        return {
+          type: "request",
+          request: {
+            url: `${meta.base_url}/page/${direct}`,
+            method: "GET",
+            headers: headers(),
+          },
+          next_state: { direct: true, bookId: direct },
+        };
+      }
+      // 參見檔頭注釋：搜尋 API 只接受 POST 查詢串，GET 會被風控挑戰攔截。
+      const pageIndex = event.cursor == null ? 0 : Number(event.cursor);
       return {
         type: "request",
         request: {
-          url: `${meta.base_url}/page/${bookId}`,
-          method: "GET",
+          url: `${meta.base_url}/api/author/search/search_book/v1`,
+          method: "POST",
+          params: {
+            filter: "127,127,127,127",
+            page_count: "10",
+            page_index: String(pageIndex),
+            query_type: "0",
+            query_word: keyword,
+          },
           headers: headers(),
         },
-        next_state: { bookId },
+        next_state: { pageIndex },
       };
     }
     const failure = ensureAvailable(event.response);
     if (failure) return failure;
-    return {
-      type: "complete",
-      items: [parseBook(event.response, event.state.bookId)],
-    };
+    if (event.state.direct) {
+      return {
+        type: "complete",
+        items: [parseBook(event.response, event.state.bookId)],
+      };
+    }
+    return parseSearchResults(
+      event.response?.body ?? "",
+      event.state.pageIndex ?? 0,
+    );
   }
 
   function bookInfo(event) {
