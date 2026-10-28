@@ -178,6 +178,15 @@
   "searchAuthHint": "此書源可能需要先登錄",
   "searchAuthAction": "去登錄",
 
+  "webviewVerifyPageTitle": "驗證",
+  "webviewVerifyDone": "完成",
+  "webviewVerifyInstructions": "請在此網頁完成人機驗證，然後點擊「完成」。",
+  "webviewVerifyDesktopInstructions": "已在單獨的窗口中打開驗證頁。請在該窗口完成驗證，保持窗口開啟，然後回到本頁點擊「完成」。",
+  "webviewVerifyDesktopWindowHint": "驗證窗口保持開啟中。完成驗證後，點擊右上角的「完成」。",
+  "webviewVerifyWindowClosed": "驗證窗口已關閉。驗證需要讀取窗口中的頁面與 cookies，請重新打開。",
+  "webviewVerifyReopenWindow": "重新打開驗證窗口",
+  "webviewVerifySubmitting": "正在提交驗證…",
+
   "feedItemLoadError": "加載失敗",
 
   "feedDeleteConfirmTitle": "刪除書源？",

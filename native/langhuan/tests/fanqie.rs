@@ -10,6 +10,7 @@ use langhuan::error::{Error, ExpectedErrorCode, ScriptError};
 use langhuan::feed::Feed;
 use langhuan::script::runtime::ScriptEngine;
 use mockito::ServerGuard;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_stream::StreamExt;
 
@@ -308,6 +309,306 @@ async fn search_follows_pagination_cursor() {
         ids,
         vec!["1000000000000000001", "1000000000000000002", "1000000000000000003"],
         "expected both pages in order"
+    );
+}
+
+// ── Search risk gate → WebView verification ─────────────────────────────────
+
+/// A canned webview handler: records every request and answers with the
+/// configured cookies, or with an auth-required error when `cookies` is
+/// `None` (simulating the user canceling the page).
+struct TestWebview {
+    requests: Mutex<Vec<langhuan::feed::WebviewRequest>>,
+    cookies: Option<Vec<langhuan::feed::CookieEntry>>,
+}
+
+impl TestWebview {
+    fn new(cookies: Option<Vec<langhuan::feed::CookieEntry>>) -> Arc<Self> {
+        Arc::new(Self {
+            requests: Mutex::new(Vec::new()),
+            cookies,
+        })
+    }
+}
+
+impl langhuan::feed::WebviewHandler for TestWebview {
+    fn open(&self, request: langhuan::feed::WebviewRequest) -> langhuan::feed::WebviewFuture {
+        self.requests.lock().unwrap().push(request);
+        let cookies = self.cookies.clone();
+        Box::pin(async move {
+            match cookies {
+                Some(cookies) => Ok(langhuan::feed::WebviewSnapshot {
+                    current_url: "https://fanqienovel.com/library".into(),
+                    html: "<html>ok</html>".into(),
+                    cookies,
+                }),
+                None => Err(Error::expected(
+                    ExpectedErrorCode::AuthRequired,
+                    "驗證已取消",
+                )),
+            }
+        })
+    }
+}
+
+fn cookie(name: &str, value: &str, domain: &str) -> langhuan::feed::CookieEntry {
+    langhuan::feed::CookieEntry {
+        name: name.into(),
+        value: value.into(),
+        domain: Some(domain.into()),
+        path: Some("/".into()),
+        expires: None,
+        secure: Some(true),
+        http_only: Some(false),
+        same_site: None,
+    }
+}
+
+fn verified_cookies() -> Vec<langhuan::feed::CookieEntry> {
+    vec![
+        cookie("msToken", "device-token", ".fanqienovel.com"),
+        cookie("ttwid", "tt-value", ".fanqienovel.com"),
+        // 百度統計與異域 cookie 必須被剔除。
+        cookie("Hm_lvt_9706", "stat", ".fanqienovel.com"),
+        cookie("foreign", "no", ".example.org"),
+    ]
+}
+
+fn gate_query() -> mockito::Matcher {
+    mockito::Matcher::AllOf(vec![
+        mockito::Matcher::UrlEncoded("page_count".into(), "10".into()),
+        mockito::Matcher::UrlEncoded("page_index".into(), "0".into()),
+        mockito::Matcher::UrlEncoded("query_word".into(), "深空".into()),
+    ])
+}
+
+const VERIFIED_COOKIE_HEADER: &str = "msToken=device-token; ttwid=tt-value";
+
+#[tokio::test]
+async fn search_verifies_in_webview_and_retries_with_cookies() {
+    let mut server = mockito::Server::new_async().await;
+
+    // The initial POST carries no Cookie header and is answered with an
+    // empty body — the risk gate's signature response.
+    let _gate = server
+        .mock("POST", "/api/author/search/search_book/v1")
+        .match_query(gate_query())
+        .match_header("Cookie", mockito::Matcher::Missing)
+        .with_status(200)
+        .with_body("")
+        .create_async()
+        .await;
+    // The post-verification retry must arrive with exactly the harvested
+    // fanqienovel.com cookies to reach the business payload.
+    let _ok = server
+        .mock("POST", "/api/author/search/search_book/v1")
+        .match_query(gate_query())
+        .match_header("Cookie", VERIFIED_COOKIE_HEADER)
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(search_page_json(
+            10,
+            &[("7649785550819314712", "深空底噪", "张大样")],
+        ))
+        .create_async()
+        .await;
+
+    let script = load_script_for_server(&server);
+    let engine = ScriptEngine::new();
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
+    let webview = TestWebview::new(Some(verified_cookies()));
+    feed.set_webview_handler(Some(webview.clone()))
+        .expect("install webview handler");
+
+    let results: Vec<_> = feed.search("深空").collect::<Vec<_>>().await;
+    let items: Vec<_> = results
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("search stream yielded an error");
+    assert_eq!(items.len(), 1, "expected the verified retry to succeed");
+    assert_eq!(items[0].id, "7649785550819314712");
+
+    let requests = webview.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1, "exactly one verification round-trip");
+    assert!(requests[0].url.ends_with("/library"), "unexpected url");
+    assert_eq!(requests[0].title.as_deref(), Some("番茄小說驗證"));
+    assert_eq!(requests[0].feed_id, "fanqie");
+    assert_eq!(requests[0].feed_name, "番茄小說");
+}
+
+#[tokio::test]
+async fn search_reuses_verified_cookies_within_the_session() {
+    let mut server = mockito::Server::new_async().await;
+
+    // The initial unauthenticated POST is gated…
+    let _gate = server
+        .mock("POST", "/api/author/search/search_book/v1")
+        .match_query(gate_query())
+        .match_header("Cookie", mockito::Matcher::Missing)
+        .with_status(200)
+        .with_body("")
+        .create_async()
+        .await;
+    // …and every cookie-carrying POST reaches the payload. After a
+    // successful verification the session cache means brand-new searches
+    // arrive already authenticated — no second verification prompt.
+    let _ok = server
+        .mock("POST", "/api/author/search/search_book/v1")
+        .match_query(gate_query())
+        .match_header("Cookie", VERIFIED_COOKIE_HEADER)
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(search_page_json(
+            10,
+            &[("7649785550819314712", "深空底噪", "张大样")],
+        ))
+        .create_async()
+        .await;
+
+    let script = load_script_for_server(&server);
+    let engine = ScriptEngine::new();
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
+    let webview = TestWebview::new(Some(verified_cookies()));
+    feed.set_webview_handler(Some(webview.clone()))
+        .expect("install webview handler");
+
+    let first: Vec<_> = feed.search("深空").collect::<Vec<_>>().await;
+    assert_eq!(
+        first
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("first search should verify and succeed")
+            .len(),
+        1
+    );
+
+    let second: Vec<_> = feed.search("深空").collect::<Vec<_>>().await;
+    let items: Vec<_> = second
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("second search should reuse the verified cookies");
+    assert_eq!(items.len(), 1);
+    assert_eq!(
+        webview.requests.lock().unwrap().len(),
+        1,
+        "no second verification prompt within the session"
+    );
+}
+
+#[tokio::test]
+async fn search_fails_auth_required_when_webview_canceled() {
+    let mut server = mockito::Server::new_async().await;
+
+    let _gate = server
+        .mock("POST", "/api/author/search/search_book/v1")
+        .match_query(gate_query())
+        .with_status(200)
+        .with_body("")
+        .create_async()
+        .await;
+
+    let script = load_script_for_server(&server);
+    let engine = ScriptEngine::new();
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
+    feed.set_webview_handler(Some(TestWebview::new(None)))
+        .expect("install webview handler");
+
+    let results: Vec<_> = feed.search("深空").collect::<Vec<_>>().await;
+    assert_eq!(results.len(), 1);
+    let error = results[0].as_ref().err().expect("must fail");
+    assert_expected_code(error, ExpectedErrorCode::AuthRequired);
+}
+
+#[tokio::test]
+async fn search_fails_auth_required_when_snapshot_has_no_usable_cookies() {
+    let mut server = mockito::Server::new_async().await;
+
+    let _gate = server
+        .mock("POST", "/api/author/search/search_book/v1")
+        .match_query(gate_query())
+        .with_status(200)
+        .with_body("")
+        .create_async()
+        .await;
+
+    let script = load_script_for_server(&server);
+    let engine = ScriptEngine::new();
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
+    // Only statistics and foreign-domain cookies were harvested.
+    feed.set_webview_handler(Some(TestWebview::new(Some(vec![
+        cookie("Hm_lvt_9706", "stat", ".fanqienovel.com"),
+        cookie("foreign", "no", ".example.org"),
+    ]))))
+    .expect("install webview handler");
+
+    let results: Vec<_> = feed.search("深空").collect::<Vec<_>>().await;
+    assert_eq!(results.len(), 1);
+    let error = results[0].as_ref().err().expect("must fail");
+    assert_expected_code(error, ExpectedErrorCode::AuthRequired);
+}
+
+#[tokio::test]
+async fn search_reports_failure_when_verification_does_not_help() {
+    let mut server = mockito::Server::new_async().await;
+
+    let _gate = server
+        .mock("POST", "/api/author/search/search_book/v1")
+        .match_query(gate_query())
+        .match_header("Cookie", mockito::Matcher::Missing)
+        .with_status(200)
+        .with_body("")
+        .create_async()
+        .await;
+    // Even with the verified cookies the gate answers empty.
+    let _still_gated = server
+        .mock("POST", "/api/author/search/search_book/v1")
+        .match_query(gate_query())
+        .match_header("Cookie", VERIFIED_COOKIE_HEADER)
+        .with_status(200)
+        .with_body("")
+        .create_async()
+        .await;
+
+    let script = load_script_for_server(&server);
+    let engine = ScriptEngine::new();
+    let feed = engine
+        .load_script(&script)
+        .await
+        .expect("load_script failed");
+    let webview = TestWebview::new(Some(verified_cookies()));
+    feed.set_webview_handler(Some(webview.clone()))
+        .expect("install webview handler");
+
+    let results: Vec<_> = feed.search("深空").collect::<Vec<_>>().await;
+    assert_eq!(results.len(), 1);
+    let error = results[0].as_ref().err().expect("must fail");
+    assert_eq!(
+        error.to_string(),
+        "expected script error [Unknown(\"search_failed\")]: 完成驗證後仍被番茄風控攔截，請稍後再試"
+    );
+
+    // While the session stays risk-blocked, further searches fail fast
+    // without popping another verification page.
+    let more: Vec<_> = feed.search("深空").collect::<Vec<_>>().await;
+    assert_eq!(more.len(), 1);
+    let error = more[0].as_ref().err().expect("must fail");
+    assert!(error.to_string().contains("search_failed"));
+    assert_eq!(
+        webview.requests.lock().unwrap().len(),
+        1,
+        "no additional verification prompt while blocked"
     );
 }
 

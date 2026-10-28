@@ -11,6 +11,7 @@ pub(crate) mod locale_actor;
 pub(crate) mod login_actor;
 pub(crate) mod reading_progress_actor;
 pub(crate) mod registry_actor;
+pub(crate) mod webview_actor;
 
 pub(crate) use app_data_actor::AppDataActor;
 pub(crate) use bookmark_actor::BookmarkActor;
@@ -25,6 +26,7 @@ pub(crate) use reading_progress_actor::ReadingProgressActor;
 pub(crate) use registry_actor::RegistryActor;
 use tokio::spawn;
 use tokio::sync::OnceCell;
+pub(crate) use webview_actor::WebviewActor;
 
 // Uncomment below to target the web.
 // use tokio_with_wasm::alias as tokio;
@@ -52,6 +54,7 @@ pub(crate) struct ActorAddresses {
     pub app_data: Address<AppDataActor>,
     pub bookmark: Address<BookmarkActor>,
     pub conversion: Address<ConversionActor>,
+    pub webview: Address<WebviewActor>,
 }
 
 /// Returns a reference to the global actor addresses.
@@ -108,6 +111,10 @@ pub async fn create_actors() {
     let login_context = Context::new();
     let login_addr = login_context.address();
 
+    tracing::debug!("creating webview actor");
+    let webview_context = Context::new();
+    let webview_addr = webview_context.address();
+
     // BookshelfActor - local bookshelf storage and simple capability response.
     tracing::debug!("creating bookshelf actor");
     let bookshelf_context = Context::new();
@@ -121,7 +128,7 @@ pub async fn create_actors() {
     let bookmark_context = Context::new();
     let bookmark_addr = bookmark_context.address();
 
-    let registry_actor = RegistryActor::new(engine);
+    let registry_actor = RegistryActor::new(engine, webview_addr.clone());
     let login_actor = LoginActor::new(registry_addr.clone());
     let app_data_actor = AppDataActor::new(
         registry_addr.clone(),
@@ -132,11 +139,13 @@ pub async fn create_actors() {
     );
     let reading_progress_actor = ReadingProgressActor::new();
     let bookmark_actor = BookmarkActor::new();
+    let webview_actor = WebviewActor::new();
     spawn(registry_context.run(registry_actor));
     spawn(login_context.run(login_actor));
     spawn(app_data_context.run(app_data_actor));
     spawn(reading_progress_context.run(reading_progress_actor));
     spawn(bookmark_context.run(bookmark_actor));
+    spawn(webview_context.run(webview_actor));
 
     // ConversionActor — holds the current Chinese conversion mode and
     // produces FilterChain instances for FeedActor.
@@ -168,6 +177,7 @@ pub async fn create_actors() {
             app_data: app_data_addr,
             bookmark: bookmark_addr,
             conversion: conversion_addr,
+            webview: webview_addr,
         })
         .is_err()
     {

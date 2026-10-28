@@ -15,6 +15,7 @@ use super::sandbox::{JsObject, Sandbox};
 use crate::error::{ExpectedErrorCode, Result};
 use crate::feed::{
     AuthEntry, AuthInfo, AuthPageContext, AuthStatus, Feed, FeedAuthFlow, FeedMeta, FeedStream,
+    SharedWebviewHandler, WebviewRequest, WebviewSnapshot,
 };
 use crate::http::{self, HttpRequest, HttpResponse};
 use crate::model::{BookInfo, ChapterInfo, Page, Paragraph, RawParagraph, SearchResult};
@@ -152,6 +153,7 @@ pub struct JsFeed {
     has_auth_status: bool,
     auth_info: RwLock<Option<AuthInfo>>,
     response_cache: AsyncMutex<HashMap<String, HttpResponse>>,
+    webview_handler: RwLock<Option<SharedWebviewHandler>>,
     feed_object: JsObject,
 }
 
@@ -164,6 +166,7 @@ struct JsEvent<'a> {
     response: Option<JsResponse>,
     compute: Option<Value>,
     auth: Option<Value>,
+    webview: Option<WebviewSnapshot>,
 }
 
 #[derive(Serialize)]
@@ -199,6 +202,13 @@ enum JsStep {
         programs: Vec<String>,
         #[serde(default)]
         input: Value,
+        #[serde(default)]
+        next_state: Value,
+    },
+    Webview {
+        url: String,
+        #[serde(default)]
+        title: Option<String>,
         #[serde(default)]
         next_state: Value,
     },
@@ -269,6 +279,7 @@ impl JsFeed {
             has_auth_status,
             auth_info: RwLock::new(None),
             response_cache: AsyncMutex::new(HashMap::new()),
+            webview_handler: RwLock::new(None),
             feed_object,
         })
     }
@@ -288,6 +299,24 @@ impl JsFeed {
             .read()
             .map_err(|_| crate::error::Error::invalid_feed("auth state lock poisoned"))
             .map(|auth| auth.clone())
+    }
+
+    /// Install or remove the host-side WebView provider. Without one, any
+    /// `webview` step a script returns fails with an auth-required error.
+    pub fn set_webview_handler(&self, handler: Option<SharedWebviewHandler>) -> Result<()> {
+        *self
+            .webview_handler
+            .write()
+            .map_err(|_| crate::error::Error::invalid_feed("webview handler lock poisoned"))? =
+            handler;
+        Ok(())
+    }
+
+    fn webview_handler(&self) -> Result<Option<SharedWebviewHandler>> {
+        self.webview_handler
+            .read()
+            .map_err(|_| crate::error::Error::invalid_feed("webview handler lock poisoned"))
+            .map(|handler| handler.clone())
     }
 
     fn to_js_value(value: &impl Serialize, description: &str) -> Result<Value> {
@@ -384,6 +413,7 @@ impl JsFeed {
         let mut state = Value::Null;
         let mut response = None;
         let mut compute = None;
+        let mut webview = None;
         let mut internal_steps = 0usize;
 
         loop {
@@ -395,6 +425,7 @@ impl JsFeed {
                 response: response.take(),
                 compute: compute.take(),
                 auth,
+                webview: webview.take(),
             };
             match self.invoke(operation, &event)? {
                 JsStep::Request {
@@ -435,6 +466,33 @@ impl JsFeed {
                     })??;
                     state = next_state;
                     compute = Some(result);
+                }
+                JsStep::Webview {
+                    url,
+                    title,
+                    next_state,
+                } => {
+                    internal_steps += 1;
+                    if internal_steps > MAX_INTERNAL_STEPS {
+                        return Err(crate::error::Error::javascript(
+                            "feed operation exceeded the internal step limit",
+                        ));
+                    }
+                    let handler = self.webview_handler()?.ok_or_else(|| {
+                        crate::error::Error::expected(
+                            ExpectedErrorCode::AuthRequired,
+                            "WebView verification is unavailable in this environment",
+                        )
+                    })?;
+                    let request = WebviewRequest {
+                        feed_id: self.meta.id.clone(),
+                        feed_name: self.meta.name.clone(),
+                        url,
+                        title,
+                    };
+                    let snapshot = handler.open(request).await?;
+                    state = next_state;
+                    webview = Some(snapshot);
                 }
                 JsStep::Complete {
                     items,

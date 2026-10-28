@@ -1076,6 +1076,54 @@ abstract class AppLocalizations {
   /// **'Login Source'**
   String get searchAuthAction;
 
+  /// Fallback title for the feed-requested verification page
+  ///
+  /// In en, this message translates to:
+  /// **'Verification'**
+  String get webviewVerifyPageTitle;
+
+  /// Button that submits the verification page snapshot
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get webviewVerifyDone;
+
+  /// Instructions shown above the embedded verification WebView
+  ///
+  /// In en, this message translates to:
+  /// **'Complete the verification on this page, then tap \"Done\".'**
+  String get webviewVerifyInstructions;
+
+  /// Instructions shown while the verification WebView runs in a separate desktop window
+  ///
+  /// In en, this message translates to:
+  /// **'The verification page opened in a separate window. Complete it there, keep the window open, then come back and tap \"Done\".'**
+  String get webviewVerifyDesktopInstructions;
+
+  /// Hint shown while the desktop verification window is open
+  ///
+  /// In en, this message translates to:
+  /// **'The verification window is still open. Once you finish there, tap \"Done\" in the top-right corner.'**
+  String get webviewVerifyDesktopWindowHint;
+
+  /// Message shown when the desktop verification window is closed
+  ///
+  /// In en, this message translates to:
+  /// **'The verification window was closed. Verification needs the page and cookies from that window — please reopen it.'**
+  String get webviewVerifyWindowClosed;
+
+  /// Button that reopens the desktop verification window
+  ///
+  /// In en, this message translates to:
+  /// **'Reopen verification window'**
+  String get webviewVerifyReopenWindow;
+
+  /// Banner shown while the page snapshot is being submitted
+  ///
+  /// In en, this message translates to:
+  /// **'Submitting verification…'**
+  String get webviewVerifySubmitting;
+
   /// Label for per-feed compile error in detail sheet
   ///
   /// In en, this message translates to:

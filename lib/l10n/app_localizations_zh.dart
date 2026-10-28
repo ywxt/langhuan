@@ -537,6 +537,32 @@ class AppLocalizationsZh extends AppLocalizations {
   String get searchAuthAction => '去登錄';
 
   @override
+  String get webviewVerifyPageTitle => '驗證';
+
+  @override
+  String get webviewVerifyDone => '完成';
+
+  @override
+  String get webviewVerifyInstructions => '請在此網頁完成人機驗證，然後點擊「完成」。';
+
+  @override
+  String get webviewVerifyDesktopInstructions =>
+      '已在單獨的窗口中打開驗證頁。請在該窗口完成驗證，保持窗口開啟，然後回到本頁點擊「完成」。';
+
+  @override
+  String get webviewVerifyDesktopWindowHint => '驗證窗口保持開啟中。完成驗證後，點擊右上角的「完成」。';
+
+  @override
+  String get webviewVerifyWindowClosed =>
+      '驗證窗口已關閉。驗證需要讀取窗口中的頁面與 cookies，請重新打開。';
+
+  @override
+  String get webviewVerifyReopenWindow => '重新打開驗證窗口';
+
+  @override
+  String get webviewVerifySubmitting => '正在提交驗證…';
+
+  @override
   String get feedItemLoadError => '加載失敗';
 
   @override

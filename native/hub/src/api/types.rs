@@ -454,6 +454,19 @@ pub struct CookieEntry {
 }
 
 // ---------------------------------------------------------------------------
+// WebView verification types
+// ---------------------------------------------------------------------------
+
+/// A verification page a feed asked the host to open for the user.
+pub struct WebviewPrompt {
+    pub request_id: u32,
+    pub feed_id: String,
+    pub feed_name: String,
+    pub url: String,
+    pub title: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Reading progress types
 // ---------------------------------------------------------------------------
 

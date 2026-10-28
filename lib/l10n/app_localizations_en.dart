@@ -546,6 +546,34 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchAuthAction => 'Login Source';
 
   @override
+  String get webviewVerifyPageTitle => 'Verification';
+
+  @override
+  String get webviewVerifyDone => 'Done';
+
+  @override
+  String get webviewVerifyInstructions =>
+      'Complete the verification on this page, then tap \"Done\".';
+
+  @override
+  String get webviewVerifyDesktopInstructions =>
+      'The verification page opened in a separate window. Complete it there, keep the window open, then come back and tap \"Done\".';
+
+  @override
+  String get webviewVerifyDesktopWindowHint =>
+      'The verification window is still open. Once you finish there, tap \"Done\" in the top-right corner.';
+
+  @override
+  String get webviewVerifyWindowClosed =>
+      'The verification window was closed. Verification needs the page and cookies from that window — please reopen it.';
+
+  @override
+  String get webviewVerifyReopenWindow => 'Reopen verification window';
+
+  @override
+  String get webviewVerifySubmitting => 'Submitting verification…';
+
+  @override
   String get feedItemLoadError => 'Load error';
 
   @override

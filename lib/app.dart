@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:langhuan/features/feeds/feed_providers.dart';
+import 'package:langhuan/features/feeds/webview_verify_coordinator.dart';
 import 'package:langhuan/rust_init.dart';
 
 import 'l10n/app_localizations.dart';
@@ -43,6 +44,9 @@ class _LanghuanAppState extends ConsumerState<LanghuanApp> {
   Widget build(BuildContext context) {
     ref.watch(appDataDirectorySetProvider);
     ref.watch(feedListProvider);
+    // Presents feed verification prompts as they arrive; the underlying
+    // stream stays open for the lifetime of the app.
+    ref.watch(webviewVerifyCoordinatorProvider);
 
     ref.listen(appDataDirectorySetProvider, (previous, next) {
       next.when(

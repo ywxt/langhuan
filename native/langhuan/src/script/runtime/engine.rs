@@ -62,8 +62,11 @@ impl Default for ScriptEngine {
 
 #[cfg(test)]
 mod tests {
-    use crate::error::{Error, ScriptError};
-    use crate::feed::{Feed, FeedAuthFlow};
+    use crate::error::{Error, ExpectedErrorCode, ScriptError};
+    use crate::feed::{
+        CookieEntry, Feed, FeedAuthFlow, WebviewFuture, WebviewHandler, WebviewRequest,
+        WebviewSnapshot,
+    };
     use tokio_stream::StreamExt as _;
 
     use super::*;
@@ -335,5 +338,193 @@ mod tests {
         }
         calls.sort_unstable();
         assert_eq!(calls, (1..=16).collect::<Vec<_>>());
+    }
+
+    // -----------------------------------------------------------------------
+    // WebView steps
+    // -----------------------------------------------------------------------
+
+    /// Handler that records every request and replies with one canned
+    /// snapshot, or with an auth-required error when `snapshot` is `None`.
+    struct CannedWebview {
+        requests: std::sync::Mutex<Vec<WebviewRequest>>,
+        snapshot: Option<WebviewSnapshot>,
+    }
+
+    impl CannedWebview {
+        fn with_snapshot(snapshot: WebviewSnapshot) -> Arc<Self> {
+            Arc::new(Self {
+                requests: std::sync::Mutex::new(Vec::new()),
+                snapshot: Some(snapshot),
+            })
+        }
+
+        fn canceled() -> Arc<Self> {
+            Arc::new(Self {
+                requests: std::sync::Mutex::new(Vec::new()),
+                snapshot: None,
+            })
+        }
+    }
+
+    impl WebviewHandler for CannedWebview {
+        fn open(&self, request: WebviewRequest) -> WebviewFuture {
+            self.requests.lock().unwrap().push(request);
+            let snapshot = self.snapshot.clone();
+            Box::pin(async move {
+                snapshot.ok_or_else(|| {
+                    crate::error::Error::expected(
+                        ExpectedErrorCode::AuthRequired,
+                        "verification canceled",
+                    )
+                })
+            })
+        }
+    }
+
+    fn sample_snapshot() -> WebviewSnapshot {
+        WebviewSnapshot {
+            current_url: "https://example.com/verify".into(),
+            html: "<html>ok</html>".into(),
+            cookies: vec![CookieEntry {
+                name: "msToken".into(),
+                value: "device-token".into(),
+                domain: Some(".example.com".into()),
+                path: Some("/".into()),
+                expires: None,
+                secure: Some(true),
+                http_only: Some(false),
+                same_site: None,
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn webview_step_round_trips_snapshot_to_reducer() {
+        let body = r#"(() => {
+          const empty = () => ({ type: "complete", items: [] });
+          function search(event) {
+            if (event.state == null) {
+              return {
+                type: "webview",
+                url: "https://example.com/verify",
+                title: "Verify",
+                next_state: { stage: 1 },
+              };
+            }
+            if (event.state.stage === 1 && event.webview != null) {
+              const cookie = event.webview.cookies.find((c) => c.name === "msToken");
+              if (event.webview.current_url !== "https://example.com/verify") {
+                return { type: "fail", code: "source_unavailable", message: "bad url" };
+              }
+              return {
+                type: "complete",
+                items: [{
+                  id: "1",
+                  title: cookie.value,
+                  author: event.webview.html,
+                }],
+              };
+            }
+            return { type: "fail", code: "auth_required", message: "unexpected state" };
+          }
+          const bookInfo = () => ({
+            type: "complete", value: { id: "1", title: "One", author: "Test" },
+          });
+          return { search, bookInfo, chapters: empty, paragraphs: empty };
+        })()"#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(3, body))
+            .await
+            .unwrap();
+        let handler = CannedWebview::with_snapshot(sample_snapshot());
+        feed.set_webview_handler(Some(handler.clone())).unwrap();
+
+        let items = feed.search("x").collect::<Vec<_>>().await;
+        assert_eq!(items.len(), 1);
+        let item = items[0].as_ref().unwrap();
+        assert_eq!(item.title, "device-token");
+        assert_eq!(item.author, "<html>ok</html>");
+
+        let requests = handler.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].url, "https://example.com/verify");
+        assert_eq!(requests[0].title.as_deref(), Some("Verify"));
+        assert_eq!(requests[0].feed_id, "test");
+        assert_eq!(requests[0].feed_name, "Test");
+    }
+
+    #[tokio::test]
+    async fn webview_step_without_handler_fails_auth_required() {
+        let body = r#"(() => {
+          const empty = () => ({ type: "complete", items: [] });
+          function search() {
+            return {
+              type: "webview",
+              url: "https://example.com/verify",
+              next_state: {},
+            };
+          }
+          const bookInfo = () => ({
+            type: "complete", value: { id: "1", title: "One", author: "Test" },
+          });
+          return { search, bookInfo, chapters: empty, paragraphs: empty };
+        })()"#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(3, body))
+            .await
+            .unwrap();
+
+        let items = feed.search("x").collect::<Vec<_>>().await;
+        assert_eq!(items.len(), 1);
+        let error = items[0].as_ref().err().expect("must fail");
+        assert!(
+            matches!(
+                error,
+                Error::Script(ScriptError::Expected {
+                    code: ExpectedErrorCode::AuthRequired,
+                    ..
+                })
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn webview_handler_error_aborts_operation() {
+        let body = r#"(() => {
+          const empty = () => ({ type: "complete", items: [] });
+          function search() {
+            return {
+              type: "webview",
+              url: "https://example.com/verify",
+              next_state: {},
+            };
+          }
+          const bookInfo = () => ({
+            type: "complete", value: { id: "1", title: "One", author: "Test" },
+          });
+          return { search, bookInfo, chapters: empty, paragraphs: empty };
+        })()"#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(3, body))
+            .await
+            .unwrap();
+        feed.set_webview_handler(Some(CannedWebview::canceled()))
+            .unwrap();
+
+        let items = feed.search("x").collect::<Vec<_>>().await;
+        assert_eq!(items.len(), 1);
+        let error = items[0].as_ref().err().expect("must fail");
+        assert!(
+            matches!(
+                error,
+                Error::Script(ScriptError::Expected {
+                    code: ExpectedErrorCode::AuthRequired,
+                    ..
+                })
+            ),
+            "unexpected error: {error:?}"
+        );
     }
 }

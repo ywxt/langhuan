@@ -517,6 +517,7 @@ mod tests {
 
     use super::*;
     use crate::actors::app_data_actor::InitializeAppDataDirectory;
+    use crate::actors::webview_actor::WebviewActor;
 
     type TestResult = Result<(), Box<dyn Error>>;
 
@@ -631,7 +632,13 @@ mod tests {
     ) -> Result<Address<FeedActor>, Box<dyn Error>> {
         let registry_context = Context::new();
         let mut registry_addr = registry_context.address();
-        spawn(registry_context.run(RegistryActor::new(ScriptEngine::new())));
+        let webview_context = Context::new();
+        let webview_addr = webview_context.address();
+        spawn(registry_context.run(RegistryActor::new(
+            ScriptEngine::new(),
+            webview_addr,
+        )));
+        spawn(webview_context.run(WebviewActor::new()));
 
         registry_addr
             .send(InitializeAppDataDirectory { db })

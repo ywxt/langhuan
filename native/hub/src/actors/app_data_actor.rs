@@ -160,6 +160,7 @@ mod tests {
     use super::super::login_actor::LoginActor;
     use super::super::reading_progress_actor::ReadingProgressActor;
     use super::super::registry_actor::RegistryActor;
+    use super::super::webview_actor::WebviewActor;
     use super::*;
 
     type TestResult = Result<(), Box<dyn Error>>;
@@ -177,8 +178,10 @@ mod tests {
         let reading_progress_addr = reading_progress_context.address();
         let bookmark_context: Context<BookmarkActor> = Context::new();
         let bookmark_addr = bookmark_context.address();
+        let webview_context: Context<WebviewActor> = Context::new();
+        let webview_addr = webview_context.address();
 
-        let registry_actor = RegistryActor::new(ScriptEngine::new());
+        let registry_actor = RegistryActor::new(ScriptEngine::new(), webview_addr);
         let login_actor = LoginActor::new(registry_addr.clone());
         let bookshelf_actor = BookshelfActor::new();
         let reading_progress_actor = ReadingProgressActor::new();
@@ -192,6 +195,7 @@ mod tests {
         );
 
         spawn(registry_context.run(registry_actor));
+        spawn(webview_context.run(WebviewActor::new()));
         spawn(login_context.run(login_actor));
         spawn(bookshelf_context.run(bookshelf_actor));
         spawn(reading_progress_context.run(reading_progress_actor));

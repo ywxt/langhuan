@@ -8,7 +8,9 @@ import '../features/bookshelf/reader_page.dart';
 import '../features/bookshelf/search_page.dart';
 import '../features/developer/developer_tools_page.dart';
 import '../features/feeds/feed_auth_page.dart';
+import '../features/feeds/feed_service.dart';
 import '../features/feeds/feeds_page.dart';
+import '../features/feeds/webview_verify_page.dart';
 import '../features/settings/settings_page.dart';
 import '../shared/developer_mode_provider.dart';
 import '../shared/theme/fade_slide_page_transitions_builder.dart';
@@ -160,6 +162,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             ref.read(developerModeProvider) ? null : '/settings',
         pageBuilder: (context, state) =>
             _transitionPage(state, const DeveloperToolsPage()),
+      ),
+      // Feed-requested verification pages: presented above everything by
+      // the webview verify coordinator, not navigated to directly.
+      GoRoute(
+        path: '/webview-verify',
+        name: 'webview-verify',
+        parentNavigatorKey: _rootNavigatorKey,
+        pageBuilder: (context, state) {
+          final prompt = state.extra is WebviewPromptModel
+              ? state.extra as WebviewPromptModel
+              : null;
+          if (prompt == null) {
+            return _transitionPage(state, const SizedBox.shrink());
+          }
+          return _transitionPage(state, WebviewVerifyPage(prompt: prompt));
+        },
       ),
     ],
   );

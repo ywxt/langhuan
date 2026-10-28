@@ -1,9 +1,9 @@
 // ==Feed==
 // @id           fanqie
 // @name         番茄小說
-// @version      1.1.0
+// @version      1.2.0
 // @author       Langhuan
-// @description  番茄小說官網書源（fanqienovel.com）：支持關鍵詞搜尋（也可直接貼書籍連結或 ID），正文採用字體混淆，內置字形映射表解碼
+// @description  番茄小說官網書源（fanqienovel.com）：支持關鍵詞搜尋（也可直接貼書籍連結或 ID），正文採用字體混淆，內置字形映射表解碼；搜索被風控攔截時可經內嵌驗證頁完成人機驗證後重試
 // @base_url     https://fanqienovel.com
 // @access_domain fanqienovel.com
 // @access_domain *.byteimg.com
@@ -20,8 +20,14 @@
 // 官網搜尋 API（/api/author/search/search_book/v1）位於字節 BDMS 簽名保護的
 // /api 命名空間下，且參數必須以 POST 查詢串發送：未簽名的 GET 會被風控以空
 // 響應加 bdturing 滑塊挑戰攔截，而同樣參數的 POST（無 body、無簽名、無
-// cookie）可以直接到達端點並返回明文 JSON。若番茄日後封堵此通路，搜尋會以
-// search_failed 錯誤明確暴露。
+// cookie）可以直接到達端點並返回明文 JSON。
+//
+// 若番茄日後封堵此通路，搜索會返回 webview 步驟：host 彈出內嵌驗證頁（打開
+// /library 觸發滑塊），用戶完成後頁面快照（URL、HTML、cookies）以
+// event.webview 回到本 reducer，腳本把採集到的 fanqienovel.com cookie（剔除
+// Hm_* 統計項）附加到重試請求上。驗證後的 cookie 串在本會話內快取，後續搜索
+// 直接帶上；若驗證後仍被攔截則標記本會話為風控攔截狀態，之後的搜索直接報
+// search_failed 而不再重複彈出驗證頁，直到某次搜索成功才解除。
 
 (() => {
   "use strict";
@@ -131,6 +137,53 @@
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "zh-CN,zh;q=0.9",
     };
+  }
+
+  // ── 搜索會話狀態（模組級，隨 Feed 物件存活於本次應用會話）─────────────────
+  //
+  // 驗證後的 cookie 串與風控攔截標記：cookie 串讓後續搜索直接帶上憑證；
+  // 標記避免「驗證也救不了」時每次搜索都重複彈出驗證頁，直到某次搜索
+  // 成功才自動解除。
+
+  let sessionCookieHeader = null;
+  let sessionRiskBlocked = false;
+
+  function isFanqieDomain(domain) {
+    const host = String(domain ?? "").replace(/^\./, "").toLowerCase();
+    return host === "fanqienovel.com" || host.endsWith(".fanqienovel.com");
+  }
+
+  // 從驗證頁快照採集 cookie：僅保留 fanqienovel.com 域、剔除百度統計
+  // （Hm_*）等與風控無關的項。
+  function cookieHeaderFromSnapshot(cookies) {
+    const parts = [];
+    for (const cookie of Array.isArray(cookies) ? cookies : []) {
+      const name = String(cookie?.name ?? "").trim();
+      if (!name || name.startsWith("Hm_")) continue;
+      const domain = String(cookie?.domain ?? "");
+      if (domain && !isFanqieDomain(domain)) continue;
+      parts.push(`${name}=${cookie.value ?? ""}`);
+    }
+    return parts.length > 0 ? parts.join("; ") : null;
+  }
+
+  function searchRequest(keyword, pageIndex) {
+    const request = {
+      url: `${meta.base_url}/api/author/search/search_book/v1`,
+      method: "POST",
+      params: {
+        filter: "127,127,127,127",
+        page_count: "10",
+        page_index: String(pageIndex),
+        query_type: "0",
+        query_word: keyword,
+      },
+      headers: headers(),
+    };
+    if (sessionCookieHeader != null) {
+      request.headers.Cookie = sessionCookieHeader;
+    }
+    return request;
   }
 
   function decode(value) {
@@ -315,33 +368,63 @@
       const pageIndex = event.cursor == null ? 0 : Number(event.cursor);
       return {
         type: "request",
-        request: {
-          url: `${meta.base_url}/api/author/search/search_book/v1`,
-          method: "POST",
-          params: {
-            filter: "127,127,127,127",
-            page_count: "10",
-            page_index: String(pageIndex),
-            query_type: "0",
-            query_word: keyword,
-          },
-          headers: headers(),
-        },
+        request: searchRequest(keyword, pageIndex),
         next_state: { pageIndex },
       };
     }
-    const failure = ensureAvailable(event.response);
-    if (failure) return failure;
     if (event.state.direct) {
+      const failure = ensureAvailable(event.response);
+      if (failure) return failure;
       return {
         type: "complete",
         items: [parseBook(event.response, event.state.bookId)],
       };
     }
-    return parseSearchResults(
-      event.response?.body ?? "",
-      event.state.pageIndex ?? 0,
-    );
+    if (event.webview != null) {
+      // 用戶剛在驗證頁完成人機驗證：採集 cookie 並帶著重試本次搜索。
+      const header = cookieHeaderFromSnapshot(event.webview.cookies);
+      if (header == null) {
+        return FeedError.authRequired(
+          "驗證後未採集到 fanqienovel.com 的有效 cookie",
+        );
+      }
+      sessionCookieHeader = header;
+      const pageIndex = event.state.pageIndex ?? 0;
+      return {
+        type: "request",
+        request: searchRequest(event.input.keyword, pageIndex),
+        next_state: { pageIndex, retried: true },
+      };
+    }
+    const failure = ensureAvailable(event.response);
+    if (failure) return failure;
+    const body = String(event.response?.body ?? "").trim();
+    if (!body || body.startsWith("<")) {
+      // 風控攔截：200 但 body 為空或為挑戰頁 HTML。
+      if (event.state.retried) {
+        sessionRiskBlocked = true;
+        sessionCookieHeader = null;
+        return FeedError.raise(
+          "search_failed",
+          "完成驗證後仍被番茄風控攔截，請稍後再試",
+        );
+      }
+      if (sessionRiskBlocked) {
+        return FeedError.raise(
+          "search_failed",
+          "番茄風控持續攔截（本會話內驗證已無效），請稍後再試",
+        );
+      }
+      return {
+        type: "webview",
+        url: `${meta.base_url}/library`,
+        title: "番茄小說驗證",
+        next_state: { pageIndex: event.state.pageIndex ?? 0 },
+      };
+    }
+    const result = parseSearchResults(body, event.state.pageIndex ?? 0);
+    if (result.type === "complete") sessionRiskBlocked = false;
+    return result;
   }
 
   function bookInfo(event) {

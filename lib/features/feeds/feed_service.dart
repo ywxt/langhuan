@@ -7,6 +7,7 @@ import '../../src/rust/api/feed_stream.dart' as rust_stream;
 import '../../src/rust/api/reading_progress.dart' as rust_progress;
 import '../../src/rust/api/registry.dart' as rust_registry;
 import '../../src/rust/api/transfer.dart' as rust_transfer;
+import '../../src/rust/api/webview.dart' as rust_webview;
 import '../../src/rust/api/types.dart';
 import '../bookshelf/bookshelf_operation.dart';
 
@@ -352,6 +353,35 @@ class BookmarkModel {
 }
 
 enum FeedAuthStatusModel { loggedIn, loggedOut, expired, unsupported }
+
+/// A verification page a feed requested interactively (reducer `webview`
+/// step). The Rust side parks the originating operation until the prompt
+/// is answered.
+@immutable
+class WebviewPromptModel {
+  const WebviewPromptModel({
+    required this.requestId,
+    required this.feedId,
+    required this.feedName,
+    required this.url,
+    this.title,
+  });
+
+  final int requestId;
+  final String feedId;
+  final String feedName;
+  final String url;
+  final String? title;
+
+  factory WebviewPromptModel.fromRust(WebviewPrompt prompt) =>
+      WebviewPromptModel(
+        requestId: prompt.requestId,
+        feedId: prompt.feedId,
+        feedName: prompt.feedName,
+        url: prompt.url,
+        title: prompt.title,
+      );
+}
 
 @immutable
 class FeedAuthEntryModel {
@@ -754,6 +784,39 @@ class FeedService {
 
   Future<void> clearFeedAuth(String feedId) {
     return rust_auth.feedAuthClear(feedId: feedId);
+  }
+
+  // -------------------------------------------------------------------------
+  // WebView verification prompts
+  // -------------------------------------------------------------------------
+
+  /// Opens the single app-wide verification prompt stream. The coordinator
+  /// presents each prompt and answers it via [completeWebview] or
+  /// [cancelWebview].
+  Future<rust_webview.WebviewPromptStream> openWebviewPromptStream() {
+    return rust_webview.openWebviewPromptStream();
+  }
+
+  /// Delivers the page snapshot after the user finished verifying. Returns
+  /// `false` when the request id is no longer pending.
+  Future<bool> completeWebview({
+    required int requestId,
+    required String currentUrl,
+    required String html,
+    required List<CookieEntry> cookies,
+  }) {
+    return rust_webview.completeWebview(
+      requestId: requestId,
+      currentUrl: currentUrl,
+      html: html,
+      cookies: cookies,
+    );
+  }
+
+  /// Reports that the user abandoned the verification page. Returns `false`
+  /// when the request id is no longer pending.
+  Future<bool> cancelWebview(int requestId) {
+    return rust_webview.cancelWebview(requestId: requestId);
   }
 }
 

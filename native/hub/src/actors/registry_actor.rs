@@ -17,7 +17,7 @@ use langhuan::db::repo::FeedRow;
 use langhuan::feed::FeedMeta;
 use langhuan::script::feed::ScriptFeed;
 use langhuan::script::runtime::ScriptEngine;
-use messages::prelude::{Actor, Context, Handler};
+use messages::prelude::{Actor, Context, Handler, Address};
 
 use crate::api::types::{
     BridgeError, FeedImportFailure, FeedImportOutcome, FeedMetaItem, FeedPreviewInfo, VersionChange,
@@ -25,6 +25,7 @@ use crate::api::types::{
 use crate::localize_error;
 
 use super::app_data_actor::InitializeAppDataDirectory;
+use super::webview_actor::{attach_webview_handler, WebviewActor};
 
 /// How many script versions are kept per feed.
 const SCRIPT_HISTORY_KEEP: usize = langhuan::db::maintenance::SCRIPT_HISTORY_KEEP;
@@ -130,6 +131,7 @@ struct PendingInstall {
 
 pub struct RegistryActor {
     engine: ScriptEngine,
+    webview_addr: Address<WebviewActor>,
     db: Option<Db>,
     /// Successfully compiled feeds, keyed by feed id.
     feeds: HashMap<String, Arc<ScriptFeed>>,
@@ -144,15 +146,27 @@ pub struct RegistryActor {
 impl Actor for RegistryActor {}
 
 impl RegistryActor {
-    pub fn new(engine: ScriptEngine) -> Self {
+    pub fn new(engine: ScriptEngine, webview_addr: Address<WebviewActor>) -> Self {
         Self {
             engine,
+            webview_addr,
             db: None,
             feeds: HashMap::new(),
             load_errors: HashMap::new(),
             pending_installs: HashMap::new(),
             pending_seq: 0,
         }
+    }
+
+    /// Compile a script into a feed with the hub's webview handler attached,
+    /// so its reducers can request interactive verification.
+    async fn compile_feed(
+        &self,
+        script: &str,
+    ) -> Result<ScriptFeed, langhuan::error::Error> {
+        let feed = self.engine.load_script(script).await?;
+        attach_webview_handler(&feed, &self.webview_addr)?;
+        Ok(feed)
     }
 
     // -----------------------------------------------------------------------
@@ -184,7 +198,7 @@ impl RegistryActor {
                 );
                 continue;
             };
-            match self.engine.load_script(&script).await {
+            match self.compile_feed(&script).await {
                 Err(e) => {
                     load_errors.insert(row.id.clone(), localize_error(&e));
                 }
@@ -318,7 +332,7 @@ impl RegistryActor {
 
         // Compile first — a script that cannot run is never persisted.
         let (meta, _) = langhuan::script::meta::parse_meta(&pending.content)?;
-        let feed = self.engine.load_script(&pending.content).await?;
+        let feed = self.compile_feed(&pending.content).await?;
 
         let content_hash = langhuan::hash::sha256_hex(pending.content.as_bytes());
         let now = langhuan::db::now_ms();
@@ -353,7 +367,7 @@ impl RegistryActor {
         let db = self.require_db()?;
 
         // Compile first — a script that cannot run is never persisted.
-        let feed = self.engine.load_script(&content).await?;
+        let feed = self.compile_feed(&content).await?;
 
         let content_hash = langhuan::hash::sha256_hex(content.as_bytes());
         let already_installed = db
@@ -637,6 +651,15 @@ mod tests {
 
     type TestResult = Result<(), Box<dyn Error>>;
 
+    /// Spawns an idle WebviewActor and hands back its address — the tests
+    /// never prompt, but every compiled feed needs a handler target.
+    fn webview_address() -> Address<WebviewActor> {
+        let context = Context::new();
+        let address = context.address();
+        tokio::spawn(context.run(WebviewActor::new()));
+        address
+    }
+
     #[test]
     fn version_change_classification() {
         use VersionChange::*;
@@ -690,7 +713,7 @@ mod tests {
         })
         .await?;
 
-        let mut actor = RegistryActor::new(ScriptEngine::new());
+        let mut actor = RegistryActor::new(ScriptEngine::new(), webview_address());
         actor.initialize_app_data_directory(db.clone()).await?;
 
         let f2 = import_script("f2", "1.0.0");
@@ -776,7 +799,7 @@ mod tests {
         })
         .await?;
 
-        let mut actor = RegistryActor::new(ScriptEngine::new());
+        let mut actor = RegistryActor::new(ScriptEngine::new(), webview_address());
         let result = actor.initialize_app_data_directory(db).await?;
         // The seeded script fails to compile, but registration survives.
         assert_eq!(result.feed_count, 0);
@@ -799,7 +822,7 @@ mod tests {
 
     #[tokio::test]
     async fn pending_installs_are_capped_and_lru() {
-        let mut actor = RegistryActor::new(ScriptEngine::new());
+        let mut actor = RegistryActor::new(ScriptEngine::new(), webview_address());
         for i in 0..PENDING_INSTALLS_CAP {
             actor.push_pending(
                 format!("f{i}"),

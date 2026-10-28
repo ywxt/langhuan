@@ -12,7 +12,8 @@ Current examples:
 - [`fanqie.js`](fanqie.js) — server-rendered pages whose text is font-obfuscated
   (decoded through an embedded glyph table pinned to the served font), with
   keyword search via the site's JSON API (POST with query-string parameters;
-  plain GETs are risk-control challenged).
+  plain GETs are risk-control challenged) and an interactive WebView
+  verification fallback for when the search endpoint is risk-gated.
 
 There is no legacy runtime compatibility. Schema 3 sources must use `.js` and
 must return their Feed object. Assigning `globalThis.feed` is not supported.
@@ -73,7 +74,7 @@ methods. Do not mutate globals to register handlers.
 ## Reducer model
 
 Each operation is a synchronous reducer. It receives an event and returns one
-of four steps:
+of five steps:
 
 ```ts
 type Event = {
@@ -89,11 +90,17 @@ type Event = {
   };
   compute: unknown | null;
   auth: null | object;
+  webview: null | {
+    current_url: string;
+    html: string;
+    cookies: { name: string; value: string; domain?: string }[];
+  };
 };
 
 type Step =
   | { type: "request"; request: Request; next_state?: unknown; cache_key?: string }
   | { type: "compute"; programs: string[]; input?: unknown; next_state?: unknown }
+  | { type: "webview"; url: string; title?: string; next_state?: unknown }
   | { type: "complete"; items?: unknown[]; value?: unknown; next_cursor?: unknown }
   | { type: "fail"; code: string; message: string };
 ```
@@ -122,7 +129,8 @@ The script never performs HTTP itself.
 ```
 
 Rust enforces the domain allowlist, response-size limits, retry policy, trace
-redaction, and at most eight internal request/compute steps per operation.
+redaction, and at most eight internal request/compute/webview steps per
+operation.
 `cache_key` enables the small per-feed response cache and single-flight
 behavior for immutable helper assets such as a decryptor bundle.
 Only use it when both the URL and content are immutable. For a script URL
@@ -156,6 +164,55 @@ execution-time, source-size, program-count, and result-size limits.
 
 Do not pass complete authentication objects to compute. Provide only the
 minimum scalar inputs required by the website algorithm.
+
+### Interactive WebView verification
+
+Some gates cannot be cleared from a script at all: anti-bot sliders, device
+checks, or consent walls that only a human in a real browser satisfies. When a
+reducer hits one, it returns a `webview` step:
+
+```js
+return {
+  type: "webview",
+  url: `${meta.base_url}/library`,   // page that triggers the challenge
+  title: "番茄小說驗證",               // optional UI title
+  next_state: { stage: "verified" },
+};
+```
+
+The host opens the page in a platform WebView (embedded on Android, iOS and
+macOS; a separate window on Linux and Windows), the user completes the
+interaction, and the page snapshot — final URL, HTML, and the cookies
+collected so far — comes back as `event.webview` with `next_state`, letting
+the reducer continue:
+
+```js
+if (event.webview != null) {
+  const cookies = event.webview.cookies
+    .filter((c) => c.domain?.endsWith("example.com"))
+    .map((c) => `${c.name}=${c.value}`)
+    .join("; ");
+  return {
+    type: "request",
+    request: { url: "...", method: "POST", headers: { Cookie: cookies } },
+    next_state: { stage: "results" },
+  };
+}
+```
+
+Notes:
+
+- The operation parks while the user interacts — it can take minutes; there
+  is no timeout, and the search results arrive when the user finishes.
+- If the user abandons the page, the operation fails with `auth_required`.
+  The same error surfaces when the environment provides no WebView host.
+- The step counts toward the eight-step internal limit, so a script cannot
+  loop verification; gate → verify → retry counts as three steps.
+- Use it only for human-only gates. Preflighting it on every operation
+  would train users to dismiss dialogs.
+- Keep any harvested cookie string in module state (it persists for the
+  feed's lifetime) and attach it to later requests, so verification happens
+  once per session instead of once per operation. See `fanqie.js`.
 
 ### Operations
 

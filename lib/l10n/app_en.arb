@@ -515,6 +515,30 @@
   "searchAuthAction": "Login Source",
   "@searchAuthAction": { "description": "Action button for opening feed auth flow from search" },
 
+  "webviewVerifyPageTitle": "Verification",
+  "@webviewVerifyPageTitle": { "description": "Fallback title for the feed-requested verification page" },
+
+  "webviewVerifyDone": "Done",
+  "@webviewVerifyDone": { "description": "Button that submits the verification page snapshot" },
+
+  "webviewVerifyInstructions": "Complete the verification on this page, then tap \"Done\".",
+  "@webviewVerifyInstructions": { "description": "Instructions shown above the embedded verification WebView" },
+
+  "webviewVerifyDesktopInstructions": "The verification page opened in a separate window. Complete it there, keep the window open, then come back and tap \"Done\".",
+  "@webviewVerifyDesktopInstructions": { "description": "Instructions shown while the verification WebView runs in a separate desktop window" },
+
+  "webviewVerifyDesktopWindowHint": "The verification window is still open. Once you finish there, tap \"Done\" in the top-right corner.",
+  "@webviewVerifyDesktopWindowHint": { "description": "Hint shown while the desktop verification window is open" },
+
+  "webviewVerifyWindowClosed": "The verification window was closed. Verification needs the page and cookies from that window — please reopen it.",
+  "@webviewVerifyWindowClosed": { "description": "Message shown when the desktop verification window is closed" },
+
+  "webviewVerifyReopenWindow": "Reopen verification window",
+  "@webviewVerifyReopenWindow": { "description": "Button that reopens the desktop verification window" },
+
+  "webviewVerifySubmitting": "Submitting verification…",
+  "@webviewVerifySubmitting": { "description": "Banner shown while the page snapshot is being submitted" },
+
   "feedItemLoadError": "Load error",
   "@feedItemLoadError": { "description": "Label for per-feed compile error in detail sheet" },
 
