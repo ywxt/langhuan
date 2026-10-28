@@ -89,8 +89,10 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes clang cmake ninja-build
-          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> "$GITHUB_ENV"
+          sudo apt-get install --yes clang cmake libclang-dev ninja-build
+          libclang="$(find /usr/lib/llvm-* -type f -name 'libclang.so*' -print -quit)"
+          test -n "$libclang"
+          echo "LIBCLANG_PATH=$(dirname "$libclang")" >> "$GITHUB_ENV"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
 
       - uses: actions/download-artifact@v8
