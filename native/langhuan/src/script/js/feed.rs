@@ -61,55 +61,70 @@ const REQUIRED_LOGIN_HANDLERS: &[JsMethodPath] = &[
 #[derive(Clone)]
 pub struct JsSupportAuth;
 
-#[derive(Clone, Copy)]
-enum JsOperationKind {
-    Search,
-    BookInfo,
-    Chapters,
-    Paragraphs,
+/// One operation of the feed contract, carrying the typed arguments its
+/// reducer receives as `event.input`.
+enum JsOperation<'a> {
+    Search {
+        keyword: &'a str,
+    },
+    BookInfo {
+        book_id: &'a str,
+    },
+    Chapters {
+        book_id: &'a str,
+    },
+    Paragraphs {
+        book_id: &'a str,
+        chapter_id: &'a str,
+    },
     AuthStatus,
 }
 
-impl JsOperationKind {
-    const fn handler(self) -> JsMethodPath {
+impl JsOperation<'_> {
+    /// The handler path on the feed object.
+    fn handler(&self) -> JsMethodPath {
         match self {
-            Self::Search => SEARCH_HANDLER,
-            Self::BookInfo => BOOK_INFO_HANDLER,
-            Self::Chapters => CHAPTERS_HANDLER,
-            Self::Paragraphs => PARAGRAPHS_HANDLER,
+            Self::Search { .. } => SEARCH_HANDLER,
+            Self::BookInfo { .. } => BOOK_INFO_HANDLER,
+            Self::Chapters { .. } => CHAPTERS_HANDLER,
+            Self::Paragraphs { .. } => PARAGRAPHS_HANDLER,
             Self::AuthStatus => LOGIN_STATUS_HANDLER,
         }
     }
 
     /// The snake-case operation name delivered in the reducer event.
-    const fn as_str(self) -> &'static str {
+    fn kind(&self) -> &'static str {
         match self {
-            Self::Search => "search",
-            Self::BookInfo => "book_info",
-            Self::Chapters => "chapters",
-            Self::Paragraphs => "paragraphs",
+            Self::Search { .. } => "search",
+            Self::BookInfo { .. } => "book_info",
+            Self::Chapters { .. } => "chapters",
+            Self::Paragraphs { .. } => "paragraphs",
             Self::AuthStatus => "auth_status",
         }
     }
-}
 
-/// One operation of the feed contract: which handler to run, and the input
-/// it receives, materialized once at construction.
-struct JsOperation {
-    kind: JsOperationKind,
-    input: JsData,
-}
-
-impl JsOperation {
-    fn new(kind: JsOperationKind, input: JsData) -> Self {
-        Self { kind, input }
+    /// The `event.input` object, built from the typed arguments.
+    fn input(&self) -> JsData {
+        match self {
+            Self::Search { keyword } => JsData::obj([("keyword", JsData::str(*keyword))]),
+            Self::BookInfo { book_id } => JsData::obj([("bookId", JsData::str(*book_id))]),
+            Self::Chapters { book_id } => JsData::obj([("bookId", JsData::str(*book_id))]),
+            Self::Paragraphs {
+                book_id,
+                chapter_id,
+            } => JsData::obj([
+                ("bookId", JsData::str(*book_id)),
+                ("chapterId", JsData::str(*chapter_id)),
+            ]),
+            Self::AuthStatus => JsData::obj([]),
+        }
     }
 
     /// The `{operation, input}` object `login.patchRequest` receives.
     fn patch_argument(&self) -> JsData {
         JsData::obj([
-            ("operation", JsData::str(self.kind.as_str())),
-            ("input", self.input.clone()),
+            ("operation", JsData::str(self.kind())),
+            ("input", self.input()),
         ])
     }
 }
@@ -245,12 +260,13 @@ impl JsFeed {
     }
 
     /// Invoke the operation's reducer once with a live event object.
-    fn invoke(&self, operation: &JsOperation, round: Round<'_>) -> Result<Step> {
+    fn invoke(&self, operation: &JsOperation<'_>, round: Round<'_>) -> Result<Step> {
+        let input = operation.input();
         let spec = OperationSpec {
-            kind: operation.kind.as_str(),
-            input: &operation.input,
+            kind: operation.kind(),
+            input: &input,
         };
-        let handler = operation.kind.handler();
+        let handler = operation.handler();
         self.feed_object.with_realm(move |ctx, feed_object| {
             let event = build_event(&ctx, &spec, &round)?;
             let result = call_handler(&ctx, &feed_object, handler, &[event])?;
@@ -261,7 +277,7 @@ impl JsFeed {
     /// Run `login.patchRequest` over a request when the feed is logged in.
     fn apply_auth_patch(
         &self,
-        operation: &JsOperation,
+        operation: &JsOperation<'_>,
         request: HttpRequest,
     ) -> Result<HttpRequest> {
         if !self.has_login {
@@ -333,7 +349,11 @@ impl JsFeed {
         Ok(response)
     }
 
-    async fn run_operation(&self, operation: &JsOperation, cursor: &JsData) -> Result<Complete> {
+    async fn run_operation(
+        &self,
+        operation: &JsOperation<'_>,
+        cursor: &JsData,
+    ) -> Result<Complete> {
         // `state` threads opaque JavaScript values between rounds; the
         // executed step's result is carried as `outcome` and consumed by the
         // next round.
@@ -429,7 +449,7 @@ impl JsFeed {
 
     async fn run_page<T: DeserializeOwned>(
         &self,
-        operation: &JsOperation,
+        operation: &JsOperation<'_>,
         cursor: &JsData,
     ) -> Result<Page<T, JsData>> {
         let complete = self.run_operation(operation, cursor).await?;
@@ -441,13 +461,13 @@ impl JsFeed {
         })
     }
 
-    async fn run_value<T: DeserializeOwned>(&self, operation: &JsOperation) -> Result<T> {
+    async fn run_value<T: DeserializeOwned>(&self, operation: &JsOperation<'_>) -> Result<T> {
         let complete = self.run_operation(operation, &JsData::Null).await?;
         serde_json::from_value(complete.value.unwrap_or(Value::Null))
             .map_err(|error| Error::javascript(format!("invalid value: {error}")))
     }
 
-    fn paged_stream<'a, T>(&'a self, operation: JsOperation) -> FeedStream<'a, T>
+    fn paged_stream<'a, T>(&'a self, operation: JsOperation<'a>) -> FeedStream<'a, T>
     where
         T: DeserializeOwned + Send + 'a,
     {
@@ -520,27 +540,18 @@ fn spend_step(steps_left: &mut usize) -> Result<()> {
 
 impl Feed for JsFeed {
     fn search<'a>(&'a self, keyword: &'a str) -> FeedStream<'a, SearchResult> {
-        let operation = JsOperation::new(
-            JsOperationKind::Search,
-            JsData::obj([("keyword", JsData::str(keyword))]),
-        );
+        let operation = JsOperation::Search { keyword };
         let stream = self.paged_stream(operation);
         self.dedup_stream(stream, "book", |item: &SearchResult| item.id.clone())
     }
 
     async fn book_info(&self, id: &str) -> Result<BookInfo> {
-        let operation = JsOperation::new(
-            JsOperationKind::BookInfo,
-            JsData::obj([("bookId", JsData::str(id))]),
-        );
+        let operation = JsOperation::BookInfo { book_id: id };
         self.run_value(&operation).await
     }
 
     fn chapters<'a>(&'a self, book_id: &'a str) -> FeedStream<'a, ChapterInfo> {
-        let operation = JsOperation::new(
-            JsOperationKind::Chapters,
-            JsData::obj([("bookId", JsData::str(book_id))]),
-        );
+        let operation = JsOperation::Chapters { book_id };
         let stream = self.paged_stream(operation);
         self.dedup_stream(stream, "chapter", |item: &ChapterInfo| item.id.clone())
     }
@@ -550,13 +561,10 @@ impl Feed for JsFeed {
         book_id: &'a str,
         chapter_id: &'a str,
     ) -> FeedStream<'a, Paragraph> {
-        let operation = JsOperation::new(
-            JsOperationKind::Paragraphs,
-            JsData::obj([
-                ("bookId", JsData::str(book_id)),
-                ("chapterId", JsData::str(chapter_id)),
-            ]),
-        );
+        let operation = JsOperation::Paragraphs {
+            book_id,
+            chapter_id,
+        };
         let raw: FeedStream<'a, RawParagraph> = self.paged_stream(operation);
         let indexed: FeedStream<'a, Paragraph> = Box::pin(stream! {
             let mut index = 0usize;
@@ -628,7 +636,7 @@ impl FeedAuthFlow for JsFeed {
         if !self.has_auth_status {
             return Ok(AuthStatus::LoggedIn);
         }
-        let operation = JsOperation::new(JsOperationKind::AuthStatus, JsData::obj([]));
+        let operation = JsOperation::AuthStatus;
         let valid: bool = self.run_value(&operation).await?;
         Ok(if valid {
             AuthStatus::LoggedIn
