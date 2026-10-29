@@ -43,8 +43,8 @@ fn build_text_decoder<'js>(
             &format!("TextDecoder: unknown encoding label {label:?}"),
         ));
     };
-    let fatal = flag(ctx, options.as_ref(), "fatal", false)?;
-    let ignore_bom = flag(ctx, options.as_ref(), "ignoreBOM", false)?;
+    let fatal = flag(ctx, options.as_ref(), "TextDecoder", "fatal", false)?;
+    let ignore_bom = flag(ctx, options.as_ref(), "TextDecoder", "ignoreBOM", false)?;
 
     let decoder = Object::new(ctx.clone())?;
     decoder.set("encoding", encoding.name())?;
@@ -59,7 +59,13 @@ fn build_text_decoder<'js>(
                   options: Opt<Object<'js>>|
                   -> JsResult<String> {
                 let options = options.0;
-                if flag(&ctx, options.as_ref(), "stream", false)? {
+                if flag(
+                    &ctx,
+                    options.as_ref(),
+                    "TextDecoder.decode",
+                    "stream",
+                    false,
+                )? {
                     return Err(Exception::throw_message(
                         &ctx,
                         "TextDecoder.decode: streaming decode is not supported",
@@ -120,7 +126,7 @@ fn install_bytes<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
              data: TypedArray<'js, u8>,
              options: Opt<Object<'js>>|
              -> JsResult<String> {
-                let url_safe = flag(&ctx, options.0.as_ref(), "urlSafe", false)?;
+                let url_safe = flag(&ctx, options.0.as_ref(), "Bytes.toBase64", "urlSafe", false)?;
                 let bytes = typed_bytes(&ctx, &data)?;
                 Ok(to_base64(&bytes, url_safe))
             },
@@ -134,7 +140,13 @@ fn install_bytes<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
              input: String,
              options: Opt<Object<'js>>|
              -> JsResult<TypedArray<'js, u8>> {
-                let url_safe = flag(&ctx, options.0.as_ref(), "urlSafe", false)?;
+                let url_safe = flag(
+                    &ctx,
+                    options.0.as_ref(),
+                    "Bytes.fromBase64",
+                    "urlSafe",
+                    false,
+                )?;
                 let bytes = from_base64(&input, url_safe).ok_or_else(|| {
                     Exception::throw_message(&ctx, "Bytes.fromBase64: invalid base64 input")
                 })?;
@@ -175,6 +187,7 @@ fn install_bytes<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
 fn flag<'js>(
     ctx: &Ctx<'js>,
     options: Option<&Object<'js>>,
+    label: &str,
     name: &str,
     fallback: bool,
 ) -> JsResult<bool> {
@@ -189,7 +202,7 @@ fn flag<'js>(
         Some(flag) => Ok(flag),
         None => Err(Exception::throw_message(
             ctx,
-            &format!("`{name}` must be a boolean"),
+            &format!("{label}: `{name}` must be a boolean"),
         )),
     }
 }
@@ -315,6 +328,8 @@ fn from_hex(input: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::script::js::sandbox::Sandbox;
+    use std::time::Duration;
 
     #[test]
     fn base64_matches_rfc4648_vectors() {
@@ -365,5 +380,26 @@ mod tests {
         assert_eq!(from_hex("000FA5FF").unwrap(), bytes);
         assert!(from_hex("000fa5f").is_none());
         assert!(from_hex("000fa5fg").is_none());
+    }
+
+    #[test]
+    fn option_flags_report_their_namespace() {
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let error = sandbox
+            .eval_json("new TextDecoder('utf-8', { fatal: 5 })")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("TextDecoder: `fatal` must be a boolean"),
+            "{error}"
+        );
+        let error = sandbox
+            .eval_json("Bytes.toBase64(new Uint8Array(1), { urlSafe: 1 })")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("Bytes.toBase64: `urlSafe` must be a boolean"),
+            "{error}"
+        );
     }
 }

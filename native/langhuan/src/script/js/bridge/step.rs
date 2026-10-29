@@ -10,11 +10,12 @@
 
 use std::collections::HashMap;
 
-use rquickjs::{Ctx, Error as JsError, FromJs, Object, Result as JsResult, Value as JsValue};
+use rquickjs::{Ctx, Error as JsError, FromJs, Result as JsResult, Value as JsValue};
 use serde_json::Value;
 
 use super::convert::{JsData, js_to_jsdata, js_to_json, u8_to_bytes};
 use super::event::OpaqueJsValue;
+use super::fields::{Fields, conversion_detail};
 use crate::error::{Error, ExpectedErrorCode, Result};
 use crate::feed::AuthEntry;
 use crate::http::{HttpBody, HttpRequest};
@@ -305,144 +306,13 @@ pub fn read_auth_result<'js>(ctx: &Ctx<'js>, value: &JsValue<'js>) -> Result<Val
 }
 
 // ---------------------------------------------------------------------------
-// Field readers
+// Conversion errors
 // ---------------------------------------------------------------------------
 
-/// Prefix a context label to a conversion failure, extracting the
-/// field-level detail from the error's message slot.
+/// Prefix a context label to a conversion failure; the field-level detail
+/// comes from the conversion error's message slot.
 fn labeled(label: &'static str, error: JsError) -> Error {
-    let detail = match error {
-        JsError::FromJs {
-            message: Some(detail),
-            ..
-        } => detail,
-        other => other.to_string(),
-    };
-    Error::javascript(format!("{label}: {detail}"))
-}
-
-/// Field readers over a live object, so extraction errors name the offending
-/// field. The detail travels in the conversion error's message slot; the
-/// boundary functions prefix the context label.
-struct Fields<'js> {
-    object: Object<'js>,
-    /// The Rust type being read, named if an error escapes a boundary raw.
-    type_name: &'static str,
-}
-
-impl<'js> Fields<'js> {
-    /// Read `value` as an object for conversion into `type_name`.
-    fn new(value: JsValue<'js>, type_name: &'static str) -> JsResult<Self> {
-        let js_type = value.type_name();
-        let object = value.into_object().ok_or_else(|| {
-            JsError::new_from_js_message(js_type, type_name, "expected an object")
-        })?;
-        Ok(Self { object, type_name })
-    }
-
-    /// A conversion failure with an arbitrary detail.
-    fn invalid(&self, detail: impl Into<String>) -> JsError {
-        JsError::new_from_js_message("object", self.type_name, detail.into())
-    }
-
-    /// Fetch a field's live value.
-    fn value(&self, field: &str) -> JsResult<JsValue<'js>> {
-        self.object
-            .get::<_, JsValue>(field)
-            .map_err(|error| self.invalid(format!("reading `{field}` failed: {error}")))
-    }
-
-    /// A required field that is absent.
-    fn missing(&self, field: &str) -> JsError {
-        self.invalid(format!("missing field `{field}`"))
-    }
-
-    /// A field with the wrong shape.
-    fn error(&self, field: &str, problem: &str) -> JsError {
-        self.invalid(format!("`{field}` {problem}"))
-    }
-
-    /// A host-side conversion failure for a field.
-    fn conversion_error(&self, field: &str, error: Error) -> JsError {
-        self.invalid(format!("`{field}`: {error}"))
-    }
-
-    fn required_string(&self, field: &str) -> JsResult<String> {
-        let value = self.value(field)?;
-        if value.is_undefined() {
-            return Err(self.missing(field));
-        }
-        value
-            .get::<String>()
-            .map_err(|_| self.error(field, "must be a string"))
-    }
-
-    fn optional_string(&self, field: &str) -> JsResult<Option<String>> {
-        let value = self.value(field)?;
-        if value.is_undefined() || value.is_null() {
-            return Ok(None);
-        }
-        value
-            .get::<String>()
-            .map(Some)
-            .map_err(|_| self.error(field, "must be a string"))
-    }
-
-    fn required_object(&self, field: &str) -> JsResult<Object<'js>> {
-        let value = self.value(field)?;
-        if value.is_undefined() {
-            return Err(self.missing(field));
-        }
-        value
-            .into_object()
-            .ok_or_else(|| self.error(field, "must be an object"))
-    }
-
-    fn string_array(&self, field: &str) -> JsResult<Vec<String>> {
-        let value = self.value(field)?;
-        if value.is_undefined() {
-            return Err(self.missing(field));
-        }
-        if !value.is_array() {
-            return Err(self.error(field, "must be an array of strings"));
-        }
-        let array = value
-            .into_array()
-            .ok_or_else(|| self.error(field, "must be an array of strings"))?;
-        let mut items = Vec::with_capacity(array.len());
-        for entry in array.iter::<JsValue>() {
-            let entry = entry
-                .map_err(|error| self.invalid(format!("reading `{field}` failed: {error}")))?;
-            let text = entry
-                .get::<String>()
-                .map_err(|_| self.error(field, "must contain only strings"))?;
-            items.push(text);
-        }
-        Ok(items)
-    }
-
-    /// Read a step field as realm-independent data, for values that travel
-    /// back into the realm untouched (unlike `items`/`value`, which the host
-    /// materializes as JSON for serde).
-    fn data_field(&self, field: &str) -> JsResult<Option<JsData>> {
-        let value = self.value(field)?;
-        if value.is_undefined() || value.is_null() {
-            return Ok(None);
-        }
-        js_to_jsdata(&value)
-            .map(Some)
-            .map_err(|error| self.conversion_error(field, error))
-    }
-
-    /// Convert a step field to JSON, rejecting bytes and other non-JSON
-    /// values.
-    fn json_field(&self, ctx: &Ctx<'js>, field: &str) -> JsResult<Option<Value>> {
-        let value = self.value(field)?;
-        if value.is_undefined() || value.is_null() {
-            return Ok(None);
-        }
-        js_to_json(ctx, &value).map_err(|error| self.conversion_error(field, error))
-    }
+    Error::javascript(format!("{label}: {}", conversion_detail(error)))
 }
 
 #[cfg(test)]

@@ -16,7 +16,7 @@ use rquickjs::{
 };
 use sha2::Digest;
 
-use super::bridge::typed_bytes;
+use super::bridge::{Fields, conversion_detail, typed_bytes};
 
 /// Upper bound for decompressed output, matching the QuickJS heap limit.
 const MAX_EXPANSION_BYTES: usize = 32 * 1024 * 1024;
@@ -80,8 +80,13 @@ fn install_crypto<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
         "aes",
         Function::new(
             ctx.clone(),
-            |ctx: Ctx<'js>, options: Object<'js>| -> JsResult<TypedArray<'js, u8>> {
-                let request = AesRequest::from_options(&ctx, &options)?;
+            |ctx: Ctx<'js>, options: JsValue<'js>| -> JsResult<TypedArray<'js, u8>> {
+                let request = AesRequest::from_js(&ctx, options).map_err(|error| {
+                    Exception::throw_message(
+                        &ctx,
+                        &format!("Crypto.aes: {}", conversion_detail(error)),
+                    )
+                })?;
                 let output = aes_run(&ctx, &request)?;
                 bytes_out(&ctx, output)
             },
@@ -209,77 +214,18 @@ struct AesRequest {
     aad: Option<Vec<u8>>,
 }
 
-impl AesRequest {
-    fn from_options<'js>(ctx: &Ctx<'js>, options: &Object<'js>) -> JsResult<Self> {
-        let options = Options {
-            ctx,
-            object: options,
-        };
+impl<'js> FromJs<'js> for AesRequest {
+    fn from_js(ctx: &Ctx<'js>, value: JsValue<'js>) -> JsResult<Self> {
+        let fields = Fields::new(value, "AesRequest")?;
         Ok(Self {
-            op: options.required_string("op")?,
-            mode: options.required_string("mode")?,
-            key: options.required_bytes("key")?,
-            iv: options.optional_bytes("iv")?,
-            data: options.required_bytes("data")?,
-            padding: options.optional_string("padding")?,
-            aad: options.optional_bytes("aad")?,
+            op: fields.required_string("op")?,
+            mode: fields.required_string("mode")?,
+            key: fields.required_bytes(ctx, "key")?,
+            iv: fields.optional_bytes(ctx, "iv")?,
+            data: fields.required_bytes(ctx, "data")?,
+            padding: fields.optional_string("padding")?,
+            aad: fields.optional_bytes(ctx, "aad")?,
         })
-    }
-}
-
-/// Field readers for the `Crypto.aes` options object; every failure names
-/// the offending field.
-struct Options<'a, 'js> {
-    ctx: &'a Ctx<'js>,
-    object: &'a Object<'js>,
-}
-
-impl<'js> Options<'_, 'js> {
-    fn problem(&self, problem: String) -> rquickjs::Error {
-        Exception::throw_message(self.ctx, &format!("Crypto.aes: {problem}"))
-    }
-
-    fn required_string(&self, name: &str) -> JsResult<String> {
-        let value: JsValue = self.object.get(name)?;
-        if value.is_undefined() {
-            return Err(self.problem(format!("missing field `{name}`")));
-        }
-        value
-            .get::<String>()
-            .map_err(|_| self.problem(format!("`{name}` must be a string")))
-    }
-
-    fn optional_string(&self, name: &str) -> JsResult<Option<String>> {
-        let value: JsValue = self.object.get(name)?;
-        if value.is_undefined() || value.is_null() {
-            return Ok(None);
-        }
-        value
-            .get::<String>()
-            .map(Some)
-            .map_err(|_| self.problem(format!("`{name}` must be a string")))
-    }
-
-    fn required_bytes(&self, name: &str) -> JsResult<Vec<u8>> {
-        let value: JsValue = self.object.get(name)?;
-        if value.is_undefined() {
-            return Err(self.problem(format!("missing field `{name}`")));
-        }
-        self.byte_field(name, value)
-    }
-
-    fn optional_bytes(&self, name: &str) -> JsResult<Option<Vec<u8>>> {
-        let value: JsValue = self.object.get(name)?;
-        if value.is_undefined() || value.is_null() {
-            return Ok(None);
-        }
-        Ok(Some(self.byte_field(name, value)?))
-    }
-
-    fn byte_field(&self, name: &str, value: JsValue<'js>) -> JsResult<Vec<u8>> {
-        let typed = TypedArray::<u8>::from_js(self.ctx, value)
-            .map_err(|_| self.problem(format!("`{name}` must be a Uint8Array")))?;
-        typed_bytes(self.ctx, &typed)
     }
 }
 
@@ -551,6 +497,8 @@ fn bytes_out<'js>(ctx: &Ctx<'js>, bytes: Vec<u8>) -> JsResult<TypedArray<'js, u8
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::script::js::sandbox::Sandbox;
+    use std::time::Duration;
 
     fn hex(bytes: &[u8]) -> String {
         bytes.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -688,5 +636,54 @@ mod tests {
         let bomb = gzip_encode(&vec![0u8; 1024]).unwrap();
         // 1 KiB of zeros compresses tiny; decode is fine and small.
         assert_eq!(gzip_decode(&bomb).unwrap().len(), 1024);
+    }
+
+    #[test]
+    fn aes_rejects_malformed_options_with_field_names() {
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let cases = [
+            ("Crypto.aes(5)", "Crypto.aes: expected an object"),
+            ("Crypto.aes({})", "Crypto.aes: missing field `op`"),
+            (
+                "Crypto.aes({ op: 5, mode: 'cbc', key: [], iv: [], data: [] })",
+                "Crypto.aes: `op` must be a string",
+            ),
+            (
+                "Crypto.aes({ op: 'encrypt', mode: 'cbc', key: 5, iv: [], data: [] })",
+                "Crypto.aes: `key` must be a Uint8Array",
+            ),
+        ];
+        for (code, expected) in cases {
+            let error = sandbox.eval_json(code).unwrap_err().to_string();
+            assert!(error.contains(expected), "{code} -> {error}");
+        }
+    }
+
+    #[test]
+    fn aes_round_trips_options_through_the_realm() {
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let sealed = sandbox
+            .eval_json(
+                r#"Bytes.toHex(Crypto.aes({
+                    op: "encrypt",
+                    mode: "cbc",
+                    key: new Uint8Array(16),
+                    iv: new Uint8Array(16),
+                    data: new TextEncoder().encode("secret"),
+                }))"#,
+            )
+            .unwrap();
+        let opened = sandbox
+            .eval_json(&format!(
+                r#"new TextDecoder().decode(Crypto.aes({{
+                    op: "decrypt",
+                    mode: "cbc",
+                    key: new Uint8Array(16),
+                    iv: new Uint8Array(16),
+                    data: Bytes.fromHex("{sealed}"),
+                }}))"#
+            ))
+            .unwrap();
+        assert_eq!(opened, "secret");
     }
 }

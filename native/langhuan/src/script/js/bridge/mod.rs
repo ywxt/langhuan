@@ -11,6 +11,9 @@
 //!   becomes a live object instead of a stringified one.
 //! * [`event`] builds the objects the host hands into the realm — the
 //!   reducer event, the auth page, and patchable requests.
+//! * [`fields`] reads objects field by field; every failure becomes a
+//!   conversion error whose message slot names the offending field, which
+//!   boundary functions re-label as their own.
 //! * [`step`] reads what scripts return — reducer steps, patched requests,
 //!   and authentication results — with errors that name the offending field.
 //!
@@ -19,6 +22,7 @@
 
 mod convert;
 mod event;
+mod fields;
 mod step;
 
 use rquickjs::{Ctx, IntoJs, Object, Value as JsValue};
@@ -30,6 +34,7 @@ use crate::error::Result;
 pub(super) use convert::js_to_json;
 pub(super) use convert::{JsData, js_to_jsdata, typed_bytes};
 pub(super) use event::{OpaqueJsValue, OperationSpec, Round, StepOutcome, build_event};
+pub(super) use fields::{Fields, conversion_detail};
 pub(super) use step::{Step, read_auth_entry, read_auth_result, read_patched_request, read_step};
 
 /// Upper bound for values materialized across the bridge, matching the
