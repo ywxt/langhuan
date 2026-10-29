@@ -12,7 +12,7 @@
 //       -d emulator-5554 --no-uninstall
 //
 // (On NixOS the Android target additionally needs the read-only-SDK plugin
-// mirror from flake.nix; see flutter-native-plugin-loader-nix.gradle.kts.)
+// mirror from nix/flutter.nix; see nix/flutter-native-plugin-loader-nix.gradle.kts.)
 
 import 'dart:io';
 
