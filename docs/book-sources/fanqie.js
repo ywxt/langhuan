@@ -31,12 +31,11 @@
 //
 // 部分章節在網頁端是 SVIP 權益牆而非單純的反爬：閱讀頁 SSR 對未登入帳號只
 // 渲染試讀段落（頁面帶 muye-to-vip-login 標記），登入後若帳號無 SVIP 權益，
-// 返回的仍是同一份試讀頁。改打 /api/reader/full 也取不到全文：該端點對缺少
-// 瀏覽器憑證的請求一律回 200 空體 + bdturing-verify 響應頭（滑塊挑戰，免費
-// 章與 VIP 章一視同仁），且頁面訪問本身不下發 Set-Cookie——通行憑證由頁面
-// JS 在瀏覽器內計算，沙箱側無從生成；滑塊雖可由 webview 裏的真人解掉，但過
-// 閘後匿名能否取 VIP 全文未經證實（網頁端權益語義是登入 + SVIP 暢讀），而
-// API 正文的字體混淆配置逐章經 x-tt-zhal 響應頭下發、需逐字體建映射表，故
+// 返回的仍是同一份試讀頁。改打 /api/reader/full 也繞不過權益牆：該端點按
+// IP 信譽設閘——機房 IP 一律回 200 空體 + bdturing-verify 滑塊挑戰頭（頁
+// 面訪問不下發 Set-Cookie，通行憑證由頁面 JS 在瀏覽器內計算），住宅 IP 直
+// 通（多個第三方項目交叉證實）；但直通後付費章仍回 needPay 權益錯誤，免費
+// 章 SSR 本來就完整，且 API 正文的字體混淆配置逐章經 x-tt-zhal 頭下發，故
 // 不改走此路線。已知的替代路線是 APP 匿名裝置閘道
 // （reading.snssdk.com 的 /reading/*，需 Argus/Ladon 請求簽名、ttencrypt 裝
 // 置註冊與 AES 內容密鑰；據 GPL-3.0 的 fanqie-assistant 專案，此路線可匿名
