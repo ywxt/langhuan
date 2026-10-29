@@ -90,12 +90,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes clang cmake libclang-dev ninja-build
-          # llvm-config ships with clang's dependencies and reports the
-          # directory holding libclang. Resolve LIBCLANG_PATH through it
-          # instead of globbing /usr/lib/llvm-*: Debian names the library
-          # libclang-<n>.so*, which a `find -name 'libclang.so*'` misses
-          # (and its unversioned symlinks are excluded by `-type f`).
-          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> "$GITHUB_ENV"
+          # libclang-dev drops the versioned library into /usr/lib/llvm-<n>/lib
+          # but does not pull llvm-config — resolve the directory from the
+          # installed files instead. The glob must match Debian's versioned
+          # sonames (libclang-18.so*): 'libclang.so*' never matches them, which
+          # is what the original find probe died on, and llvm-config's absence
+          # silently emptied LIBCLANG_PATH in the run after that. The test
+          # fails the step loudly if the layout ever shifts again.
+          libclang_dir="$(dirname "$(find /usr/lib -name 'libclang-*.so*' -print -quit)")"
+          test -n "$libclang_dir"
+          echo "LIBCLANG_PATH=$libclang_dir" >> "$GITHUB_ENV"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
 
       - uses: actions/download-artifact@v8
@@ -143,8 +147,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
-            clang cmake ninja-build pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
-          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> "$GITHUB_ENV"
+            clang cmake ninja-build pkg-config libclang-dev libgtk-3-dev libwebkit2gtk-4.1-dev
+          # Same resolution as the Android job. The desktop build never runs
+          # bindgen (rquickjs-sys ships pre-generated bindings for the host
+          # target), so an empty LIBCLANG_PATH goes unnoticed here — set it
+          # properly anyway in case that ever changes.
+          libclang_dir="$(dirname "$(find /usr/lib -name 'libclang-*.so*' -print -quit)")"
+          test -n "$libclang_dir"
+          echo "LIBCLANG_PATH=$libclang_dir" >> "$GITHUB_ENV"
 
       - uses: actions/download-artifact@v8
         with:
