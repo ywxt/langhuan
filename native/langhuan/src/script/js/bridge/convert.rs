@@ -66,6 +66,22 @@ impl JsData {
         }
     }
 
+    /// Build a string value.
+    pub fn str(text: impl Into<String>) -> Self {
+        Self::Str(text.into())
+    }
+
+    /// Build an object from `(key, value)` pairs — the shape of every
+    /// operation input the host constructs itself.
+    pub fn obj(entries: impl IntoIterator<Item = (&'static str, JsData)>) -> Self {
+        Self::Obj(
+            entries
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect(),
+        )
+    }
+
     /// Render back to JSON (test helpers and diagnostics).
     #[cfg(test)]
     pub fn into_json(self) -> Value {

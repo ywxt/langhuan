@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 /// - `Some(cursor)` is an opaque value passed back to the next `*_request`
 ///   call. It can be a page number, a URL, a token, a table — whatever the
 ///   script needs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct Page<T, C = String> {
+#[derive(Debug, Clone)]
+pub(crate) struct Page<T, C> {
     /// The items on this page.
     pub items: Vec<T>,
     /// An opaque cursor for the next page, or `None` if this is the last page.

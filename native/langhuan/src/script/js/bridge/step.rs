@@ -42,7 +42,7 @@ pub enum Step {
     Complete {
         items: Option<Value>,
         value: Option<Value>,
-        next_cursor: Option<Value>,
+        next_cursor: Option<JsData>,
     },
     Fail {
         code: String,
@@ -102,7 +102,7 @@ pub fn read_step<'js>(ctx: &Ctx<'js>, value: &JsValue<'js>) -> Result<Step> {
         "complete" => {
             let items = json_field(ctx, &object, "items")?;
             let value = json_field(ctx, &object, "value")?;
-            let next_cursor = json_field(ctx, &object, "next_cursor")?;
+            let next_cursor = data_field(&object, "next_cursor")?;
             Ok(Step::Complete {
                 items,
                 value,
@@ -126,6 +126,21 @@ fn read_next_state<'js>(ctx: &Ctx<'js>, fields: &Fields<'js, '_>) -> Result<Opti
         return Ok(None);
     }
     Ok(Some(OpaqueJsValue::save(ctx, value)))
+}
+
+/// Read a step field as realm-independent data, for values that travel back
+/// into the realm untouched (unlike `items`/`value`, which the host
+/// materializes as JSON for serde).
+fn data_field<'js>(object: &Object<'js>, field: &'static str) -> Result<Option<JsData>> {
+    let value: JsValue = object
+        .get(field)
+        .map_err(|error| Error::javascript(format!("reading `{field}` failed: {error}")))?;
+    if value.is_undefined() || value.is_null() {
+        return Ok(None);
+    }
+    js_to_jsdata(&value)
+        .map(Some)
+        .map_err(|error| Error::javascript(format!("invalid feed step: `{field}`: {error}")))
 }
 
 /// Convert a step field to JSON, rejecting bytes and other non-JSON values.

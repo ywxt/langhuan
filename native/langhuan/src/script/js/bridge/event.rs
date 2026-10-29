@@ -53,8 +53,8 @@ impl<'js> IntoJs<'js> for &OpaqueJsValue {
 pub struct OperationSpec<'a> {
     /// Snake-case operation name (`"search"`, `"book_info"`, …).
     pub kind: &'a str,
-    /// Operation input as JSON.
-    pub input: &'a Value,
+    /// Operation input, materialized once at construction.
+    pub input: &'a JsData,
 }
 
 /// What the previously executed step produced, carried into the next round.
@@ -68,7 +68,7 @@ pub enum StepOutcome {
 
 /// One reducer round: everything the event carries besides the operation.
 pub struct Round<'a> {
-    pub cursor: &'a Value,
+    pub cursor: &'a JsData,
     pub state: Option<OpaqueJsValue>,
     pub outcome: Option<StepOutcome>,
     pub auth: Option<&'a Value>,
@@ -85,8 +85,8 @@ pub fn build_event<'js>(
 ) -> rquickjs::Result<JsValue<'js>> {
     let event = Object::new(ctx.clone())?;
     event.set("operation", operation.kind)?;
-    event.set("input", JsData::from_json(operation.input))?;
-    event.set("cursor", JsData::from_json(round.cursor))?;
+    event.set("input", operation.input)?;
+    event.set("cursor", round.cursor)?;
     event.set("state", round.state.as_ref())?;
     match round.outcome.as_ref() {
         Some(StepOutcome::Response(response)) => event.set("response", response)?,

@@ -93,24 +93,24 @@ impl JsOperationKind {
     }
 }
 
-/// One operation of the feed contract: which handler to run, and the JSON
-/// input it receives.
+/// One operation of the feed contract: which handler to run, and the input
+/// it receives, materialized once at construction.
 struct JsOperation {
     kind: JsOperationKind,
-    input: Value,
+    input: JsData,
 }
 
 impl JsOperation {
-    fn new(kind: JsOperationKind, input: Value) -> Self {
+    fn new(kind: JsOperationKind, input: JsData) -> Self {
         Self { kind, input }
     }
 
     /// The `{operation, input}` object `login.patchRequest` receives.
-    fn patch_argument(&self) -> Value {
-        serde_json::json!({
-            "operation": self.kind.as_str(),
-            "input": self.input,
-        })
+    fn patch_argument(&self) -> JsData {
+        JsData::obj([
+            ("operation", JsData::str(self.kind.as_str())),
+            ("input", self.input.clone()),
+        ])
     }
 }
 
@@ -133,7 +133,7 @@ pub struct JsFeed {
 struct Complete {
     items: Option<Value>,
     value: Option<Value>,
-    next_cursor: Option<Value>,
+    next_cursor: Option<JsData>,
 }
 
 impl JsFeed {
@@ -270,9 +270,9 @@ impl JsFeed {
         let Some(auth) = self.auth_info()? else {
             return Ok(request);
         };
-        let operation_json = operation.patch_argument();
+        let operation_argument = operation.patch_argument();
         self.feed_object.with_realm(move |ctx, feed_object| {
-            let operation_arg = JsData::from_json(&operation_json).into_js(&ctx)?;
+            let operation_arg = operation_argument.into_js(&ctx)?;
             let request_arg = (&request).into_js(&ctx)?;
             let auth_arg = JsData::from_json(&auth).into_js(&ctx)?;
             let result = call_handler(
@@ -333,7 +333,7 @@ impl JsFeed {
         Ok(response)
     }
 
-    async fn run_operation(&self, operation: &JsOperation, cursor: &Value) -> Result<Complete> {
+    async fn run_operation(&self, operation: &JsOperation, cursor: &JsData) -> Result<Complete> {
         // `state` threads opaque JavaScript values between rounds; the
         // executed step's result is carried as `outcome` and consumed by the
         // next round.
@@ -430,19 +430,19 @@ impl JsFeed {
     async fn run_page<T: DeserializeOwned>(
         &self,
         operation: &JsOperation,
-        cursor: &Value,
-    ) -> Result<Page<T, Value>> {
+        cursor: &JsData,
+    ) -> Result<Page<T, JsData>> {
         let complete = self.run_operation(operation, cursor).await?;
         let items = serde_json::from_value(complete.items.unwrap_or(Value::Array(Vec::new())))
             .map_err(|error| Error::javascript(format!("invalid items: {error}")))?;
         Ok(Page {
             items,
-            next_cursor: complete.next_cursor.filter(|value| !value.is_null()),
+            next_cursor: complete.next_cursor,
         })
     }
 
     async fn run_value<T: DeserializeOwned>(&self, operation: &JsOperation) -> Result<T> {
-        let complete = self.run_operation(operation, &Value::Null).await?;
+        let complete = self.run_operation(operation, &JsData::Null).await?;
         serde_json::from_value(complete.value.unwrap_or(Value::Null))
             .map_err(|error| Error::javascript(format!("invalid value: {error}")))
     }
@@ -452,7 +452,7 @@ impl JsFeed {
         T: DeserializeOwned + Send + 'a,
     {
         Box::pin(stream! {
-            let mut cursor = Value::Null;
+            let mut cursor = JsData::Null;
             loop {
                 match self.run_page(&operation, &cursor).await {
                     Ok(page) => {
@@ -522,7 +522,7 @@ impl Feed for JsFeed {
     fn search<'a>(&'a self, keyword: &'a str) -> FeedStream<'a, SearchResult> {
         let operation = JsOperation::new(
             JsOperationKind::Search,
-            serde_json::json!({ "keyword": keyword }),
+            JsData::obj([("keyword", JsData::str(keyword))]),
         );
         let stream = self.paged_stream(operation);
         self.dedup_stream(stream, "book", |item: &SearchResult| item.id.clone())
@@ -531,7 +531,7 @@ impl Feed for JsFeed {
     async fn book_info(&self, id: &str) -> Result<BookInfo> {
         let operation = JsOperation::new(
             JsOperationKind::BookInfo,
-            serde_json::json!({ "bookId": id }),
+            JsData::obj([("bookId", JsData::str(id))]),
         );
         self.run_value(&operation).await
     }
@@ -539,7 +539,7 @@ impl Feed for JsFeed {
     fn chapters<'a>(&'a self, book_id: &'a str) -> FeedStream<'a, ChapterInfo> {
         let operation = JsOperation::new(
             JsOperationKind::Chapters,
-            serde_json::json!({ "bookId": book_id }),
+            JsData::obj([("bookId", JsData::str(book_id))]),
         );
         let stream = self.paged_stream(operation);
         self.dedup_stream(stream, "chapter", |item: &ChapterInfo| item.id.clone())
@@ -552,10 +552,10 @@ impl Feed for JsFeed {
     ) -> FeedStream<'a, Paragraph> {
         let operation = JsOperation::new(
             JsOperationKind::Paragraphs,
-            serde_json::json!({
-                "bookId": book_id,
-                "chapterId": chapter_id,
-            }),
+            JsData::obj([
+                ("bookId", JsData::str(book_id)),
+                ("chapterId", JsData::str(chapter_id)),
+            ]),
         );
         let raw: FeedStream<'a, RawParagraph> = self.paged_stream(operation);
         let indexed: FeedStream<'a, Paragraph> = Box::pin(stream! {
@@ -628,7 +628,7 @@ impl FeedAuthFlow for JsFeed {
         if !self.has_auth_status {
             return Ok(AuthStatus::LoggedIn);
         }
-        let operation = JsOperation::new(JsOperationKind::AuthStatus, serde_json::json!({}));
+        let operation = JsOperation::new(JsOperationKind::AuthStatus, JsData::obj([]));
         let valid: bool = self.run_value(&operation).await?;
         Ok(if valid {
             AuthStatus::LoggedIn
