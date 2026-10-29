@@ -1,4 +1,5 @@
 mod bridge;
+mod crypto;
 mod feed;
 mod hostapi;
 mod html;

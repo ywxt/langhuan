@@ -342,6 +342,49 @@ Notes:
   `Uint8Array` there is rejected with guidance to decode it or encode it as
   base64/hex first.
 
+## Cryptography and compression
+
+Sites encrypt content with standard primitives, and reimplementing AES in a
+sandboxed script would be both slow and wrong. The host provides synchronous,
+pure-function namespaces in both the feed realm and every compute realm:
+
+```js
+Crypto.md5(data)                 // -> Uint8Array digest
+Crypto.sha1(data)
+Crypto.sha256(data)
+Crypto.sha512(data)
+Crypto.hmac("sha256", key, data) // algorithm: "md5"|"sha1"|"sha256"|"sha512"
+
+Crypto.aes({
+  op: "encrypt" | "decrypt",
+  mode: "cbc" | "ecb" | "ctr" | "gcm",
+  key,                          // Uint8Array, 16/24/32 bytes
+  iv,                           // Uint8Array; required for cbc/ctr/gcm
+  data,                         // Uint8Array
+  padding: "pkcs7" | "none",    // cbc/ecb only; defaults to "pkcs7"
+  aad,                          // Uint8Array, gcm only
+})
+// -> Uint8Array. GCM follows the WebCrypto convention: `data` on decrypt and
+//    the returned value are ciphertext||tag (16-byte tag); `iv` is the nonce.
+
+Crypto.randomBytes(length)      // -> Uint8Array from the system RNG
+
+Compression.gzip(data)
+Compression.gunzip(data)
+Compression.deflateRaw(data)
+Compression.inflateRaw(data)
+```
+
+Notes:
+
+- Digests and HMACs return raw bytes; use `Bytes.toHex(...)` for hex output.
+- `padding: "none"` requires the data length to be a multiple of 16 for cbc
+  and ecb; `pkcs7` is the browser-compatible default.
+- Decompression output is capped at 32 MiB, matching the sandbox heap limit.
+- A common site pattern decrypts as
+  `Crypto.aes({ op: "decrypt", mode: "cbc", key, iv, data: payload })` where
+  `payload = base64(iv || ciphertext)` was split beforehand.
+
 ## Authentication
 
 The optional `login` object contains:

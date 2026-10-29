@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use rquickjs::{CaughtError, Context, Ctx, Object, Persistent, Runtime, Value as JsValue};
 
 use super::bridge::{self, JsData};
+use super::crypto;
 use super::hostapi;
 use super::html;
 use crate::error::{Error, Result};
@@ -137,6 +138,11 @@ impl Sandbox {
         context
             .with(|ctx| {
                 CaughtError::catch(&ctx, hostapi::install(&ctx)).map_err(|e| e.to_string())
+            })
+            .map_err(sandbox_error)?;
+        context
+            .with(|ctx| {
+                CaughtError::catch(&ctx, crypto::install(&ctx)).map_err(|e| e.to_string())
             })
             .map_err(sandbox_error)?;
         if matches!(profile, SandboxProfile::Feed) {
@@ -440,6 +446,39 @@ mod tests {
         assert_eq!(
             result,
             r#"{"gbk":"你好","utf8":"你好","bom":1,"b64":"Zm9vYmFy","hex":"666f6f626172","padded":1,"urlSafe":"-_-_"}"#
+        );
+    }
+
+    #[test]
+    fn crypto_and_compression_work_from_javascript() {
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let result = sandbox
+            .eval_json(
+                r#"JSON.stringify({
+                    md5: Bytes.toHex(Crypto.md5(new TextEncoder().encode("abc"))),
+                    hmac: Bytes.toHex(Crypto.hmac("sha256", new TextEncoder().encode("Jefe"),
+                        new TextEncoder().encode("what do ya want for nothing?"))),
+                    gcm: Bytes.toHex(Crypto.aes({
+                        op: "encrypt",
+                        mode: "gcm",
+                        key: Bytes.fromHex("7fddb57453c241d03efbed3ac44e371c"),
+                        iv: Bytes.fromHex("ee283a3fc75575e33efd4887"),
+                        data: Bytes.fromHex("d5de42b461646c255c87bd2962d3b9a2"),
+                    })),
+                    gunzip: new TextDecoder().decode(
+                        Compression.gunzip(Compression.gzip(new TextEncoder().encode("packed")))),
+                    random: Crypto.randomBytes(32).length,
+                })"#,
+            )
+            .unwrap();
+        assert_eq!(
+            result,
+            concat!(
+                r#"{"md5":"900150983cd24fb0d6963f7d28e17f72","#,
+                r#""hmac":"5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843","#,
+                r#""gcm":"2ccda4a5415cb91e135c2a0f78c9b2fdb36d1df9b9d5e596f83e8b7f52971cb3","#,
+                r#""gunzip":"packed","random":32}"#
+            )
         );
     }
 
