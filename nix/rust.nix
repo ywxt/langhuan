@@ -4,25 +4,29 @@
 # `rustup` shim satisfies native_toolchain_rust's insistence on driving
 # builds through rustup.
 { pkgs }:
-let
-  # Stable Rust (rustc, cargo, clippy, rustfmt) plus the requested
-  # cross-targets; the host target is always included by the overlay.
-  # The rust-analyzer and rust-src components make editors launched
-  # inside a shell analyze with this exact toolchain: the LSP server
-  # binary is built for the pinned rustc release, and rust-src provides
-  # the standard library sources rust-analyzer needs for std analysis.
-  mkRustToolchain =
-    targets:
-    pkgs.rust-bin.stable.latest.default.override {
-      extensions = [
-        "rust-analyzer"
-        "rust-src"
-      ];
-      inherit targets;
-    };
-in
 {
-  inherit mkRustToolchain;
+  # Stable Rust (rustc, cargo, clippy, rustfmt) with the Android
+  # targets cargokit cross-compiles to; the host target is always
+  # included for the linux desktop build. The rust-analyzer and
+  # rust-src components make editors launched inside the shell
+  # analyze with this exact toolchain: the LSP server binary is
+  # built for the pinned rustc release, and rust-src provides the
+  # standard library sources rust-analyzer needs for std analysis.
+  rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+    extensions = [
+      "rust-analyzer"
+      "rust-src"
+    ];
+    targets = [
+      "aarch64-linux-android"
+      "armv7-linux-androideabi"
+      "i686-linux-android"
+      "x86_64-linux-android"
+      # Lets Linux CI/cargo-xwin type-check the native QuickJS path
+      # against the same MSVC ABI used by Flutter Windows builds.
+      "x86_64-pc-windows-msvc"
+    ];
+  };
 
   # Both the old Cargokit integration and the current Native Assets
   # builder (native_toolchain_rust, driving `cargo build` for

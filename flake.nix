@@ -1,20 +1,19 @@
-# Langhuan dev shells: Flutter + Android SDK + Rust (flutter_rust_bridge).
+# Langhuan dev shell: Flutter + Android SDK + Rust (flutter_rust_bridge).
 #
 # Based on the flutter template from ~/nixos-config. The shell logic is
 # split into modules under nix/:
 #
-#   nix/shells/       — the dev shells, per system: linux.nix (`default`
-#                       for interactive development — emulator, AVDs, the
-#                       Linux desktop target — and `ci` for the release
-#                       workflow), darwin.nix (`ci` for the macOS job,
-#                       arm64)
-#   nix/android.nix   — the Android SDK compositions (build / emulator /
-#                       CI sides) and the AVDs
-#   nix/rust.nix      — the declarative Rust toolchain and rustup shim
-#   nix/flutter.nix   — the nixpkgs flutter wrapper patched for Gradle 9
+#   nix/shells.nix  — the dev shell itself: `default` for interactive
+#                     development (emulator, AVDs, the Linux desktop
+#                     target)
+#   nix/android.nix — the Android SDK compositions (build / emulator
+#                     sides) and the AVDs
+#   nix/rust.nix    — the declarative Rust toolchain and rustup shim
+#   nix/flutter.nix — the nixpkgs flutter wrapper patched for Gradle 9
 #
 # Inside the default shell, `flutter run` deploys to a device or the
-# emulator. `nix develop .#ci` is what the release workflow builds with.
+# emulator. This flake is development-only: release builds use the
+# runner's native toolchains (see .github/workflows/release.yml).
 {
   description = "Langhuan development environment (Flutter + Rust + Android)";
 
@@ -31,5 +30,5 @@
 
   outputs =
     { nixpkgs, rust-overlay, ... }:
-    import ./nix/shells { inherit nixpkgs rust-overlay; };
+    import ./nix/shells.nix { inherit nixpkgs rust-overlay; };
 }

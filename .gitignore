@@ -62,6 +62,7 @@ openspec/
 
 # direnv
 /.direnv
+/.envrc
 
 # project-local Android AVDs (emulator images and user data)
 /.avd/

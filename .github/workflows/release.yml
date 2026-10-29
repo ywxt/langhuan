@@ -14,6 +14,7 @@ concurrency:
 
 env:
   FLUTTER_VERSION: "3.47.4"
+  FRB_VERSION: "2.13.0"
 
 jobs:
   bindings:
@@ -36,16 +37,21 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      # The flake pins Flutter, the Rust toolchain and the code
-      # generator (version-matched to the flutter_rust_bridge runtime
-      # in pubspec.lock) — the same environment local development
-      # builds in, so the generated bindings cannot drift from it.
-      - uses: DeterminateSystems/nix-installer-action@v23
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install flutter_rust_bridge code generator
+        run: cargo install flutter_rust_bridge_codegen --version "$FRB_VERSION" --locked
 
       - name: Resolve Dart packages and generate bindings
         run: |
-          nix develop .#ci -c flutter pub get
-          nix develop .#ci -c flutter_rust_bridge_codegen generate
+          flutter pub get
+          flutter_rust_bridge_codegen generate
 
       - name: Upload generated bindings
         uses: actions/upload-artifact@v7
@@ -65,13 +71,32 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Everything the build needs comes from the flake: the pinned
-      # Rust toolchain (with the rustup shim native_toolchain_rust
-      # drives), the JDK, libclang for rquickjs's bindgen, and an
-      # Android SDK carrying the NDK, platform levels and pre-accepted
-      # licenses — no apt packages, no LIBCLANG_PATH probing, no
-      # sdkmanager downloads.
-      - uses: DeterminateSystems/nix-installer-action@v23
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang cmake libclang-dev ninja-build
+          # llvm-config ships with clang's dependencies and reports the
+          # directory holding libclang. Resolve LIBCLANG_PATH through it
+          # instead of globbing /usr/lib/llvm-*: Debian names the library
+          # libclang-<n>.so*, which a `find -name 'libclang.so*'` misses
+          # (and its unversioned symlinks are excluded by `-type f`).
+          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> "$GITHUB_ENV"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
 
       - uses: actions/download-artifact@v8
         with:
@@ -82,10 +107,10 @@ jobs:
         env:
           VERSION: ${{ needs.bindings.outputs.version }}
         run: |
-          nix develop .#ci -c flutter pub get
-          nix develop .#ci -c flutter build apk --release --split-per-abi \
+          flutter pub get
+          flutter build apk --release --split-per-abi \
             --build-name "$VERSION" \
-            --build-number "$GITHUB_RUN_NUMBER"
+            --build-number "${{ github.run_number }}"
           mkdir -p dist
           for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
             abi="$(basename "$apk" | sed -E 's/^app-(.*)-release\.apk$/\1/')"
@@ -148,12 +173,7 @@ jobs:
   macos:
     name: macOS arm64
     needs: bindings
-    # Intel build gone — the release ships an arm64 binary. The toolchain
-    # split: flutter comes from subosito (nixpkgs' darwin flutter ships its
-    # engine artifacts with the store's read-only directory modes, which
-    # ditto preserves and lipo then cannot unpack — see nix/shells/darwin.nix),
-    # the Rust toolchain and libclang from the flake, Xcode from the
-    # runner because Apple licenses its toolchain to the machine.
+    # The release ships an arm64 build only — the Intel job is gone.
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -165,7 +185,14 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
-      - uses: DeterminateSystems/nix-installer-action@v23
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure libclang
+        shell: bash
+        run: |
+          llvm_prefix="$(brew --prefix llvm@18)"
+          echo "$llvm_prefix/bin" >> "$GITHUB_PATH"
+          echo "LIBCLANG_PATH=$llvm_prefix/lib" >> "$GITHUB_ENV"
 
       - uses: actions/download-artifact@v8
         with:
@@ -176,10 +203,10 @@ jobs:
         env:
           VERSION: ${{ needs.bindings.outputs.version }}
         run: |
-          nix develop .#ci -c flutter pub get
-          nix develop .#ci -c flutter build macos --release \
+          flutter pub get
+          flutter build macos --release \
             --build-name "$VERSION" \
-            --build-number "$GITHUB_RUN_NUMBER"
+            --build-number "${{ github.run_number }}"
           app="build/macos/Build/Products/Release/langhuan.app"
           test -d "$app"
           codesign --force --deep --sign - "$app"

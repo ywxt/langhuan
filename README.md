@@ -52,10 +52,10 @@ native/hub/                 # FRB bridge layer + Actor system
 
 The development environment is fully declarative: a Nix flake provides Flutter (stable), a stable Rust toolchain with the Android cross-targets, the binding generator, the Android SDK/NDK with licenses already accepted, the emulator, and one Pixel 7 AVD (Android 16) provisioned into the project-local `.avd/` directory. The SDK carries every platform the app and its plugins compile against (API 35 and 36) plus only the one system image its AVD boots (API 36), so nothing is ever downloaded at build time.
 
-Requirements: Nix (with flakes) and [direnv](https://direnv.net/) on an x86_64-linux host.
+Requirements: Nix (with flakes) on an x86_64-linux host. If you use [direnv](https://direnv.net/), create a local `.envrc` containing `use flake` (the file is gitignored).
 
 ```bash
-direnv allow                            # or: nix develop
+nix develop                            # or: direnv allow with your local .envrc
 flutter doctor                          # everything should be green
 flutter_rust_bridge_codegen generate    # required before the first build
 emulator -avd Pixel_7_API_36            # optional: launch an emulator

@@ -52,10 +52,10 @@ native/hub/                 # FRB 橋接層 + Actor 系統
 
 開發環境完全聲明式：Nix flake 提供 Flutter（stable）、帶 Android 交叉編譯 target 的 Rust 穩定工具鏈、綁定生成器、許可證已預接受的 Android SDK/NDK、模擬器，以及一個 Pixel 7 AVD（Android 16），AVD 存放在項目內的 `.avd/` 目錄。SDK 攜帶應用及其插件編譯所需的全部平臺（API 35、36），以及 AVD 啓動所需的唯一系統鏡像（API 36），構建期間不會再下載任何內容。
 
-環境要求：x86_64-linux 主機上的 Nix（含 flakes）與 [direnv](https://direnv.net/)。
+環境要求：x86_64-linux 主機上的 Nix（含 flakes）。若使用 [direnv](https://direnv.net/)，請自建本地 `.envrc` 寫入 `use flake`（該文件已被 gitignore）。
 
 ```bash
-direnv allow                            # 或：nix develop
+nix develop                            # 或：用本地 .envrc 執行 direnv allow
 flutter doctor                          # 所有項目應爲綠色
 flutter_rust_bridge_codegen generate    # 首次構建前必須執行
 emulator -avd Pixel_7_API_36            # 可選：啓動模擬器

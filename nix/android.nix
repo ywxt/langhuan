@@ -165,23 +165,6 @@ let
     ln -s ${cmake3221} "$out/libexec/android-sdk/cmake/3.22.1"
   '';
 
-  # CI/release SDK root: the build-side composition plus the same
-  # cmake/3.22.1 merge as above, but none of the emulator side —
-  # no emulator, no system images, no AVD machinery. Release
-  # runners never boot a device, and skipping that side keeps the
-  # ~2 GB image closure out of every cold `nix develop .#ci`.
-  androidSdkCi = pkgs.runCommand "androidsdk-ci" { } ''
-    mkdir -p $out/libexec/android-sdk $out/bin
-    for entry in ${androidSdkBuild}/libexec/android-sdk/*; do
-      ln -s "$entry" "$out/libexec/android-sdk/$(basename "$entry")"
-    done
-    for tool in ${androidSdkBuild}/bin/*; do
-      ln -s "$tool" "$out/bin/$(basename "$tool")"
-    done
-    mkdir -p "$out/libexec/android-sdk/cmake"
-    ln -s ${cmake3221} "$out/libexec/android-sdk/cmake/3.22.1"
-  '';
-
   # The AVDs above, built at build time rather than created
   # imperatively at shell entry. The avdmanager on PATH is the
   # merged SDK's, whose wrapper hard-codes --sdk_root at the
@@ -219,7 +202,6 @@ in
 {
   inherit
     androidSdk
-    androidSdkCi
     androidAvds
     avds
     ;
