@@ -14,7 +14,6 @@ concurrency:
 
 env:
   FLUTTER_VERSION: "3.47.4"
-  FRB_VERSION: "2.13.0"
 
 jobs:
   bindings:
@@ -37,21 +36,16 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install flutter_rust_bridge code generator
-        run: cargo install flutter_rust_bridge_codegen --version "$FRB_VERSION" --locked
+      # The flake pins Flutter, the Rust toolchain and the code
+      # generator (version-matched to the flutter_rust_bridge runtime
+      # in pubspec.lock) — the same environment local development
+      # builds in, so the generated bindings cannot drift from it.
+      - uses: DeterminateSystems/nix-installer-action@v23
 
       - name: Resolve Dart packages and generate bindings
         run: |
-          flutter pub get
-          flutter_rust_bridge_codegen generate
+          nix develop .#ci -c flutter pub get
+          nix develop .#ci -c flutter_rust_bridge_codegen generate
 
       - name: Upload generated bindings
         uses: actions/upload-artifact@v7
@@ -71,29 +65,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
-
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
-
-      - name: Install native build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes clang cmake libclang-dev ninja-build
-          libclang="$(find /usr/lib/llvm-* -type f -name 'libclang.so*' -print -quit)"
-          test -n "$libclang"
-          echo "LIBCLANG_PATH=$(dirname "$libclang")" >> "$GITHUB_ENV"
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
+      # Everything the build needs comes from the flake: the pinned
+      # Rust toolchain (with the rustup shim native_toolchain_rust
+      # drives), the JDK, libclang for rquickjs's bindgen, and an
+      # Android SDK carrying the NDK, platform levels and pre-accepted
+      # licenses — no apt packages, no LIBCLANG_PATH probing, no
+      # sdkmanager downloads.
+      - uses: DeterminateSystems/nix-installer-action@v23
 
       - uses: actions/download-artifact@v8
         with:
@@ -104,10 +82,10 @@ jobs:
         env:
           VERSION: ${{ needs.bindings.outputs.version }}
         run: |
-          flutter pub get
-          flutter build apk --release --split-per-abi \
+          nix develop .#ci -c flutter pub get
+          nix develop .#ci -c flutter build apk --release --split-per-abi \
             --build-name "$VERSION" \
-            --build-number "${{ github.run_number }}"
+            --build-number "$GITHUB_RUN_NUMBER"
           mkdir -p dist
           for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
             abi="$(basename "$apk" | sed -E 's/^app-(.*)-release\.apk$/\1/')"

@@ -314,6 +314,23 @@
             ln -s ${cmake3221} "$out/libexec/android-sdk/cmake/3.22.1"
           '';
 
+          # CI/release SDK root: the build-side composition plus the same
+          # cmake/3.22.1 merge as above, but none of the emulator side —
+          # no emulator, no system images, no AVD machinery. Release
+          # runners never boot a device, and skipping that side keeps the
+          # ~2 GB image closure out of every cold `nix develop .#ci`.
+          androidSdkCi = pkgs.runCommand "androidsdk-ci" { } ''
+            mkdir -p $out/libexec/android-sdk $out/bin
+            for entry in ${androidSdkBuild}/libexec/android-sdk/*; do
+              ln -s "$entry" "$out/libexec/android-sdk/$(basename "$entry")"
+            done
+            for tool in ${androidSdkBuild}/bin/*; do
+              ln -s "$tool" "$out/bin/$(basename "$tool")"
+            done
+            mkdir -p "$out/libexec/android-sdk/cmake"
+            ln -s ${cmake3221} "$out/libexec/android-sdk/cmake/3.22.1"
+          '';
+
           # The AVDs above, built at build time rather than created
           # imperatively at shell entry. The avdmanager on PATH is the
           # merged SDK's, whose wrapper hard-codes --sdk_root at the
@@ -492,6 +509,69 @@
                   chmod -R u+w "$ANDROID_AVD_HOME/${avd.name}.avd"
                 fi
               '') avds}
+            '';
+          };
+
+          # Release shell for CI (`nix develop .#ci`): the default shell
+          # minus everything only a developer machine needs — the
+          # emulator-side SDK, system images and AVD materialization are
+          # gone (see androidSdkCi). Used by the release workflow's
+          # bindings and Android jobs so both build with exactly the
+          # toolchain this flake pins — Flutter, the Rust toolchain with
+          # the rustup shim native_toolchain_rust drives, libclang for
+          # rquickjs's bindgen, the JDK and an Android SDK with the NDK
+          # and pre-accepted licenses — instead of whatever the runner
+          # image happens to carry. Linux desktop builds stay out of this
+          # shell on purpose: a bundle linked against the nix-store
+          # gtk/webkit only runs on machines with /nix, so the release
+          # workflow keeps building the Linux tarball against the
+          # runner's system libraries.
+          ci = pkgs.mkShell {
+            packages = [
+              flutterGradle9
+              pkgs.git
+              androidSdkCi # adb, sdkmanager, ndk on PATH — no emulator
+              jdk
+              rustToolchain
+              rustupShim
+              # Bindings generation (release "Generate bindings" job).
+              # The version is pinned by flake.lock and must match the
+              # flutter_rust_bridge runtime in pubspec.lock; see the note
+              # on the default shell.
+              pkgs.flutter_rust_bridge_codegen
+              pkgs.cargo-expand
+            ];
+
+            JAVA_HOME = jdk.home;
+            ANDROID_HOME = "${androidSdkCi}/libexec/android-sdk";
+            ANDROID_SDK_ROOT = "${androidSdkCi}/libexec/android-sdk"; # legacy tools still read this
+            # bindgen (rquickjs) loads libclang.so from here — see the
+            # note in the default shell for why libclang stays off PATH.
+            LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+
+            # Same as the default shell: no bare host CC/CXX, and the
+            # Android Native Assets build sets its own NDK compilers per
+            # target.
+            CC = "${pkgs.stdenv.cc}/bin/cc";
+            CXX = "${pkgs.stdenv.cc}/bin/c++";
+
+            shellHook = ''
+              # Some packages install setup hooks after mkShell variables
+              # and replace CC/CXX; restore the wrappers at the final hook
+              # stage, exactly like the default shell.
+              export CC="${pkgs.stdenv.cc}/bin/cc"
+              export CXX="${pkgs.stdenv.cc}/bin/c++"
+
+              # Tools installed with `cargo install` land in ~/.cargo/bin.
+              export PATH="''${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+
+              # AGP downloads an unpatched aapt2 from Maven; point Gradle
+              # at the patched copy inside the SDK (newest build-tools
+              # wins). Unnecessary on a plain Ubuntu runner, required
+              # wherever the host is NixOS — kept for parity with the
+              # default shell.
+              aapt2="$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)"
+              export GRADLE_OPTS="''${GRADLE_OPTS:-} -Dorg.gradle.project.android.aapt2FromMavenOverride=$aapt2"
             '';
           };
         }
