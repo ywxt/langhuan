@@ -359,6 +359,21 @@ impl JsFeed {
         operation: &JsOperation<'_>,
         cursor: &JsData,
     ) -> Result<Complete> {
+        let outcome = self.drive_steps(operation, cursor).await;
+        if let Err(error) = &outcome {
+            tracing::warn!(
+                feed_id = %self.meta.id,
+                operation = operation.kind(),
+                error = %error,
+                "feed operation failed"
+            );
+        }
+        outcome
+    }
+
+    /// The reducer loop: invoke the handler, execute the returned step, and
+    /// repeat until the feed completes or fails.
+    async fn drive_steps(&self, operation: &JsOperation<'_>, cursor: &JsData) -> Result<Complete> {
         // `state` threads opaque JavaScript values between rounds; the
         // executed step's result is carried as `outcome` and consumed by the
         // next round.
@@ -367,6 +382,13 @@ impl JsFeed {
         let mut steps_left = MAX_INTERNAL_STEPS;
 
         loop {
+            let round = MAX_INTERNAL_STEPS - steps_left;
+            tracing::debug!(
+                feed_id = %self.meta.id,
+                operation = operation.kind(),
+                round,
+                "invoking reducer"
+            );
             let auth = self.auth_info()?;
             let round = Round {
                 cursor,

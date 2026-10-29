@@ -32,6 +32,14 @@ impl ScriptEngine {
     }
 
     pub fn load_js_feed(&self, script: &str) -> Result<JsFeed> {
+        let outcome = self.parse_and_load(script);
+        if let Err(error) = &outcome {
+            tracing::warn!(error = %error, "failed to load feed script");
+        }
+        outcome
+    }
+
+    fn parse_and_load(&self, script: &str) -> Result<JsFeed> {
         let (feed_meta, body_offset) = meta::parse_meta(script)?;
         if feed_meta.schema_version > crate::feed::meta::FEED_SCHEMA_VERSION {
             return Err(crate::error::Error::feed_schema_too_new(

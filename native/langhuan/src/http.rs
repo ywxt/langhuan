@@ -378,6 +378,12 @@ pub async fn execute(
     let response = match builder.send().await {
         Ok(response) => response,
         Err(e) => {
+            tracing::warn!(
+                feed_id = %feed_id,
+                url = %redact_url_secrets(&req.url),
+                error = %e,
+                "HTTP request failed"
+            );
             if let Some(trace) = &trace {
                 trace.record_send_error(req, start, &e);
             }
@@ -399,6 +405,13 @@ pub async fn execute(
     let body = match response.bytes().await {
         Ok(body) => body,
         Err(e) => {
+            tracing::warn!(
+                feed_id = %feed_id,
+                status,
+                url = %redact_url_secrets(&url),
+                error = %e,
+                "HTTP response body download failed"
+            );
             if let Some(trace) = &trace {
                 trace.record_body_error(req, status, &url, start, &e);
             }
