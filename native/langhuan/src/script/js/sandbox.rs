@@ -5,7 +5,7 @@ use rquickjs::{CaughtError, Context, Ctx, IntoJs, Object, Persistent, Runtime, V
 
 use super::bridge::{JsData, MAX_BRIDGE_BYTES, js_to_jsdata};
 #[cfg(test)]
-use super::bridge::{Json, call_handler, js_to_json};
+use super::bridge::{call_handler, js_to_json};
 use super::crypto;
 use super::hostapi;
 use super::html;
@@ -323,7 +323,7 @@ impl JsObject {
         self.with_realm(|ctx, object| {
             let mut values = Vec::with_capacity(arguments.len());
             for argument in arguments {
-                values.push(Json(argument).into_js(&ctx)?);
+                values.push(JsData::from_json(argument).into_js(&ctx)?);
             }
             let result = call_handler(&ctx, &object, path, &values)?;
             let json = js_to_json(&ctx, &result)

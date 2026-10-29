@@ -11,7 +11,7 @@ use tokio::time::sleep;
 use tokio_stream::StreamExt as _;
 
 use super::bridge::{
-    Json, OpaqueJsValue, OperationSpec, Round, Step, build_event, call_handler, read_auth_entry,
+    JsData, OpaqueJsValue, OperationSpec, Round, Step, build_event, call_handler, read_auth_entry,
     read_auth_result, read_patched_request, read_step, restore_compute,
 };
 use super::prelude::PRELUDE;
@@ -272,9 +272,9 @@ impl JsFeed {
         };
         let operation_json = operation.patch_argument();
         self.feed_object.with_realm(move |ctx, feed_object| {
-            let operation_arg = Json(&operation_json).into_js(&ctx)?;
+            let operation_arg = JsData::from_json(&operation_json).into_js(&ctx)?;
             let request_arg = (&request).into_js(&ctx)?;
-            let auth_arg = Json(&auth).into_js(&ctx)?;
+            let auth_arg = JsData::from_json(&auth).into_js(&ctx)?;
             let result = call_handler(
                 &ctx,
                 &feed_object,

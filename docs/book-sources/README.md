@@ -90,15 +90,15 @@ type Event = {
   input: object;
   cursor: unknown;
   state: unknown;
-  response: null | {
+  response?: {
     status: number;
     headers: [string, string][];
     body: Uint8Array;
     url: string;
   };
-  compute: unknown | null;
-  auth: null | object;
-  webview: null | {
+  compute?: unknown;
+  auth?: object;
+  webview?: {
     current_url: string;
     html: string;
     cookies: { name: string; value: string; domain?: string }[];
@@ -113,10 +113,11 @@ type Step =
   | { type: "fail"; code: string; message: string };
 ```
 
-On the first call, `state`, `response`, and `compute` are `null`. Return a
-request. Rust validates and performs it, then calls the same reducer with the
-response and the provided `next_state`. This can repeat for multi-step flows
-such as Qidian:
+On the first call, `state`, `response`, and `compute` are `undefined` (test
+them with loose equality: `event.state == null`, which also matches `null`).
+Return a request. Rust validates and performs it, then calls the same reducer
+with the response and the provided `next_state`. This can repeat for multi-step
+flows such as Qidian:
 
 ```text
 chapter HTML -> chapter API -> official decryptor bundle -> isolated compute -> complete
@@ -138,7 +139,7 @@ closures survive unchanged. The same applies to the `compute` result returned as
   method: "GET",                 // defaults to GET
   headers: { Accept: "text/html" },
   params: { q: "keyword" },      // URL query parameters
-  body: null,                    // string, Uint8Array, or null
+  // body: optional string or Uint8Array, omitted for no body
 }
 ```
 

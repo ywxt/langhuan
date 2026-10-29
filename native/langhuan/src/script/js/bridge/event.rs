@@ -6,7 +6,7 @@
 use rquickjs::{Array, Ctx, IntoJs, Object, Persistent, Value as JsValue};
 use serde_json::Value;
 
-use super::convert::{Json, bytes_to_u8array};
+use super::convert::{JsData, bytes_to_u8array};
 use crate::feed::{AuthPageContext, CookieEntry, WebviewSnapshot};
 use crate::http::{HttpRequest, HttpResponse};
 
@@ -68,6 +68,10 @@ pub struct Round<'a> {
 }
 
 /// Build the reducer event object natively.
+///
+/// Absent round data is rendered as `undefined` — rquickjs's native `Option`
+/// conversion — so scripts test it with loose equality (`event.state == null`),
+/// which matches `null` as well.
 pub fn build_event<'js>(
     ctx: &Ctx<'js>,
     operation: &OperationSpec<'_>,
@@ -75,28 +79,14 @@ pub fn build_event<'js>(
 ) -> rquickjs::Result<JsValue<'js>> {
     let event = Object::new(ctx.clone())?;
     event.set("operation", operation.kind)?;
-    event.set("input", Json(operation.input))?;
-    event.set("cursor", Json(round.cursor))?;
-    event.set("state", OrNull(round.state.as_ref()))?;
-    event.set("response", OrNull(round.response))?;
-    event.set("compute", OrNull(round.compute.as_ref()))?;
-    event.set("auth", OrNull(round.auth.map(Json)))?;
-    event.set("webview", OrNull(round.webview))?;
+    event.set("input", JsData::from_json(operation.input))?;
+    event.set("cursor", JsData::from_json(round.cursor))?;
+    event.set("state", round.state.as_ref())?;
+    event.set("response", round.response)?;
+    event.set("compute", round.compute.as_ref())?;
+    event.set("auth", round.auth.map(JsData::from_json))?;
+    event.set("webview", round.webview)?;
     Ok(event.into_value())
-}
-
-/// The reducer-event convention: absent data is delivered as `null`, never
-/// `undefined` (which is what rquickjs's own `Option` conversion produces),
-/// so scripts can test `event.state === null`.
-struct OrNull<T>(Option<T>);
-
-impl<'js, T: IntoJs<'js>> IntoJs<'js> for OrNull<T> {
-    fn into_js(self, ctx: &Ctx<'js>) -> rquickjs::Result<JsValue<'js>> {
-        match self.0 {
-            Some(value) => value.into_js(ctx),
-            None => Ok(JsValue::new_null(ctx.clone())),
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -159,9 +149,8 @@ impl<'js> IntoJs<'js> for &HttpRequest {
             headers.set(key.as_str(), value.as_str())?;
         }
         object.set("headers", headers)?;
-        match &self.body {
-            Some(body) => object.set("body", bytes_to_u8array(ctx, &body.0)?)?,
-            None => object.set("body", JsValue::new_null(ctx.clone()))?,
+        if let Some(body) = &self.body {
+            object.set("body", bytes_to_u8array(ctx, &body.0)?)?;
         }
         Ok(object.into_value())
     }
@@ -192,11 +181,11 @@ fn cookie_to_js<'js>(ctx: &Ctx<'js>, cookie: &CookieEntry) -> rquickjs::Result<O
     let entry = Object::new(ctx.clone())?;
     entry.set("name", cookie.name.as_str())?;
     entry.set("value", cookie.value.as_str())?;
-    entry.set("domain", OrNull(cookie.domain.as_deref()))?;
-    entry.set("path", OrNull(cookie.path.as_deref()))?;
-    entry.set("expires", OrNull(cookie.expires.as_deref()))?;
-    entry.set("secure", OrNull(cookie.secure))?;
-    entry.set("http_only", OrNull(cookie.http_only))?;
-    entry.set("same_site", OrNull(cookie.same_site.as_deref()))?;
+    entry.set("domain", cookie.domain.as_deref())?;
+    entry.set("path", cookie.path.as_deref())?;
+    entry.set("expires", cookie.expires.as_deref())?;
+    entry.set("secure", cookie.secure)?;
+    entry.set("http_only", cookie.http_only)?;
+    entry.set("same_site", cookie.same_site.as_deref())?;
     Ok(entry)
 }

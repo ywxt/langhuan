@@ -133,15 +133,12 @@ impl<'js> IntoJs<'js> for &JsData {
     }
 }
 
-/// JSON-shaped host data rendered as a live JavaScript value.
-///
-/// serde_json's [`Value`] is foreign to both this crate and rquickjs, so the
-/// trait implementation lives on this wrapper instead of on the value.
-pub struct Json<'a>(pub &'a Value);
-
-impl<'js> IntoJs<'js> for Json<'_> {
+/// Owned counterpart to the borrow above: freshly materialized values
+/// (`JsData::from_json`) go straight into `Object::set` and work through
+/// rquickjs's native `Option` conversion.
+impl<'js> IntoJs<'js> for JsData {
     fn into_js(self, ctx: &Ctx<'js>) -> rquickjs::Result<JsValue<'js>> {
-        JsData::from_json(self.0).into_js(ctx)
+        (&self).into_js(ctx)
     }
 }
 
