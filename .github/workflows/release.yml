@@ -148,15 +148,22 @@ jobs:
   macos:
     name: macOS arm64
     needs: bindings
-    # nixpkgs' flutter supports aarch64-darwin only, so the Intel build
-    # is gone and the release ships an arm64 binary. Xcode still comes
-    # from the runner — Apple licenses its toolchain to the machine and
-    # nix cannot ship it — while flutter, the Rust toolchain and
-    # libclang come from the flake.
+    # Intel build gone — the release ships an arm64 binary. The toolchain
+    # split: flutter comes from subosito (nixpkgs' darwin flutter ships its
+    # engine artifacts with the store's read-only directory modes, which
+    # ditto preserves and lipo then cannot unpack — see nix/shells/darwin.nix),
+    # the Rust toolchain and libclang from the flake, Xcode from the
+    # runner because Apple licenses its toolchain to the machine.
     runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
 
       - uses: DeterminateSystems/nix-installer-action@v23
 

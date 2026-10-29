@@ -1,8 +1,9 @@
 # Per-system composition of the dev shells. The system list is explicit:
 # the Android SDK binaries and flutter's Android engine artifacts are
 # x86_64-linux only, and the macOS release shell exists for
-# aarch64-darwin alone because nixpkgs' flutter does not support
-# x86_64-darwin (the release no longer ships an Intel macOS build).
+# aarch64-darwin alone because the release ships an arm64 build (the
+# Intel macOS job is gone; see darwin.nix for why that shell carries
+# no flutter).
 # The shells themselves live in sibling files: linux.nix (`default` for
 # interactive development, `ci` for the release workflow's bindings and
 # Android jobs) and darwin.nix (`ci` for the macOS job).
