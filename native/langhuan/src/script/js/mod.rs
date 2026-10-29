@@ -3,6 +3,7 @@ mod crypto;
 mod feed;
 mod hostapi;
 mod html;
+mod module;
 mod prelude;
 mod sandbox;
 

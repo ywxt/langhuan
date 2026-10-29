@@ -11,12 +11,11 @@ use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::{DeflateEncoder, GzEncoder};
 use hmac::Mac;
-use rquickjs::{
-    Ctx, Exception, FromJs, Function, Object, Result as JsResult, TypedArray, Value as JsValue,
-};
+use rquickjs::{Ctx, Exception, FromJs, Result as JsResult, TypedArray, Value as JsValue};
 use sha2::Digest;
 
 use super::bridge::{Fields, conversion_detail, typed_bytes};
+use super::module::Namespace;
 
 /// Upper bound for decompressed output, matching the QuickJS heap limit.
 const MAX_EXPANSION_BYTES: usize = 32 * 1024 * 1024;
@@ -30,36 +29,21 @@ pub(super) fn install<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
 }
 
 fn install_crypto<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
-    let namespace = Object::new(ctx.clone())?;
-
-    namespace.set(
-        "md5",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
+    Namespace::new(ctx, "Crypto")?
+        .function("md5", |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
             digest_call::<md5::Md5>(&ctx, &data)
-        })?,
-    )?;
-    namespace.set(
-        "sha1",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
+        })?
+        .function("sha1", |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
             digest_call::<sha1::Sha1>(&ctx, &data)
-        })?,
-    )?;
-    namespace.set(
-        "sha256",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
+        })?
+        .function("sha256", |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
             digest_call::<sha2::Sha256>(&ctx, &data)
-        })?,
-    )?;
-    namespace.set(
-        "sha512",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
+        })?
+        .function("sha512", |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
             digest_call::<sha2::Sha512>(&ctx, &data)
-        })?,
-    )?;
-    namespace.set(
-        "hmac",
-        Function::new(
-            ctx.clone(),
+        })?
+        .function(
+            "hmac",
             |ctx: Ctx<'js>,
              algorithm: String,
              key: TypedArray<'js, u8>,
@@ -74,12 +58,9 @@ fn install_crypto<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
                 })?;
                 bytes_out(&ctx, mac)
             },
-        )?,
-    )?;
-    namespace.set(
-        "aes",
-        Function::new(
-            ctx.clone(),
+        )?
+        .function(
+            "aes",
             |ctx: Ctx<'js>, options: JsValue<'js>| -> JsResult<TypedArray<'js, u8>> {
                 let request = AesRequest::from_js(&ctx, options).map_err(|error| {
                     Exception::throw_message(
@@ -90,12 +71,9 @@ fn install_crypto<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
                 let output = aes_run(&ctx, &request)?;
                 bytes_out(&ctx, output)
             },
-        )?,
-    )?;
-    namespace.set(
-        "randomBytes",
-        Function::new(
-            ctx.clone(),
+        )?
+        .function(
+            "randomBytes",
             |ctx: Ctx<'js>, length: usize| -> JsResult<TypedArray<'js, u8>> {
                 if length == 0 || length > MAX_RANDOM_BYTES {
                     return Err(Exception::throw_message(
@@ -111,54 +89,41 @@ fn install_crypto<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
                 })?;
                 bytes_out(&ctx, buffer)
             },
-        )?,
-    )?;
-    ctx.globals().set("Crypto", namespace)
+        )?
+        .install()
 }
 
 fn install_compression<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
-    let namespace = Object::new(ctx.clone())?;
-    namespace.set(
-        "gzip",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
+    Namespace::new(ctx, "Compression")?
+        .function("gzip", |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
             let bytes = typed_bytes(&ctx, &data)?;
             let output = gzip_encode(&bytes).map_err(|message| {
                 Exception::throw_message(&ctx, &format!("Compression.gzip: {message}"))
             })?;
             bytes_out(&ctx, output)
-        })?,
-    )?;
-    namespace.set(
-        "gunzip",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
+        })?
+        .function("gunzip", |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
             let bytes = typed_bytes(&ctx, &data)?;
             let output = gzip_decode(&bytes).map_err(|message| {
                 Exception::throw_message(&ctx, &format!("Compression.gunzip: {message}"))
             })?;
             bytes_out(&ctx, output)
-        })?,
-    )?;
-    namespace.set(
-        "deflateRaw",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
+        })?
+        .function("deflateRaw", |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
             let bytes = typed_bytes(&ctx, &data)?;
             let output = deflate_raw_encode(&bytes).map_err(|message| {
                 Exception::throw_message(&ctx, &format!("Compression.deflateRaw: {message}"))
             })?;
             bytes_out(&ctx, output)
-        })?,
-    )?;
-    namespace.set(
-        "inflateRaw",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
+        })?
+        .function("inflateRaw", |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
             let bytes = typed_bytes(&ctx, &data)?;
             let output = inflate_raw_decode(&bytes).map_err(|message| {
                 Exception::throw_message(&ctx, &format!("Compression.inflateRaw: {message}"))
             })?;
             bytes_out(&ctx, output)
-        })?,
-    )?;
-    ctx.globals().set("Compression", namespace)
+        })?
+        .install()
 }
 
 // ---------------------------------------------------------------------------

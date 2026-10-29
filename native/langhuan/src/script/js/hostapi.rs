@@ -8,9 +8,10 @@
 
 use encoding_rs::Encoding;
 use rquickjs::function::Opt;
-use rquickjs::{Ctx, Exception, Function, Object, Result as JsResult, TypedArray};
+use rquickjs::{Ctx, Exception, Object, Result as JsResult, TypedArray};
 
 use super::bridge::typed_bytes;
+use super::module::{Namespace, constructor, set_function};
 
 /// Install `TextDecoder`, `TextEncoder`, and the `Bytes` namespace.
 pub(super) fn install<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
@@ -21,14 +22,13 @@ pub(super) fn install<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
 }
 
 fn install_text_decoder<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
-    let constructor = Function::new(
-        ctx.clone(),
+    constructor(
+        ctx,
+        "TextDecoder",
         |ctx: Ctx<'js>, label: Opt<String>, options: Opt<Object<'js>>| -> JsResult<Object<'js>> {
             build_text_decoder(&ctx, label.0, options.0)
         },
-    )?
-    .with_constructor(true);
-    ctx.globals().set("TextDecoder", constructor)
+    )
 }
 
 fn build_text_decoder<'js>(
@@ -50,78 +50,76 @@ fn build_text_decoder<'js>(
     decoder.set("encoding", encoding.name())?;
     decoder.set("fatal", fatal)?;
     decoder.set("ignoreBOM", ignore_bom)?;
-    decoder.set(
+    set_function(
+        ctx,
+        &decoder,
         "decode",
-        Function::new(
-            ctx.clone(),
-            move |ctx: Ctx<'js>,
-                  data: Opt<TypedArray<'js, u8>>,
-                  options: Opt<Object<'js>>|
-                  -> JsResult<String> {
-                let options = options.0;
-                if flag(
+        move |ctx: Ctx<'js>,
+              data: Opt<TypedArray<'js, u8>>,
+              options: Opt<Object<'js>>|
+              -> JsResult<String> {
+            let options = options.0;
+            if flag(
+                &ctx,
+                options.as_ref(),
+                "TextDecoder.decode",
+                "stream",
+                false,
+            )? {
+                return Err(Exception::throw_message(
                     &ctx,
-                    options.as_ref(),
-                    "TextDecoder.decode",
-                    "stream",
-                    false,
-                )? {
-                    return Err(Exception::throw_message(
-                        &ctx,
-                        "TextDecoder.decode: streaming decode is not supported",
-                    ));
-                }
-                let bytes = match &data.0 {
-                    Some(data) => typed_bytes(&ctx, data)?,
-                    None => Vec::new(),
-                };
-                // Unlike the WHATWG decoder we do not re-sniff the encoding
-                // from a BOM; a leading BOM of the requested encoding is
-                // removed unless `ignoreBOM` is set.
-                let (text, had_errors) = if ignore_bom {
-                    encoding.decode_without_bom_handling(&bytes)
-                } else {
-                    encoding.decode_with_bom_removal(&bytes)
-                };
-                if had_errors && fatal {
-                    return Err(Exception::throw_message(
-                        &ctx,
-                        "TextDecoder.decode: invalid byte sequence for the encoding",
-                    ));
-                }
-                Ok(text.into_owned())
-            },
-        )?,
+                    "TextDecoder.decode: streaming decode is not supported",
+                ));
+            }
+            let bytes = match &data.0 {
+                Some(data) => typed_bytes(&ctx, data)?,
+                None => Vec::new(),
+            };
+            // Unlike the WHATWG decoder we do not re-sniff the encoding
+            // from a BOM; a leading BOM of the requested encoding is
+            // removed unless `ignoreBOM` is set.
+            let (text, had_errors) = if ignore_bom {
+                encoding.decode_without_bom_handling(&bytes)
+            } else {
+                encoding.decode_with_bom_removal(&bytes)
+            };
+            if had_errors && fatal {
+                return Err(Exception::throw_message(
+                    &ctx,
+                    "TextDecoder.decode: invalid byte sequence for the encoding",
+                ));
+            }
+            Ok(text.into_owned())
+        },
     )?;
     Ok(decoder)
 }
 
 fn install_text_encoder<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
-    let constructor = Function::new(ctx.clone(), |ctx: Ctx<'js>| -> JsResult<Object<'js>> {
-        let encoder = Object::new(ctx.clone())?;
-        encoder.set("encoding", "utf-8")?;
-        encoder.set(
-            "encode",
-            Function::new(
-                ctx.clone(),
+    constructor(
+        ctx,
+        "TextEncoder",
+        |ctx: Ctx<'js>| -> JsResult<Object<'js>> {
+            let encoder = Object::new(ctx.clone())?;
+            encoder.set("encoding", "utf-8")?;
+            set_function(
+                &ctx,
+                &encoder,
+                "encode",
                 |ctx: Ctx<'js>, input: Opt<String>| -> JsResult<TypedArray<'js, u8>> {
                     let bytes = input.0.unwrap_or_default().into_bytes();
                     TypedArray::<u8>::new_copy(ctx.clone(), &bytes)
                 },
-            )?,
-        )?;
-        Ok(encoder)
-    })?
-    .with_constructor(true);
-    ctx.globals().set("TextEncoder", constructor)
+            )?;
+            Ok(encoder)
+        },
+    )
 }
 
 fn install_bytes<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
-    let namespace = Object::new(ctx.clone())?;
-    namespace.set(
-        "toBase64",
-        Function::new(
-            ctx.clone(),
+    Namespace::new(ctx, "Bytes")?
+        .function(
+            "toBase64",
             |ctx: Ctx<'js>,
              data: TypedArray<'js, u8>,
              options: Opt<Object<'js>>|
@@ -130,12 +128,9 @@ fn install_bytes<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
                 let bytes = typed_bytes(&ctx, &data)?;
                 Ok(to_base64(&bytes, url_safe))
             },
-        )?,
-    )?;
-    namespace.set(
-        "fromBase64",
-        Function::new(
-            ctx.clone(),
+        )?
+        .function(
+            "fromBase64",
             |ctx: Ctx<'js>,
              input: String,
              options: Opt<Object<'js>>|
@@ -152,31 +147,24 @@ fn install_bytes<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
                 })?;
                 TypedArray::<u8>::new_copy(ctx.clone(), &bytes)
             },
-        )?,
-    )?;
-    namespace.set(
-        "toHex",
-        Function::new(
-            ctx.clone(),
+        )?
+        .function(
+            "toHex",
             |ctx: Ctx<'js>, data: TypedArray<'js, u8>| -> JsResult<String> {
                 let bytes = typed_bytes(&ctx, &data)?;
                 Ok(to_hex(&bytes))
             },
-        )?,
-    )?;
-    namespace.set(
-        "fromHex",
-        Function::new(
-            ctx.clone(),
+        )?
+        .function(
+            "fromHex",
             |ctx: Ctx<'js>, input: String| -> JsResult<TypedArray<'js, u8>> {
                 let bytes = from_hex(&input).ok_or_else(|| {
                     Exception::throw_message(&ctx, "Bytes.fromHex: invalid hex input")
                 })?;
                 TypedArray::<u8>::new_copy(ctx.clone(), &bytes)
             },
-        )?,
-    )?;
-    ctx.globals().set("Bytes", namespace)
+        )?
+        .install()
 }
 
 // ---------------------------------------------------------------------------

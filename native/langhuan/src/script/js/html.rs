@@ -4,8 +4,10 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use ego_tree::{NodeId, NodeRef};
 use rquickjs::function::This;
 use rquickjs::object::Accessor;
-use rquickjs::{Array, Ctx, Exception, Function, Object, Result as JsResult, Value};
+use rquickjs::{Array, Ctx, Exception, Object, Result as JsResult, Value};
 use scraper::{ElementRef, Html, Node, Selector};
+
+use super::module::{Namespace, set_function};
 
 const MAX_HTML_INPUT_BYTES: usize = 4 * 1024 * 1024;
 
@@ -188,41 +190,47 @@ fn build_selection<'js>(
         selection.set(index, build_node(ctx, document.clone(), node_id)?)?;
     }
 
-    selection.as_object().set(
-        "first",
-        Function::new(ctx.clone(), |this: This<Array<'js>>| this.0.get::<Value>(0))?,
-    )?;
+    let selection_object = selection.as_object();
+    set_function(ctx, selection_object, "first", |this: This<Array<'js>>| {
+        this.0.get::<Value>(0)
+    })?;
 
     let text_document = document.clone();
     let text_nodes = nodes.clone();
-    selection.as_object().set(
+    set_function(
+        ctx,
+        selection_object,
         "text",
-        Function::new(ctx.clone(), move |ctx: Ctx<'js>| -> JsResult<String> {
+        move |ctx: Ctx<'js>| -> JsResult<String> {
             let mut output = String::new();
             for node_id in &text_nodes {
                 output.push_str(&node_text(&ctx, &text_document, *node_id)?);
             }
             Ok(output)
-        })?,
+        },
     )?;
 
     let attr_document = document.clone();
     let attr_node = nodes.first().copied();
-    selection.as_object().set(
+    set_function(
+        ctx,
+        selection_object,
         "attr",
-        Function::new(ctx.clone(), move |ctx: Ctx<'js>, name: String| {
+        move |ctx: Ctx<'js>, name: String| {
             attr_node
                 .map(|node_id| node_attr(&ctx, &attr_document, node_id, &name))
                 .transpose()
                 .map(Option::flatten)
-        })?,
+        },
     )?;
 
     let attrs_document = document.clone();
     let attrs_node = nodes.first().copied();
-    selection.as_object().set(
+    set_function(
+        ctx,
+        selection_object,
         "attrs",
-        Function::new(ctx.clone(), move |ctx: Ctx<'js>| -> JsResult<Object<'js>> {
+        move |ctx: Ctx<'js>| -> JsResult<Object<'js>> {
             let attributes = Object::new(ctx.clone())?;
             if let Some(node_id) = attrs_node {
                 for (name, value) in node_attrs(&ctx, &attrs_document, node_id)? {
@@ -230,30 +238,29 @@ fn build_selection<'js>(
                 }
             }
             Ok(attributes)
-        })?,
+        },
     )?;
 
     for (name, outer) in [("html", false), ("outer_html", true)] {
         let html_document = document.clone();
         let html_node = nodes.first().copied();
-        selection.as_object().set(
-            name,
-            Function::new(ctx.clone(), move |ctx: Ctx<'js>| {
-                html_node
-                    .map(|node_id| node_html(&ctx, &html_document, node_id, outer))
-                    .transpose()
-                    .map(Option::flatten)
-            })?,
-        )?;
+        set_function(ctx, selection_object, name, move |ctx: Ctx<'js>| {
+            html_node
+                .map(|node_id| node_html(&ctx, &html_document, node_id, outer))
+                .transpose()
+                .map(Option::flatten)
+        })?;
     }
 
     let select_document = document;
-    selection.as_object().set(
+    set_function(
+        ctx,
+        selection_object,
         "select",
-        Function::new(ctx.clone(), move |ctx: Ctx<'js>, selector: String| {
+        move |ctx: Ctx<'js>, selector: String| {
             let selected = select_descendants(&ctx, &select_document, &nodes, &selector)?;
             build_selection(&ctx, select_document.clone(), selected)
-        })?,
+        },
     )?;
     Ok(selection)
 }
@@ -273,62 +280,66 @@ fn build_node<'js>(
     node.set("tagName", tag_name)?;
 
     let text_document = document.clone();
-    node.set(
+    set_function(
+        ctx,
+        &node,
         "text",
-        Function::new(ctx.clone(), move |ctx: Ctx<'js>| -> JsResult<String> {
-            node_text(&ctx, &text_document, node_id)
-        })?,
+        move |ctx: Ctx<'js>| -> JsResult<String> { node_text(&ctx, &text_document, node_id) },
     )?;
     node.set("textContent", node_text(ctx, &document, node_id)?)?;
 
     let attr_document = document.clone();
-    let attr = Function::new(ctx.clone(), move |ctx: Ctx<'js>, name: String| {
+    let attr = set_function(ctx, &node, "attr", move |ctx: Ctx<'js>, name: String| {
         node_attr(&ctx, &attr_document, node_id, &name)
     })?;
-    node.set("attr", attr.clone())?;
     node.set("getAttribute", attr)?;
 
     let attrs_document = document.clone();
-    node.set(
+    set_function(
+        ctx,
+        &node,
         "attrs",
-        Function::new(ctx.clone(), move |ctx: Ctx<'js>| -> JsResult<Object<'js>> {
+        move |ctx: Ctx<'js>| -> JsResult<Object<'js>> {
             let attributes = Object::new(ctx.clone())?;
             for (name, value) in node_attrs(&ctx, &attrs_document, node_id)? {
                 attributes.set(name, value)?;
             }
             Ok(attributes)
-        })?,
+        },
     )?;
 
     for (name, outer) in [("html", false), ("outer_html", true)] {
         let html_document = document.clone();
-        node.set(
-            name,
-            Function::new(ctx.clone(), move |ctx: Ctx<'js>| {
-                node_html(&ctx, &html_document, node_id, outer)
-            })?,
-        )?;
+        set_function(ctx, &node, name, move |ctx: Ctx<'js>| {
+            node_html(&ctx, &html_document, node_id, outer)
+        })?;
     }
 
     let select_document = document.clone();
-    let select = Function::new(ctx.clone(), move |ctx: Ctx<'js>, selector: String| {
-        let selected = select_ids(&ctx, &select_document, Some(node_id), &selector)?;
-        build_selection(&ctx, select_document.clone(), selected)
-    })?;
-    node.set("select", select.clone())?;
+    let select = set_function(
+        ctx,
+        &node,
+        "select",
+        move |ctx: Ctx<'js>, selector: String| {
+            let selected = select_ids(&ctx, &select_document, Some(node_id), &selector)?;
+            build_selection(&ctx, select_document.clone(), selected)
+        },
+    )?;
     node.set("querySelectorAll", select)?;
 
     let query_document = document.clone();
-    node.set(
+    set_function(
+        ctx,
+        &node,
         "querySelector",
-        Function::new(ctx.clone(), move |ctx: Ctx<'js>, selector: String| {
+        move |ctx: Ctx<'js>, selector: String| {
             let selected = select_ids(&ctx, &query_document, Some(node_id), &selector)?;
             selected
                 .first()
                 .copied()
                 .map(|id| build_node(&ctx, query_document.clone(), id))
                 .transpose()
-        })?,
+        },
     )?;
 
     // Relations are getters so walking `parent.parent` remains possible
@@ -356,32 +367,36 @@ fn build_node<'js>(
 fn build_document<'js>(ctx: &Ctx<'js>, document: SharedDocument) -> JsResult<Object<'js>> {
     let object = Object::new(ctx.clone())?;
     let select_document = document.clone();
-    let select = Function::new(ctx.clone(), move |ctx: Ctx<'js>, selector: String| {
-        let selected = select_ids(&ctx, &select_document, None, &selector)?;
-        build_selection(&ctx, select_document.clone(), selected)
-    })?;
-    object.set("select", select.clone())?;
+    let select = set_function(
+        ctx,
+        &object,
+        "select",
+        move |ctx: Ctx<'js>, selector: String| {
+            let selected = select_ids(&ctx, &select_document, None, &selector)?;
+            build_selection(&ctx, select_document.clone(), selected)
+        },
+    )?;
     object.set("querySelectorAll", select)?;
 
-    object.set(
+    set_function(
+        ctx,
+        &object,
         "querySelector",
-        Function::new(ctx.clone(), move |ctx: Ctx<'js>, selector: String| {
+        move |ctx: Ctx<'js>, selector: String| {
             let selected = select_ids(&ctx, &document, None, &selector)?;
             selected
                 .first()
                 .copied()
                 .map(|id| build_node(&ctx, document.clone(), id))
                 .transpose()
-        })?,
+        },
     )?;
     Ok(object)
 }
 
 pub(super) fn install<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
-    let html = Object::new(ctx.clone())?;
-    html.set(
-        "parse",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, input: String| {
+    Namespace::new(ctx, "HTML")?
+        .function("parse", |ctx: Ctx<'js>, input: String| {
             if input.trim().is_empty() {
                 return js_error(&ctx, "HTML.parse: input is empty");
             }
@@ -394,11 +409,8 @@ pub(super) fn install<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
                     dom: Mutex::new(Html::parse_document(&input)),
                 }),
             )
-        })?,
-    )?;
-    html.set(
-        "decodeEntities",
-        Function::new(ctx.clone(), |ctx: Ctx<'js>, input: String| {
+        })?
+        .function("decodeEntities", |ctx: Ctx<'js>, input: String| {
             if input.len() > MAX_HTML_INPUT_BYTES {
                 return js_error(&ctx, "HTML.decodeEntities: input exceeds the 4 MiB limit");
             }
@@ -406,7 +418,6 @@ pub(super) fn install<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
             let mut output = String::new();
             append_text(document.tree.root(), &mut output);
             Ok(output)
-        })?,
-    )?;
-    ctx.globals().set("HTML", html)
+        })?
+        .install()
 }
