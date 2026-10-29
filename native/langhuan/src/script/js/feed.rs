@@ -11,8 +11,8 @@ use tokio::time::sleep;
 use tokio_stream::StreamExt as _;
 
 use super::bridge::{
-    JsData, OpaqueJsValue, OperationSpec, Round, Step, build_event, call_handler, read_auth_entry,
-    read_auth_result, read_patched_request, read_step, restore_compute,
+    JsData, OpaqueJsValue, OperationSpec, Round, Step, StepOutcome, build_event, call_handler,
+    read_auth_entry, read_auth_result, read_patched_request, read_step, restore_compute,
 };
 use super::prelude::PRELUDE;
 use super::sandbox::{JsObject, Sandbox};
@@ -20,7 +20,7 @@ use super::sandbox::{JsObject, Sandbox};
 use crate::error::{Error, ExpectedErrorCode, Result};
 use crate::feed::{
     AuthEntry, AuthInfo, AuthPageContext, AuthStatus, Feed, FeedAuthFlow, FeedMeta, FeedStream,
-    SharedWebviewHandler, WebviewRequest, WebviewSnapshot,
+    SharedWebviewHandler, WebviewRequest,
 };
 use crate::http::{self, HttpRequest, HttpResponse};
 use crate::model::{BookInfo, ChapterInfo, Page, Paragraph, RawParagraph, SearchResult};
@@ -334,12 +334,11 @@ impl JsFeed {
     }
 
     async fn run_operation(&self, operation: &JsOperation, cursor: &Value) -> Result<Complete> {
-        // `state` and `compute` are opaque JavaScript values passed between
-        // rounds untouched; `response` and `webview` are fresh host data.
+        // `state` threads opaque JavaScript values between rounds; the
+        // executed step's result is carried as `outcome` and consumed by the
+        // next round.
         let mut state: Option<OpaqueJsValue> = None;
-        let mut compute: Option<OpaqueJsValue> = None;
-        let mut response: Option<HttpResponse> = None;
-        let mut webview: Option<WebviewSnapshot> = None;
+        let mut outcome: Option<StepOutcome> = None;
         let mut steps_left = MAX_INTERNAL_STEPS;
 
         loop {
@@ -347,16 +346,10 @@ impl JsFeed {
             let round = Round {
                 cursor,
                 state: state.take(),
-                compute: compute.take(),
-                response: response.as_ref(),
+                outcome: outcome.take(),
                 auth: auth.as_ref(),
-                webview: webview.as_ref(),
             };
             let step = self.invoke(operation, round)?;
-            // `response` and `webview` are one-shot: the reducer saw them this
-            // round, so the next round must not deliver them again.
-            response = None;
-            webview = None;
             match step {
                 Step::Request {
                     request,
@@ -369,7 +362,7 @@ impl JsFeed {
                         .execute_cached_http(&request, cache_key.as_deref())
                         .await?;
                     state = next_state;
-                    response = Some(http_response);
+                    outcome = Some(StepOutcome::Response(http_response));
                 }
                 Step::Compute {
                     programs,
@@ -384,7 +377,8 @@ impl JsFeed {
                     .map_err(|error| {
                         Error::javascript(format!("compute worker failed: {error}"))
                     })??;
-                    compute = Some(restore_compute(&self.feed_object, &result)?);
+                    let restored = restore_compute(&self.feed_object, &result)?;
+                    outcome = Some(StepOutcome::Compute(restored));
                     state = next_state;
                 }
                 Step::Webview {
@@ -410,7 +404,7 @@ impl JsFeed {
                     };
                     let snapshot = handler.open(request).await?;
                     state = next_state;
-                    webview = Some(snapshot);
+                    outcome = Some(StepOutcome::Webview(snapshot));
                 }
                 Step::Complete {
                     items,

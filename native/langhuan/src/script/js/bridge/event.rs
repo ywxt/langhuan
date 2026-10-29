@@ -57,21 +57,27 @@ pub struct OperationSpec<'a> {
     pub input: &'a Value,
 }
 
+/// What the previously executed step produced, carried into the next round.
+/// Every round follows a single step, so the three outcomes are mutually
+/// exclusive; `None` means this is the first call.
+pub enum StepOutcome {
+    Response(HttpResponse),
+    Compute(OpaqueJsValue),
+    Webview(WebviewSnapshot),
+}
+
 /// One reducer round: everything the event carries besides the operation.
 pub struct Round<'a> {
     pub cursor: &'a Value,
     pub state: Option<OpaqueJsValue>,
-    pub compute: Option<OpaqueJsValue>,
-    pub response: Option<&'a HttpResponse>,
+    pub outcome: Option<StepOutcome>,
     pub auth: Option<&'a Value>,
-    pub webview: Option<&'a WebviewSnapshot>,
 }
 
 /// Build the reducer event object natively.
 ///
-/// Absent round data is rendered as `undefined` — rquickjs's native `Option`
-/// conversion — so scripts test it with loose equality (`event.state == null`),
-/// which matches `null` as well.
+/// Absent round data reads as `undefined`, so scripts test it with loose
+/// equality (`event.state == null`), which matches `null` as well.
 pub fn build_event<'js>(
     ctx: &Ctx<'js>,
     operation: &OperationSpec<'_>,
@@ -82,10 +88,13 @@ pub fn build_event<'js>(
     event.set("input", JsData::from_json(operation.input))?;
     event.set("cursor", JsData::from_json(round.cursor))?;
     event.set("state", round.state.as_ref())?;
-    event.set("response", round.response)?;
-    event.set("compute", round.compute.as_ref())?;
+    match round.outcome.as_ref() {
+        Some(StepOutcome::Response(response)) => event.set("response", response)?,
+        Some(StepOutcome::Compute(compute)) => event.set("compute", compute)?,
+        Some(StepOutcome::Webview(webview)) => event.set("webview", webview)?,
+        None => {}
+    }
     event.set("auth", round.auth.map(JsData::from_json))?;
-    event.set("webview", round.webview)?;
     Ok(event.into_value())
 }
 
