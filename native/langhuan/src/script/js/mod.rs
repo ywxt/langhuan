@@ -1,7 +1,7 @@
 mod bridge;
 mod crypto;
+mod encoding;
 mod feed;
-mod hostapi;
 mod html;
 mod module;
 mod prelude;

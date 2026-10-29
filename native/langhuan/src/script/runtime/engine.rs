@@ -88,20 +88,20 @@ mod tests {
         )
     }
 
-    const RETURNED_FEED: &str = r#"(() => {
+    const RETURNED_FEED: &str = r#"
       const complete = () => ({ type: "complete", items: [] });
       const bookInfo = () => ({
         type: "complete", value: { id: "1", title: "One", author: "Author" },
       });
-      return { search: complete, bookInfo, chapters: complete, paragraphs: complete };
-    })()"#;
+      export default { search: complete, bookInfo, chapters: complete, paragraphs: complete };
+    "#;
 
     #[tokio::test]
-    async fn schema_four_accepts_returned_feed_object() {
+    async fn schema_four_accepts_exported_feed_object() {
         ScriptEngine::new()
             .load_script(&source(4, RETURNED_FEED))
             .await
-            .expect("returned feed object should load");
+            .expect("exported feed object should load");
     }
 
     #[tokio::test]
@@ -144,20 +144,28 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_global_feed_registration() {
-        let body = format!("globalThis.feed = {RETURNED_FEED}");
+        let body = r#"
+          const handlers = {
+            search: () => ({ type: "complete", items: [] }),
+            bookInfo: () => ({ type: "complete", value: { id: "1" } }),
+            chapters: () => ({ type: "complete", items: [] }),
+            paragraphs: () => ({ type: "complete", items: [] }),
+          };
+          globalThis.feed = handlers;
+        "#;
         let error = ScriptEngine::new()
-            .load_script(&source(4, &body))
+            .load_script(&source(4, body))
             .await
             .err()
             .expect("globalThis.feed registration must be rejected");
-        assert!(error.to_string().contains("return its handler object"));
+        assert!(error.to_string().contains("export default"));
     }
 
     #[tokio::test]
     async fn rejects_partial_login_contract() {
         let body = RETURNED_FEED.replace(
-            "return { search: complete, bookInfo, chapters: complete, paragraphs: complete };",
-            "return { search: complete, bookInfo, chapters: complete, paragraphs: complete, login: { entry() {} } };",
+            "export default { search: complete, bookInfo, chapters: complete, paragraphs: complete };",
+            "export default { search: complete, bookInfo, chapters: complete, paragraphs: complete, login: { entry() {} } };",
         );
         let error = ScriptEngine::new()
             .load_script(&source(4, &body))
@@ -169,7 +177,7 @@ mod tests {
 
     #[tokio::test]
     async fn auth_entry_rejects_unsafe_user_agent() {
-        let body = r#"(() => {
+        let body = r#"
           const complete = () => ({ type: "complete", items: [] });
           const bookInfo = () => ({
             type: "complete", value: { id: "1", title: "One", author: "Author" },
@@ -179,8 +187,8 @@ mod tests {
             parse: () => ({}),
             patchRequest: (_operation, request) => request,
           };
-          return { search: complete, bookInfo, chapters: complete, paragraphs: complete, login };
-        })()"#;
+          export default { search: complete, bookInfo, chapters: complete, paragraphs: complete, login };
+        "#;
         let feed = ScriptEngine::new()
             .load_script(&source(4, body))
             .await
@@ -202,7 +210,8 @@ mod tests {
             .with_body("ok")
             .create_async()
             .await;
-        let body = r#"(() => {
+        let body = r#"
+          import { TextDecoder } from "langhuan:encoding";
           const empty = () => ({ type: "complete", items: [] });
           function bookInfo(event) {
             if (event.state == null) {
@@ -229,8 +238,8 @@ mod tests {
               return request;
             },
           };
-          return { search: empty, bookInfo, chapters: empty, paragraphs: empty, login };
-        })()"#
+          export default { search: empty, bookInfo, chapters: empty, paragraphs: empty, login };
+        "#
             .replace("__BASE__", &server.url());
         let feed = ScriptEngine::new()
             .load_script(&source(4, &body))
@@ -254,7 +263,7 @@ mod tests {
             .with_body("ok")
             .create_async()
             .await;
-        let body = r#"(() => {
+        let body = r#"
           const empty = () => ({ type: "complete", items: [] });
           function bookInfo(event) {
             if (event.state == null) {
@@ -285,9 +294,9 @@ mod tests {
               },
             };
           }
-          return { search: empty, bookInfo, chapters: empty, paragraphs: empty };
-        })()"#
-            .replace("__BASE__", &server.url());
+          export default { search: empty, bookInfo, chapters: empty, paragraphs: empty };
+        "#
+        .replace("__BASE__", &server.url());
         let feed = ScriptEngine::new()
             .load_script(&source(4, &body))
             .await
@@ -307,7 +316,8 @@ mod tests {
             .with_body("stored")
             .create_async()
             .await;
-        let body = r#"(() => {
+        let body = r#"
+          import { TextDecoder } from "langhuan:encoding";
           const empty = () => ({ type: "complete", items: [] });
           function bookInfo(event) {
             if (event.state == null) {
@@ -326,8 +336,8 @@ mod tests {
               value: { id: "1", title: new TextDecoder().decode(event.response.body), author: "Test" },
             };
           }
-          return { search: empty, bookInfo, chapters: empty, paragraphs: empty };
-        })()"#
+          export default { search: empty, bookInfo, chapters: empty, paragraphs: empty };
+        "#
             .replace("__BASE__", &server.url());
         let feed = ScriptEngine::new()
             .load_script(&source(4, &body))
@@ -340,7 +350,7 @@ mod tests {
 
     #[tokio::test]
     async fn completed_items_reject_bytes_with_guidance() {
-        let body = r#"(() => {
+        let body = r#"
           function search() {
             return {
               type: "complete",
@@ -351,8 +361,8 @@ mod tests {
           const bookInfo = () => ({
             type: "complete", value: { id: "1", title: "One", author: "Test" },
           });
-          return { search, bookInfo, chapters: empty, paragraphs: empty };
-        })()"#;
+          export default { search, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
         let feed = ScriptEngine::new()
             .load_script(&source(4, body))
             .await
@@ -367,7 +377,7 @@ mod tests {
 
     #[tokio::test]
     async fn keeps_returned_feed_object_between_calls() {
-        let body = r#"(() => {
+        let body = r#"
           let calls = 0;
           function search() {
             calls += 1;
@@ -379,8 +389,8 @@ mod tests {
           const bookInfo = () => ({
             type: "complete", value: { id: "1", title: "One", author: "Test" },
           });
-          return { search, bookInfo, chapters: empty, paragraphs: empty };
-        })()"#;
+          export default { search, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
         let feed = ScriptEngine::new()
             .load_script(&source(4, body))
             .await
@@ -394,7 +404,7 @@ mod tests {
 
     #[tokio::test]
     async fn feed_realm_cannot_compile_dynamic_code() {
-        let body = r#"(() => {
+        let body = r#"
           const empty = () => ({ type: "complete", items: [] });
           function bookInfo() {
             let constructorResult = "blocked";
@@ -410,8 +420,8 @@ mod tests {
               },
             };
           }
-          return { search: empty, bookInfo, chapters: empty, paragraphs: empty };
-        })()"#;
+          export default { search: empty, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
         let feed = ScriptEngine::new()
             .load_script(&source(4, body))
             .await
@@ -423,7 +433,7 @@ mod tests {
 
     #[tokio::test]
     async fn compute_runs_in_a_separate_json_only_realm() {
-        let body = r#"(() => {
+        let body = r#"
           const empty = () => ({ type: "complete", items: [] });
           function bookInfo(event) {
             if (event.state == null) {
@@ -431,7 +441,7 @@ mod tests {
                 type: "compute",
                 programs: [
                   "globalThis.remoteOnly = eval('input.value + 1')",
-                  "({ title: String(globalThis.remoteOnly), html: typeof HTML, fetch: typeof fetch })",
+                  "export default { title: String(globalThis.remoteOnly), html: typeof HTML, fetch: typeof fetch };",
                 ],
                 input: { value: 41 },
                 next_state: true,
@@ -446,8 +456,8 @@ mod tests {
               },
             };
           }
-          return { search: empty, bookInfo, chapters: empty, paragraphs: empty };
-        })()"#;
+          export default { search: empty, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
         let feed = ScriptEngine::new()
             .load_script(&source(4, body))
             .await
@@ -460,7 +470,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn serializes_persistent_object_calls_across_threads() {
-        let body = r#"(() => {
+        let body = r#"
           let calls = 0;
           function search() {
             calls += 1;
@@ -472,8 +482,8 @@ mod tests {
           const bookInfo = () => ({
             type: "complete", value: { id: "1", title: "One", author: "Test" },
           });
-          return { search, bookInfo, chapters: empty, paragraphs: empty };
-        })()"#;
+          export default { search, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
         let feed = Arc::new(
             ScriptEngine::new()
                 .load_script(&source(4, body))
@@ -561,7 +571,7 @@ mod tests {
 
     #[tokio::test]
     async fn webview_step_round_trips_snapshot_to_reducer() {
-        let body = r#"(() => {
+        let body = r#"
           const empty = () => ({ type: "complete", items: [] });
           function search(event) {
             if (event.state == null) {
@@ -592,8 +602,8 @@ mod tests {
           const bookInfo = () => ({
             type: "complete", value: { id: "1", title: "One", author: "Test" },
           });
-          return { search, bookInfo, chapters: empty, paragraphs: empty };
-        })()"#;
+          export default { search, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
         let feed = ScriptEngine::new()
             .load_script(&source(4, body))
             .await
@@ -618,7 +628,7 @@ mod tests {
 
     #[tokio::test]
     async fn webview_step_without_handler_fails_auth_required() {
-        let body = r#"(() => {
+        let body = r#"
           const empty = () => ({ type: "complete", items: [] });
           function search() {
             return {
@@ -631,8 +641,8 @@ mod tests {
           const bookInfo = () => ({
             type: "complete", value: { id: "1", title: "One", author: "Test" },
           });
-          return { search, bookInfo, chapters: empty, paragraphs: empty };
-        })()"#;
+          export default { search, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
         let feed = ScriptEngine::new()
             .load_script(&source(4, body))
             .await
@@ -655,7 +665,7 @@ mod tests {
 
     #[tokio::test]
     async fn webview_handler_error_aborts_operation() {
-        let body = r#"(() => {
+        let body = r#"
           const empty = () => ({ type: "complete", items: [] });
           function search() {
             return {
@@ -668,8 +678,8 @@ mod tests {
           const bookInfo = () => ({
             type: "complete", value: { id: "1", title: "One", author: "Test" },
           });
-          return { search, bookInfo, chapters: empty, paragraphs: empty };
-        })()"#;
+          export default { search, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
         let feed = ScriptEngine::new()
             .load_script(&source(4, body))
             .await

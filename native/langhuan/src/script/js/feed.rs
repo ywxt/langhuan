@@ -159,12 +159,7 @@ impl JsFeed {
         sandbox.eval_script(&format!(
             "{PRELUDE}\nglobalThis.meta = Object.freeze({meta_json});"
         ))?;
-        let feed_object = sandbox.eval_object(&format!("({source})"))?;
-        if sandbox.has_global("feed")? {
-            return Err(Error::invalid_feed(
-                "JavaScript feed must return its handler object instead of assigning globalThis.feed",
-            ));
-        }
+        let feed_object = sandbox.eval_module_default(&source)?;
         Self::require_handlers(&feed_object)?;
         let (has_login, has_auth_status) = Self::login_capabilities(&feed_object)?;
 
@@ -190,7 +185,7 @@ impl JsFeed {
                 .collect::<Vec<_>>()
                 .join(", ");
             return Err(Error::invalid_feed(format!(
-                "JavaScript feed must return an object with {names} functions"
+                "JavaScript feed must export default an object with {names} functions"
             )));
         }
         Ok(())

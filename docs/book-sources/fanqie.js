@@ -39,8 +39,8 @@
 // 與否都只得到空回應、無法穩定驗證，因此刻意不採用。本書源對權益牆如實回
 // 報：未登入先提示登入，已登入而無權益則明確告知需要 SVIP。
 
-(() => {
-  "use strict";
+import { TextDecoder } from "langhuan:encoding";
+import { HTML } from "langhuan:html";
 
   const USER_AGENT =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
@@ -598,5 +598,4 @@
     },
   };
 
-  return { search, bookInfo, chapters, paragraphs, login };
-})()
+  export default { search, bookInfo, chapters, paragraphs, login };

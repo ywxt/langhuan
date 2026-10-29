@@ -3,11 +3,32 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use ego_tree::{NodeId, NodeRef};
 use rquickjs::function::This;
+use rquickjs::module::{Declarations, Exports, ModuleDef};
 use rquickjs::object::Accessor;
 use rquickjs::{Array, Ctx, Exception, Object, Result as JsResult, Value};
 use scraper::{ElementRef, Html, Node, Selector};
 
-use super::module::{Namespace, set_function};
+use super::module::{Namespace, declare_module, set_function};
+
+/// The `langhuan:html` module: `HTML`.
+struct HtmlModule;
+
+impl ModuleDef for HtmlModule {
+    fn declare<'js>(declarations: &Declarations<'js>) -> JsResult<()> {
+        declarations.declare("HTML")?;
+        Ok(())
+    }
+
+    fn evaluate<'js>(ctx: &Ctx<'js>, exports: &Exports<'js>) -> JsResult<()> {
+        exports.export("HTML", html(ctx)?)?;
+        Ok(())
+    }
+}
+
+/// Declare the `langhuan:html` module in the realm.
+pub(super) fn declare<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
+    declare_module::<HtmlModule>(ctx, "langhuan:html")
+}
 
 const MAX_HTML_INPUT_BYTES: usize = 4 * 1024 * 1024;
 
@@ -394,8 +415,8 @@ fn build_document<'js>(ctx: &Ctx<'js>, document: SharedDocument) -> JsResult<Obj
     Ok(object)
 }
 
-pub(super) fn install<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
-    Namespace::new(ctx, "HTML")?
+fn html<'js>(ctx: &Ctx<'js>) -> JsResult<Object<'js>> {
+    Ok(Namespace::new(ctx)?
         .function("parse", |ctx: Ctx<'js>, input: String| {
             if input.trim().is_empty() {
                 return js_error(&ctx, "HTML.parse: input is empty");
@@ -419,5 +440,5 @@ pub(super) fn install<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
             append_text(document.tree.root(), &mut output);
             Ok(output)
         })?
-        .install()
+        .object())
 }

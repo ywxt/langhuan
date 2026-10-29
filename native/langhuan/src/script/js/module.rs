@@ -1,28 +1,31 @@
-//! Registration for host-provided module globals.
+//! Native ES modules: the host API surface of a realm.
 //!
-//! A host module is a set of pure functions under one global name
-//! (`Crypto`, `Bytes`, …) or a constructor global (`TextDecoder`). The
-//! builders here keep registration declarative — a module file lists its
-//! surface as one chain instead of repeating the create-object /
-//! wrap-function / set-property ceremony — and per-object methods go
-//! through the same [`set_function`] choke point.
+//! Realms install no host globals. Scripts import what they need —
+//! `import { Crypto, Compression } from "langhuan:crypto"` — and a realm's
+//! declared-module list is its capability list: importing an undeclared
+//! module fails at link time. QuickJS resolves imports against the realm's
+//! declared modules before any loader runs, so no module loader, filesystem,
+//! or network is ever involved.
+//!
+//! A native module is a `ModuleDef` whose `declare` names its exports and
+//! whose `evaluate` fills them on first import; the values are built with
+//! the [`Namespace`] chain, [`constructor`], and [`set_function`] below.
 
 use rquickjs::function::IntoJsFunc;
-use rquickjs::{Ctx, Function, Object, Result as JsResult};
+use rquickjs::module::ModuleDef;
+use rquickjs::{Ctx, Function, Module, Object, Result as JsResult};
 
-/// A function namespace under construction, installed as one global.
+/// A function namespace under construction, exported as one module member.
 pub(super) struct Namespace<'js> {
     ctx: Ctx<'js>,
-    name: &'static str,
     object: Object<'js>,
 }
 
 impl<'js> Namespace<'js> {
-    /// Start the namespace installed as the global `name`.
-    pub(super) fn new(ctx: &Ctx<'js>, name: &'static str) -> JsResult<Self> {
+    /// Start a namespace object.
+    pub(super) fn new(ctx: &Ctx<'js>) -> JsResult<Self> {
         Ok(Self {
             ctx: ctx.clone(),
-            name,
             object: Object::new(ctx.clone())?,
         })
     }
@@ -36,24 +39,19 @@ impl<'js> Namespace<'js> {
         Ok(self)
     }
 
-    /// Install the namespace as a global under its name.
-    pub(super) fn install(self) -> JsResult<()> {
-        self.ctx.globals().set(self.name, self.object)
+    /// Finish the namespace as an object.
+    pub(super) fn object(self) -> Object<'js> {
+        self.object
     }
 }
 
-/// Install a constructor global, callable with `new`; `function` builds the
+/// Wrap a constructor function, callable with `new`; `function` builds the
 /// instance object.
-pub(super) fn constructor<'js, P, F>(
-    ctx: &Ctx<'js>,
-    name: &'static str,
-    function: F,
-) -> JsResult<()>
+pub(super) fn constructor<'js, P, F>(ctx: &Ctx<'js>, function: F) -> JsResult<Function<'js>>
 where
     F: IntoJsFunc<'js, P> + 'js,
 {
-    let constructor = Function::new(ctx.clone(), function)?.with_constructor(true);
-    ctx.globals().set(name, constructor)
+    Ok(Function::new(ctx.clone(), function)?.with_constructor(true))
 }
 
 /// Wrap `function` and set it on `object` under `name`; the wrapped
@@ -70,4 +68,12 @@ where
     let function = Function::new(ctx.clone(), function)?;
     object.set(name, function.clone())?;
     Ok(function)
+}
+
+/// Declare the native module `name`; `D` fills its exports on first import.
+pub(super) fn declare_module<'js, D>(ctx: &Ctx<'js>, name: &'static str) -> JsResult<()>
+where
+    D: ModuleDef,
+{
+    Module::declare_def::<D, _>(ctx.clone(), name).map(|_| ())
 }

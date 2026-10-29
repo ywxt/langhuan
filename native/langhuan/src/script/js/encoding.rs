@@ -1,30 +1,47 @@
-//! Host-provided globals installed into every sandbox realm.
+//! The `langhuan:encoding` module: text and byte conversions for book sources.
 //!
 //! QuickJS intentionally ships no browser APIs, so the host supplies the
 //! encoding and byte utilities book sources need. Everything here is a pure
 //! function over its arguments — no network, filesystem, clock, or random
-//! side channels — so installing the same set in the feed realm and the
+//! side channels — so declaring the module in the feed realm and in the
 //! capability-free compute realm leaks nothing.
 
 use encoding_rs::Encoding;
 use rquickjs::function::Opt;
-use rquickjs::{Ctx, Exception, Object, Result as JsResult, TypedArray};
+use rquickjs::module::{Declarations, Exports, ModuleDef};
+use rquickjs::{Ctx, Exception, Function, Object, Result as JsResult, TypedArray};
 
 use super::bridge::typed_bytes;
-use super::module::{Namespace, constructor, set_function};
+use super::module::{Namespace, constructor, declare_module, set_function};
 
-/// Install `TextDecoder`, `TextEncoder`, and the `Bytes` namespace.
-pub(super) fn install<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
-    install_text_decoder(ctx)?;
-    install_text_encoder(ctx)?;
-    install_bytes(ctx)?;
-    Ok(())
+/// The `langhuan:encoding` module: `TextDecoder`, `TextEncoder`, and `Bytes`.
+struct EncodingModule;
+
+impl ModuleDef for EncodingModule {
+    fn declare<'js>(declarations: &Declarations<'js>) -> JsResult<()> {
+        declarations
+            .declare("TextDecoder")?
+            .declare("TextEncoder")?
+            .declare("Bytes")?;
+        Ok(())
+    }
+
+    fn evaluate<'js>(ctx: &Ctx<'js>, exports: &Exports<'js>) -> JsResult<()> {
+        exports.export("TextDecoder", text_decoder(ctx)?)?;
+        exports.export("TextEncoder", text_encoder(ctx)?)?;
+        exports.export("Bytes", bytes(ctx)?)?;
+        Ok(())
+    }
 }
 
-fn install_text_decoder<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
+/// Declare the `langhuan:encoding` module in the realm.
+pub(super) fn declare<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
+    declare_module::<EncodingModule>(ctx, "langhuan:encoding")
+}
+
+fn text_decoder<'js>(ctx: &Ctx<'js>) -> JsResult<Function<'js>> {
     constructor(
         ctx,
-        "TextDecoder",
         |ctx: Ctx<'js>, label: Opt<String>, options: Opt<Object<'js>>| -> JsResult<Object<'js>> {
             build_text_decoder(&ctx, label.0, options.0)
         },
@@ -95,29 +112,25 @@ fn build_text_decoder<'js>(
     Ok(decoder)
 }
 
-fn install_text_encoder<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
-    constructor(
-        ctx,
-        "TextEncoder",
-        |ctx: Ctx<'js>| -> JsResult<Object<'js>> {
-            let encoder = Object::new(ctx.clone())?;
-            encoder.set("encoding", "utf-8")?;
-            set_function(
-                &ctx,
-                &encoder,
-                "encode",
-                |ctx: Ctx<'js>, input: Opt<String>| -> JsResult<TypedArray<'js, u8>> {
-                    let bytes = input.0.unwrap_or_default().into_bytes();
-                    TypedArray::<u8>::new_copy(ctx.clone(), &bytes)
-                },
-            )?;
-            Ok(encoder)
-        },
-    )
+fn text_encoder<'js>(ctx: &Ctx<'js>) -> JsResult<Function<'js>> {
+    constructor(ctx, |ctx: Ctx<'js>| -> JsResult<Object<'js>> {
+        let encoder = Object::new(ctx.clone())?;
+        encoder.set("encoding", "utf-8")?;
+        set_function(
+            &ctx,
+            &encoder,
+            "encode",
+            |ctx: Ctx<'js>, input: Opt<String>| -> JsResult<TypedArray<'js, u8>> {
+                let bytes = input.0.unwrap_or_default().into_bytes();
+                TypedArray::<u8>::new_copy(ctx.clone(), &bytes)
+            },
+        )?;
+        Ok(encoder)
+    })
 }
 
-fn install_bytes<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
-    Namespace::new(ctx, "Bytes")?
+fn bytes<'js>(ctx: &Ctx<'js>) -> JsResult<Object<'js>> {
+    Ok(Namespace::new(ctx)?
         .function(
             "toBase64",
             |ctx: Ctx<'js>,
@@ -164,7 +177,7 @@ fn install_bytes<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
                 TypedArray::<u8>::new_copy(ctx.clone(), &bytes)
             },
         )?
-        .install()
+        .object())
 }
 
 // ---------------------------------------------------------------------------
@@ -374,7 +387,10 @@ mod tests {
     fn option_flags_report_their_namespace() {
         let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
         let error = sandbox
-            .eval_json("new TextDecoder('utf-8', { fatal: 5 })")
+            .eval_module_json(
+                "import { TextDecoder, Bytes } from \"langhuan:encoding\";
+                 new TextDecoder('utf-8', { fatal: 5 })",
+            )
             .unwrap_err()
             .to_string();
         assert!(
@@ -382,7 +398,10 @@ mod tests {
             "{error}"
         );
         let error = sandbox
-            .eval_json("Bytes.toBase64(new Uint8Array(1), { urlSafe: 1 })")
+            .eval_module_json(
+                "import { Bytes } from \"langhuan:encoding\";
+                 Bytes.toBase64(new Uint8Array(1), { urlSafe: 1 })",
+            )
             .unwrap_err()
             .to_string();
         assert!(

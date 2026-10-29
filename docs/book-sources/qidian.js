@@ -10,8 +10,8 @@
 // @schema_version 4
 // ==/Feed==
 
-(() => {
-"use strict";
+import { TextDecoder } from "langhuan:encoding";
+import { HTML } from "langhuan:html";
 
 const PAGE_CONTEXT_MARKER = 'id="vite-plugin-ssr_pageContext"';
 
@@ -311,7 +311,7 @@ const FOCK_INITIALIZE_PROGRAM = `
 `;
 
 const FOCK_UNLOCK_PROGRAM = `
-(() => {
+export default (() => {
   let completed = false;
   let result = null;
   let failure = null;
@@ -631,11 +631,10 @@ const login = {
   },
 };
 
-return {
+export default {
   search,
   bookInfo,
   chapters,
   paragraphs,
   login,
 };
-})()

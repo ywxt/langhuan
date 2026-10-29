@@ -11,8 +11,8 @@
 // @schema_version 4
 // ==/Feed==
 
-(() => {
-  "use strict";
+import { TextDecoder } from "langhuan:encoding";
+import { HTML } from "langhuan:html";
 
   // schema 4：response.body 是 Uint8Array，需先解碼成字串。
   const DECODER = new TextDecoder("utf-8");
@@ -272,5 +272,4 @@
     return { type: "complete", items: page.items, next_cursor: page.next_cursor };
   }
 
-  return { search, bookInfo, chapters, paragraphs };
-})()
+  export default { search, bookInfo, chapters, paragraphs };

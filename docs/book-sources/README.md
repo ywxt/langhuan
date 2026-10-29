@@ -1,8 +1,9 @@
 # Book Source Guide
 
-Langhuan book sources are JavaScript reducers executed by an isolated native
-QuickJS runtime. A source describes requests as plain data; it cannot open
-sockets, files, processes, environment variables, or native APIs.
+Langhuan book sources are ES modules executed by an isolated native QuickJS
+runtime. A source describes requests as plain data; it cannot open sockets,
+files, processes, environment variables, or native APIs — host utilities are
+imported from the declared `langhuan:*` modules, never installed as globals.
 
 Current examples:
 
@@ -21,10 +22,11 @@ Current examples:
   reports as an explicit sign-in or entitlement error instead of returning
   partial content.
 
-There is no legacy runtime compatibility. Schema 4 sources must use `.js` and
-must return their Feed object. Assigning `globalThis.feed` is not supported.
-Schema 3 sources fail to load with a migration hint: response bodies are now
-`Uint8Array` values that must be decoded with `TextDecoder` before use as text.
+There is no legacy runtime compatibility. Schema 4 sources must use `.js`,
+must be ES modules, and must `export default` their Feed object. Assigning
+`globalThis.feed` is not supported. Schema 3 sources fail to load with a
+migration hint: response bodies are now `Uint8Array` values that must be
+decoded with `TextDecoder` before use as text.
 
 ## Metadata
 
@@ -52,32 +54,49 @@ apply to every request descriptor returned by the source.
 
 The runtime exposes the parsed header as the frozen global `meta` object.
 
-## Return contract
+## Host modules
 
-Use an IIFE so the source can keep helpers private and return one object:
+The runtime installs no host globals. Every host-provided API lives in a
+native module that a source imports explicitly, and a realm's declared-module
+list is its capability list — importing an undeclared module fails at link
+time, before any code runs:
+
+| Module               | Exports                                      | Feed realm | Compute realms |
+| -------------------- | -------------------------------------------- | :--------: | :------------: |
+| `langhuan:encoding`  | `TextDecoder`, `TextEncoder`, `Bytes`        |     ✓      |       ✓        |
+| `langhuan:crypto`    | `Crypto`, `Compression`                      |     ✓      |       ✓        |
+| `langhuan:html`      | `HTML`                                       |     ✓      |       —        |
+
+Host modules are native values, not parsed JSON: importing one and calling it
+never serializes arguments or results. The modules are evaluated lazily on
+first import.
+
+## Export contract
+
+The source is an ES module. Module scope keeps helpers private, so no IIFE
+is needed; `export default` is the handler table:
 
 ```js
-(() => {
-  "use strict";
+import { TextDecoder } from "langhuan:encoding";
+import { HTML } from "langhuan:html";
 
-  function search(event) { /* reducer */ }
-  function bookInfo(event) { /* reducer */ }
-  function chapters(event) { /* reducer */ }
-  function paragraphs(event) { /* reducer */ }
+function search(event) { /* reducer */ }
+function bookInfo(event) { /* reducer */ }
+function chapters(event) { /* reducer */ }
+function paragraphs(event) { /* reducer */ }
 
-  return { search, bookInfo, chapters, paragraphs };
-})()
+export default { search, bookInfo, chapters, paragraphs };
 ```
 
 The four handlers are required. `login` is optional:
 
 ```js
-return { search, bookInfo, chapters, paragraphs, login };
+export default { search, bookInfo, chapters, paragraphs, login };
 ```
 
-The source is evaluated once when it is loaded. Its returned object remains in
-that feed's native QuickJS context and all later operations call the retained
-methods. Do not mutate globals to register handlers.
+The module is evaluated once when the source is loaded. Its default export
+remains in that feed's native QuickJS context and all later operations call
+the retained methods. Do not mutate globals to register handlers.
 
 ## Reducer model
 
@@ -163,19 +182,24 @@ return {
   type: "compute",
   programs: [
     bodyText(event.response),     // site-provided code, decoded to a string
-    "decrypt(input.encrypted, input.key)",
+    "export default decrypt(input.encrypted, input.key);",
   ],
   input: { encrypted, key },
   next_state: { stage: "decrypted" },
 };
 ```
 
-Rust creates a fresh QuickJS realm for each compute step, installs no native
-callbacks, network API, HTML parser, module loader, filesystem, process, or
-environment access, and evaluates `programs` in order. The `input` value enters
-the realm as a live JavaScript value and the final program's return value comes
-back as `event.compute` — both may include strings, numbers, booleans, arrays,
-plain objects, `null`/`undefined`, and `Uint8Array` bytes.
+Each program is evaluated as an ES module, so site code can import the
+realm's declared host modules (`langhuan:encoding`, `langhuan:crypto`).
+Programs run in order and share the realm's globals, and the final program's
+`export default` value comes back as `event.compute`.
+
+Rust creates a fresh QuickJS realm for each compute step, declares no
+`langhuan:html` module, no native callbacks, network API, module loader,
+filesystem, process, or environment access, and evaluates `programs` in
+order. The `input` value enters the realm as a live JavaScript value — it
+and the result may include strings, numbers, booleans, arrays, plain
+objects, `null`/`undefined`, and `Uint8Array` bytes.
 The realm is destroyed immediately afterwards. It has independent heap, stack,
 execution-time, source-size, program-count, and result-size limits.
 
@@ -280,13 +304,15 @@ errors. See [`../error-handling.md`](../error-handling.md).
 
 ## HTML parsing
 
-The sandbox provides `HTML.parse()` through a bounded, read-only Rust binding
-powered by `scraper`. This is the only native object exposed to source code; it
-does not provide filesystem, network, process, environment, or other system
-access. Each input is limited to 4 MiB and returns a document tree with CSS
-selection:
+`langhuan:html` provides `HTML.parse()` through a bounded, read-only Rust
+binding powered by `scraper`. It is declared only in the feed realm — compute
+realms have no `langhuan:html` — and provides no filesystem, network, process,
+environment, or other system access. Each input is limited to 4 MiB and returns
+a document tree with CSS selection:
 
 ```js
+import { HTML } from "langhuan:html";
+
 const document = HTML.parse(bodyText(event.response));
 const cards = document.select(".result-card");
 const firstBook = document
@@ -307,10 +333,12 @@ comma groups, and the attribute operators `=`, `*=`, `^=`, `$=`, `~=`, and
 ## Byte and text utilities
 
 QuickJS ships no `TextDecoder`, `TextEncoder`, or typed-array conversion
-helpers, so the host provides them in both the feed realm and every compute
-realm:
+helpers, so `langhuan:encoding` provides them in both the feed realm and every
+compute realm:
 
 ```js
+import { TextDecoder, TextEncoder, Bytes } from "langhuan:encoding";
+
 // Decode response bodies (and any other bytes) to text.
 const DECODER = new TextDecoder("utf-8");          // or "gbk", "big5", "shift_jis", ...
 function bodyText(response) {
@@ -346,10 +374,13 @@ Notes:
 ## Cryptography and compression
 
 Sites encrypt content with standard primitives, and reimplementing AES in a
-sandboxed script would be both slow and wrong. The host provides synchronous,
-pure-function namespaces in both the feed realm and every compute realm:
+sandboxed script would be both slow and wrong. `langhuan:crypto` provides
+synchronous, pure-function namespaces in both the feed realm and every compute
+realm:
 
 ```js
+import { Crypto, Compression } from "langhuan:crypto";
+
 Crypto.md5(data)                 // -> Uint8Array digest
 Crypto.sha1(data)
 Crypto.sha256(data)
@@ -443,12 +474,13 @@ User-Agent, so `patchRequest` should replay the same source constant.
 ## Sandbox guarantees and limits
 
 Every loaded feed owns one native QuickJS runtime and context. The source and
-built-ins are evaluated once; the returned Feed object is retained. Reducer
+built-ins are evaluated once; the exported Feed object is retained. Reducer
 calls are serialized per feed, and the execution deadline is reset for every
 call:
 
-- no filesystem, sockets, environment, subprocesses, dynamic modules, or host
-  object references;
+- no filesystem, sockets, environment, subprocesses, module loader, dynamic
+  `import()`, or host object references — imports resolve only against the
+  realm's declared host modules;
 - 32 MiB QuickJS heap and a 1 MiB QuickJS stack;
 - a 30-second JavaScript deadline enforced by QuickJS's interrupt handler;
 - a 16 MiB limit on materialized `complete` results;
@@ -459,10 +491,11 @@ call:
 - all network, authentication, caching, redirects, and domain checks remain in
   native Rust.
 
-Browser globals are not generally available. The runtime supplies only small
-pure helpers needed by site code: `atob`, `btoa`, `window/self` aliases, inert
-`console`, `performance.now`, inert timer shims, and the byte and text
-utilities described above. `navigator` deliberately
+Browser globals are not generally available, and the host installs no
+globals of its own — every host API must be imported from the modules listed
+above. The runtime supplies only small pure ambient helpers needed by site
+code: `atob`, `btoa`, `window/self` aliases, inert `console`, `performance.now`,
+inert timer shims, and the frozen `meta` object. `navigator` deliberately
 has no `webdriver` property so official anti-bot bundles do not mistake the
 sandbox for browser automation.
 
@@ -471,7 +504,8 @@ sandbox for browser automation.
 The same reducer contract covers both kinds of site:
 
 - An ordinary HTML source returns one `request`, decodes `response.body` with
-  `TextDecoder`, parses it, and returns `complete`.
+  `TextDecoder` imported from `langhuan:encoding`, parses it, and returns
+  `complete`.
 - A site such as Qidian stores intermediate values in `next_state`, returns
   another request descriptor, evaluates pure site-provided decryption code in
   the guest, and finally returns `complete`.

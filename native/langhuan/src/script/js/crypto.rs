@@ -1,9 +1,9 @@
-//! Host-provided cryptography and compression namespaces.
+//! The `langhuan:crypto` module: cryptography and compression.
 //!
 //! Book sources need to run the same algorithms sites use — digests, HMAC,
 //! AES, and gzip — but the sandbox must never hand them a native code loader.
 //! Everything here is a pure function over explicit arguments, so it is safe
-//! to install in the feed realm and in every disposable compute realm.
+//! to declare in the feed realm and in every disposable compute realm.
 
 use aes::cipher::block_padding::{NoPadding, Pkcs7};
 use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit, StreamCipher};
@@ -11,25 +11,41 @@ use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::{DeflateEncoder, GzEncoder};
 use hmac::Mac;
-use rquickjs::{Ctx, Exception, FromJs, Result as JsResult, TypedArray, Value as JsValue};
+use rquickjs::module::{Declarations, Exports, ModuleDef};
+use rquickjs::{Ctx, Exception, FromJs, Object, Result as JsResult, TypedArray, Value as JsValue};
 use sha2::Digest;
 
 use super::bridge::{Fields, conversion_detail, typed_bytes};
-use super::module::Namespace;
+use super::module::{Namespace, declare_module};
 
 /// Upper bound for decompressed output, matching the QuickJS heap limit.
 const MAX_EXPANSION_BYTES: usize = 32 * 1024 * 1024;
 /// Upper bound for `Crypto.randomBytes`.
 const MAX_RANDOM_BYTES: usize = 1024 * 1024;
 
-pub(super) fn install<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
-    install_crypto(ctx)?;
-    install_compression(ctx)?;
-    Ok(())
+/// The `langhuan:crypto` module: `Crypto` and `Compression`.
+struct CryptoModule;
+
+impl ModuleDef for CryptoModule {
+    fn declare<'js>(declarations: &Declarations<'js>) -> JsResult<()> {
+        declarations.declare("Crypto")?.declare("Compression")?;
+        Ok(())
+    }
+
+    fn evaluate<'js>(ctx: &Ctx<'js>, exports: &Exports<'js>) -> JsResult<()> {
+        exports.export("Crypto", crypto(ctx)?)?;
+        exports.export("Compression", compression(ctx)?)?;
+        Ok(())
+    }
 }
 
-fn install_crypto<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
-    Namespace::new(ctx, "Crypto")?
+/// Declare the `langhuan:crypto` module in the realm.
+pub(super) fn declare<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
+    declare_module::<CryptoModule>(ctx, "langhuan:crypto")
+}
+
+fn crypto<'js>(ctx: &Ctx<'js>) -> JsResult<Object<'js>> {
+    Ok(Namespace::new(ctx)?
         .function("md5", |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
             digest_call::<md5::Md5>(&ctx, &data)
         })?
@@ -90,11 +106,11 @@ fn install_crypto<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
                 bytes_out(&ctx, buffer)
             },
         )?
-        .install()
+        .object())
 }
 
-fn install_compression<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
-    Namespace::new(ctx, "Compression")?
+fn compression<'js>(ctx: &Ctx<'js>) -> JsResult<Object<'js>> {
+    Ok(Namespace::new(ctx)?
         .function("gzip", |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
             let bytes = typed_bytes(&ctx, &data)?;
             let output = gzip_encode(&bytes).map_err(|message| {
@@ -123,7 +139,7 @@ fn install_compression<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
             })?;
             bytes_out(&ctx, output)
         })?
-        .install()
+        .object())
 }
 
 // ---------------------------------------------------------------------------
@@ -619,7 +635,8 @@ mod tests {
             ),
         ];
         for (code, expected) in cases {
-            let error = sandbox.eval_json(code).unwrap_err().to_string();
+            let module = format!(r#"import {{ Crypto }} from "langhuan:crypto"; {code}"#);
+            let error = sandbox.eval_module_json(&module).unwrap_err().to_string();
             assert!(error.contains(expected), "{code} -> {error}");
         }
     }
@@ -628,25 +645,29 @@ mod tests {
     fn aes_round_trips_options_through_the_realm() {
         let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
         let sealed = sandbox
-            .eval_json(
-                r#"Bytes.toHex(Crypto.aes({
-                    op: "encrypt",
-                    mode: "cbc",
-                    key: new Uint8Array(16),
-                    iv: new Uint8Array(16),
-                    data: new TextEncoder().encode("secret"),
-                }))"#,
+            .eval_module_json(
+                r#"import { Crypto } from "langhuan:crypto";
+                   import { TextEncoder, Bytes } from "langhuan:encoding";
+                   export default Bytes.toHex(Crypto.aes({
+                       op: "encrypt",
+                       mode: "cbc",
+                       key: new Uint8Array(16),
+                       iv: new Uint8Array(16),
+                       data: new TextEncoder().encode("secret"),
+                   }));"#,
             )
             .unwrap();
         let opened = sandbox
-            .eval_json(&format!(
-                r#"new TextDecoder().decode(Crypto.aes({{
-                    op: "decrypt",
-                    mode: "cbc",
-                    key: new Uint8Array(16),
-                    iv: new Uint8Array(16),
-                    data: Bytes.fromHex("{sealed}"),
-                }}))"#
+            .eval_module_json(&format!(
+                r#"import {{ Crypto }} from "langhuan:crypto";
+                   import {{ TextDecoder, Bytes }} from "langhuan:encoding";
+                   export default new TextDecoder().decode(Crypto.aes({{
+                       op: "decrypt",
+                       mode: "cbc",
+                       key: new Uint8Array(16),
+                       iv: new Uint8Array(16),
+                       data: Bytes.fromHex("{sealed}"),
+                   }}));"#
             ))
             .unwrap();
         assert_eq!(opened, "secret");

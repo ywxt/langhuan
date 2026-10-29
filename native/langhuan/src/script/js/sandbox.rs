@@ -1,13 +1,16 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rquickjs::{CaughtError, Context, Ctx, IntoJs, Object, Persistent, Runtime, Value as JsValue};
+use rquickjs::{
+    CaughtError, Context, Ctx, Exception, IntoJs, Module, Object, Persistent, Promise, Runtime,
+    Value as JsValue,
+};
 
 use super::bridge::{JsData, MAX_BRIDGE_BYTES, js_to_jsdata};
 #[cfg(test)]
 use super::bridge::{call_handler, js_to_json};
 use super::crypto;
-use super::hostapi;
+use super::encoding;
 use super::html;
 use crate::error::{Error, Result};
 
@@ -153,14 +156,15 @@ impl Sandbox {
         // it to load source. The feed profile removes every JavaScript-visible
         // dynamic compiler below, before any untrusted feed source runs.
         let context = Context::full(&runtime).map_err(sandbox_error)?;
-        // Pure host utilities (text, bytes, crypto, compression) are
-        // installed in both profiles: they leak no capabilities, and compute
-        // programs may need them just like feed reducers do.
-        context.with(|ctx| install_step(&ctx, hostapi::install))?;
-        context.with(|ctx| install_step(&ctx, crypto::install))?;
+        // Pure host modules (text, bytes, crypto, compression) are declared
+        // in both profiles: they leak no capabilities, and compute programs
+        // may import them just like feed reducers do. The HTML parser is
+        // feed-only, so the declared-module list stays the capability list.
+        context.with(|ctx| bootstrap_step(&ctx, encoding::declare))?;
+        context.with(|ctx| bootstrap_step(&ctx, crypto::declare))?;
         if matches!(profile, SandboxProfile::Feed) {
-            context.with(|ctx| install_step(&ctx, html::install))?;
-            context.with(|ctx| install_step(&ctx, disable_dynamic_compilation))?;
+            context.with(|ctx| bootstrap_step(&ctx, html::declare))?;
+            context.with(|ctx| bootstrap_step(&ctx, disable_dynamic_compilation))?;
         }
         Ok(Self {
             context,
@@ -201,9 +205,20 @@ impl Sandbox {
             let outcome: rquickjs::Result<crate::error::Result<JsData>> = (|| {
                 let input_value = input.into_js(&ctx)?;
                 ctx.globals().set("input", input_value)?;
+                // Programs are ES modules, so they can import the realm's
+                // declared host modules; the last program's `export default`
+                // value is the step's result.
                 let mut result = JsValue::new_undefined(ctx.clone());
-                for program in programs {
-                    result = ctx.eval::<JsValue, _>(program.as_bytes())?;
+                for (index, program) in programs.iter().enumerate() {
+                    let module = Module::declare(
+                        ctx.clone(),
+                        format!("<compute-{index}>"),
+                        program.as_bytes(),
+                    )?;
+                    let (module, promise) = module.eval()?;
+                    ensure_module_finished(&ctx, &promise)?;
+                    let namespace = module.namespace()?;
+                    result = namespace.get::<_, JsValue>("default")?;
                 }
                 Ok(js_to_jsdata(&result))
             })();
@@ -231,6 +246,9 @@ impl Sandbox {
             .map_err(sandbox_error)
     }
 
+    /// Evaluate an object expression as a script; used by tests that build
+    /// handler tables directly.
+    #[cfg(test)]
     pub(super) fn eval_object(&mut self, code: &str) -> Result<JsObject> {
         self.reset_deadline()?;
         let sandbox = self.clone();
@@ -248,14 +266,35 @@ impl Sandbox {
             .map_err(sandbox_error)
     }
 
-    pub(super) fn has_global(&mut self, name: &str) -> Result<bool> {
+    /// Evaluate a feed source as an ES module and keep its `export default`
+    /// object — the handler table — as the feed object.
+    pub(super) fn eval_module_default(&mut self, source: &str) -> Result<JsObject> {
         self.reset_deadline()?;
-        self.context
-            .with(|ctx| {
-                CaughtError::catch(&ctx, ctx.globals().contains_key(name))
-                    .map_err(|error| error.to_string())
-            })
-            .map_err(sandbox_error)
+        let sandbox = self.clone();
+        self.context.with(move |ctx| {
+            let outcome: rquickjs::Result<Result<JsObject>> = (|| {
+                let module = Module::declare(ctx.clone(), "feed", source)?;
+                let (module, promise) = module.eval()?;
+                ensure_module_finished(&ctx, &promise)?;
+                let namespace = module.namespace()?;
+                let handler = namespace.get::<_, JsValue>("default")?;
+                let Some(handler) = handler.into_object() else {
+                    return Ok(Err(Error::invalid_feed(
+                        "JavaScript feed must export default its handler object",
+                    )));
+                };
+                Ok(Ok(JsObject {
+                    state: Mutex::new(JsObjectState {
+                        inner: Persistent::save(&ctx, handler),
+                        sandbox: sandbox.clone(),
+                    }),
+                }))
+            })();
+            match CaughtError::catch(&ctx, outcome) {
+                Ok(result) => result,
+                Err(error) => Err(sandbox_error(error.to_string())),
+            }
+        })
     }
 
     fn with_object<T>(
@@ -286,6 +325,28 @@ impl Sandbox {
                     .map_err(|error| error.to_string())
             })
             .map_err(sandbox_error)?;
+        self.check_result_size(&output)?;
+        Ok(output)
+    }
+
+    /// Evaluate a module and return its `export default` string, exercising
+    /// the same import path feed sources and compute programs take.
+    #[cfg(test)]
+    pub(super) fn eval_module_json(&mut self, code: &str) -> Result<String> {
+        self.reset_deadline()?;
+        let output = self.context.with(|ctx| {
+            let outcome: rquickjs::Result<Result<String>> = (|| {
+                let module = Module::declare(ctx.clone(), "<test>", code)?;
+                let (module, promise) = module.eval()?;
+                ensure_module_finished(&ctx, &promise)?;
+                let namespace = module.namespace()?;
+                Ok(Ok(namespace.get::<_, String>("default")?))
+            })();
+            match CaughtError::catch(&ctx, outcome) {
+                Ok(result) => result,
+                Err(error) => Err(sandbox_error(error.to_string())),
+            }
+        })?;
         self.check_result_size(&output)?;
         Ok(output)
     }
@@ -350,7 +411,7 @@ enum SandboxProfile {
 
 /// Run one bootstrap step inside the realm, reporting caught exceptions as
 /// sandbox errors.
-fn install_step<'js, T>(
+fn bootstrap_step<'js, T>(
     ctx: &Ctx<'js>,
     step: impl FnOnce(&Ctx<'js>) -> rquickjs::Result<T>,
 ) -> Result<T> {
@@ -396,6 +457,21 @@ fn sandbox_error(error: impl std::fmt::Display) -> Error {
     Error::javascript(format!("native QuickJS sandbox: {error}"))
 }
 
+/// Ensure a module's evaluation promise completed. A pending promise means
+/// the module used top-level await; a rejected one means its body threw —
+/// `Promise::result` re-throws the rejection into the context, so returning
+/// [`rquickjs::Error::Exception`] here surfaces the original error message.
+fn ensure_module_finished<'js>(ctx: &Ctx<'js>, promise: &Promise<'js>) -> rquickjs::Result<()> {
+    match promise.result::<JsValue>() {
+        None => Err(Exception::throw_message(
+            ctx,
+            "module evaluation did not complete: top-level await is not supported",
+        )),
+        Some(Ok(_)) => Ok(()),
+        Some(Err(_)) => Err(rquickjs::Error::Exception),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -417,15 +493,16 @@ mod tests {
     }
 
     #[test]
-    fn hostapi_is_available_in_the_feed_realm() {
+    fn encoding_is_available_in_the_feed_realm() {
         let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
         let result = sandbox
-            .eval_json(
-                r#"JSON.stringify({
-                    decoder: typeof TextDecoder,
-                    encoder: typeof TextEncoder,
-                    bytes: typeof Bytes,
-                })"#,
+            .eval_module_json(
+                r#"import { TextDecoder, TextEncoder, Bytes } from "langhuan:encoding";
+                   export default JSON.stringify({
+                       decoder: typeof TextDecoder,
+                       encoder: typeof TextEncoder,
+                       bytes: typeof Bytes,
+                   });"#,
             )
             .unwrap();
         assert_eq!(
@@ -435,19 +512,20 @@ mod tests {
     }
 
     #[test]
-    fn hostapi_decodes_encodings_and_converts_bytes() {
+    fn encoding_decodes_text_and_converts_bytes() {
         let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
         let result = sandbox
-            .eval_json(
-                r#"JSON.stringify({
-                    gbk: new TextDecoder("gbk").decode(new Uint8Array([0xC4, 0xE3, 0xBA, 0xC3])),
-                    utf8: new TextDecoder().decode(new TextEncoder().encode("你好")),
-                    bom: new TextDecoder().decode(new TextEncoder().encode("x")).length,
-                    b64: Bytes.toBase64(new TextEncoder().encode("foobar")),
-                    hex: Bytes.toHex(Bytes.fromBase64("Zm9vYmFy")),
-                    padded: Bytes.fromBase64("Zg==").length,
-                    urlSafe: Bytes.toBase64(new Uint8Array([0xFB, 0xFF, 0xBF]), { urlSafe: true }),
-                })"#,
+            .eval_module_json(
+                r#"import { TextDecoder, TextEncoder, Bytes } from "langhuan:encoding";
+                   export default JSON.stringify({
+                       gbk: new TextDecoder("gbk").decode(new Uint8Array([0xC4, 0xE3, 0xBA, 0xC3])),
+                       utf8: new TextDecoder().decode(new TextEncoder().encode("你好")),
+                       bom: new TextDecoder().decode(new TextEncoder().encode("x")).length,
+                       b64: Bytes.toBase64(new TextEncoder().encode("foobar")),
+                       hex: Bytes.toHex(Bytes.fromBase64("Zm9vYmFy")),
+                       padded: Bytes.fromBase64("Zg==").length,
+                       urlSafe: Bytes.toBase64(new Uint8Array([0xFB, 0xFF, 0xBF]), { urlSafe: true }),
+                   });"#,
             )
             .unwrap();
         assert_eq!(
@@ -460,22 +538,24 @@ mod tests {
     fn crypto_and_compression_work_from_javascript() {
         let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
         let result = sandbox
-            .eval_json(
-                r#"JSON.stringify({
-                    md5: Bytes.toHex(Crypto.md5(new TextEncoder().encode("abc"))),
-                    hmac: Bytes.toHex(Crypto.hmac("sha256", new TextEncoder().encode("Jefe"),
-                        new TextEncoder().encode("what do ya want for nothing?"))),
-                    gcm: Bytes.toHex(Crypto.aes({
-                        op: "encrypt",
-                        mode: "gcm",
-                        key: Bytes.fromHex("7fddb57453c241d03efbed3ac44e371c"),
-                        iv: Bytes.fromHex("ee283a3fc75575e33efd4887"),
-                        data: Bytes.fromHex("d5de42b461646c255c87bd2962d3b9a2"),
-                    })),
-                    gunzip: new TextDecoder().decode(
-                        Compression.gunzip(Compression.gzip(new TextEncoder().encode("packed")))),
-                    random: Crypto.randomBytes(32).length,
-                })"#,
+            .eval_module_json(
+                r#"import { Crypto, Compression } from "langhuan:crypto";
+                   import { TextDecoder, TextEncoder, Bytes } from "langhuan:encoding";
+                   export default JSON.stringify({
+                       md5: Bytes.toHex(Crypto.md5(new TextEncoder().encode("abc"))),
+                       hmac: Bytes.toHex(Crypto.hmac("sha256", new TextEncoder().encode("Jefe"),
+                           new TextEncoder().encode("what do ya want for nothing?"))),
+                       gcm: Bytes.toHex(Crypto.aes({
+                           op: "encrypt",
+                           mode: "gcm",
+                           key: Bytes.fromHex("7fddb57453c241d03efbed3ac44e371c"),
+                           iv: Bytes.fromHex("ee283a3fc75575e33efd4887"),
+                           data: Bytes.fromHex("d5de42b461646c255c87bd2962d3b9a2"),
+                       })),
+                       gunzip: new TextDecoder().decode(
+                           Compression.gunzip(Compression.gzip(new TextEncoder().encode("packed")))),
+                       random: Crypto.randomBytes(32).length,
+                   });"#,
             )
             .unwrap();
         assert_eq!(
@@ -492,12 +572,15 @@ mod tests {
     #[test]
     fn compute_realm_has_the_host_byte_utilities() {
         let result = Sandbox::compute(
-            &[r#"JSON.stringify({
+            &[
+                r#"import { TextDecoder, TextEncoder, Bytes } from "langhuan:encoding";
+                export default JSON.stringify({
                     decoder: typeof TextDecoder,
                     encoder: typeof TextEncoder,
                     bytes: typeof Bytes,
-                })"#
-            .to_owned()],
+                });"#
+                    .to_owned(),
+            ],
             &JsData::Null,
             Duration::from_secs(5),
         )
@@ -563,7 +646,7 @@ mod tests {
         let result = Sandbox::compute(
             &[
                 "globalThis.remoteValue = input.value * 2;".to_owned(),
-                r#"({
+                r#"export default {
                     value: globalThis.remoteValue,
                     evalType: typeof eval,
                     htmlType: typeof HTML,
@@ -574,7 +657,7 @@ mod tests {
                     stdType: typeof std,
                     osType: typeof os,
                     webAssemblyType: typeof WebAssembly,
-                })"#
+                };"#
                 .to_owned(),
             ],
             &JsData::from_json(&serde_json::json!({ "value": 21 })),
@@ -598,7 +681,7 @@ mod tests {
         );
 
         let next = Sandbox::compute(
-            &["typeof globalThis.remoteValue".to_owned()],
+            &["export default typeof globalThis.remoteValue;".to_owned()],
             &JsData::Null,
             Duration::from_secs(5),
         )
@@ -611,7 +694,7 @@ mod tests {
         let result = Sandbox::compute(
             &[
                 "globalThis.kept = input.bytes;".to_owned(),
-                r#"({ length: input.bytes.length, first: input.bytes[0], kind: Object.prototype.toString.call(globalThis.kept) })"#
+                r#"export default { length: input.bytes.length, first: input.bytes[0], kind: Object.prototype.toString.call(globalThis.kept) };"#
                     .to_owned(),
             ],
             &JsData::Obj(vec![(
@@ -631,7 +714,7 @@ mod tests {
         );
 
         let echoed = Sandbox::compute(
-            &["input.bytes".to_owned()],
+            &["export default input.bytes;".to_owned()],
             &JsData::Obj(vec![(
                 "bytes".to_owned(),
                 JsData::Bytes(bytes::Bytes::from_static(&[250, 251])),
@@ -648,7 +731,7 @@ mod tests {
     #[test]
     fn compute_rejects_undefined_results() {
         let error = Sandbox::compute(
-            &["globalThis.nothing = 1; undefined".to_owned()],
+            &["globalThis.nothing = 1;".to_owned()],
             &JsData::Null,
             Duration::from_secs(5),
         )
@@ -708,27 +791,26 @@ mod tests {
     fn rust_html_parser_supports_dom_operations() {
         let result = Sandbox::new(Duration::from_secs(5))
             .unwrap()
-            .eval_json(
-                r#"(() => {
-                  const document = HTML.parse(`
-                    <section id="results">
-                      <article class="card featured">
-                        <a href="/book/42.html"><span>Book &amp; One</span></a>
-                      </article>
-                      <article class="card"><a href="/other">Other</a></article>
-                      <script>const fake = '<a href="/book/99.html">Fake</a>';</script>
-                    </section>`);
-                  const links = document.select(
-                    '#results > article.card a[href*="/book/"][href$=".html"]'
-                  );
-                  return JSON.stringify({
-                    count: links.length,
-                    href: links.first().attr("href"),
-                    text: links.first().text().trim(),
-                    query: document.querySelector("article.featured").tagName,
-                    parent: links.first().parent.tagName,
-                  });
-                })()"#,
+            .eval_module_json(
+                r#"import { HTML } from "langhuan:html";
+                   const document = HTML.parse(`
+                     <section id="results">
+                       <article class="card featured">
+                         <a href="/book/42.html"><span>Book &amp; One</span></a>
+                       </article>
+                       <article class="card"><a href="/other">Other</a></article>
+                       <script>const fake = '<a href="/book/99.html">Fake</a>';</script>
+                     </section>`);
+                   const links = document.select(
+                     '#results > article.card a[href*="/book/"][href$=".html"]'
+                   );
+                   export default JSON.stringify({
+                     count: links.length,
+                     href: links.first().attr("href"),
+                     text: links.first().text().trim(),
+                     query: document.querySelector("article.featured").tagName,
+                     parent: links.first().parent.tagName,
+                   });"#,
             )
             .unwrap();
         assert_eq!(
@@ -741,8 +823,11 @@ mod tests {
     fn rust_html_parser_preserves_br_as_newline() {
         let result = Sandbox::new(Duration::from_secs(5))
             .unwrap()
-            .eval_json(
-                r##"JSON.stringify(HTML.parse("<div id='x'>one<br>two</div>").querySelector("#x").text())"##,
+            .eval_module_json(
+                r##"import { HTML } from "langhuan:html";
+                    export default JSON.stringify(
+                        HTML.parse("<div id='x'>one<br>two</div>").querySelector("#x").text()
+                    );"##,
             )
             .unwrap();
         assert_eq!(result, r#""one\ntwo""#);
