@@ -551,7 +551,7 @@ async fn search_fails_auth_required_when_webview_canceled() {
 
     let results: Vec<_> = feed.search("深空").collect::<Vec<_>>().await;
     assert_eq!(results.len(), 1);
-    let error = results[0].as_ref().err().expect("must fail");
+    let error = results[0].as_ref().expect_err("must fail");
     assert_expected_code(error, ExpectedErrorCode::AuthRequired);
 }
 
@@ -582,7 +582,7 @@ async fn search_fails_auth_required_when_snapshot_has_no_usable_cookies() {
 
     let results: Vec<_> = feed.search("深空").collect::<Vec<_>>().await;
     assert_eq!(results.len(), 1);
-    let error = results[0].as_ref().err().expect("must fail");
+    let error = results[0].as_ref().expect_err("must fail");
     assert_expected_code(error, ExpectedErrorCode::AuthRequired);
 }
 
@@ -620,7 +620,7 @@ async fn search_reports_failure_when_verification_does_not_help() {
 
     let results: Vec<_> = feed.search("深空").collect::<Vec<_>>().await;
     assert_eq!(results.len(), 1);
-    let error = results[0].as_ref().err().expect("must fail");
+    let error = results[0].as_ref().expect_err("must fail");
     assert_eq!(
         error.to_string(),
         "expected script error [Unknown(\"search_failed\")]: 完成驗證後仍被番茄風控攔截，請稍後再試"
@@ -630,7 +630,7 @@ async fn search_reports_failure_when_verification_does_not_help() {
     // without popping another verification page.
     let more: Vec<_> = feed.search("深空").collect::<Vec<_>>().await;
     assert_eq!(more.len(), 1);
-    let error = more[0].as_ref().err().expect("must fail");
+    let error = more[0].as_ref().expect_err("must fail");
     assert!(error.to_string().contains("search_failed"));
     assert_eq!(
         webview.requests.lock().unwrap().len(),

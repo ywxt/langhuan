@@ -143,6 +143,16 @@ pub struct JsFeed {
     feed_object: JsObject,
 }
 
+impl std::fmt::Debug for JsFeed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The realm state and the handler object have no useful Debug form;
+        // tests only ever assert on the error side of the Result.
+        f.debug_struct("JsFeed")
+            .field("meta", &self.meta)
+            .finish_non_exhaustive()
+    }
+}
+
 /// The final outcome of an operation, separated from [`Step`] so the
 /// per-round union does not leak into callers.
 struct Complete {

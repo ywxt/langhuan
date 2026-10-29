@@ -109,8 +109,7 @@ mod tests {
         let error = ScriptEngine::new()
             .load_script(&source(2, RETURNED_FEED))
             .await
-            .err()
-            .expect("schema 2 must not be accepted");
+            .expect_err("schema 2 must not be accepted");
         assert!(matches!(
             error,
             Error::Script(ScriptError::InvalidFeed { .. })
@@ -122,8 +121,7 @@ mod tests {
         let error = ScriptEngine::new()
             .load_script(&source(3, RETURNED_FEED))
             .await
-            .err()
-            .expect("schema 3 must not be accepted");
+            .expect_err("schema 3 must not be accepted");
         let message = error.to_string();
         assert!(message.contains("schema_version 4"));
         assert!(message.contains("TextDecoder"));
@@ -134,8 +132,7 @@ mod tests {
         let error = ScriptEngine::new()
             .load_script(&source(5, RETURNED_FEED))
             .await
-            .err()
-            .expect("schema 4 must not be accepted");
+            .expect_err("schema 4 must not be accepted");
         assert!(matches!(
             error,
             Error::Script(ScriptError::SchemaTooNew { .. })
@@ -156,8 +153,7 @@ mod tests {
         let error = ScriptEngine::new()
             .load_script(&source(4, body))
             .await
-            .err()
-            .expect("globalThis.feed registration must be rejected");
+            .expect_err("globalThis.feed registration must be rejected");
         assert!(error.to_string().contains("export default"));
     }
 
@@ -170,8 +166,7 @@ mod tests {
         let error = ScriptEngine::new()
             .load_script(&source(4, &body))
             .await
-            .err()
-            .expect("partial login contract must be rejected");
+            .expect_err("partial login contract must be rejected");
         assert!(error.to_string().contains("login.entry, login.parse"));
     }
 
@@ -650,7 +645,7 @@ mod tests {
 
         let items = feed.search("x").collect::<Vec<_>>().await;
         assert_eq!(items.len(), 1);
-        let error = items[0].as_ref().err().expect("must fail");
+        let error = items[0].as_ref().expect_err("must fail");
         assert!(
             matches!(
                 error,
@@ -689,7 +684,7 @@ mod tests {
 
         let items = feed.search("x").collect::<Vec<_>>().await;
         assert_eq!(items.len(), 1);
-        let error = items[0].as_ref().err().expect("must fail");
+        let error = items[0].as_ref().expect_err("must fail");
         assert!(
             matches!(
                 error,

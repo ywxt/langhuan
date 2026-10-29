@@ -23,6 +23,12 @@ use crate::http::{HttpRequest, HttpResponse};
 /// held, so no two threads ever touch the same context through it.
 pub struct OpaqueJsValue(Persistent<JsValue<'static>>);
 
+impl std::fmt::Debug for OpaqueJsValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("OpaqueJsValue")
+    }
+}
+
 // SAFETY: the persistent is only restored inside `JsObject::with_realm`,
 // which serializes all context access behind one mutex. Moving the wrapper
 // between threads never touches the QuickJS heap.

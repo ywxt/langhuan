@@ -25,6 +25,7 @@ use crate::http::{HttpBody, HttpRequest};
 // ---------------------------------------------------------------------------
 
 /// A step returned by a reducer, extracted from the live result object.
+#[derive(Debug)]
 pub enum Step {
     Request {
         request: HttpRequest,
@@ -329,8 +330,7 @@ mod tests {
         let object = sandbox.eval_object(code).unwrap();
         let error = object
             .with_realm(|ctx, object| Ok(read_step(&ctx, &object.into_value())))
-            .err()
-            .expect("step unexpectedly read");
+            .expect_err("step unexpectedly read");
         javascript_message(error)
     }
 
@@ -341,8 +341,7 @@ mod tests {
         let object = sandbox.eval_object(code).unwrap();
         let error = object
             .with_realm(|_ctx, object| Ok(read_patched_request(&object.into_value())))
-            .err()
-            .expect("request unexpectedly read");
+            .expect_err("request unexpectedly read");
         javascript_message(error)
     }
 
@@ -414,8 +413,7 @@ mod tests {
                 let value: JsValue = ctx.eval("5")?;
                 Ok(read_step(&ctx, &value))
             })
-            .err()
-            .expect("step unexpectedly read");
+            .expect_err("step unexpectedly read");
         assert_eq!(
             javascript_message(error),
             "invalid feed step: expected an object"
