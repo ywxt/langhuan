@@ -8,7 +8,7 @@ use crate::script::feed::ScriptFeed;
 use crate::script::js::JsFeed;
 use crate::script::meta;
 
-/// Loads schema-3 JavaScript feeds into the native QuickJS sandbox runtime.
+/// Loads JavaScript feeds into the native QuickJS sandbox runtime.
 #[derive(Clone)]
 pub struct ScriptEngine {
     client: Arc<Client>,
