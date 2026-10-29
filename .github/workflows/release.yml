@@ -146,35 +146,19 @@ jobs:
           if-no-files-found: error
 
   macos:
-    name: macOS ${{ matrix.arch }}
+    name: macOS arm64
     needs: bindings
-    runs-on: ${{ matrix.runner }}
+    # nixpkgs' flutter supports aarch64-darwin only, so the Intel build
+    # is gone and the release ships an arm64 binary. Xcode still comes
+    # from the runner — Apple licenses its toolchain to the machine and
+    # nix cannot ship it — while flutter, the Rust toolchain and
+    # libclang come from the flake.
+    runs-on: macos-15
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15-intel
-            arch: x64
-          - runner: macos-15
-            arch: arm64
     steps:
       - uses: actions/checkout@v7
 
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Configure libclang
-        shell: bash
-        run: |
-          llvm_prefix="$(brew --prefix llvm@18)"
-          echo "$llvm_prefix/bin" >> "$GITHUB_PATH"
-          echo "LIBCLANG_PATH=$llvm_prefix/lib" >> "$GITHUB_ENV"
+      - uses: DeterminateSystems/nix-installer-action@v23
 
       - uses: actions/download-artifact@v8
         with:
@@ -185,20 +169,20 @@ jobs:
         env:
           VERSION: ${{ needs.bindings.outputs.version }}
         run: |
-          flutter pub get
-          flutter build macos --release \
+          nix develop .#ci -c flutter pub get
+          nix develop .#ci -c flutter build macos --release \
             --build-name "$VERSION" \
-            --build-number "${{ github.run_number }}"
+            --build-number "$GITHUB_RUN_NUMBER"
           app="build/macos/Build/Products/Release/langhuan.app"
           test -d "$app"
           codesign --force --deep --sign - "$app"
           mkdir -p dist
           ditto -c -k --sequesterRsrc --keepParent \
-            "$app" "dist/langhuan-${VERSION}-macos-${{ matrix.arch }}.zip"
+            "$app" "dist/langhuan-${VERSION}-macos-arm64.zip"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: release-macos-${{ matrix.arch }}
+          name: release-macos-arm64
           path: dist/*.zip
           if-no-files-found: error
 
