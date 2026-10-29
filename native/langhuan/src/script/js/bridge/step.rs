@@ -2,13 +2,15 @@
 //! authentication results.
 //!
 //! Extraction is strict — every reader names the offending field — because a
-//! malformed step must fail loudly, not silently. [`Fields`] carries the
-//! context label so the same reader reports as `invalid feed step` inside a
+//! malformed step must fail loudly, not silently. Each shape implements
+//! [`FromJs`] and carries the field-level detail in the conversion error's
+//! message slot; the boundary functions extract that detail and prefix the
+//! context label, so the same reader reports as `invalid feed step` inside a
 //! step and as `invalid patched request` for a `login.patchRequest` result.
 
 use std::collections::HashMap;
 
-use rquickjs::{Ctx, Object, Value as JsValue};
+use rquickjs::{Ctx, Error as JsError, FromJs, Object, Result as JsResult, Value as JsValue};
 use serde_json::Value;
 
 use super::convert::{JsData, js_to_jsdata, js_to_json, u8_to_bytes};
@@ -52,111 +54,81 @@ pub enum Step {
 
 /// Read the step a reducer returned from its live result object.
 pub fn read_step<'js>(ctx: &Ctx<'js>, value: &JsValue<'js>) -> Result<Step> {
-    let object = value
-        .clone()
-        .into_object()
-        .ok_or_else(|| Error::javascript("invalid feed step: expected an object"))?;
-    let fields = Fields::new(&object, "invalid feed step");
-    let step_type = fields.required_string("type")?;
-    match step_type.as_str() {
-        "request" => {
-            let request_object = fields.required_object("request")?;
-            let request = read_request(&request_object, "invalid feed step")?;
-            let cache_key = fields.optional_string("cache_key")?;
-            let next_state = read_next_state(ctx, &fields)?;
-            Ok(Step::Request {
-                request,
-                next_state,
-                cache_key,
-            })
+    Step::from_js(ctx, value.clone()).map_err(|error| labeled("invalid feed step", error))
+}
+
+impl<'js> FromJs<'js> for Step {
+    fn from_js(ctx: &Ctx<'js>, value: JsValue<'js>) -> JsResult<Self> {
+        let fields = Fields::new(value, "Step")?;
+        let step_type = fields.required_string("type")?;
+        match step_type.as_str() {
+            "request" => {
+                let request_object = fields.required_object("request")?;
+                let request = HttpRequest::from_js(ctx, request_object.into_value())?;
+                let cache_key = fields.optional_string("cache_key")?;
+                let next_state = read_next_state(ctx, &fields)?;
+                Ok(Step::Request {
+                    request,
+                    next_state,
+                    cache_key,
+                })
+            }
+            "compute" => {
+                let programs = fields.string_array("programs")?;
+                let input = {
+                    let value = fields.value("input")?;
+                    if value.is_undefined() {
+                        JsData::Null
+                    } else {
+                        js_to_jsdata(&value)
+                            .map_err(|error| fields.conversion_error("input", error))?
+                    }
+                };
+                let next_state = read_next_state(ctx, &fields)?;
+                Ok(Step::Compute {
+                    programs,
+                    input,
+                    next_state,
+                })
+            }
+            "webview" => {
+                let url = fields.required_string("url")?;
+                let title = fields.optional_string("title")?;
+                let user_agent = fields.required_string("user_agent")?;
+                let next_state = read_next_state(ctx, &fields)?;
+                Ok(Step::Webview {
+                    url,
+                    title,
+                    user_agent,
+                    next_state,
+                })
+            }
+            "complete" => {
+                let items = fields.json_field(ctx, "items")?;
+                let value = fields.json_field(ctx, "value")?;
+                let next_cursor = fields.data_field("next_cursor")?;
+                Ok(Step::Complete {
+                    items,
+                    value,
+                    next_cursor,
+                })
+            }
+            "fail" => {
+                let code = fields.required_string("code")?;
+                let message = fields.required_string("message")?;
+                Ok(Step::Fail { code, message })
+            }
+            other => Err(fields.invalid(format!("unknown step type {other:?}"))),
         }
-        "compute" => {
-            let programs = fields.string_array("programs")?;
-            let input = {
-                let value = fields.value("input")?;
-                if value.is_undefined() {
-                    JsData::Null
-                } else {
-                    js_to_jsdata(&value)?
-                }
-            };
-            let next_state = read_next_state(ctx, &fields)?;
-            Ok(Step::Compute {
-                programs,
-                input,
-                next_state,
-            })
-        }
-        "webview" => {
-            let url = fields.required_string("url")?;
-            let title = fields.optional_string("title")?;
-            let user_agent = fields.required_string("user_agent")?;
-            let next_state = read_next_state(ctx, &fields)?;
-            Ok(Step::Webview {
-                url,
-                title,
-                user_agent,
-                next_state,
-            })
-        }
-        "complete" => {
-            let items = json_field(ctx, &object, "items")?;
-            let value = json_field(ctx, &object, "value")?;
-            let next_cursor = data_field(&object, "next_cursor")?;
-            Ok(Step::Complete {
-                items,
-                value,
-                next_cursor,
-            })
-        }
-        "fail" => {
-            let code = fields.required_string("code")?;
-            let message = fields.required_string("message")?;
-            Ok(Step::Fail { code, message })
-        }
-        other => Err(Error::javascript(format!(
-            "invalid feed step: unknown step type {other:?}"
-        ))),
     }
 }
 
-fn read_next_state<'js>(ctx: &Ctx<'js>, fields: &Fields<'js, '_>) -> Result<Option<OpaqueJsValue>> {
+fn read_next_state<'js>(ctx: &Ctx<'js>, fields: &Fields<'js>) -> JsResult<Option<OpaqueJsValue>> {
     let value = fields.value("next_state")?;
     if value.is_undefined() || value.is_null() {
         return Ok(None);
     }
     Ok(Some(OpaqueJsValue::save(ctx, value)))
-}
-
-/// Read a step field as realm-independent data, for values that travel back
-/// into the realm untouched (unlike `items`/`value`, which the host
-/// materializes as JSON for serde).
-fn data_field<'js>(object: &Object<'js>, field: &'static str) -> Result<Option<JsData>> {
-    let value: JsValue = object
-        .get(field)
-        .map_err(|error| Error::javascript(format!("reading `{field}` failed: {error}")))?;
-    if value.is_undefined() || value.is_null() {
-        return Ok(None);
-    }
-    js_to_jsdata(&value)
-        .map(Some)
-        .map_err(|error| Error::javascript(format!("invalid feed step: `{field}`: {error}")))
-}
-
-/// Convert a step field to JSON, rejecting bytes and other non-JSON values.
-fn json_field<'js>(
-    ctx: &Ctx<'js>,
-    object: &Object<'js>,
-    field: &'static str,
-) -> Result<Option<Value>> {
-    let value: JsValue = object
-        .get(field)
-        .map_err(|error| Error::javascript(format!("reading `{field}` failed: {error}")))?;
-    if value.is_undefined() || value.is_null() {
-        return Ok(None);
-    }
-    js_to_json(ctx, &value)
-        .map_err(|error| Error::javascript(format!("invalid feed step: `{field}`: {error}")))
 }
 
 // ---------------------------------------------------------------------------
@@ -165,35 +137,34 @@ fn json_field<'js>(
 
 /// Read the object `login.patchRequest` returned.
 pub fn read_patched_request(value: &JsValue<'_>) -> Result<HttpRequest> {
-    let object = value
-        .clone()
-        .into_object()
-        .ok_or_else(|| Error::javascript("invalid patched request: expected an object"))?;
-    read_request(&object, "invalid patched request")
+    HttpRequest::from_js(value.ctx(), value.clone())
+        .map_err(|error| labeled("invalid patched request", error))
 }
 
 /// Read an [`HttpRequest`] from a live object, accepting the same shapes the
 /// old serde deserializer did: headers as a map or an array of pairs, body
 /// as a string or `Uint8Array`.
-fn read_request(object: &Object<'_>, label: &'static str) -> Result<HttpRequest> {
-    let fields = Fields::new(object, label);
-    let url = fields.required_string("url")?;
-    let method = fields
-        .optional_string("method")?
-        .unwrap_or_else(|| "GET".to_owned());
-    let params = read_params(&fields)?;
-    let headers = read_headers(&fields)?;
-    let body = read_body(&fields)?;
-    Ok(HttpRequest {
-        url,
-        method,
-        params,
-        headers,
-        body,
-    })
+impl<'js> FromJs<'js> for HttpRequest {
+    fn from_js(_ctx: &Ctx<'js>, value: JsValue<'js>) -> JsResult<Self> {
+        let fields = Fields::new(value, "HttpRequest")?;
+        let url = fields.required_string("url")?;
+        let method = fields
+            .optional_string("method")?
+            .unwrap_or_else(|| "GET".to_owned());
+        let params = read_params(&fields)?;
+        let headers = read_headers(&fields)?;
+        let body = read_body(&fields)?;
+        Ok(HttpRequest {
+            url,
+            method,
+            params,
+            headers,
+            body,
+        })
+    }
 }
 
-fn read_params(fields: &Fields<'_, '_>) -> Result<HashMap<String, String>> {
+fn read_params(fields: &Fields<'_>) -> JsResult<HashMap<String, String>> {
     let value = fields.value("params")?;
     if value.is_undefined() || value.is_null() {
         return Ok(HashMap::new());
@@ -206,9 +177,8 @@ fn read_params(fields: &Fields<'_, '_>) -> Result<HashMap<String, String>> {
     };
     let mut params = HashMap::with_capacity(map.len());
     for entry in map.props::<String, JsValue>() {
-        let (key, prop) = entry.map_err(|error| {
-            Error::javascript(format!("{}: reading params failed: {error}", fields.label))
-        })?;
+        let (key, prop) =
+            entry.map_err(|error| fields.invalid(format!("reading params failed: {error}")))?;
         let text = prop
             .get::<String>()
             .map_err(|_| fields.error("params", "values must be strings"))?;
@@ -217,20 +187,20 @@ fn read_params(fields: &Fields<'_, '_>) -> Result<HashMap<String, String>> {
     Ok(params)
 }
 
-fn read_headers(fields: &Fields<'_, '_>) -> Result<Vec<(String, String)>> {
+fn read_headers(fields: &Fields<'_>) -> JsResult<Vec<(String, String)>> {
     let value = fields.value("headers")?;
     if value.is_undefined() || value.is_null() {
         return Ok(Vec::new());
     }
     if value.is_array() {
-        let array = value.clone().into_array().ok_or_else(|| {
-            Error::javascript(format!("{}: reading headers failed", fields.label))
-        })?;
+        let array = value
+            .clone()
+            .into_array()
+            .ok_or_else(|| fields.invalid("reading headers failed"))?;
         let mut headers = Vec::with_capacity(array.len());
         for entry in array.iter::<JsValue>() {
-            let entry = entry.map_err(|error| {
-                Error::javascript(format!("{}: reading headers failed: {error}", fields.label))
-            })?;
+            let entry = entry
+                .map_err(|error| fields.invalid(format!("reading headers failed: {error}")))?;
             let Some(pair) = entry.clone().into_array() else {
                 return Err(fields.error("headers", "entries must be [name, value] pairs"));
             };
@@ -257,9 +227,8 @@ fn read_headers(fields: &Fields<'_, '_>) -> Result<Vec<(String, String)>> {
     };
     let mut headers = Vec::with_capacity(map.len());
     for entry in map.props::<String, JsValue>() {
-        let (name, prop) = entry.map_err(|error| {
-            Error::javascript(format!("{}: reading headers failed: {error}", fields.label))
-        })?;
+        let (name, prop) =
+            entry.map_err(|error| fields.invalid(format!("reading headers failed: {error}")))?;
         let value = prop
             .get::<String>()
             .map_err(|_| fields.error("headers", "values must be strings"))?;
@@ -268,7 +237,7 @@ fn read_headers(fields: &Fields<'_, '_>) -> Result<Vec<(String, String)>> {
     Ok(headers)
 }
 
-fn read_body(fields: &Fields<'_, '_>) -> Result<Option<HttpBody>> {
+fn read_body(fields: &Fields<'_>) -> JsResult<Option<HttpBody>> {
     let value = fields.value("body")?;
     if value.is_undefined() || value.is_null() {
         return Ok(None);
@@ -291,16 +260,19 @@ fn read_body(fields: &Fields<'_, '_>) -> Result<Option<HttpBody>> {
 
 /// Read the object `login.entry` returned.
 pub fn read_auth_entry(value: &JsValue<'_>) -> Result<AuthEntry> {
-    let object = value
-        .clone()
-        .into_object()
-        .ok_or_else(|| Error::javascript("invalid auth entry: expected an object"))?;
-    let fields = Fields::new(&object, "invalid auth entry");
-    Ok(AuthEntry {
-        url: fields.required_string("url")?,
-        title: fields.optional_string("title")?,
-        user_agent: fields.required_string("user_agent")?,
-    })
+    AuthEntry::from_js(value.ctx(), value.clone())
+        .map_err(|error| labeled("invalid auth entry", error))
+}
+
+impl<'js> FromJs<'js> for AuthEntry {
+    fn from_js(_ctx: &Ctx<'js>, value: JsValue<'js>) -> JsResult<Self> {
+        let fields = Fields::new(value, "AuthEntry")?;
+        Ok(AuthEntry {
+            url: fields.required_string("url")?,
+            title: fields.optional_string("title")?,
+            user_agent: fields.required_string("user_agent")?,
+        })
+    }
 }
 
 /// Read what `login.parse` returned: either a fail step the host lifts into
@@ -336,34 +308,66 @@ pub fn read_auth_result<'js>(ctx: &Ctx<'js>, value: &JsValue<'js>) -> Result<Val
 // Field readers
 // ---------------------------------------------------------------------------
 
-/// Labeled field readers over a live object, so extraction errors name both
-/// the context (`"invalid feed step"`) and the offending field.
-struct Fields<'js, 'a> {
-    object: &'a Object<'js>,
-    label: &'static str,
+/// Prefix a context label to a conversion failure, extracting the
+/// field-level detail from the error's message slot.
+fn labeled(label: &'static str, error: JsError) -> Error {
+    let detail = match error {
+        JsError::FromJs {
+            message: Some(detail),
+            ..
+        } => detail,
+        other => other.to_string(),
+    };
+    Error::javascript(format!("{label}: {detail}"))
 }
 
-impl<'js, 'a> Fields<'js, 'a> {
-    fn new(object: &'a Object<'js>, label: &'static str) -> Self {
-        Self { object, label }
+/// Field readers over a live object, so extraction errors name the offending
+/// field. The detail travels in the conversion error's message slot; the
+/// boundary functions prefix the context label.
+struct Fields<'js> {
+    object: Object<'js>,
+    /// The Rust type being read, named if an error escapes a boundary raw.
+    type_name: &'static str,
+}
+
+impl<'js> Fields<'js> {
+    /// Read `value` as an object for conversion into `type_name`.
+    fn new(value: JsValue<'js>, type_name: &'static str) -> JsResult<Self> {
+        let js_type = value.type_name();
+        let object = value.into_object().ok_or_else(|| {
+            JsError::new_from_js_message(js_type, type_name, "expected an object")
+        })?;
+        Ok(Self { object, type_name })
+    }
+
+    /// A conversion failure with an arbitrary detail.
+    fn invalid(&self, detail: impl Into<String>) -> JsError {
+        JsError::new_from_js_message("object", self.type_name, detail.into())
     }
 
     /// Fetch a field's live value.
-    fn value(&self, field: &str) -> Result<JsValue<'js>> {
-        self.object.get::<_, JsValue>(field).map_err(|error| {
-            Error::javascript(format!("{}: reading `{field}` failed: {error}", self.label))
-        })
+    fn value(&self, field: &str) -> JsResult<JsValue<'js>> {
+        self.object
+            .get::<_, JsValue>(field)
+            .map_err(|error| self.invalid(format!("reading `{field}` failed: {error}")))
     }
 
-    fn missing(&self, field: &str) -> Error {
-        Error::javascript(format!("{}: missing field `{field}`", self.label))
+    /// A required field that is absent.
+    fn missing(&self, field: &str) -> JsError {
+        self.invalid(format!("missing field `{field}`"))
     }
 
-    fn error(&self, field: &str, problem: &str) -> Error {
-        Error::javascript(format!("{}: `{field}` {problem}", self.label))
+    /// A field with the wrong shape.
+    fn error(&self, field: &str, problem: &str) -> JsError {
+        self.invalid(format!("`{field}` {problem}"))
     }
 
-    fn required_string(&self, field: &str) -> Result<String> {
+    /// A host-side conversion failure for a field.
+    fn conversion_error(&self, field: &str, error: Error) -> JsError {
+        self.invalid(format!("`{field}`: {error}"))
+    }
+
+    fn required_string(&self, field: &str) -> JsResult<String> {
         let value = self.value(field)?;
         if value.is_undefined() {
             return Err(self.missing(field));
@@ -373,7 +377,7 @@ impl<'js, 'a> Fields<'js, 'a> {
             .map_err(|_| self.error(field, "must be a string"))
     }
 
-    fn optional_string(&self, field: &str) -> Result<Option<String>> {
+    fn optional_string(&self, field: &str) -> JsResult<Option<String>> {
         let value = self.value(field)?;
         if value.is_undefined() || value.is_null() {
             return Ok(None);
@@ -384,7 +388,7 @@ impl<'js, 'a> Fields<'js, 'a> {
             .map_err(|_| self.error(field, "must be a string"))
     }
 
-    fn required_object(&self, field: &str) -> Result<Object<'js>> {
+    fn required_object(&self, field: &str) -> JsResult<Object<'js>> {
         let value = self.value(field)?;
         if value.is_undefined() {
             return Err(self.missing(field));
@@ -394,7 +398,7 @@ impl<'js, 'a> Fields<'js, 'a> {
             .ok_or_else(|| self.error(field, "must be an object"))
     }
 
-    fn string_array(&self, field: &str) -> Result<Vec<String>> {
+    fn string_array(&self, field: &str) -> JsResult<Vec<String>> {
         let value = self.value(field)?;
         if value.is_undefined() {
             return Err(self.missing(field));
@@ -407,14 +411,144 @@ impl<'js, 'a> Fields<'js, 'a> {
             .ok_or_else(|| self.error(field, "must be an array of strings"))?;
         let mut items = Vec::with_capacity(array.len());
         for entry in array.iter::<JsValue>() {
-            let entry = entry.map_err(|error| {
-                Error::javascript(format!("{}: reading `{field}` failed: {error}", self.label))
-            })?;
+            let entry = entry
+                .map_err(|error| self.invalid(format!("reading `{field}` failed: {error}")))?;
             let text = entry
                 .get::<String>()
                 .map_err(|_| self.error(field, "must contain only strings"))?;
             items.push(text);
         }
         Ok(items)
+    }
+
+    /// Read a step field as realm-independent data, for values that travel
+    /// back into the realm untouched (unlike `items`/`value`, which the host
+    /// materializes as JSON for serde).
+    fn data_field(&self, field: &str) -> JsResult<Option<JsData>> {
+        let value = self.value(field)?;
+        if value.is_undefined() || value.is_null() {
+            return Ok(None);
+        }
+        js_to_jsdata(&value)
+            .map(Some)
+            .map_err(|error| self.conversion_error(field, error))
+    }
+
+    /// Convert a step field to JSON, rejecting bytes and other non-JSON
+    /// values.
+    fn json_field(&self, ctx: &Ctx<'js>, field: &str) -> JsResult<Option<Value>> {
+        let value = self.value(field)?;
+        if value.is_undefined() || value.is_null() {
+            return Ok(None);
+        }
+        js_to_json(ctx, &value).map_err(|error| self.conversion_error(field, error))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::ScriptError;
+    use crate::script::js::sandbox::Sandbox;
+    use std::time::Duration;
+
+    /// Evaluate `code` in a feed realm and read it as a step, returning the
+    /// failure message.
+    fn step_error(code: &str) -> String {
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let object = sandbox.eval_object(code).unwrap();
+        let error = object
+            .with_realm(|ctx, object| Ok(read_step(&ctx, &object.into_value())))
+            .err()
+            .expect("step unexpectedly read");
+        javascript_message(error)
+    }
+
+    /// Evaluate `code` in a feed realm and read it as a patched request,
+    /// returning the failure message.
+    fn request_error(code: &str) -> String {
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let object = sandbox.eval_object(code).unwrap();
+        let error = object
+            .with_realm(|_ctx, object| Ok(read_patched_request(&object.into_value())))
+            .err()
+            .expect("request unexpectedly read");
+        javascript_message(error)
+    }
+
+    fn javascript_message(error: Error) -> String {
+        match error {
+            Error::Script(ScriptError::JavaScript(message)) => message,
+            other => panic!("unexpected error kind: {other}"),
+        }
+    }
+
+    #[test]
+    fn step_errors_name_the_offending_field() {
+        assert_eq!(
+            step_error("({})"),
+            "invalid feed step: missing field `type`"
+        );
+        assert_eq!(
+            step_error("({ type: 5 })"),
+            "invalid feed step: `type` must be a string"
+        );
+        assert_eq!(
+            step_error("({ type: 'compute', programs: 5 })"),
+            "invalid feed step: `programs` must be an array of strings"
+        );
+        assert_eq!(
+            step_error("({ type: 'explode' })"),
+            "invalid feed step: unknown step type \"explode\""
+        );
+    }
+
+    #[test]
+    fn step_errors_reach_into_nested_requests() {
+        assert_eq!(
+            step_error("({ type: 'request', request: 5 })"),
+            "invalid feed step: `request` must be an object"
+        );
+        assert_eq!(
+            step_error("({ type: 'request', request: {} })"),
+            "invalid feed step: missing field `url`"
+        );
+        assert_eq!(
+            step_error("({ type: 'request', request: { url: 5 } })"),
+            "invalid feed step: `url` must be a string"
+        );
+    }
+
+    #[test]
+    fn compute_inputs_tunnel_conversion_failures() {
+        assert_eq!(
+            step_error("({ type: 'compute', programs: [], input: () => {} })"),
+            "invalid feed step: `input`: javascript error: functions cannot be copied across realms"
+        );
+    }
+
+    #[test]
+    fn patched_requests_report_their_own_label() {
+        assert_eq!(
+            request_error("({ url: 5 })"),
+            "invalid patched request: `url` must be a string"
+        );
+    }
+
+    #[test]
+    fn non_object_steps_report_the_expected_shape() {
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let object = sandbox.eval_object("({})").unwrap();
+        let error = object
+            .with_realm(|ctx, _object| {
+                let value: JsValue = ctx.eval("5")?;
+                Ok(read_step(&ctx, &value))
+            })
+            .err()
+            .expect("step unexpectedly read");
+        assert_eq!(
+            javascript_message(error),
+            "invalid feed step: expected an object"
+        );
     }
 }
