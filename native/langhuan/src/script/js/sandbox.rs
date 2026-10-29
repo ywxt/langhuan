@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use rquickjs::{CaughtError, Context, Ctx, Object, Persistent, Runtime, Value as JsValue};
 
 use super::bridge::{self, JsData};
+use super::hostapi;
 use super::html;
 use crate::error::{Error, Result};
 
@@ -130,6 +131,14 @@ impl Sandbox {
         // it to load source. The feed profile removes every JavaScript-visible
         // dynamic compiler below, before any untrusted feed source runs.
         let context = Context::full(&runtime).map_err(sandbox_error)?;
+        // Pure host utilities (TextDecoder/TextEncoder/Bytes) are installed in
+        // both profiles: they leak no capabilities, and compute programs may
+        // need them just like feed reducers do.
+        context
+            .with(|ctx| {
+                CaughtError::catch(&ctx, hostapi::install(&ctx)).map_err(|e| e.to_string())
+            })
+            .map_err(sandbox_error)?;
         if matches!(profile, SandboxProfile::Feed) {
             context
                 .with(|ctx| {
@@ -391,6 +400,67 @@ mod tests {
         assert_eq!(
             object.call_json(&["next"], &[]).unwrap(),
             serde_json::json!(42)
+        );
+    }
+
+    #[test]
+    fn hostapi_is_available_in_the_feed_realm() {
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let result = sandbox
+            .eval_json(
+                r#"JSON.stringify({
+                    decoder: typeof TextDecoder,
+                    encoder: typeof TextEncoder,
+                    bytes: typeof Bytes,
+                })"#,
+            )
+            .unwrap();
+        assert_eq!(
+            result,
+            r#"{"decoder":"function","encoder":"function","bytes":"object"}"#
+        );
+    }
+
+    #[test]
+    fn hostapi_decodes_encodings_and_converts_bytes() {
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let result = sandbox
+            .eval_json(
+                r#"JSON.stringify({
+                    gbk: new TextDecoder("gbk").decode(new Uint8Array([0xC4, 0xE3, 0xBA, 0xC3])),
+                    utf8: new TextDecoder().decode(new TextEncoder().encode("你好")),
+                    bom: new TextDecoder().decode(new TextEncoder().encode("x")).length,
+                    b64: Bytes.toBase64(new TextEncoder().encode("foobar")),
+                    hex: Bytes.toHex(Bytes.fromBase64("Zm9vYmFy")),
+                    padded: Bytes.fromBase64("Zg==").length,
+                    urlSafe: Bytes.toBase64(new Uint8Array([0xFB, 0xFF, 0xBF]), { urlSafe: true }),
+                })"#,
+            )
+            .unwrap();
+        assert_eq!(
+            result,
+            r#"{"gbk":"你好","utf8":"你好","bom":1,"b64":"Zm9vYmFy","hex":"666f6f626172","padded":1,"urlSafe":"-_-_"}"#
+        );
+    }
+
+    #[test]
+    fn compute_realm_has_the_host_byte_utilities() {
+        let result = Sandbox::compute(
+            &[r#"JSON.stringify({
+                    decoder: typeof TextDecoder,
+                    encoder: typeof TextEncoder,
+                    bytes: typeof Bytes,
+                })"#
+            .to_owned()],
+            &JsData::Null,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(
+            result,
+            JsData::Str(
+                r#"{"decoder":"function","encoder":"function","bytes":"object"}"#.to_owned()
+            )
         );
     }
 

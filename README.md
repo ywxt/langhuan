@@ -8,7 +8,7 @@ Built with Flutter (UI), Rust (backend), and an isolated native QuickJS runtime 
 
 ## Features
 
-- **Sandboxed JavaScript Book Sources** — Define how to search and parse novel content with schema-3 reducers. Rust owns HTTP and authentication; scripts run in a capability-free native QuickJS runtime.
+- **Sandboxed JavaScript Book Sources** — Define how to search and parse novel content with schema-4 reducers. Rust owns HTTP and authentication; scripts run in a capability-free native QuickJS runtime.
 - **Cache Management** — Local chapter caching with automatic stale data cleanup; bookshelf items are preserved.
 - **Localization** — English and Chinese.
 
@@ -93,7 +93,7 @@ When you later modify the Rust API surface (functions in `native/hub/src/api/`),
 
 ## Book Source Scripts
 
-Book sources are schema-3 JavaScript reducers that return request descriptors while native Rust owns all HTTP. See the [book source documentation](docs/book-sources/README.md) for the full scripting guide, sandbox contract, and examples.
+Book sources are schema-4 JavaScript reducers that return request descriptors while native Rust owns all HTTP. See the [book source documentation](docs/book-sources/README.md) for the full scripting guide, sandbox contract, and examples.
 
 ## License
 

@@ -1,18 +1,25 @@
 // ==Feed==
 // @id           biquge-tw
 // @name         筆趣閣（biquge.tw）
-// @version      2.0.0
+// @version      2.1.0
 // @author       Langhuan
 // @description  適配 biquge.tw 的書源，支持搜尋、詳情、目錄、正文（含多頁章節）
 // @base_url     https://www.biquge.tw
 // @access_domain www.biquge.tw
 // @access_domain m.biquge.tw
 // @access_domain img.biquge.tw
-// @schema_version 3
+// @schema_version 4
 // ==/Feed==
 
 (() => {
   "use strict";
+
+  // schema 4：response.body 是 Uint8Array，需先解碼成字串。
+  const DECODER = new TextDecoder("utf-8");
+
+  function bodyText(response) {
+    return DECODER.decode(response?.body);
+  }
 
   function headers() {
     return {
@@ -54,7 +61,7 @@
   }
 
   function ensureAvailable(response) {
-    const body = response?.body ?? "";
+    const body = bodyText(response);
     if (body.includes("Just a moment") && body.includes("cf_chl_opt")) {
       return FeedError.cfChallenge("biquge.tw returned Cloudflare challenge page");
     }
@@ -118,7 +125,7 @@
   }
 
   function parseBook(response) {
-    const body = response.body ?? "";
+    const body = bodyText(response);
     const document = HTML.parse(body);
     const title = text(document.select("h1").first()?.text()) || "未知書名";
     let author = "未知";
@@ -142,7 +149,7 @@
   }
 
   function parseChapters(response) {
-    const body = response.body ?? "";
+    const body = bodyText(response);
     const document = HTML.parse(body);
     const currentBook = String(response.url).match(/\/book\/(\d+)/)?.[1] ?? "";
     const items = [];
@@ -161,7 +168,7 @@
   }
 
   function parseParagraphs(response) {
-    const body = response.body ?? "";
+    const body = bodyText(response);
     const document = HTML.parse(body);
     const items = [];
     const title = text(document.select("h1").first()?.text())
@@ -205,8 +212,8 @@
     if (failure) return failure;
     return {
       type: "complete",
-      items: searchItems(event.response?.body ?? ""),
-      next_cursor: nextSearchCursor(event.response?.body ?? ""),
+      items: searchItems(bodyText(event.response)),
+      next_cursor: nextSearchCursor(bodyText(event.response)),
     };
   }
 

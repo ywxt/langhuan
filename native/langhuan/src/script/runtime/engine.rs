@@ -42,8 +42,11 @@ impl ScriptEngine {
         }
         if feed_meta.schema_version != crate::feed::meta::FEED_SCHEMA_VERSION {
             return Err(crate::error::Error::invalid_feed(format!(
-                "JavaScript feeds require schema_version {}",
+                "JavaScript feeds require schema_version {}; schema {} must migrate: \
+                 response bodies are now Uint8Array (decode with TextDecoder) and \
+                 compute input/results may carry bytes",
                 crate::feed::meta::FEED_SCHEMA_VERSION,
+                feed_meta.schema_version,
             )));
         }
         JsFeed::new(
@@ -94,9 +97,9 @@ mod tests {
     })()"#;
 
     #[tokio::test]
-    async fn schema_three_accepts_returned_feed_object() {
+    async fn schema_four_accepts_returned_feed_object() {
         ScriptEngine::new()
-            .load_script(&source(3, RETURNED_FEED))
+            .load_script(&source(4, RETURNED_FEED))
             .await
             .expect("returned feed object should load");
     }
@@ -115,9 +118,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rejects_schema_three_with_a_migration_hint() {
+        let error = ScriptEngine::new()
+            .load_script(&source(3, RETURNED_FEED))
+            .await
+            .err()
+            .expect("schema 3 must not be accepted");
+        let message = error.to_string();
+        assert!(message.contains("schema_version 4"));
+        assert!(message.contains("TextDecoder"));
+    }
+
+    #[tokio::test]
     async fn rejects_newer_schema() {
         let error = ScriptEngine::new()
-            .load_script(&source(4, RETURNED_FEED))
+            .load_script(&source(5, RETURNED_FEED))
             .await
             .err()
             .expect("schema 4 must not be accepted");
@@ -131,7 +146,7 @@ mod tests {
     async fn rejects_global_feed_registration() {
         let body = format!("globalThis.feed = {RETURNED_FEED}");
         let error = ScriptEngine::new()
-            .load_script(&source(3, &body))
+            .load_script(&source(4, &body))
             .await
             .err()
             .expect("globalThis.feed registration must be rejected");
@@ -145,7 +160,7 @@ mod tests {
             "return { search: complete, bookInfo, chapters: complete, paragraphs: complete, login: { entry() {} } };",
         );
         let error = ScriptEngine::new()
-            .load_script(&source(3, &body))
+            .load_script(&source(4, &body))
             .await
             .err()
             .expect("partial login contract must be rejected");
@@ -167,7 +182,7 @@ mod tests {
           return { search: complete, bookInfo, chapters: complete, paragraphs: complete, login };
         })()"#;
         let feed = ScriptEngine::new()
-            .load_script(&source(3, body))
+            .load_script(&source(4, body))
             .await
             .expect("feed should compile");
         let support = feed.supports_auth().expect("login should be supported");
@@ -199,7 +214,7 @@ mod tests {
             }
             return {
               type: "complete",
-              value: { id: event.input.bookId, title: event.response.body, author: "Test" },
+              value: { id: event.input.bookId, title: new TextDecoder().decode(event.response.body), author: "Test" },
             };
           }
           const login = {
@@ -218,7 +233,7 @@ mod tests {
         })()"#
             .replace("__BASE__", &server.url());
         let feed = ScriptEngine::new()
-            .load_script(&source(3, &body))
+            .load_script(&source(4, &body))
             .await
             .unwrap();
         let support = feed.supports_auth().unwrap();
@@ -274,7 +289,7 @@ mod tests {
         })()"#
             .replace("__BASE__", &server.url());
         let feed = ScriptEngine::new()
-            .load_script(&source(3, &body))
+            .load_script(&source(4, &body))
             .await
             .unwrap();
 
@@ -308,14 +323,14 @@ mod tests {
             }
             return {
               type: "complete",
-              value: { id: "1", title: event.response.body, author: "Test" },
+              value: { id: "1", title: new TextDecoder().decode(event.response.body), author: "Test" },
             };
           }
           return { search: empty, bookInfo, chapters: empty, paragraphs: empty };
         })()"#
             .replace("__BASE__", &server.url());
         let feed = ScriptEngine::new()
-            .load_script(&source(3, &body))
+            .load_script(&source(4, &body))
             .await
             .unwrap();
 
@@ -339,7 +354,7 @@ mod tests {
           return { search, bookInfo, chapters: empty, paragraphs: empty };
         })()"#;
         let feed = ScriptEngine::new()
-            .load_script(&source(3, body))
+            .load_script(&source(4, body))
             .await
             .unwrap();
 
@@ -367,7 +382,7 @@ mod tests {
           return { search, bookInfo, chapters: empty, paragraphs: empty };
         })()"#;
         let feed = ScriptEngine::new()
-            .load_script(&source(3, body))
+            .load_script(&source(4, body))
             .await
             .unwrap();
 
@@ -398,7 +413,7 @@ mod tests {
           return { search: empty, bookInfo, chapters: empty, paragraphs: empty };
         })()"#;
         let feed = ScriptEngine::new()
-            .load_script(&source(3, body))
+            .load_script(&source(4, body))
             .await
             .unwrap();
 
@@ -434,7 +449,7 @@ mod tests {
           return { search: empty, bookInfo, chapters: empty, paragraphs: empty };
         })()"#;
         let feed = ScriptEngine::new()
-            .load_script(&source(3, body))
+            .load_script(&source(4, body))
             .await
             .unwrap();
 
@@ -461,7 +476,7 @@ mod tests {
         })()"#;
         let feed = Arc::new(
             ScriptEngine::new()
-                .load_script(&source(3, body))
+                .load_script(&source(4, body))
                 .await
                 .unwrap(),
         );
@@ -580,7 +595,7 @@ mod tests {
           return { search, bookInfo, chapters: empty, paragraphs: empty };
         })()"#;
         let feed = ScriptEngine::new()
-            .load_script(&source(3, body))
+            .load_script(&source(4, body))
             .await
             .unwrap();
         let handler = CannedWebview::with_snapshot(sample_snapshot());
@@ -619,7 +634,7 @@ mod tests {
           return { search, bookInfo, chapters: empty, paragraphs: empty };
         })()"#;
         let feed = ScriptEngine::new()
-            .load_script(&source(3, body))
+            .load_script(&source(4, body))
             .await
             .unwrap();
 
@@ -656,7 +671,7 @@ mod tests {
           return { search, bookInfo, chapters: empty, paragraphs: empty };
         })()"#;
         let feed = ScriptEngine::new()
-            .load_script(&source(3, body))
+            .load_script(&source(4, body))
             .await
             .unwrap();
         feed.set_webview_handler(Some(CannedWebview::canceled()))

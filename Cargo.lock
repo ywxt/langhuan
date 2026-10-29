@@ -1571,6 +1571,7 @@ dependencies = [
  "async-stream",
  "bytes",
  "ego-tree",
+ "encoding_rs",
  "ferrous-opencc",
  "mockito",
  "reqwest",

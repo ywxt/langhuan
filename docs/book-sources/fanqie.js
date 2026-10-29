@@ -1,14 +1,14 @@
 // ==Feed==
 // @id           fanqie
 // @name         番茄小說
-// @version      1.3.1
+// @version      1.4.0
 // @author       Langhuan
 // @description  番茄小說官網書源（fanqienovel.com）：支持關鍵詞搜尋（也可直接貼書籍連結或 ID）、帳號登入與網頁暢讀；正文採用字體混淆，內置字形映射表解碼
 // @base_url     https://fanqienovel.com
 // @access_domain fanqienovel.com
 // @access_domain *.byteimg.com
 // @access_domain *.fqnovelpic.com
-// @schema_version 3
+// @schema_version 4
 // ==/Feed==
 
 // 官網正文反爬採用字體混淆：HTML 內約 360 個高頻字以私用區（PUA）碼位存儲，
@@ -47,6 +47,13 @@
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
   const FONT_HASH = "dc027189e0ba4cd";
+
+  // schema 4：response.body 是 Uint8Array，需先解碼成字串。
+  const DECODER = new TextDecoder("utf-8");
+
+  function bodyText(response) {
+    return DECODER.decode(response?.body);
+  }
 
   // PUA 碼位 → 真實字元。按碼位升序排列。
   const FONT_MAP = {
@@ -232,7 +239,6 @@
 
   function ensureAvailable(response) {
     const status = response?.status ?? 0;
-    const body = response?.body ?? "";
     if (status === 404) {
       return FeedError.contentNotFound("書籍或章節不存在或已下架");
     }
@@ -265,7 +271,7 @@
   // ── 頁面解析 ────────────────────────────────────────────────────────────────
 
   function parseBook(response, bookId) {
-    const document = HTML.parse(response.body);
+    const document = HTML.parse(bodyText(response));
     const title = decode(document.select("h1").first()?.text()).trim();
     const author = decode(
       document.select(".author-name-text").first()?.text(),
@@ -314,7 +320,7 @@
   }
 
   function parseChapters(response) {
-    const document = HTML.parse(response.body);
+    const document = HTML.parse(bodyText(response));
     const items = [];
     const seen = new Set();
     // 目錄在 .page-directory-content 內完整 SSR；頁首的「最近更新」橫幅也帶
@@ -333,7 +339,7 @@
   }
 
   function parseParagraphs(response) {
-    const body = response.body ?? "";
+    const body = bodyText(response);
     const document = HTML.parse(body);
 
     // 字體哈希釘住映射表版本；輪換後明確報錯。
@@ -426,7 +432,7 @@
     }
     const failure = ensureAvailable(event.response);
     if (failure) return failure;
-    const body = String(event.response?.body ?? "").trim();
+    const body = bodyText(event.response).trim();
     if (!body || body.startsWith("<")) {
       // 風控攔截：200 但 body 為空或為挑戰頁 HTML。
       if (event.state.retried) {
@@ -513,7 +519,7 @@
     }
     const failure = ensureAvailable(event.response);
     if (failure) return failure;
-    const body = String(event.response?.body ?? "");
+    const body = bodyText(event.response);
     // SVIP 權益牆（詳見檔頭注釋）：頁面只含試讀段落。未登入先引導登入；
     // 已登入仍遇牆即代表帳號無 SVIP 權益，如實回報而非返回試讀殘文。
     if (
@@ -584,7 +590,7 @@
         return { type: "complete", value: false };
       }
       try {
-        const payload = JSON.parse(event.response.body ?? "");
+        const payload = JSON.parse(bodyText(event.response));
         return { type: "complete", value: payload?.code === 0 };
       } catch (_) {
         return { type: "complete", value: false };

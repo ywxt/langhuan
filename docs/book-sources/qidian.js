@@ -1,19 +1,26 @@
 // ==Feed==
 // @id           qidian
 // @name         起點中文網
-// @version      3.2.0
+// @version      3.3.0
 // @author       Langhuan
 // @description  起點中文網書源（m 站），支持登入及已購 VIP 章節
 // @base_url     https://m.qidian.com
 // @access_domain m.qidian.com
 // @access_domain *.image.myqcloud.com
-// @schema_version 3
+// @schema_version 4
 // ==/Feed==
 
 (() => {
 "use strict";
 
 const PAGE_CONTEXT_MARKER = 'id="vite-plugin-ssr_pageContext"';
+
+// schema 4：response.body 是 Uint8Array，需先解碼成字串。
+const DECODER = new TextDecoder("utf-8");
+
+function bodyText(response) {
+  return DECODER.decode(response?.body);
+}
 const USER_AGENT =
   "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
@@ -114,7 +121,7 @@ function isWafChallenge(body) {
 }
 
 function responseFailure(response, notFoundMessage) {
-  if (isWafChallenge(response.body)) {
+  if (isWafChallenge(bodyText(response))) {
     return FeedError.cfChallenge("起點風控攔截（probe challenge），請稍後重試");
   }
   if (response.status === 404) {
@@ -149,11 +156,11 @@ function parseSearchItems(body) {
 }
 
 function parseBookInfo(response, fallbackId) {
-  const context = extractPageContext(response.body);
+  const context = extractPageContext(bodyText(response));
   const info = nav(context, "pageProps", "pageData", "bookInfo");
   if (!info?.bookName) return null;
 
-  const coverMatch = response.body.match(
+  const coverMatch = bodyText(response).match(
     /(?:data-src|src)="(\/\/bookcover\.yuewen\.com\/[^"]+)"/,
   );
   const idMatch = response.url.match(/\/book\/(\d+)/);
@@ -167,7 +174,7 @@ function parseBookInfo(response, fallbackId) {
 }
 
 function parseChapterItems(response) {
-  const context = extractPageContext(response.body);
+  const context = extractPageContext(bodyText(response));
   const volumes = nav(context, "pageProps", "pageData", "vs");
   if (!Array.isArray(volumes)) return null;
 
@@ -347,7 +354,7 @@ function search(event) {
   }
   const failure = responseFailure(event.response, "搜索頁不可用");
   if (failure) return failure;
-  const items = parseSearchItems(event.response.body);
+  const items = parseSearchItems(bodyText(event.response));
   if (!items) return FeedError.sourceUnavailable("無法解析起點搜索頁");
   return { type: "complete", items, next_cursor: null };
 }
@@ -408,10 +415,10 @@ function paragraphs(event) {
   if (event.state.stage === "chapter_page") {
     const failure = responseFailure(event.response);
     if (failure) return failure;
-    const context = extractPageContext(event.response.body);
+    const context = extractPageContext(bodyText(event.response));
     const chapter = nav(context, "pageProps", "pageData", "chapterInfo");
     const user = nav(context, "pageProps", "pageData", "user");
-    const fockUrl = extractFockUrl(event.response.body);
+    const fockUrl = extractFockUrl(bodyText(event.response));
     if (!chapter) return FeedError.contentNotFound("章節不存在或已下架");
 
     if (chapter.vipStatus === 1) {
@@ -457,7 +464,7 @@ function paragraphs(event) {
     if (failure) return failure;
     let payload;
     try {
-      payload = JSON.parse(event.response.body);
+      payload = JSON.parse(bodyText(event.response));
     } catch (_) {
       return FeedError.sourceUnavailable("起點章節 API 返回了無效 JSON");
     }
@@ -507,7 +514,7 @@ function paragraphs(event) {
       type: "compute",
       programs: [
         FOCK_ENV_PROGRAM,
-        event.response.body,
+        bodyText(event.response),
         FOCK_INITIALIZE_PROGRAM,
         atob(event.state.fkp),
         FOCK_UNLOCK_PROGRAM,
@@ -618,7 +625,7 @@ const login = {
         next_state: { stage: "probe" },
       };
     }
-    const context = extractPageContext(event.response?.body ?? "");
+    const context = extractPageContext(bodyText(event.response));
     const user = nav(context, "pageProps", "pageData", "user");
     return { type: "complete", value: user?.isLogin === true };
   },

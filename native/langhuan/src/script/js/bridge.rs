@@ -25,7 +25,7 @@ use serde_json::Value;
 
 use super::sandbox::resolve_owner;
 use crate::error::{Error, Result};
-use crate::feed::WebviewSnapshot;
+use crate::feed::{AuthPageContext, CookieEntry, WebviewSnapshot};
 use crate::http::{HttpBody, HttpRequest, HttpResponse};
 
 /// Upper bound for values materialized across the bridge, matching the
@@ -510,9 +510,22 @@ fn response_to_js<'js>(
         headers.set(headers.len(), pair)?;
     }
     object.set("headers", headers)?;
-    object.set("body", String::from_utf8_lossy(&response.body.0).as_ref())?;
+    object.set("body", bytes_to_u8array(ctx, &response.body.0)?)?;
     object.set("url", response.url.as_str())?;
     Ok(object.into_value())
+}
+
+fn cookie_to_js<'js>(ctx: &Ctx<'js>, cookie: &CookieEntry) -> rquickjs::Result<Object<'js>> {
+    let entry = Object::new(ctx.clone())?;
+    entry.set("name", cookie.name.as_str())?;
+    entry.set("value", cookie.value.as_str())?;
+    entry.set("domain", optional_to_js(ctx, &cookie.domain)?)?;
+    entry.set("path", optional_to_js(ctx, &cookie.path)?)?;
+    entry.set("expires", optional_to_js(ctx, &cookie.expires)?)?;
+    entry.set("secure", optional_to_js(ctx, &cookie.secure)?)?;
+    entry.set("http_only", optional_to_js(ctx, &cookie.http_only)?)?;
+    entry.set("same_site", optional_to_js(ctx, &cookie.same_site)?)?;
+    Ok(entry)
 }
 
 fn webview_to_js<'js>(
@@ -524,16 +537,31 @@ fn webview_to_js<'js>(
     object.set("html", snapshot.html.as_str())?;
     let cookies = Array::new(ctx.clone())?;
     for cookie in &snapshot.cookies {
-        let entry = Object::new(ctx.clone())?;
-        entry.set("name", cookie.name.as_str())?;
-        entry.set("value", cookie.value.as_str())?;
-        entry.set("domain", optional_to_js(ctx, &cookie.domain)?)?;
-        entry.set("path", optional_to_js(ctx, &cookie.path)?)?;
-        entry.set("expires", optional_to_js(ctx, &cookie.expires)?)?;
-        entry.set("secure", optional_to_js(ctx, &cookie.secure)?)?;
-        entry.set("http_only", optional_to_js(ctx, &cookie.http_only)?)?;
-        entry.set("same_site", optional_to_js(ctx, &cookie.same_site)?)?;
-        cookies.set(cookies.len(), entry)?;
+        cookies.set(cookies.len(), cookie_to_js(ctx, cookie)?)?;
+    }
+    object.set("cookies", cookies)?;
+    Ok(object.into_value())
+}
+
+/// Build the page context object handed to `login.parse`.
+pub(super) fn build_auth_page<'js>(
+    ctx: &Ctx<'js>,
+    page: &AuthPageContext,
+) -> rquickjs::Result<JsValue<'js>> {
+    let object = Object::new(ctx.clone())?;
+    object.set("current_url", page.current_url.as_str())?;
+    object.set("response", bytes_to_u8array(ctx, &page.response.0)?)?;
+    let headers = Array::new(ctx.clone())?;
+    for (name, value) in &page.response_headers {
+        let pair = Array::new(ctx.clone())?;
+        pair.set(0, name.as_str())?;
+        pair.set(1, value.as_str())?;
+        headers.set(headers.len(), pair)?;
+    }
+    object.set("response_headers", headers)?;
+    let cookies = Array::new(ctx.clone())?;
+    for cookie in &page.cookies {
+        cookies.set(cookies.len(), cookie_to_js(ctx, cookie)?)?;
     }
     object.set("cookies", cookies)?;
     Ok(object.into_value())

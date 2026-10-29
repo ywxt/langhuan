@@ -36,7 +36,7 @@ Throw an `Error` only for defects or malformed responses the source does not
 know how to handle:
 
 ```js
-const payload = JSON.parse(event.response.body);
+const payload = JSON.parse(bodyText(event.response));
 if (!Array.isArray(payload.records)) {
   throw new Error("search response has no records array");
 }

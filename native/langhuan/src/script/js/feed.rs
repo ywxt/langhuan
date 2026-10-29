@@ -11,9 +11,9 @@ use tokio::time::sleep;
 use tokio_stream::StreamExt as _;
 
 use super::bridge::{
-    build_event, build_request_object, js_to_json, jsdata_to_js, json_to_js, optional_string,
-    read_http_request, read_step, required_string, JsData, OperationSpec, OpaqueJsValue, Round,
-    Step,
+    build_auth_page, build_event, build_request_object, js_to_json, jsdata_to_js, json_to_js,
+    optional_string, read_http_request, read_step, required_string, JsData, OperationSpec,
+    OpaqueJsValue, Round, Step,
 };
 use super::sandbox::{JsObject, Sandbox};
 
@@ -92,6 +92,23 @@ globalThis.atob = function(input) {
        ~buffer && (bs = bc % 4 ? bs * 64 + buffer : buffer,
        bc++ % 4) ? output += String.fromCharCode(255 & bs >> (-2 * bc & 6)) : 0) {
     buffer = chars.indexOf(buffer);
+  }
+  return output;
+};
+globalThis.btoa = function(input) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let str = String(input);
+  let output = "";
+  for (let idx = 0; idx < str.length; idx += 3) {
+    const a = str.charCodeAt(idx);
+    const b = str.charCodeAt(idx + 1);
+    const c = str.charCodeAt(idx + 2);
+    const hasB = idx + 1 < str.length;
+    const hasC = idx + 2 < str.length;
+    output += chars.charAt(a >> 2);
+    output += chars.charAt(((a & 3) << 4) | (hasB ? b >> 4 : 0));
+    output += hasB ? chars.charAt(((b & 15) << 2) | (hasC ? c >> 6 : 0)) : "=";
+    output += hasC ? chars.charAt(c & 63) : "=";
   }
   return output;
 };
@@ -696,9 +713,8 @@ impl FeedAuthFlow for JsFeed {
     }
 
     fn parse_auth(&self, _support: &Self::SupportAuth, page: &AuthPageContext) -> Result<AuthInfo> {
-        let page_json = Self::to_js_value(page, "authentication page")?;
         self.feed_object.with_realm(move |ctx, feed_object| {
-            let page_arg = json_to_js(&ctx, &page_json)?;
+            let page_arg = build_auth_page(&ctx, page)?;
             let (owner, function) =
                 super::bridge::resolve_method(&feed_object, LOGIN_PARSE_HANDLER)?;
             let result = super::bridge::call_method(&ctx, &owner, &function, &[page_arg])?;

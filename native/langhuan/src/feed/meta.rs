@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use serde::Serialize;
 
 /// The current feed script schema version supported by this application.
-pub const FEED_SCHEMA_VERSION: u32 = 3;
+pub const FEED_SCHEMA_VERSION: u32 = 4;
 
 /// Metadata extracted from the `==Feed==` header block of a feed script.
 #[derive(Debug, Clone, Serialize)]

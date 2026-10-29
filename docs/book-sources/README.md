@@ -21,8 +21,10 @@ Current examples:
   reports as an explicit sign-in or entitlement error instead of returning
   partial content.
 
-There is no legacy runtime compatibility. Schema 3 sources must use `.js` and
+There is no legacy runtime compatibility. Schema 4 sources must use `.js` and
 must return their Feed object. Assigning `globalThis.feed` is not supported.
+Schema 3 sources fail to load with a migration hint: response bodies are now
+`Uint8Array` values that must be decoded with `TextDecoder` before use as text.
 
 ## Metadata
 
@@ -34,11 +36,11 @@ Every file starts with a comment header:
 // @name         Example Source
 // @version      3.0.0
 // @author       You
-// @description  Example schema-3 source
+// @description  Example schema-4 source
 // @base_url     https://example.com
 // @access_domain example.com
 // @access_domain *.static.example.com
-// @schema_version 3
+// @schema_version 4
 // ==/Feed==
 ```
 
@@ -91,7 +93,7 @@ type Event = {
   response: null | {
     status: number;
     headers: [string, string][];
-    body: string;
+    body: Uint8Array;
     url: string;
   };
   compute: unknown | null;
@@ -122,6 +124,12 @@ chapter HTML -> chapter API -> official decryptor bundle -> isolated compute -> 
 
 The script never performs HTTP itself.
 
+`next_state` is carried between rounds as a live JavaScript value, not a JSON
+copy: `Date` instances, `Uint8Array` buffers, `undefined` properties, and
+closures survive unchanged. The same applies to the `compute` result returned as
+`event.compute`. Only the values inside a final `complete` step (`items`,
+`value`) are materialized for the host and must be plain JSON-compatible data.
+
 ### Request descriptor
 
 ```js
@@ -130,7 +138,7 @@ The script never performs HTTP itself.
   method: "GET",                 // defaults to GET
   headers: { Accept: "text/html" },
   params: { q: "keyword" },      // URL query parameters
-  body: null,
+  body: null,                    // string, Uint8Array, or null
 }
 ```
 
@@ -153,7 +161,7 @@ request an isolated computation instead:
 return {
   type: "compute",
   programs: [
-    event.response.body,
+    bodyText(event.response),     // site-provided code, decoded to a string
     "decrypt(input.encrypted, input.key)",
   ],
   input: { encrypted, key },
@@ -163,8 +171,10 @@ return {
 
 Rust creates a fresh QuickJS realm for each compute step, installs no native
 callbacks, network API, HTML parser, module loader, filesystem, process, or
-environment access, and evaluates `programs` in order. Only JSON `input` enters
-the realm and only the final program's JSON value returns as `event.compute`.
+environment access, and evaluates `programs` in order. The `input` value enters
+the realm as a live JavaScript value and the final program's return value comes
+back as `event.compute` — both may include strings, numbers, booleans, arrays,
+plain objects, `null`/`undefined`, and `Uint8Array` bytes.
 The realm is destroyed immediately afterwards. It has independent heap, stack,
 execution-time, source-size, program-count, and result-size limits.
 
@@ -276,7 +286,7 @@ access. Each input is limited to 4 MiB and returns a document tree with CSS
 selection:
 
 ```js
-const document = HTML.parse(event.response.body);
+const document = HTML.parse(bodyText(event.response));
 const cards = document.select(".result-card");
 const firstBook = document
   .select('a[href*="/book/"][href$=".html"]')
@@ -293,6 +303,45 @@ Selectors support tags, `#id`, `.class`, descendant and child combinators,
 comma groups, and the attribute operators `=`, `*=`, `^=`, `$=`, `~=`, and
 `|=`. A selection is array-like and adds `first()`.
 
+## Byte and text utilities
+
+QuickJS ships no `TextDecoder`, `TextEncoder`, or typed-array conversion
+helpers, so the host provides them in both the feed realm and every compute
+realm:
+
+```js
+// Decode response bodies (and any other bytes) to text.
+const DECODER = new TextDecoder("utf-8");          // or "gbk", "big5", "shift_jis", ...
+function bodyText(response) {
+  return DECODER.decode(response?.body);           // missing body -> ""
+}
+
+new TextDecoder("gbk", { fatal: true })            // throw on invalid bytes
+new TextDecoder("utf-8", { ignoreBOM: true })      // keep a leading BOM
+
+// Encode text to UTF-8 bytes (for a request body or a digest input).
+const bytes = new TextEncoder().encode("你好");
+
+// Base64 and hex conversions for Uint8Array values.
+Bytes.toBase64(bytes);                             // "..." with padding
+Bytes.toBase64(bytes, { urlSafe: true });          // "-" and "_" alphabet
+Bytes.fromBase64("Zm9vYmFy");                      // -> Uint8Array
+Bytes.fromBase64("Zm9v\nYmFy");                    // ASCII whitespace is skipped
+Bytes.toHex(bytes);                                // lowercase hex
+Bytes.fromHex("000fa5ff");                         // case-insensitive
+```
+
+Notes:
+
+- `TextDecoder` accepts any WHATWG encoding label; a leading BOM of the
+  requested encoding is removed unless `ignoreBOM` is set. Streaming decode
+  (`{ stream: true }`) is not supported and throws.
+- `new TextDecoder().decode()` with no argument returns the empty string, so
+  `bodyText(null)` is safe.
+- Returned values (`complete.items`/`value`) must be JSON-compatible: a
+  `Uint8Array` there is rejected with guidance to decode it or encode it as
+  base64/hex first.
+
 ## Authentication
 
 The optional `login` object contains:
@@ -308,7 +357,7 @@ const login = {
   },
 
   parse(page) {
-    // page: { current_url, response, response_headers, cookies }
+    // page: { current_url, response (Uint8Array), response_headers, cookies }
     const session = page.cookies.find((cookie) => cookie.name === "session");
     if (!session) return FeedError.authRequired("Login is incomplete");
     return { cookie_header: `session=${session.value}` };
@@ -358,15 +407,18 @@ call:
   object references;
 - 32 MiB QuickJS heap and a 1 MiB QuickJS stack;
 - a 30-second JavaScript deadline enforced by QuickJS's interrupt handler;
-- a 16 MiB serialized-result limit;
+- a 16 MiB limit on materialized `complete` results;
 - no state sharing between different feeds;
-- JSON-only arguments and results, capped by the host;
+- reducer calls exchange live JavaScript values — `next_state` and compute
+  results are never serialized, while `complete` payloads must be
+  JSON-compatible data capped by the host;
 - all network, authentication, caching, redirects, and domain checks remain in
   native Rust.
 
 Browser globals are not generally available. The runtime supplies only small
-pure helpers needed by site code: `atob`, `window/self` aliases, inert
-`console`, `performance.now`, and inert timer shims. `navigator` deliberately
+pure helpers needed by site code: `atob`, `btoa`, `window/self` aliases, inert
+`console`, `performance.now`, inert timer shims, and the byte and text
+utilities described above. `navigator` deliberately
 has no `webdriver` property so official anti-bot bundles do not mistake the
 sandbox for browser automation.
 
@@ -374,8 +426,8 @@ sandbox for browser automation.
 
 The same reducer contract covers both kinds of site:
 
-- An ordinary HTML source returns one `request`, parses `response.body`, and
-  returns `complete`.
+- An ordinary HTML source returns one `request`, decodes `response.body` with
+  `TextDecoder`, parses it, and returns `complete`.
 - A site such as Qidian stores intermediate values in `next_state`, returns
   another request descriptor, evaluates pure site-provided decryption code in
   the guest, and finally returns `complete`.
