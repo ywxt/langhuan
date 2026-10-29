@@ -1,9 +1,9 @@
 // ==Feed==
 // @id           fanqie
 // @name         番茄小說
-// @version      1.3.0
+// @version      1.3.1
 // @author       Langhuan
-// @description  番茄小說官網書源（fanqienovel.com）：支持關鍵詞搜尋（也可直接貼書籍連結或 ID）、帳號登入與網頁畅读；正文採用字體混淆，內置字形映射表解碼
+// @description  番茄小說官網書源（fanqienovel.com）：支持關鍵詞搜尋（也可直接貼書籍連結或 ID）、帳號登入與網頁暢讀；正文採用字體混淆，內置字形映射表解碼
 // @base_url     https://fanqienovel.com
 // @access_domain fanqienovel.com
 // @access_domain *.byteimg.com
@@ -28,6 +28,16 @@
 // Hm_* 統計項）附加到重試請求上。驗證後的 cookie 串在本會話內快取，後續搜索
 // 直接帶上；若驗證後仍被攔截則標記本會話為風控攔截狀態，之後的搜索直接報
 // search_failed 而不再重複彈出驗證頁，直到某次搜索成功才解除。
+//
+// 部分章節在網頁端是 SVIP 權益牆而非單純的反爬：閱讀頁 SSR 對未登入帳號只
+// 渲染試讀段落（頁面帶 muye-to-vip-login 標記），登入後若帳號無 SVIP 權益，
+// 返回的仍是同一份試讀頁；改打 /api/reader/full 也取不到全文（該端點另受
+// bdturing 滑塊挑戰保護，腳本難以繞過）。已知的替代路線是 APP 匿名裝置閘道
+// （reading.snssdk.com 的 /reading/*，需 Argus/Ladon 請求簽名、ttencrypt 裝
+// 置註冊與 AES 內容密鑰；據 GPL-3.0 的 fanqie-assistant 專案，此路線可匿名
+// 讀到 VIP 章節），但這套簽名/加密棧逾兩千行，且資料中心 IP 下無論簽名正確
+// 與否都只得到空回應、無法穩定驗證，因此刻意不採用。本書源對權益牆如實回
+// 報：未登入先提示登入，已登入而無權益則明確告知需要 SVIP。
 
 (() => {
   "use strict";
@@ -504,15 +514,19 @@
     const failure = ensureAvailable(event.response);
     if (failure) return failure;
     const body = String(event.response?.body ?? "");
+    // SVIP 權益牆（詳見檔頭注釋）：頁面只含試讀段落。未登入先引導登入；
+    // 已登入仍遇牆即代表帳號無 SVIP 權益，如實回報而非返回試讀殘文。
     if (
       body.includes("muye-to-vip-login") ||
       body.includes("会员登录后，可在网页畅读全文")
     ) {
       if (event.auth == null) {
-        return FeedError.authRequired("本章只返回試讀內容，請先登入番茄小說");
+        return FeedError.authRequired(
+          "本章僅提供試讀內容，請先登入番茄小說（網頁端暢讀全文另需 SVIP 權益）",
+        );
       }
       return FeedError.contentNotFound(
-        "登入後仍只返回試讀內容；網頁畅读需要有效的番茄 SVIP 權益",
+        "登入帳號缺少番茄 SVIP 權益，網頁端僅提供試讀內容而無法取得全文",
       );
     }
     return parseParagraphs(event.response);

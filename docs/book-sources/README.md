@@ -16,6 +16,10 @@ Current examples:
   verification fallback for when the search endpoint is risk-gated. The
   source also persists WebView login cookies for chapters that require a
   logged-in account and verifies them against the reader user endpoint.
+  Chapters gated behind the site's SVIP entitlement serve only a preview on
+  the web — an entitlement wall rather than anti-crawling — which the source
+  reports as an explicit sign-in or entitlement error instead of returning
+  partial content.
 
 There is no legacy runtime compatibility. Schema 3 sources must use `.js` and
 must return their Feed object. Assigning `globalThis.feed` is not supported.
