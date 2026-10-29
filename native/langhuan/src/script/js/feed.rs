@@ -3,21 +3,21 @@ use std::sync::RwLock;
 use std::time::Duration;
 
 use async_stream::stream;
+use rquickjs::IntoJs;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::sleep;
 use tokio_stream::StreamExt as _;
 
 use super::bridge::{
-    build_auth_page, build_event, build_request_object, js_to_json, jsdata_to_js, json_to_js,
-    optional_string, read_http_request, read_step, required_string, JsData, OperationSpec,
-    OpaqueJsValue, Round, Step,
+    Json, OpaqueJsValue, OperationSpec, Round, Step, build_event, call_handler, read_auth_entry,
+    read_auth_result, read_patched_request, read_step, restore_compute,
 };
+use super::prelude::PRELUDE;
 use super::sandbox::{JsObject, Sandbox};
 
-use crate::error::{ExpectedErrorCode, Result};
+use crate::error::{Error, ExpectedErrorCode, Result};
 use crate::feed::{
     AuthEntry, AuthInfo, AuthPageContext, AuthStatus, Feed, FeedAuthFlow, FeedMeta, FeedStream,
     SharedWebviewHandler, WebviewRequest, WebviewSnapshot,
@@ -58,81 +58,10 @@ const REQUIRED_LOGIN_HANDLERS: &[JsMethodPath] = &[
     LOGIN_PATCH_REQUEST_HANDLER,
 ];
 
-const PRELUDE: &str = r#"
-globalThis.FeedError = Object.freeze({
-  authRequired(message) {
-    return { type: "fail", code: "auth_required", message: String(message) };
-  },
-  cfChallenge(message) {
-    return { type: "fail", code: "cf_challenge", message: String(message) };
-  },
-  rateLimited(message) {
-    return { type: "fail", code: "rate_limited", message: String(message) };
-  },
-  contentNotFound(message) {
-    return { type: "fail", code: "content_not_found", message: String(message) };
-  },
-  sourceUnavailable(message) {
-    return { type: "fail", code: "source_unavailable", message: String(message) };
-  },
-  raise(code, message) {
-    return { type: "fail", code: String(code), message: String(message) };
-  },
-});
-
-// QuickJS intentionally has no browser APIs. These pure helpers are enough
-// for site-provided decryptors without granting network or system access.
-globalThis.atob = function(input) {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
-  let str = String(input).replace(/=+$/, "");
-  let output = "";
-  if (str.length % 4 === 1) throw new TypeError("invalid base64");
-  for (let bc = 0, bs, buffer, idx = 0;
-       (buffer = str.charAt(idx++));
-       ~buffer && (bs = bc % 4 ? bs * 64 + buffer : buffer,
-       bc++ % 4) ? output += String.fromCharCode(255 & bs >> (-2 * bc & 6)) : 0) {
-    buffer = chars.indexOf(buffer);
-  }
-  return output;
-};
-globalThis.btoa = function(input) {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  let str = String(input);
-  let output = "";
-  for (let idx = 0; idx < str.length; idx += 3) {
-    const a = str.charCodeAt(idx);
-    const b = str.charCodeAt(idx + 1);
-    const c = str.charCodeAt(idx + 2);
-    const hasB = idx + 1 < str.length;
-    const hasC = idx + 2 < str.length;
-    output += chars.charAt(a >> 2);
-    output += chars.charAt(((a & 3) << 4) | (hasB ? b >> 4 : 0));
-    output += hasB ? chars.charAt(((b & 15) << 2) | (hasC ? c >> 6 : 0)) : "=";
-    output += hasC ? chars.charAt(c & 63) : "=";
-  }
-  return output;
-};
-globalThis.window = globalThis;
-globalThis.self = globalThis;
-globalThis.navigator = { userAgent: "Langhuan QuickJS" };
-globalThis.console = {
-  log() {}, info() {}, warn() {}, error() {}, debug() {}, trace() {}
-};
-globalThis.performance = { now() { return Date.now(); } };
-globalThis.setTimeout = function(callback) {
-  if (typeof callback === "function") callback();
-  return 0;
-};
-globalThis.clearTimeout = function() {};
-globalThis.setInterval = function() { return 0; };
-globalThis.clearInterval = function() {};
-"#;
-
 #[derive(Clone)]
 pub struct JsSupportAuth;
 
-#[derive(Clone, Copy, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy)]
 enum JsOperationKind {
     Search,
     BookInfo,
@@ -164,9 +93,9 @@ impl JsOperationKind {
     }
 }
 
-#[derive(Serialize)]
+/// One operation of the feed contract: which handler to run, and the JSON
+/// input it receives.
 struct JsOperation {
-    #[serde(rename = "operation")]
     kind: JsOperationKind,
     input: Value,
 }
@@ -174,6 +103,14 @@ struct JsOperation {
 impl JsOperation {
     fn new(kind: JsOperationKind, input: Value) -> Self {
         Self { kind, input }
+    }
+
+    /// The `{operation, input}` object `login.patchRequest` receives.
+    fn patch_argument(&self) -> Value {
+        serde_json::json!({
+            "operation": self.kind.as_str(),
+            "input": self.input,
+        })
     }
 }
 
@@ -191,6 +128,8 @@ pub struct JsFeed {
     feed_object: JsObject,
 }
 
+/// The final outcome of an operation, separated from [`Step`] so the
+/// per-round union does not leak into callers.
 struct Complete {
     items: Option<Value>,
     value: Option<Value>,
@@ -198,63 +137,21 @@ struct Complete {
 }
 
 impl JsFeed {
-    fn validate_user_agent(user_agent: &str) -> Result<()> {
-        if user_agent.is_empty() {
-            return Err(crate::error::Error::javascript(
-                "user_agent must not be empty",
-            ));
-        }
-        if user_agent.len() > MAX_USER_AGENT_BYTES {
-            return Err(crate::error::Error::javascript(format!(
-                "user_agent exceeds {MAX_USER_AGENT_BYTES} bytes"
-            )));
-        }
-        if user_agent.chars().any(char::is_control) {
-            return Err(crate::error::Error::javascript(
-                "user_agent must not contain control characters",
-            ));
-        }
-        Ok(())
-    }
-
     pub(crate) fn new(source: String, meta: FeedMeta, client: reqwest::Client) -> Result<Self> {
-        let meta_json = serde_json::to_string(&meta)
-            .map_err(|error| crate::error::Error::javascript(error.to_string()))?;
+        let meta_json =
+            serde_json::to_string(&meta).map_err(|error| Error::javascript(error.to_string()))?;
         let mut sandbox = Sandbox::new(SCRIPT_TIMEOUT)?;
         sandbox.eval_script(&format!(
             "{PRELUDE}\nglobalThis.meta = Object.freeze({meta_json});"
         ))?;
         let feed_object = sandbox.eval_object(&format!("({source})"))?;
         if sandbox.has_global("feed")? {
-            return Err(crate::error::Error::invalid_feed(
+            return Err(Error::invalid_feed(
                 "JavaScript feed must return its handler object instead of assigning globalThis.feed",
             ));
         }
-        if !Self::has_methods(&feed_object, REQUIRED_HANDLERS)? {
-            let names = REQUIRED_HANDLERS
-                .iter()
-                .filter_map(|path| path.last())
-                .copied()
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(crate::error::Error::invalid_feed(format!(
-                "JavaScript feed must return an object with {names} functions"
-            )));
-        }
-
-        let login_methods = Self::method_presence(&feed_object, REQUIRED_LOGIN_HANDLERS)?;
-        let has_auth_status = feed_object.has_function(LOGIN_STATUS_HANDLER)?;
-        let has_login = login_methods.iter().all(|present| *present);
-        if (login_methods.iter().any(|present| *present) || has_auth_status) && !has_login {
-            let names = REQUIRED_LOGIN_HANDLERS
-                .iter()
-                .map(|path| path.join("."))
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(crate::error::Error::invalid_feed(format!(
-                "JavaScript feed login support must define all of: {names}"
-            )));
-        }
+        Self::require_handlers(&feed_object)?;
+        let (has_login, has_auth_status) = Self::login_capabilities(&feed_object)?;
 
         Ok(Self {
             meta,
@@ -268,20 +165,65 @@ impl JsFeed {
         })
     }
 
-    fn has_methods(object: &JsObject, paths: &[JsMethodPath]) -> Result<bool> {
-        Ok(Self::method_presence(object, paths)?
-            .into_iter()
-            .all(|present| present))
+    /// Every feed must define the four content handlers.
+    fn require_handlers(feed_object: &JsObject) -> Result<()> {
+        if !feed_object.has_functions(REQUIRED_HANDLERS)? {
+            let names = REQUIRED_HANDLERS
+                .iter()
+                .filter_map(|path| path.last())
+                .copied()
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(Error::invalid_feed(format!(
+                "JavaScript feed must return an object with {names} functions"
+            )));
+        }
+        Ok(())
     }
 
-    fn method_presence(object: &JsObject, paths: &[JsMethodPath]) -> Result<Vec<bool>> {
-        paths.iter().map(|path| object.has_function(path)).collect()
+    /// Login support is all-or-nothing: `entry`, `parse`, and `patchRequest`
+    /// must all exist if any login-related handler does.
+    fn login_capabilities(feed_object: &JsObject) -> Result<(bool, bool)> {
+        let has_auth_status = feed_object.has_function(LOGIN_STATUS_HANDLER)?;
+        let presence = REQUIRED_LOGIN_HANDLERS
+            .iter()
+            .map(|path| feed_object.has_function(path))
+            .collect::<Result<Vec<_>>>()?;
+        let has_login = presence.iter().all(|present| *present);
+        if (presence.iter().any(|present| *present) || has_auth_status) && !has_login {
+            let names = REQUIRED_LOGIN_HANDLERS
+                .iter()
+                .map(|path| path.join("."))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(Error::invalid_feed(format!(
+                "JavaScript feed login support must define all of: {names}"
+            )));
+        }
+        Ok((has_login, has_auth_status))
+    }
+
+    fn validate_user_agent(user_agent: &str) -> Result<()> {
+        if user_agent.is_empty() {
+            return Err(Error::javascript("user_agent must not be empty"));
+        }
+        if user_agent.len() > MAX_USER_AGENT_BYTES {
+            return Err(Error::javascript(format!(
+                "user_agent exceeds {MAX_USER_AGENT_BYTES} bytes"
+            )));
+        }
+        if user_agent.chars().any(char::is_control) {
+            return Err(Error::javascript(
+                "user_agent must not contain control characters",
+            ));
+        }
+        Ok(())
     }
 
     fn auth_info(&self) -> Result<Option<AuthInfo>> {
         self.auth_info
             .read()
-            .map_err(|_| crate::error::Error::invalid_feed("auth state lock poisoned"))
+            .map_err(|_| Error::invalid_feed("auth state lock poisoned"))
             .map(|auth| auth.clone())
     }
 
@@ -291,24 +233,15 @@ impl JsFeed {
         *self
             .webview_handler
             .write()
-            .map_err(|_| crate::error::Error::invalid_feed("webview handler lock poisoned"))? =
-            handler;
+            .map_err(|_| Error::invalid_feed("webview handler lock poisoned"))? = handler;
         Ok(())
     }
 
     fn webview_handler(&self) -> Result<Option<SharedWebviewHandler>> {
         self.webview_handler
             .read()
-            .map_err(|_| crate::error::Error::invalid_feed("webview handler lock poisoned"))
+            .map_err(|_| Error::invalid_feed("webview handler lock poisoned"))
             .map(|handler| handler.clone())
-    }
-
-    fn to_js_value(value: &impl Serialize, description: &str) -> Result<Value> {
-        serde_json::to_value(value).map_err(|error| {
-            crate::error::Error::javascript(format!(
-                "failed to serialize {description} for JavaScript: {error}"
-            ))
-        })
     }
 
     /// Invoke the operation's reducer once with a live event object.
@@ -320,17 +253,35 @@ impl JsFeed {
         let handler = operation.kind.handler();
         self.feed_object.with_realm(move |ctx, feed_object| {
             let event = build_event(&ctx, &spec, &round)?;
-            let (owner, function) = super::bridge::resolve_method(&feed_object, handler)?;
-            let result = super::bridge::call_method(&ctx, &owner, &function, &[event])?;
+            let result = call_handler(&ctx, &feed_object, handler, &[event])?;
             Ok(read_step(&ctx, &result))
         })
     }
 
-    /// Materialize a compute result into the feed realm as an opaque value.
-    fn restore_compute(&self, data: JsData) -> Result<OpaqueJsValue> {
-        self.feed_object.with_realm(move |ctx, _| {
-            let value = jsdata_to_js(&ctx, &data)?;
-            Ok(Ok(OpaqueJsValue::save(&ctx, value)))
+    /// Run `login.patchRequest` over a request when the feed is logged in.
+    fn apply_auth_patch(
+        &self,
+        operation: &JsOperation,
+        request: HttpRequest,
+    ) -> Result<HttpRequest> {
+        if !self.has_login {
+            return Ok(request);
+        }
+        let Some(auth) = self.auth_info()? else {
+            return Ok(request);
+        };
+        let operation_json = operation.patch_argument();
+        self.feed_object.with_realm(move |ctx, feed_object| {
+            let operation_arg = Json(&operation_json).into_js(&ctx)?;
+            let request_arg = (&request).into_js(&ctx)?;
+            let auth_arg = Json(&auth).into_js(&ctx)?;
+            let result = call_handler(
+                &ctx,
+                &feed_object,
+                LOGIN_PATCH_REQUEST_HANDLER,
+                &[operation_arg, request_arg, auth_arg],
+            )?;
+            Ok(read_patched_request(&result))
         })
     }
 
@@ -382,41 +333,6 @@ impl JsFeed {
         Ok(response)
     }
 
-    fn apply_auth_patch(
-        &self,
-        operation: &JsOperation,
-        request: HttpRequest,
-    ) -> Result<HttpRequest> {
-        if !self.has_login {
-            return Ok(request);
-        }
-        let Some(auth) = self.auth_info()? else {
-            return Ok(request);
-        };
-        let operation_json = Self::to_js_value(operation, "operation")?;
-        self.feed_object.with_realm(move |ctx, feed_object| {
-            let operation_arg = json_to_js(&ctx, &operation_json)?;
-            let request_arg = build_request_object(&ctx, &request)?;
-            let auth_arg = json_to_js(&ctx, &auth)?;
-            let (owner, function) =
-                super::bridge::resolve_method(&feed_object, LOGIN_PATCH_REQUEST_HANDLER)?;
-            let result = super::bridge::call_method(
-                &ctx,
-                &owner,
-                &function,
-                &[operation_arg, request_arg, auth_arg],
-            )?;
-            Ok((|| {
-                let object = result.into_object().ok_or_else(|| {
-                    crate::error::Error::javascript(
-                        "invalid patched request: expected an object",
-                    )
-                })?;
-                read_http_request(&object, "invalid patched request")
-            })())
-        })
-    }
-
     async fn run_operation(&self, operation: &JsOperation, cursor: &Value) -> Result<Complete> {
         // `state` and `compute` are opaque JavaScript values passed between
         // rounds untouched; `response` and `webview` are fresh host data.
@@ -424,7 +340,7 @@ impl JsFeed {
         let mut compute: Option<OpaqueJsValue> = None;
         let mut response: Option<HttpResponse> = None;
         let mut webview: Option<WebviewSnapshot> = None;
-        let mut internal_steps = 0usize;
+        let mut steps_left = MAX_INTERNAL_STEPS;
 
         loop {
             let auth = self.auth_info()?;
@@ -447,12 +363,7 @@ impl JsFeed {
                     next_state,
                     cache_key,
                 } => {
-                    internal_steps += 1;
-                    if internal_steps > MAX_INTERNAL_STEPS {
-                        return Err(crate::error::Error::javascript(
-                            "feed operation exceeded the internal step limit",
-                        ));
-                    }
+                    spend_step(&mut steps_left)?;
                     let request = self.apply_auth_patch(operation, request)?;
                     let http_response = self
                         .execute_cached_http(&request, cache_key.as_deref())
@@ -465,20 +376,15 @@ impl JsFeed {
                     input,
                     next_state,
                 } => {
-                    internal_steps += 1;
-                    if internal_steps > MAX_INTERNAL_STEPS {
-                        return Err(crate::error::Error::javascript(
-                            "feed operation exceeded the internal step limit",
-                        ));
-                    }
+                    spend_step(&mut steps_left)?;
                     let result = tokio::task::spawn_blocking(move || {
                         Sandbox::compute(&programs, &input, COMPUTE_TIMEOUT)
                     })
                     .await
                     .map_err(|error| {
-                        crate::error::Error::javascript(format!("compute worker failed: {error}"))
+                        Error::javascript(format!("compute worker failed: {error}"))
                     })??;
-                    compute = Some(self.restore_compute(result)?);
+                    compute = Some(restore_compute(&self.feed_object, &result)?);
                     state = next_state;
                 }
                 Step::Webview {
@@ -488,14 +394,9 @@ impl JsFeed {
                     next_state,
                 } => {
                     Self::validate_user_agent(&user_agent)?;
-                    internal_steps += 1;
-                    if internal_steps > MAX_INTERNAL_STEPS {
-                        return Err(crate::error::Error::javascript(
-                            "feed operation exceeded the internal step limit",
-                        ));
-                    }
+                    spend_step(&mut steps_left)?;
                     let handler = self.webview_handler()?.ok_or_else(|| {
-                        crate::error::Error::expected(
+                        Error::expected(
                             ExpectedErrorCode::AuthRequired,
                             "WebView verification is unavailable in this environment",
                         )
@@ -523,7 +424,7 @@ impl JsFeed {
                     });
                 }
                 Step::Fail { code, message } => {
-                    return Err(crate::error::Error::expected(
+                    return Err(Error::expected(
                         ExpectedErrorCode::from_code(&code),
                         message,
                     ));
@@ -538,8 +439,8 @@ impl JsFeed {
         cursor: &Value,
     ) -> Result<Page<T, Value>> {
         let complete = self.run_operation(operation, cursor).await?;
-        let items = serde_json::from_value(complete.items.unwrap_or(Value::Array(vec![])))
-            .map_err(|e| crate::error::Error::javascript(format!("invalid items: {e}")))?;
+        let items = serde_json::from_value(complete.items.unwrap_or(Value::Array(Vec::new())))
+            .map_err(|error| Error::javascript(format!("invalid items: {error}")))?;
         Ok(Page {
             items,
             next_cursor: complete.next_cursor.filter(|value| !value.is_null()),
@@ -549,7 +450,7 @@ impl JsFeed {
     async fn run_value<T: DeserializeOwned>(&self, operation: &JsOperation) -> Result<T> {
         let complete = self.run_operation(operation, &Value::Null).await?;
         serde_json::from_value(complete.value.unwrap_or(Value::Null))
-            .map_err(|e| crate::error::Error::javascript(format!("invalid value: {e}")))
+            .map_err(|error| Error::javascript(format!("invalid value: {error}")))
     }
 
     fn paged_stream<'a, T>(&'a self, operation: JsOperation) -> FeedStream<'a, T>
@@ -598,7 +499,7 @@ impl JsFeed {
                     Ok(item) => {
                         let id = get_id(&item);
                         if !seen.insert(id.clone()) {
-                            yield Err(crate::error::Error::duplicate_id(
+                            yield Err(Error::duplicate_id(
                                 feed_id.clone(), kind, id,
                             ));
                             break;
@@ -613,6 +514,14 @@ impl JsFeed {
             }
         })
     }
+}
+
+/// Count one internal step, failing once the loop budget is spent.
+fn spend_step(steps_left: &mut usize) -> Result<()> {
+    *steps_left = steps_left
+        .checked_sub(1)
+        .ok_or_else(|| Error::javascript("feed operation exceeded the internal step limit"))?;
+    Ok(())
 }
 
 impl Feed for JsFeed {
@@ -690,23 +599,8 @@ impl FeedAuthFlow for JsFeed {
 
     fn auth_entry(&self, _support: &Self::SupportAuth) -> Result<AuthEntry> {
         let entry = self.feed_object.with_realm(|ctx, feed_object| {
-            let (owner, function) =
-                super::bridge::resolve_method(&feed_object, LOGIN_ENTRY_HANDLER)?;
-            let result = super::bridge::call_method(&ctx, &owner, &function, &[])?;
-            Ok((|| {
-                let object = result.into_object().ok_or_else(|| {
-                    crate::error::Error::javascript("invalid auth entry: expected an object")
-                })?;
-                Ok(AuthEntry {
-                    url: required_string(&object, "url", "invalid auth entry")?,
-                    title: optional_string(&object, "title", "invalid auth entry")?,
-                    user_agent: required_string(
-                        &object,
-                        "user_agent",
-                        "invalid auth entry",
-                    )?,
-                })
-            })())
+            let result = call_handler(&ctx, &feed_object, LOGIN_ENTRY_HANDLER, &[])?;
+            Ok(read_auth_entry(&result))
         })?;
         Self::validate_user_agent(&entry.user_agent)?;
         Ok(entry)
@@ -714,37 +608,9 @@ impl FeedAuthFlow for JsFeed {
 
     fn parse_auth(&self, _support: &Self::SupportAuth, page: &AuthPageContext) -> Result<AuthInfo> {
         self.feed_object.with_realm(move |ctx, feed_object| {
-            let page_arg = build_auth_page(&ctx, page)?;
-            let (owner, function) =
-                super::bridge::resolve_method(&feed_object, LOGIN_PARSE_HANDLER)?;
-            let result = super::bridge::call_method(&ctx, &owner, &function, &[page_arg])?;
-            Ok((|| {
-                if let Some(object) = result.clone().into_object()
-                    && let Ok(step_type) = object.get::<_, String>("type")
-                    && step_type == "fail"
-                {
-                    let code = object
-                        .get::<_, String>("code")
-                        .unwrap_or_else(|_| "raise".to_owned());
-                    let message = object
-                        .get::<_, String>("message")
-                        .unwrap_or_else(|_| "authentication failed".to_owned());
-                    return Err(crate::error::Error::expected(
-                        ExpectedErrorCode::from_code(&code),
-                        message,
-                    ));
-                }
-                match js_to_json(&ctx, &result).map_err(|error| {
-                    crate::error::Error::javascript(format!(
-                        "invalid authentication result: {error}"
-                    ))
-                })? {
-                    Some(value) => Ok(value),
-                    None => Err(crate::error::Error::javascript(
-                        "invalid authentication result: method returned undefined",
-                    )),
-                }
-            })())
+            let page_arg = page.into_js(&ctx)?;
+            let result = call_handler(&ctx, &feed_object, LOGIN_PARSE_HANDLER, &[page_arg])?;
+            Ok(read_auth_result(&ctx, &result))
         })
     }
 
@@ -756,8 +622,7 @@ impl FeedAuthFlow for JsFeed {
         *self
             .auth_info
             .write()
-            .map_err(|_| crate::error::Error::invalid_feed("auth state lock poisoned"))? =
-            auth_info;
+            .map_err(|_| Error::invalid_feed("auth state lock poisoned"))? = auth_info;
         Ok(())
     }
 
@@ -769,10 +634,7 @@ impl FeedAuthFlow for JsFeed {
         if !self.has_auth_status {
             return Ok(AuthStatus::LoggedIn);
         }
-        let operation = JsOperation::new(
-            JsOperationKind::AuthStatus,
-            Value::Object(Default::default()),
-        );
+        let operation = JsOperation::new(JsOperationKind::AuthStatus, serde_json::json!({}));
         let valid: bool = self.run_value(&operation).await?;
         Ok(if valid {
             AuthStatus::LoggedIn

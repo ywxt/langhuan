@@ -7,12 +7,16 @@
 
 use aes::cipher::block_padding::{NoPadding, Pkcs7};
 use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit, StreamCipher};
+use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::{DeflateEncoder, GzEncoder};
-use flate2::Compression;
 use hmac::Mac;
-use rquickjs::{Ctx, Exception, FromJs, Function, Object, Result as JsResult, TypedArray, Value as JsValue};
+use rquickjs::{
+    Ctx, Exception, FromJs, Function, Object, Result as JsResult, TypedArray, Value as JsValue,
+};
 use sha2::Digest;
+
+use super::bridge::typed_bytes;
 
 /// Upper bound for decompressed output, matching the QuickJS heap limit.
 const MAX_EXPANSION_BYTES: usize = 32 * 1024 * 1024;
@@ -207,15 +211,75 @@ struct AesRequest {
 
 impl AesRequest {
     fn from_options<'js>(ctx: &Ctx<'js>, options: &Object<'js>) -> JsResult<Self> {
+        let options = Options {
+            ctx,
+            object: options,
+        };
         Ok(Self {
-            op: required_string(ctx, options, "op")?,
-            mode: required_string(ctx, options, "mode")?,
-            key: required_bytes(ctx, options, "key")?,
-            iv: optional_bytes(ctx, options, "iv")?,
-            data: required_bytes(ctx, options, "data")?,
-            padding: optional_string(options, "padding"),
-            aad: optional_bytes(ctx, options, "aad")?,
+            op: options.required_string("op")?,
+            mode: options.required_string("mode")?,
+            key: options.required_bytes("key")?,
+            iv: options.optional_bytes("iv")?,
+            data: options.required_bytes("data")?,
+            padding: options.optional_string("padding")?,
+            aad: options.optional_bytes("aad")?,
         })
+    }
+}
+
+/// Field readers for the `Crypto.aes` options object; every failure names
+/// the offending field.
+struct Options<'a, 'js> {
+    ctx: &'a Ctx<'js>,
+    object: &'a Object<'js>,
+}
+
+impl<'js> Options<'_, 'js> {
+    fn problem(&self, problem: String) -> rquickjs::Error {
+        Exception::throw_message(self.ctx, &format!("Crypto.aes: {problem}"))
+    }
+
+    fn required_string(&self, name: &str) -> JsResult<String> {
+        let value: JsValue = self.object.get(name)?;
+        if value.is_undefined() {
+            return Err(self.problem(format!("missing field `{name}`")));
+        }
+        value
+            .get::<String>()
+            .map_err(|_| self.problem(format!("`{name}` must be a string")))
+    }
+
+    fn optional_string(&self, name: &str) -> JsResult<Option<String>> {
+        let value: JsValue = self.object.get(name)?;
+        if value.is_undefined() || value.is_null() {
+            return Ok(None);
+        }
+        value
+            .get::<String>()
+            .map(Some)
+            .map_err(|_| self.problem(format!("`{name}` must be a string")))
+    }
+
+    fn required_bytes(&self, name: &str) -> JsResult<Vec<u8>> {
+        let value: JsValue = self.object.get(name)?;
+        if value.is_undefined() {
+            return Err(self.problem(format!("missing field `{name}`")));
+        }
+        self.byte_field(name, value)
+    }
+
+    fn optional_bytes(&self, name: &str) -> JsResult<Option<Vec<u8>>> {
+        let value: JsValue = self.object.get(name)?;
+        if value.is_undefined() || value.is_null() {
+            return Ok(None);
+        }
+        Ok(Some(self.byte_field(name, value)?))
+    }
+
+    fn byte_field(&self, name: &str, value: JsValue<'js>) -> JsResult<Vec<u8>> {
+        let typed = TypedArray::<u8>::from_js(self.ctx, value)
+            .map_err(|_| self.problem(format!("`{name}` must be a Uint8Array")))?;
+        typed_bytes(self.ctx, &typed)
     }
 }
 
@@ -261,13 +325,16 @@ fn aes_run<'js>(ctx: &Ctx<'js>, request: &AesRequest) -> JsResult<Vec<u8>> {
     let op = match request.op.as_str() {
         "encrypt" => Op::Encrypt,
         "decrypt" => Op::Decrypt,
-        other => return Err(fail(format!("`op` must be \"encrypt\" or \"decrypt\", got {other:?}"))),
+        other => {
+            return Err(fail(format!(
+                "`op` must be \"encrypt\" or \"decrypt\", got {other:?}"
+            )));
+        }
     };
     let Some(mode) = Mode::from_label(&request.mode) else {
         return Err(fail(format!("unknown mode {:?}", request.mode)));
     };
-    let padding =
-        parse_padding(mode.padded(), request.padding.as_deref()).map_err(fail)?;
+    let padding = parse_padding(mode.padded(), request.padding.as_deref()).map_err(fail)?;
     let iv = match (mode, request.iv.as_deref()) {
         (Mode::Ecb, Some(_)) => return Err(fail("`iv` must be omitted for ecb".to_owned())),
         (Mode::Ecb, None) => &[][..],
@@ -297,11 +364,19 @@ fn parse_padding(padded: bool, label: Option<&str>) -> Result<Padding, String> {
     match (padded, label) {
         (false, None | Some("none")) | (true, Some("none")) => Ok(Padding::None),
         (true, None | Some("pkcs7")) => Ok(Padding::Pkcs7),
-        (_, Some(other)) => Err(format!("`padding` must be \"pkcs7\" or \"none\", got {other:?}")),
+        (_, Some(other)) => Err(format!(
+            "`padding` must be \"pkcs7\" or \"none\", got {other:?}"
+        )),
     }
 }
 
-fn cbc_run(op: Op, key: &[u8], iv: &[u8], data: &[u8], padding: Padding) -> Result<Vec<u8>, String> {
+fn cbc_run(
+    op: Op,
+    key: &[u8],
+    iv: &[u8],
+    data: &[u8],
+    padding: Padding,
+) -> Result<Vec<u8>, String> {
     macro_rules! enc {
         ($ctor:ty, $pad:ty) => {{
             let cipher = <$ctor as KeyIvInit>::new_from_slices(key, iv)
@@ -387,32 +462,21 @@ fn ctr_run(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>, String> {
     }
 }
 
-fn gcm_run(
-    op: Op,
-    key: &[u8],
-    iv: &[u8],
-    data: &[u8],
-    aad: &[u8],
-) -> Result<Vec<u8>, String> {
+fn gcm_run(op: Op, key: &[u8], iv: &[u8], data: &[u8], aad: &[u8]) -> Result<Vec<u8>, String> {
     use aes_gcm::aead::{Aead, Payload};
     macro_rules! run {
         ($ctor:ty) => {{
             let cipher = <$ctor as KeyInit>::new_from_slice(key)
                 .map_err(|_| "invalid key length".to_owned())?;
             let nonce = aes_gcm::aead::generic_array::GenericArray::from_slice(iv);
-            let payload = Payload {
-                msg: data,
-                aad,
-            };
+            let payload = Payload { msg: data, aad };
             match op {
                 Op::Encrypt => cipher
                     .encrypt(nonce, payload)
                     .map_err(|_| "encryption failed".to_owned()),
-                Op::Decrypt => cipher
-                    .decrypt(nonce, payload)
-                    .map_err(|_| {
-                        "decryption failed (wrong key/iv/tag or corrupted data)".to_owned()
-                    }),
+                Op::Decrypt => cipher.decrypt(nonce, payload).map_err(|_| {
+                    "decryption failed (wrong key/iv/tag or corrupted data)".to_owned()
+                }),
             }
         }};
     }
@@ -445,7 +509,9 @@ fn gzip_decode(data: &[u8]) -> Result<Vec<u8>, String> {
         .read_to_end(&mut output)
         .map_err(|_| "invalid gzip data".to_owned())?;
     if output.len() > MAX_EXPANSION_BYTES {
-        return Err(format!("decompressed data exceeds {MAX_EXPANSION_BYTES} bytes"));
+        return Err(format!(
+            "decompressed data exceeds {MAX_EXPANSION_BYTES} bytes"
+        ));
     }
     Ok(output)
 }
@@ -467,7 +533,9 @@ fn inflate_raw_decode(data: &[u8]) -> Result<Vec<u8>, String> {
         .read_to_end(&mut output)
         .map_err(|_| "invalid deflate data".to_owned())?;
     if output.len() > MAX_EXPANSION_BYTES {
-        return Err(format!("decompressed data exceeds {MAX_EXPANSION_BYTES} bytes"));
+        return Err(format!(
+            "decompressed data exceeds {MAX_EXPANSION_BYTES} bytes"
+        ));
     }
     Ok(output)
 }
@@ -476,74 +544,8 @@ fn inflate_raw_decode(data: &[u8]) -> Result<Vec<u8>, String> {
 // Argument helpers
 // ---------------------------------------------------------------------------
 
-/// Copy the bytes of a typed array, rejecting detached buffers.
-fn typed_bytes<'js>(ctx: &Ctx<'js>, data: &TypedArray<'js, u8>) -> JsResult<Vec<u8>> {
-    // SAFETY: no JavaScript runs while the slice is borrowed.
-    match unsafe { data.as_bytes() } {
-        Some(slice) => Ok(slice.to_vec()),
-        None => Err(Exception::throw_message(
-            ctx,
-            "expected a Uint8Array, got a detached buffer",
-        )),
-    }
-}
-
 fn bytes_out<'js>(ctx: &Ctx<'js>, bytes: Vec<u8>) -> JsResult<TypedArray<'js, u8>> {
     TypedArray::<u8>::new_copy(ctx.clone(), &bytes)
-}
-
-fn required_string<'js>(ctx: &Ctx<'js>, object: &Object<'js>, name: &str) -> JsResult<String> {
-    let value: JsValue = object.get(name)?;
-    if value.is_undefined() {
-        return Err(Exception::throw_message(
-            ctx,
-            &format!("Crypto.aes: missing field `{name}`"),
-        ));
-    }
-    match String::from_js(ctx, value) {
-        Ok(value) => Ok(value),
-        Err(_) => Err(Exception::throw_message(
-            ctx,
-            &format!("Crypto.aes: `{name}` must be a string"),
-        )),
-    }
-}
-
-fn optional_string(object: &Object<'_>, name: &str) -> Option<String> {
-    object.get::<_, String>(name).ok()
-}
-
-fn required_bytes<'js>(
-    ctx: &Ctx<'js>,
-    object: &Object<'js>,
-    name: &str,
-) -> JsResult<Vec<u8>> {
-    let value: JsValue = object.get(name)?;
-    if value.is_undefined() {
-        return Err(Exception::throw_message(
-            ctx,
-            &format!("Crypto.aes: missing field `{name}`"),
-        ));
-    }
-    let typed = TypedArray::<u8>::from_js(ctx, value).map_err(|_| {
-        Exception::throw_message(ctx, &format!("Crypto.aes: `{name}` must be a Uint8Array"))
-    })?;
-    typed_bytes(ctx, &typed)
-}
-
-fn optional_bytes<'js>(
-    ctx: &Ctx<'js>,
-    object: &Object<'js>,
-    name: &str,
-) -> JsResult<Option<Vec<u8>>> {
-    let value: JsValue = object.get(name)?;
-    if value.is_undefined() || value.is_null() {
-        return Ok(None);
-    }
-    let typed = TypedArray::<u8>::from_js(ctx, value).map_err(|_| {
-        Exception::throw_message(ctx, &format!("Crypto.aes: `{name}` must be a Uint8Array"))
-    })?;
-    Ok(Some(typed_bytes(ctx, &typed)?))
 }
 
 #[cfg(test)]
@@ -566,13 +568,13 @@ mod tests {
         let data = b"abc";
         let mut md5 = md5::Md5::new();
         md5.update(data);
-        assert_eq!(
-            hex(&md5.finalize()),
-            "900150983cd24fb0d6963f7d28e17f72"
-        );
+        assert_eq!(hex(&md5.finalize()), "900150983cd24fb0d6963f7d28e17f72");
         let mut sha1 = sha1::Sha1::new();
         sha1.update(data);
-        assert_eq!(hex(&sha1.finalize()), "a9993e364706816aba3e25717850c26c9cd0d89d");
+        assert_eq!(
+            hex(&sha1.finalize()),
+            "a9993e364706816aba3e25717850c26c9cd0d89d"
+        );
         let mut sha256 = sha2::Sha256::new();
         sha256.update(data);
         assert_eq!(
@@ -658,12 +660,10 @@ mod tests {
             let key = vec![0x42u8; usize::from(length)];
             let iv = [0x11u8; 16];
             let data = b"arbitrary length payload!";
-            let sealed =
-                cbc_run(Op::Encrypt, &key, &iv, data, Padding::Pkcs7).unwrap();
+            let sealed = cbc_run(Op::Encrypt, &key, &iv, data, Padding::Pkcs7).unwrap();
             assert_eq!(sealed.len() % 16, 0);
             assert_ne!(sealed, data.to_vec());
-            let opened =
-                cbc_run(Op::Decrypt, &key, &iv, &sealed, Padding::Pkcs7).unwrap();
+            let opened = cbc_run(Op::Decrypt, &key, &iv, &sealed, Padding::Pkcs7).unwrap();
             assert_eq!(opened, data);
         }
         // A wrong key must fail padding validation.

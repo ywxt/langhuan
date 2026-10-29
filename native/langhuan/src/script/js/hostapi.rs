@@ -10,6 +10,8 @@ use encoding_rs::Encoding;
 use rquickjs::function::Opt;
 use rquickjs::{Ctx, Exception, Function, Object, Result as JsResult, TypedArray};
 
+use super::bridge::typed_bytes;
+
 /// Install `TextDecoder`, `TextEncoder`, and the `Bytes` namespace.
 pub(super) fn install<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
     install_text_decoder(ctx)?;
@@ -21,10 +23,7 @@ pub(super) fn install<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
 fn install_text_decoder<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
     let constructor = Function::new(
         ctx.clone(),
-        |ctx: Ctx<'js>,
-         label: Opt<String>,
-         options: Opt<Object<'js>>|
-         -> JsResult<Object<'js>> {
+        |ctx: Ctx<'js>, label: Opt<String>, options: Opt<Object<'js>>| -> JsResult<Object<'js>> {
             build_text_decoder(&ctx, label.0, options.0)
         },
     )?
@@ -56,9 +55,9 @@ fn build_text_decoder<'js>(
         Function::new(
             ctx.clone(),
             move |ctx: Ctx<'js>,
-                 data: Opt<TypedArray<'js, u8>>,
-                 options: Opt<Object<'js>>|
-                 -> JsResult<String> {
+                  data: Opt<TypedArray<'js, u8>>,
+                  options: Opt<Object<'js>>|
+                  -> JsResult<String> {
                 let options = options.0;
                 if flag(&ctx, options.as_ref(), "stream", false)? {
                     return Err(Exception::throw_message(
@@ -92,24 +91,21 @@ fn build_text_decoder<'js>(
 }
 
 fn install_text_encoder<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
-    let constructor = Function::new(
-        ctx.clone(),
-        |ctx: Ctx<'js>| -> JsResult<Object<'js>> {
-            let encoder = Object::new(ctx.clone())?;
-            encoder.set("encoding", "utf-8")?;
-            encoder.set(
-                "encode",
-                Function::new(
-                    ctx.clone(),
-                    |ctx: Ctx<'js>, input: Opt<String>| -> JsResult<TypedArray<'js, u8>> {
-                        let bytes = input.0.unwrap_or_default().into_bytes();
-                        TypedArray::<u8>::new_copy(ctx.clone(), &bytes)
-                    },
-                )?,
-            )?;
-            Ok(encoder)
-        },
-    )?
+    let constructor = Function::new(ctx.clone(), |ctx: Ctx<'js>| -> JsResult<Object<'js>> {
+        let encoder = Object::new(ctx.clone())?;
+        encoder.set("encoding", "utf-8")?;
+        encoder.set(
+            "encode",
+            Function::new(
+                ctx.clone(),
+                |ctx: Ctx<'js>, input: Opt<String>| -> JsResult<TypedArray<'js, u8>> {
+                    let bytes = input.0.unwrap_or_default().into_bytes();
+                    TypedArray::<u8>::new_copy(ctx.clone(), &bytes)
+                },
+            )?,
+        )?;
+        Ok(encoder)
+    })?
     .with_constructor(true);
     ctx.globals().set("TextEncoder", constructor)
 }
@@ -174,18 +170,6 @@ fn install_bytes<'js>(ctx: &Ctx<'js>) -> JsResult<()> {
 // ---------------------------------------------------------------------------
 // Argument helpers
 // ---------------------------------------------------------------------------
-
-/// Copy the bytes of a typed array, rejecting detached buffers.
-fn typed_bytes<'js>(ctx: &Ctx<'js>, data: &TypedArray<'js, u8>) -> JsResult<Vec<u8>> {
-    // SAFETY: no JavaScript runs while the slice is borrowed.
-    match unsafe { data.as_bytes() } {
-        Some(slice) => Ok(slice.to_vec()),
-        None => Err(Exception::throw_message(
-            ctx,
-            "expected a Uint8Array, got a detached buffer",
-        )),
-    }
-}
 
 /// Read an optional boolean property from an options object.
 fn flag<'js>(
@@ -267,7 +251,11 @@ fn from_base64(input: &str, url_safe: bool) -> Option<Vec<u8>> {
     };
     // Strip trailing padding, then require a valid remainder length and no
     // padding in the middle.
-    let padding = compact.iter().rev().take_while(|&&byte| byte == b'=').count();
+    let padding = compact
+        .iter()
+        .rev()
+        .take_while(|&&byte| byte == b'=')
+        .count();
     if padding > 2
         || padding == compact.len() && !compact.is_empty()
         || compact[..compact.len() - padding].contains(&b'=')
@@ -346,10 +334,7 @@ mod tests {
             from_base64(&to_base64(&bytes, false), false).unwrap(),
             bytes
         );
-        assert_eq!(
-            from_base64(&to_base64(&bytes, true), true).unwrap(),
-            bytes
-        );
+        assert_eq!(from_base64(&to_base64(&bytes, true), true).unwrap(), bytes);
     }
 
     #[test]

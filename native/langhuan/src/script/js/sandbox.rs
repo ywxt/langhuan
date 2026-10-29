@@ -1,9 +1,11 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rquickjs::{CaughtError, Context, Ctx, Object, Persistent, Runtime, Value as JsValue};
+use rquickjs::{CaughtError, Context, Ctx, IntoJs, Object, Persistent, Runtime, Value as JsValue};
 
-use super::bridge::{self, JsData};
+use super::bridge::{JsData, MAX_BRIDGE_BYTES, js_to_jsdata};
+#[cfg(test)]
+use super::bridge::{Json, call_handler, js_to_json};
 use super::crypto;
 use super::hostapi;
 use super::html;
@@ -46,6 +48,16 @@ impl JsObject {
         })
     }
 
+    /// Whether every path resolves to a function.
+    pub(super) fn has_functions(&self, paths: &[&[&str]]) -> Result<bool> {
+        for path in paths {
+            if !self.has_function(path)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     /// Run one exclusive unit of work inside the realm: build arguments as
     /// live values, call a method, and extract the result — all under the
     /// realm mutex, with no JSON round trip.
@@ -65,6 +77,15 @@ impl JsObject {
         sandbox
             .with_object(inner, |ctx, object| callback(ctx.clone(), object))
             .map_err(sandbox_error)?
+    }
+
+    /// [`with_realm`](Self::with_realm) for callers whose work cannot fail
+    /// host-side, so no inner result needs unwrapping.
+    pub(super) fn with_realm_js<T>(
+        &self,
+        callback: impl for<'js> FnOnce(Ctx<'js>, Object<'js>) -> rquickjs::Result<T>,
+    ) -> Result<T> {
+        self.with_realm(|ctx, object| callback(ctx, object).map(Ok))
     }
 
     fn lock_state(&self) -> Result<std::sync::MutexGuard<'_, JsObjectState>> {
@@ -132,64 +153,14 @@ impl Sandbox {
         // it to load source. The feed profile removes every JavaScript-visible
         // dynamic compiler below, before any untrusted feed source runs.
         let context = Context::full(&runtime).map_err(sandbox_error)?;
-        // Pure host utilities (TextDecoder/TextEncoder/Bytes) are installed in
-        // both profiles: they leak no capabilities, and compute programs may
-        // need them just like feed reducers do.
-        context
-            .with(|ctx| {
-                CaughtError::catch(&ctx, hostapi::install(&ctx)).map_err(|e| e.to_string())
-            })
-            .map_err(sandbox_error)?;
-        context
-            .with(|ctx| {
-                CaughtError::catch(&ctx, crypto::install(&ctx)).map_err(|e| e.to_string())
-            })
-            .map_err(sandbox_error)?;
+        // Pure host utilities (text, bytes, crypto, compression) are
+        // installed in both profiles: they leak no capabilities, and compute
+        // programs may need them just like feed reducers do.
+        context.with(|ctx| install_step(&ctx, hostapi::install))?;
+        context.with(|ctx| install_step(&ctx, crypto::install))?;
         if matches!(profile, SandboxProfile::Feed) {
-            context
-                .with(|ctx| {
-                    CaughtError::catch(&ctx, html::install(&ctx)).map_err(|e| e.to_string())
-                })
-                .map_err(sandbox_error)?;
-        }
-        if matches!(profile, SandboxProfile::Feed) {
-            context
-                .with(|ctx| {
-                    CaughtError::catch(
-                        &ctx,
-                        ctx.eval::<(), _>(
-                            r#"
-                            (() => {
-                              const prototypes = [
-                                Object.getPrototypeOf(function() {}),
-                                Object.getPrototypeOf(async function() {}),
-                                Object.getPrototypeOf(function*() {}),
-                                Object.getPrototypeOf(async function*() {}),
-                              ];
-                              for (const prototype of prototypes) {
-                                Object.defineProperty(prototype, "constructor", {
-                                  value: undefined,
-                                  writable: false,
-                                  configurable: false,
-                                });
-                              }
-                              Object.defineProperty(globalThis, "eval", {
-                                value: undefined,
-                                writable: false,
-                                configurable: false,
-                              });
-                              Object.defineProperty(globalThis, "Function", {
-                                value: undefined,
-                                writable: false,
-                                configurable: false,
-                              });
-                            })();
-                            "#,
-                        ),
-                    )
-                    .map_err(|error| error.to_string())
-                })
-                .map_err(sandbox_error)?;
+            context.with(|ctx| install_step(&ctx, html::install))?;
+            context.with(|ctx| install_step(&ctx, disable_dynamic_compilation))?;
         }
         Ok(Self {
             context,
@@ -206,7 +177,11 @@ impl Sandbox {
     /// the only value crossing out is the final program's result, deep-copied
     /// back as [`JsData`]. The realm is destroyed when this function returns
     /// and never shares globals with a feed.
-    pub(super) fn compute(programs: &[String], input: &JsData, timeout: Duration) -> Result<JsData> {
+    pub(super) fn compute(
+        programs: &[String],
+        input: &JsData,
+        timeout: Duration,
+    ) -> Result<JsData> {
         if programs.is_empty() || programs.len() > MAX_COMPUTE_PROGRAMS {
             return Err(Error::javascript(format!(
                 "compute requires 1..={MAX_COMPUTE_PROGRAMS} programs"
@@ -216,7 +191,7 @@ impl Sandbox {
         if source_bytes > MAX_COMPUTE_SOURCE_BYTES {
             return Err(Error::javascript("compute source exceeds the size limit"));
         }
-        if input.measure() > bridge::MAX_BRIDGE_BYTES {
+        if input.measure() > MAX_BRIDGE_BYTES {
             return Err(Error::javascript("compute input exceeds the size limit"));
         }
 
@@ -224,26 +199,24 @@ impl Sandbox {
         sandbox.reset_deadline()?;
         let output: crate::error::Result<JsData> = sandbox.context.with(|ctx| {
             let outcome: rquickjs::Result<crate::error::Result<JsData>> = (|| {
-                let input_value = bridge::jsdata_to_js(&ctx, input)?;
+                let input_value = input.into_js(&ctx)?;
                 ctx.globals().set("input", input_value)?;
                 let mut result = JsValue::new_undefined(ctx.clone());
                 for program in programs {
                     result = ctx.eval::<JsValue, _>(program.as_bytes())?;
                 }
-                Ok(bridge::js_to_jsdata(&result))
+                Ok(js_to_jsdata(&result))
             })();
             match CaughtError::catch(&ctx, outcome) {
                 Ok(result) => result,
-                Err(error) => {
-                    Err(Error::javascript(format!("native QuickJS sandbox: {error}")))
-                }
+                Err(error) => Err(sandbox_error(error.to_string())),
             }
         });
         let data = output?;
         if matches!(data, JsData::Undefined) {
             return Err(Error::javascript("compute returned undefined"));
         }
-        if data.measure() > bridge::MAX_BRIDGE_BYTES {
+        if data.measure() > MAX_BRIDGE_BYTES {
             return Err(Error::javascript("compute result exceeds the size limit"));
         }
         Ok(data)
@@ -348,22 +321,12 @@ impl JsObject {
         arguments: &[serde_json::Value],
     ) -> Result<serde_json::Value> {
         self.with_realm(|ctx, object| {
-            let (owner, name) = resolve_owner(object, path)?.ok_or_else(|| {
-                rquickjs::Error::new_from_js_message(
-                    "object",
-                    "function",
-                    format!("missing JavaScript method: {}", path.join(".")),
-                )
-            })?;
-            let function: rquickjs::Function = owner.get(name)?;
-            let mut call_arguments =
-                rquickjs::function::Args::new(ctx.clone(), arguments.len());
-            call_arguments.this(owner)?;
+            let mut values = Vec::with_capacity(arguments.len());
             for argument in arguments {
-                call_arguments.push_arg(bridge::json_to_js(&ctx, argument)?)?;
+                values.push(Json(argument).into_js(&ctx)?);
             }
-            let result: JsValue = function.call_arg(call_arguments)?;
-            let json = bridge::js_to_json(&ctx, &result)
+            let result = call_handler(&ctx, &object, path, &values)?;
+            let json = js_to_json(&ctx, &result)
                 .map_err(|error| {
                     rquickjs::Error::new_from_js_message("value", "JSON", error.to_string())
                 })?
@@ -383,6 +346,50 @@ impl JsObject {
 enum SandboxProfile {
     Feed,
     Compute,
+}
+
+/// Run one bootstrap step inside the realm, reporting caught exceptions as
+/// sandbox errors.
+fn install_step<'js, T>(
+    ctx: &Ctx<'js>,
+    step: impl FnOnce(&Ctx<'js>) -> rquickjs::Result<T>,
+) -> Result<T> {
+    CaughtError::catch(ctx, step(ctx)).map_err(|error| sandbox_error(error.to_string()))
+}
+
+/// Remove every JavaScript-visible dynamic compiler from the feed realm
+/// before any untrusted feed source runs. Compute realms keep `eval` because
+/// the host itself evaluates the provided programs.
+fn disable_dynamic_compilation<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<()> {
+    ctx.eval::<(), _>(
+        r#"
+        (() => {
+          const prototypes = [
+            Object.getPrototypeOf(function() {}),
+            Object.getPrototypeOf(async function() {}),
+            Object.getPrototypeOf(function*() {}),
+            Object.getPrototypeOf(async function*() {}),
+          ];
+          for (const prototype of prototypes) {
+            Object.defineProperty(prototype, "constructor", {
+              value: undefined,
+              writable: false,
+              configurable: false,
+            });
+          }
+          Object.defineProperty(globalThis, "eval", {
+            value: undefined,
+            writable: false,
+            configurable: false,
+          });
+          Object.defineProperty(globalThis, "Function", {
+            value: undefined,
+            writable: false,
+            configurable: false,
+          });
+        })();
+        "#,
+    )
 }
 
 fn sandbox_error(error: impl std::fmt::Display) -> Error {
