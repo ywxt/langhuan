@@ -1,21 +1,19 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rquickjs::function::Args;
-use rquickjs::{
-    CaughtError, Context, Ctx, Function, Object, Persistent, Runtime, Value as JsValue,
-};
-use serde_json::Value;
+use rquickjs::{CaughtError, Context, Ctx, Object, Persistent, Runtime, Value as JsValue};
 
+use super::bridge::{self, JsData};
 use super::html;
 use crate::error::{Error, Result};
 
 const QUICKJS_HEAP_LIMIT: usize = 32 * 1024 * 1024;
 const QUICKJS_STACK_LIMIT: usize = 1024 * 1024;
-const MAX_RESULT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_COMPUTE_PROGRAMS: usize = 8;
 const MAX_COMPUTE_SOURCE_BYTES: usize = 4 * 1024 * 1024;
 const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(test)]
+const MAX_RESULT_BYTES: usize = 16 * 1024 * 1024;
 
 /// A QuickJS object together with the sandbox that owns its context.
 pub(super) struct JsObject {
@@ -46,43 +44,25 @@ impl JsObject {
         })
     }
 
-    pub(super) fn call_json(&self, path: &[&str], arguments: &[Value]) -> Result<Value> {
-        let arguments = serde_json::to_string(arguments)
-            .map_err(|error| Error::javascript(error.to_string()))?;
+    /// Run one exclusive unit of work inside the realm: build arguments as
+    /// live values, call a method, and extract the result — all under the
+    /// realm mutex, with no JSON round trip.
+    ///
+    /// The callback returns the outer `rquickjs::Result` for engine failures
+    /// (including caught script exceptions) wrapping an inner `Result` for
+    /// host-side extraction errors, so both surfaces stay distinguishable.
+    pub(super) fn with_realm<T>(
+        &self,
+        callback: impl for<'js> FnOnce(
+            Ctx<'js>,
+            Object<'js>,
+        ) -> rquickjs::Result<crate::error::Result<T>>,
+    ) -> Result<T> {
         let mut state = self.lock_state()?;
         let JsObjectState { inner, sandbox } = &mut *state;
-        let json = sandbox.with_object(inner, |ctx, object| {
-            let (owner, name) = resolve_owner(object, path)?.ok_or_else(|| {
-                rquickjs::Error::new_from_js_message(
-                    "object",
-                    "function",
-                    format!("missing JavaScript method: {}", path.join(".")),
-                )
-            })?;
-            let function: Function = owner.get(name)?;
-            let parsed = ctx.json_parse(arguments)?;
-            let arguments = parsed.into_array().ok_or_else(|| {
-                rquickjs::Error::new_from_js_message("JSON", "Array", "arguments are not an array")
-            })?;
-            let mut call_arguments = Args::new(ctx.clone(), arguments.len());
-            call_arguments.this(owner)?;
-            for argument in arguments.iter::<JsValue>() {
-                call_arguments.push_arg(argument?)?;
-            }
-            let result: JsValue = function.call_arg(call_arguments)?;
-            ctx.json_stringify(result)?
-                .ok_or_else(|| {
-                    rquickjs::Error::new_from_js_message(
-                        "JavaScript value",
-                        "JSON",
-                        "method returned undefined",
-                    )
-                })?
-                .to_string()
-        })?;
-        sandbox.check_result_size(&json)?;
-        serde_json::from_str(&json)
-            .map_err(|error| Error::javascript(format!("invalid JavaScript result: {error}")))
+        sandbox
+            .with_object(inner, |ctx, object| callback(ctx.clone(), object))
+            .map_err(sandbox_error)?
     }
 
     fn lock_state(&self) -> Result<std::sync::MutexGuard<'_, JsObjectState>> {
@@ -92,7 +72,7 @@ impl JsObject {
     }
 }
 
-fn resolve_owner<'js>(
+pub(super) fn resolve_owner<'js>(
     mut object: Object<'js>,
     path: &[&str],
 ) -> rquickjs::Result<Option<(Object<'js>, String)>> {
@@ -206,10 +186,12 @@ impl Sandbox {
 
     /// Execute website-provided programs in a fresh, capability-free realm.
     ///
-    /// The only value crossing into the realm is JSON `input`; the only value
-    /// crossing out is the final program's JSON result. The realm is destroyed
-    /// when this function returns and never shares globals with a feed.
-    pub(super) fn compute(programs: &[String], input: &Value, timeout: Duration) -> Result<Value> {
+    /// The only value crossing into the realm is the [`JsData`] input,
+    /// materialized as a live JavaScript value (bytes become `Uint8Array`);
+    /// the only value crossing out is the final program's result, deep-copied
+    /// back as [`JsData`]. The realm is destroyed when this function returns
+    /// and never shares globals with a feed.
+    pub(super) fn compute(programs: &[String], input: &JsData, timeout: Duration) -> Result<JsData> {
         if programs.is_empty() || programs.len() > MAX_COMPUTE_PROGRAMS {
             return Err(Error::javascript(format!(
                 "compute requires 1..={MAX_COMPUTE_PROGRAMS} programs"
@@ -219,43 +201,37 @@ impl Sandbox {
         if source_bytes > MAX_COMPUTE_SOURCE_BYTES {
             return Err(Error::javascript("compute source exceeds the size limit"));
         }
-        let input_json = serde_json::to_string(input)
-            .map_err(|error| Error::javascript(format!("invalid compute input: {error}")))?;
-        if input_json.len() > MAX_RESULT_BYTES {
+        if input.measure() > bridge::MAX_BRIDGE_BYTES {
             return Err(Error::javascript("compute input exceeds the size limit"));
         }
 
         let sandbox = Self::new_compute(timeout)?;
         sandbox.reset_deadline()?;
-        let output = sandbox
-            .context
-            .with(|ctx| {
-                CaughtError::catch(
-                    &ctx,
-                    (|| {
-                        let input = ctx.json_parse(input_json)?;
-                        ctx.globals().set("input", input)?;
-                        let mut result = JsValue::new_undefined(ctx.clone());
-                        for program in programs {
-                            result = ctx.eval::<JsValue, _>(program.as_bytes())?;
-                        }
-                        ctx.json_stringify(result)?
-                            .ok_or_else(|| {
-                                rquickjs::Error::new_from_js_message(
-                                    "JavaScript value",
-                                    "JSON",
-                                    "compute returned undefined",
-                                )
-                            })?
-                            .to_string()
-                    })(),
-                )
-                .map_err(|error| error.to_string())
-            })
-            .map_err(sandbox_error)?;
-        sandbox.check_result_size(&output)?;
-        serde_json::from_str(&output)
-            .map_err(|error| Error::javascript(format!("invalid compute result: {error}")))
+        let output: crate::error::Result<JsData> = sandbox.context.with(|ctx| {
+            let outcome: rquickjs::Result<crate::error::Result<JsData>> = (|| {
+                let input_value = bridge::jsdata_to_js(&ctx, input)?;
+                ctx.globals().set("input", input_value)?;
+                let mut result = JsValue::new_undefined(ctx.clone());
+                for program in programs {
+                    result = ctx.eval::<JsValue, _>(program.as_bytes())?;
+                }
+                Ok(bridge::js_to_jsdata(&result))
+            })();
+            match CaughtError::catch(&ctx, outcome) {
+                Ok(result) => result,
+                Err(error) => {
+                    Err(Error::javascript(format!("native QuickJS sandbox: {error}")))
+                }
+            }
+        });
+        let data = output?;
+        if matches!(data, JsData::Undefined) {
+            return Err(Error::javascript("compute returned undefined"));
+        }
+        if data.measure() > bridge::MAX_BRIDGE_BYTES {
+            return Err(Error::javascript("compute result exceeds the size limit"));
+        }
+        Ok(data)
     }
 
     pub(super) fn eval_script(&mut self, code: &str) -> Result<()> {
@@ -335,6 +311,7 @@ impl Sandbox {
         Ok(())
     }
 
+    #[cfg(test)]
     fn check_result_size(&self, output: &str) -> Result<()> {
         if output.len() > MAX_RESULT_BYTES {
             return Err(Error::javascript(
@@ -342,6 +319,48 @@ impl Sandbox {
             ));
         }
         Ok(())
+    }
+}
+
+/// Test-only JSON round-trip helper exercising the same bridge the runtime
+/// uses, so JSON-shaped calls stay covered while production code goes through
+/// `with_realm` directly.
+#[cfg(test)]
+impl JsObject {
+    fn call_json(
+        &self,
+        path: &[&str],
+        arguments: &[serde_json::Value],
+    ) -> Result<serde_json::Value> {
+        self.with_realm(|ctx, object| {
+            let (owner, name) = resolve_owner(object, path)?.ok_or_else(|| {
+                rquickjs::Error::new_from_js_message(
+                    "object",
+                    "function",
+                    format!("missing JavaScript method: {}", path.join(".")),
+                )
+            })?;
+            let function: rquickjs::Function = owner.get(name)?;
+            let mut call_arguments =
+                rquickjs::function::Args::new(ctx.clone(), arguments.len());
+            call_arguments.this(owner)?;
+            for argument in arguments {
+                call_arguments.push_arg(bridge::json_to_js(&ctx, argument)?)?;
+            }
+            let result: JsValue = function.call_arg(call_arguments)?;
+            let json = bridge::js_to_json(&ctx, &result)
+                .map_err(|error| {
+                    rquickjs::Error::new_from_js_message("value", "JSON", error.to_string())
+                })?
+                .ok_or_else(|| {
+                    rquickjs::Error::new_from_js_message(
+                        "value",
+                        "JSON",
+                        "method returned undefined",
+                    )
+                })?;
+            Ok(Ok(json))
+        })
     }
 }
 
@@ -442,12 +461,12 @@ mod tests {
                 })"#
                 .to_owned(),
             ],
-            &serde_json::json!({ "value": 21 }),
+            &JsData::from_json(&serde_json::json!({ "value": 21 })),
             Duration::from_secs(5),
         )
         .unwrap();
         assert_eq!(
-            result,
+            result.into_json(),
             serde_json::json!({
                 "value": 42,
                 "evalType": "function",
@@ -464,18 +483,68 @@ mod tests {
 
         let next = Sandbox::compute(
             &["typeof globalThis.remoteValue".to_owned()],
-            &Value::Null,
+            &JsData::Null,
             Duration::from_secs(5),
         )
         .unwrap();
-        assert_eq!(next, serde_json::json!("undefined"));
+        assert_eq!(next.into_json(), serde_json::json!("undefined"));
+    }
+
+    #[test]
+    fn compute_input_and_result_can_carry_bytes() {
+        let result = Sandbox::compute(
+            &[
+                "globalThis.kept = input.bytes;".to_owned(),
+                r#"({ length: input.bytes.length, first: input.bytes[0], kind: Object.prototype.toString.call(globalThis.kept) })"#
+                    .to_owned(),
+            ],
+            &JsData::Obj(vec![(
+                "bytes".to_owned(),
+                JsData::Bytes(bytes::Bytes::from_static(&[7, 8, 9])),
+            )]),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(
+            result.into_json(),
+            serde_json::json!({
+                "length": 3,
+                "first": 7,
+                "kind": "[object Uint8Array]",
+            })
+        );
+
+        let echoed = Sandbox::compute(
+            &["input.bytes".to_owned()],
+            &JsData::Obj(vec![(
+                "bytes".to_owned(),
+                JsData::Bytes(bytes::Bytes::from_static(&[250, 251])),
+            )]),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(
+            echoed,
+            JsData::Bytes(bytes::Bytes::from_static(&[250, 251]))
+        );
+    }
+
+    #[test]
+    fn compute_rejects_undefined_results() {
+        let error = Sandbox::compute(
+            &["globalThis.nothing = 1; undefined".to_owned()],
+            &JsData::Null,
+            Duration::from_secs(5),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("undefined"));
     }
 
     #[test]
     fn compute_interrupts_infinite_loop() {
         let error = Sandbox::compute(
             &["while (true) {}".to_owned()],
-            &Value::Null,
+            &JsData::Null,
             Duration::from_millis(50),
         )
         .unwrap_err();

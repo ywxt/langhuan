@@ -231,6 +231,126 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn state_passes_through_as_a_live_javascript_value() {
+        let mut server = mockito::Server::new_async().await;
+        let _request = server
+            .mock("GET", "/book")
+            .with_status(200)
+            .with_body("ok")
+            .create_async()
+            .await;
+        let body = r#"(() => {
+          const empty = () => ({ type: "complete", items: [] });
+          function bookInfo(event) {
+            if (event.state == null) {
+              return {
+                type: "request",
+                request: { url: "__BASE__/book" },
+                next_state: {
+                  when: new Date(1234567890),
+                  blob: new Uint8Array([200, 201]),
+                  label: undefined,
+                },
+              };
+            }
+            const keptDate =
+              event.state.when instanceof Date &&
+              event.state.when.getTime() === 1234567890;
+            const keptBlob =
+              event.state.blob instanceof Uint8Array &&
+              event.state.blob.length === 2 &&
+              event.state.blob[1] === 201;
+            const keptUndefinedKey = "label" in event.state;
+            return {
+              type: "complete",
+              value: {
+                id: "1",
+                title: keptDate && keptBlob && keptUndefinedKey ? "ok" : "broken",
+                author: "Test",
+              },
+            };
+          }
+          return { search: empty, bookInfo, chapters: empty, paragraphs: empty };
+        })()"#
+            .replace("__BASE__", &server.url());
+        let feed = ScriptEngine::new()
+            .load_script(&source(3, &body))
+            .await
+            .unwrap();
+
+        let book = feed.book_info("1").await.unwrap();
+        assert_eq!(book.title, "ok");
+    }
+
+    #[tokio::test]
+    async fn request_body_can_carry_bytes() {
+        let mut server = mockito::Server::new_async().await;
+        let _request = server
+            .mock("POST", "/submit")
+            .match_body(mockito::Matcher::from(vec![65, 255, 0, 127]))
+            .with_status(200)
+            .with_body("stored")
+            .create_async()
+            .await;
+        let body = r#"(() => {
+          const empty = () => ({ type: "complete", items: [] });
+          function bookInfo(event) {
+            if (event.state == null) {
+              return {
+                type: "request",
+                request: {
+                  url: "__BASE__/submit",
+                  method: "POST",
+                  body: new Uint8Array([65, 255, 0, 127]),
+                },
+                next_state: true,
+              };
+            }
+            return {
+              type: "complete",
+              value: { id: "1", title: event.response.body, author: "Test" },
+            };
+          }
+          return { search: empty, bookInfo, chapters: empty, paragraphs: empty };
+        })()"#
+            .replace("__BASE__", &server.url());
+        let feed = ScriptEngine::new()
+            .load_script(&source(3, &body))
+            .await
+            .unwrap();
+
+        let book = feed.book_info("1").await.unwrap();
+        assert_eq!(book.title, "stored");
+    }
+
+    #[tokio::test]
+    async fn completed_items_reject_bytes_with_guidance() {
+        let body = r#"(() => {
+          function search() {
+            return {
+              type: "complete",
+              items: [{ id: "1", title: new Uint8Array([1]), author: "Test" }],
+            };
+          }
+          const empty = () => ({ type: "complete", items: [] });
+          const bookInfo = () => ({
+            type: "complete", value: { id: "1", title: "One", author: "Test" },
+          });
+          return { search, bookInfo, chapters: empty, paragraphs: empty };
+        })()"#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(3, body))
+            .await
+            .unwrap();
+
+        let collected = feed.search("x").collect::<Vec<_>>().await;
+        let Some(error) = collected[0].as_ref().err() else {
+            panic!("bytes must be rejected in completed items");
+        };
+        assert!(error.to_string().contains("Uint8Array"));
+    }
+
+    #[tokio::test]
     async fn keeps_returned_feed_object_between_calls() {
         let body = r#"(() => {
           let calls = 0;

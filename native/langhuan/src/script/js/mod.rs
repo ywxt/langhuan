@@ -1,3 +1,4 @@
+mod bridge;
 mod feed;
 mod html;
 mod sandbox;

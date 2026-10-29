@@ -4,12 +4,17 @@ use std::time::Duration;
 
 use async_stream::stream;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::sleep;
 use tokio_stream::StreamExt as _;
 
+use super::bridge::{
+    build_event, build_request_object, js_to_json, jsdata_to_js, json_to_js, optional_string,
+    read_http_request, read_step, required_string, JsData, OperationSpec, OpaqueJsValue, Round,
+    Step,
+};
 use super::sandbox::{JsObject, Sandbox};
 
 use crate::error::{ExpectedErrorCode, Result};
@@ -129,6 +134,17 @@ impl JsOperationKind {
             Self::AuthStatus => LOGIN_STATUS_HANDLER,
         }
     }
+
+    /// The snake-case operation name delivered in the reducer event.
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Search => "search",
+            Self::BookInfo => "book_info",
+            Self::Chapters => "chapters",
+            Self::Paragraphs => "paragraphs",
+            Self::AuthStatus => "auth_status",
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -156,76 +172,6 @@ pub struct JsFeed {
     response_cache: AsyncMutex<HashMap<String, HttpResponse>>,
     webview_handler: RwLock<Option<SharedWebviewHandler>>,
     feed_object: JsObject,
-}
-
-#[derive(Serialize)]
-struct JsEvent<'a> {
-    #[serde(flatten)]
-    operation: &'a JsOperation,
-    cursor: &'a Value,
-    state: &'a Value,
-    response: Option<JsResponse>,
-    compute: Option<Value>,
-    auth: Option<Value>,
-    webview: Option<WebviewSnapshot>,
-}
-
-#[derive(Serialize)]
-struct JsResponse {
-    status: u16,
-    headers: Vec<(String, String)>,
-    body: String,
-    url: String,
-}
-
-impl From<HttpResponse> for JsResponse {
-    fn from(response: HttpResponse) -> Self {
-        Self {
-            status: response.status,
-            headers: response.headers,
-            body: String::from_utf8_lossy(&response.body.0).into_owned(),
-            url: response.url,
-        }
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum JsStep {
-    Request {
-        request: HttpRequest,
-        #[serde(default)]
-        next_state: Value,
-        #[serde(default)]
-        cache_key: Option<String>,
-    },
-    Compute {
-        programs: Vec<String>,
-        #[serde(default)]
-        input: Value,
-        #[serde(default)]
-        next_state: Value,
-    },
-    Webview {
-        url: String,
-        #[serde(default)]
-        title: Option<String>,
-        user_agent: String,
-        #[serde(default)]
-        next_state: Value,
-    },
-    Complete {
-        #[serde(default)]
-        items: Option<Value>,
-        #[serde(default)]
-        value: Option<Value>,
-        #[serde(default)]
-        next_cursor: Option<Value>,
-    },
-    Fail {
-        code: String,
-        message: String,
-    },
 }
 
 struct Complete {
@@ -348,15 +294,27 @@ impl JsFeed {
         })
     }
 
-    fn call_method(&self, path: JsMethodPath, args: &[Value]) -> Result<Value> {
-        self.feed_object.call_json(path, args)
+    /// Invoke the operation's reducer once with a live event object.
+    fn invoke(&self, operation: &JsOperation, round: Round<'_>) -> Result<Step> {
+        let spec = OperationSpec {
+            kind: operation.kind.as_str(),
+            input: &operation.input,
+        };
+        let handler = operation.kind.handler();
+        self.feed_object.with_realm(move |ctx, feed_object| {
+            let event = build_event(&ctx, &spec, &round)?;
+            let (owner, function) = super::bridge::resolve_method(&feed_object, handler)?;
+            let result = super::bridge::call_method(&ctx, &owner, &function, &[event])?;
+            Ok(read_step(&ctx, &result))
+        })
     }
 
-    fn invoke(&self, operation: &JsOperation, event: &JsEvent<'_>) -> Result<JsStep> {
-        let event = Self::to_js_value(event, "feed event")?;
-        let value = self.call_method(operation.kind.handler(), &[event])?;
-        serde_json::from_value(value)
-            .map_err(|e| crate::error::Error::javascript(format!("invalid feed step: {e}")))
+    /// Materialize a compute result into the feed realm as an opaque value.
+    fn restore_compute(&self, data: JsData) -> Result<OpaqueJsValue> {
+        self.feed_object.with_realm(move |ctx, _| {
+            let value = jsdata_to_js(&ctx, &data)?;
+            Ok(Ok(OpaqueJsValue::save(&ctx, value)))
+        })
     }
 
     async fn execute_http_with_retry(&self, request: &HttpRequest) -> Result<HttpResponse> {
@@ -418,38 +376,56 @@ impl JsFeed {
         let Some(auth) = self.auth_info()? else {
             return Ok(request);
         };
-        let value = self.call_method(
-            LOGIN_PATCH_REQUEST_HANDLER,
-            &[
-                Self::to_js_value(operation, "operation")?,
-                Self::to_js_value(&request, "HTTP request")?,
-                auth,
-            ],
-        )?;
-        serde_json::from_value(value)
-            .map_err(|e| crate::error::Error::javascript(format!("invalid patched request: {e}")))
+        let operation_json = Self::to_js_value(operation, "operation")?;
+        self.feed_object.with_realm(move |ctx, feed_object| {
+            let operation_arg = json_to_js(&ctx, &operation_json)?;
+            let request_arg = build_request_object(&ctx, &request)?;
+            let auth_arg = json_to_js(&ctx, &auth)?;
+            let (owner, function) =
+                super::bridge::resolve_method(&feed_object, LOGIN_PATCH_REQUEST_HANDLER)?;
+            let result = super::bridge::call_method(
+                &ctx,
+                &owner,
+                &function,
+                &[operation_arg, request_arg, auth_arg],
+            )?;
+            Ok((|| {
+                let object = result.into_object().ok_or_else(|| {
+                    crate::error::Error::javascript(
+                        "invalid patched request: expected an object",
+                    )
+                })?;
+                read_http_request(&object, "invalid patched request")
+            })())
+        })
     }
 
     async fn run_operation(&self, operation: &JsOperation, cursor: &Value) -> Result<Complete> {
-        let mut state = Value::Null;
-        let mut response = None;
-        let mut compute = None;
-        let mut webview = None;
+        // `state` and `compute` are opaque JavaScript values passed between
+        // rounds untouched; `response` and `webview` are fresh host data.
+        let mut state: Option<OpaqueJsValue> = None;
+        let mut compute: Option<OpaqueJsValue> = None;
+        let mut response: Option<HttpResponse> = None;
+        let mut webview: Option<WebviewSnapshot> = None;
         let mut internal_steps = 0usize;
 
         loop {
             let auth = self.auth_info()?;
-            let event = JsEvent {
-                operation,
+            let round = Round {
                 cursor,
-                state: &state,
-                response: response.take(),
+                state: state.take(),
                 compute: compute.take(),
-                auth,
-                webview: webview.take(),
+                response: response.as_ref(),
+                auth: auth.as_ref(),
+                webview: webview.as_ref(),
             };
-            match self.invoke(operation, &event)? {
-                JsStep::Request {
+            let step = self.invoke(operation, round)?;
+            // `response` and `webview` are one-shot: the reducer saw them this
+            // round, so the next round must not deliver them again.
+            response = None;
+            webview = None;
+            match step {
+                Step::Request {
                     request,
                     next_state,
                     cache_key,
@@ -465,9 +441,9 @@ impl JsFeed {
                         .execute_cached_http(&request, cache_key.as_deref())
                         .await?;
                     state = next_state;
-                    response = Some(http_response.into());
+                    response = Some(http_response);
                 }
-                JsStep::Compute {
+                Step::Compute {
                     programs,
                     input,
                     next_state,
@@ -485,10 +461,10 @@ impl JsFeed {
                     .map_err(|error| {
                         crate::error::Error::javascript(format!("compute worker failed: {error}"))
                     })??;
+                    compute = Some(self.restore_compute(result)?);
                     state = next_state;
-                    compute = Some(result);
                 }
-                JsStep::Webview {
+                Step::Webview {
                     url,
                     title,
                     user_agent,
@@ -518,7 +494,7 @@ impl JsFeed {
                     state = next_state;
                     webview = Some(snapshot);
                 }
-                JsStep::Complete {
+                Step::Complete {
                     items,
                     value,
                     next_cursor,
@@ -529,7 +505,7 @@ impl JsFeed {
                         next_cursor,
                     });
                 }
-                JsStep::Fail { code, message } => {
+                Step::Fail { code, message } => {
                     return Err(crate::error::Error::expected(
                         ExpectedErrorCode::from_code(&code),
                         message,
@@ -696,28 +672,64 @@ impl FeedAuthFlow for JsFeed {
     }
 
     fn auth_entry(&self, _support: &Self::SupportAuth) -> Result<AuthEntry> {
-        let value = self.call_method(LOGIN_ENTRY_HANDLER, &[])?;
-        let entry: AuthEntry = serde_json::from_value(value)
-            .map_err(|e| crate::error::Error::javascript(format!("invalid auth entry: {e}")))?;
+        let entry = self.feed_object.with_realm(|ctx, feed_object| {
+            let (owner, function) =
+                super::bridge::resolve_method(&feed_object, LOGIN_ENTRY_HANDLER)?;
+            let result = super::bridge::call_method(&ctx, &owner, &function, &[])?;
+            Ok((|| {
+                let object = result.into_object().ok_or_else(|| {
+                    crate::error::Error::javascript("invalid auth entry: expected an object")
+                })?;
+                Ok(AuthEntry {
+                    url: required_string(&object, "url", "invalid auth entry")?,
+                    title: optional_string(&object, "title", "invalid auth entry")?,
+                    user_agent: required_string(
+                        &object,
+                        "user_agent",
+                        "invalid auth entry",
+                    )?,
+                })
+            })())
+        })?;
         Self::validate_user_agent(&entry.user_agent)?;
         Ok(entry)
     }
 
     fn parse_auth(&self, _support: &Self::SupportAuth, page: &AuthPageContext) -> Result<AuthInfo> {
-        let page = Self::to_js_value(page, "authentication page")?;
-        let value = self.call_method(LOGIN_PARSE_HANDLER, &[page])?;
-        if value.get("type").and_then(Value::as_str) == Some("fail") {
-            return Err(crate::error::Error::expected(
-                ExpectedErrorCode::from_code(
-                    value.get("code").and_then(Value::as_str).unwrap_or("raise"),
-                ),
-                value
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .unwrap_or("authentication failed"),
-            ));
-        }
-        Ok(value)
+        let page_json = Self::to_js_value(page, "authentication page")?;
+        self.feed_object.with_realm(move |ctx, feed_object| {
+            let page_arg = json_to_js(&ctx, &page_json)?;
+            let (owner, function) =
+                super::bridge::resolve_method(&feed_object, LOGIN_PARSE_HANDLER)?;
+            let result = super::bridge::call_method(&ctx, &owner, &function, &[page_arg])?;
+            Ok((|| {
+                if let Some(object) = result.clone().into_object()
+                    && let Ok(step_type) = object.get::<_, String>("type")
+                    && step_type == "fail"
+                {
+                    let code = object
+                        .get::<_, String>("code")
+                        .unwrap_or_else(|_| "raise".to_owned());
+                    let message = object
+                        .get::<_, String>("message")
+                        .unwrap_or_else(|_| "authentication failed".to_owned());
+                    return Err(crate::error::Error::expected(
+                        ExpectedErrorCode::from_code(&code),
+                        message,
+                    ));
+                }
+                match js_to_json(&ctx, &result).map_err(|error| {
+                    crate::error::Error::javascript(format!(
+                        "invalid authentication result: {error}"
+                    ))
+                })? {
+                    Some(value) => Ok(value),
+                    None => Err(crate::error::Error::javascript(
+                        "invalid authentication result: method returned undefined",
+                    )),
+                }
+            })())
+        })
     }
 
     fn set_auth_info(
