@@ -63,8 +63,7 @@ class ChaptersNotifier extends Notifier<ChaptersState> {
     try {
       final items = await ref
           .read(feedServiceProvider)
-          .chapters(feedId: feedId, bookId: bookId)
-          .toList();
+          .chapters(feedId: feedId, bookId: bookId);
       if (runToken != _runToken) return;
 
       state = state.copyWith(items: items, isLoading: false);
@@ -241,8 +240,7 @@ class ChapterContentNotifier extends Notifier<ChapterContentState> {
     try {
       final items = await ref
           .read(feedServiceProvider)
-          .paragraphs(feedId: feedId, bookId: bookId, chapterId: chapterId)
-          .toList();
+          .paragraphs(feedId: feedId, bookId: bookId, chapterId: chapterId);
       if (runToken != _runToken) return;
 
       state = state.copyWith(items: items, isLoading: false);

@@ -65,8 +65,7 @@ class ReaderScreenController extends ChangeNotifier {
     try {
       final chapters = await _ref
           .read(feedServiceProvider)
-          .chapters(feedId: feedId, bookId: bookId)
-          .toList();
+          .chapters(feedId: feedId, bookId: bookId);
 
       final fallbackChapterId = _resolveInitialChapterId(chapters);
       final fallbackParagraphId = fallbackChapterId == initialChapterId
@@ -200,8 +199,7 @@ class ReaderScreenController extends ChangeNotifier {
             bookId: bookId,
             chapterId: chapterId,
             forceRefresh: true,
-          )
-          .drain<void>();
+          );
       // The backend cache is warm now — make the reader re-read the chapter
       // so the new content actually shows.
       _readerController.requestChapterReload(chapterId);

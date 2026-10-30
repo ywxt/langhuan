@@ -190,11 +190,11 @@ class FakeFeedService implements FeedService {
     return handler(feedId, bookId);
   }
 
-  final Stream<ChapterInfoModel> Function(String feedId, String bookId)?
+  final Future<List<ChapterInfoModel>> Function(String feedId, String bookId)?
   chaptersHandler;
 
   @override
-  Stream<ChapterInfoModel> chapters({
+  Future<List<ChapterInfoModel>> chapters({
     required String feedId,
     required String bookId,
     bool forceRefresh = false,
@@ -206,7 +206,7 @@ class FakeFeedService implements FeedService {
     return handler(feedId, bookId);
   }
 
-  final Stream<ParagraphContent> Function(
+  final Future<List<ParagraphContent>> Function(
     String feedId,
     String bookId,
     String chapterId, {
@@ -215,7 +215,7 @@ class FakeFeedService implements FeedService {
   paragraphsHandler;
 
   @override
-  Stream<ParagraphContent> paragraphs({
+  Future<List<ParagraphContent>> paragraphs({
     required String feedId,
     required String bookId,
     required String chapterId,

@@ -161,14 +161,12 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     String chapterId, {
     bool forceRefresh = false,
   }) {
-    return widget.feedService
-        .paragraphs(
-          feedId: widget.feedId,
-          bookId: widget.bookId,
-          chapterId: chapterId,
-          forceRefresh: forceRefresh,
-        )
-        .toList();
+    return widget.feedService.paragraphs(
+      feedId: widget.feedId,
+      bookId: widget.bookId,
+      chapterId: chapterId,
+      forceRefresh: forceRefresh,
+    );
   }
 
   // ── Controller commands ─────────────────────────────────────────────────

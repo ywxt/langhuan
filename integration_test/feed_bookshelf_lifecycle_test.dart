@@ -97,9 +97,7 @@ void main() {
       BookshelfAddResult.alreadyExists,
     );
 
-    final chapters = await service
-        .chapters(feedId: _feedId, bookId: _bookId)
-        .toList();
+    final chapters = await service.chapters(feedId: _feedId, bookId: _bookId);
     expect(chapters.map((chapter) => chapter.id), ['1', '2', '3']);
 
     await service.setReadingProgress(

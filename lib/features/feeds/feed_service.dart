@@ -459,18 +459,17 @@ class FeedService {
   // Chapters
   // -------------------------------------------------------------------------
 
-  Stream<ChapterInfoModel> chapters({
+  Future<List<ChapterInfoModel>> chapters({
     required String feedId,
     required String bookId,
     bool forceRefresh = false,
-  }) {
-    return Stream.fromFuture(
-      rust_stream.listChapters(
-        feedId: feedId,
-        bookId: bookId,
-        forceRefresh: forceRefresh,
-      ),
-    ).expand((items) => items).map(ChapterInfoModel.fromRust);
+  }) async {
+    final items = await rust_stream.chapters(
+      feedId: feedId,
+      bookId: bookId,
+      forceRefresh: forceRefresh,
+    );
+    return items.map(ChapterInfoModel.fromRust).toList(growable: false);
   }
 
   // -------------------------------------------------------------------------
@@ -494,20 +493,18 @@ class FeedService {
   // Paragraphs
   // -------------------------------------------------------------------------
 
-  Stream<ParagraphContent> paragraphs({
+  Future<List<ParagraphContent>> paragraphs({
     required String feedId,
     required String bookId,
     required String chapterId,
     bool forceRefresh = false,
   }) {
-    return Stream.fromFuture(
-      rust_stream.listParagraphs(
-        feedId: feedId,
-        bookId: bookId,
-        chapterId: chapterId,
-        forceRefresh: forceRefresh,
-      ),
-    ).expand((items) => items);
+    return rust_stream.paragraphs(
+      feedId: feedId,
+      bookId: bookId,
+      chapterId: chapterId,
+      forceRefresh: forceRefresh,
+    );
   }
 
   // -------------------------------------------------------------------------

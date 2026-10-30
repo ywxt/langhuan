@@ -1,8 +1,8 @@
-//! [`FeedActor`] — handles feed queries: book info and pull-based streams.
+//! [`FeedActor`] — handles feed queries.
 //!
-//! The generic [`PullStream<T>`] encapsulates a spawned producer task that
-//! iterates a feed stream and sends items through a bounded channel.  Dart
-//! calls `next()` to pull one item at a time.
+//! Search remains pull-based because callers consume and cancel it
+//! incrementally. Finite chapter and paragraph queries are collected in a
+//! background task and returned as one value.
 
 use std::sync::Arc;
 
@@ -104,47 +104,21 @@ async fn drive_stream<S, SrcItem, T, F>(
     }
 }
 
-/// Like [`drive_stream`] but runs each paragraph through a [`TransformChain`].
-///
-/// A single input paragraph may produce zero or more output paragraphs after
-/// transformation (drop / insert).
-async fn drive_stream_transformed<S>(
-    stream: S,
-    tx: mpsc::Sender<Result<ParagraphContent, BridgeError>>,
-    mut transform_chain: TransformChain,
-) where
-    S: tokio_stream::Stream<Item = Result<Paragraph, langhuan::error::Error>>,
-{
-    tokio::pin!(stream);
-    while let Some(result) = stream.next().await {
-        match result {
-            Ok(paragraph) => {
-                for p in transform_chain.apply(paragraph) {
-                    let content = match p {
-                        Paragraph::Title { id, text } => ParagraphContent::Title {
-                            id: ParagraphId::from(id),
-                            text,
-                        },
-                        Paragraph::Text { id, content } => ParagraphContent::Text {
-                            id: ParagraphId::from(id),
-                            content,
-                        },
-                        Paragraph::Image { id, url, alt } => ParagraphContent::Image {
-                            id: ParagraphId::from(id),
-                            url,
-                            alt,
-                        },
-                    };
-                    if tx.send(Ok(content)).await.is_err() {
-                        return; // receiver dropped
-                    }
-                }
-            }
-            Err(e) => {
-                let _ = tx.send(Err(BridgeError::from(e))).await;
-                return; // terminate stream on error
-            }
-        }
+fn paragraph_content(paragraph: Paragraph) -> ParagraphContent {
+    match paragraph {
+        Paragraph::Title { id, text } => ParagraphContent::Title {
+            id: ParagraphId::from(id),
+            text,
+        },
+        Paragraph::Text { id, content } => ParagraphContent::Text {
+            id: ParagraphId::from(id),
+            content,
+        },
+        Paragraph::Image { id, url, alt } => ParagraphContent::Image {
+            id: ParagraphId::from(id),
+            url,
+            alt,
+        },
     }
 }
 
@@ -167,13 +141,13 @@ pub struct OpenAggregatedSearchStream {
     pub keyword: String,
 }
 
-pub struct OpenChaptersStream {
+pub struct GetChapters {
     pub feed_id: String,
     pub book_id: String,
     pub force_refresh: bool,
 }
 
-pub struct OpenParagraphsStream {
+pub struct GetParagraphs {
     pub feed_id: String,
     pub book_id: String,
     pub chapter_id: String,
@@ -412,37 +386,43 @@ async fn emit_feed_error(
 }
 
 #[async_trait]
-impl Handler<OpenChaptersStream> for FeedActor {
-    type Result = Result<PullStream<ChapterItem>, BridgeError>;
+impl Handler<GetChapters> for FeedActor {
+    type Result = Result<JoinHandle<Result<Vec<ChapterItem>, BridgeError>>, BridgeError>;
 
-    async fn handle(&mut self, msg: OpenChaptersStream, _: &Context<Self>) -> Self::Result {
-        tracing::debug!(feed_id = %msg.feed_id, book_id = %msg.book_id, force_refresh = msg.force_refresh, "open chapters stream");
+    async fn handle(&mut self, msg: GetChapters, _: &Context<Self>) -> Self::Result {
+        tracing::debug!(feed_id = %msg.feed_id, book_id = %msg.book_id, force_refresh = msg.force_refresh, "get chapters");
         let feed = self.resolve_feed(&msg.feed_id).await?;
         if msg.force_refresh {
             feed.clear_chapters_cache(&msg.book_id).await?;
         }
         let book_id = msg.book_id;
-        Ok(spawn_pull_stream(|tx| async move {
-            drive_stream(feed.chapters(&book_id), tx, |item| ChapterItem {
-                id: item.id,
-                title: item.title,
-            })
-            .await
+        Ok(tokio::spawn(async move {
+            let stream = feed.chapters(&book_id);
+            tokio::pin!(stream);
+            let mut items = Vec::new();
+            while let Some(item) = stream.next().await {
+                let item = item.map_err(BridgeError::from)?;
+                items.push(ChapterItem {
+                    id: item.id,
+                    title: item.title,
+                });
+            }
+            Ok(items)
         }))
     }
 }
 
 #[async_trait]
-impl Handler<OpenParagraphsStream> for FeedActor {
-    type Result = Result<PullStream<ParagraphContent>, BridgeError>;
+impl Handler<GetParagraphs> for FeedActor {
+    type Result = Result<JoinHandle<Result<Vec<ParagraphContent>, BridgeError>>, BridgeError>;
 
-    async fn handle(&mut self, msg: OpenParagraphsStream, _: &Context<Self>) -> Self::Result {
+    async fn handle(&mut self, msg: GetParagraphs, _: &Context<Self>) -> Self::Result {
         tracing::debug!(
             feed_id = %msg.feed_id,
             book_id = %msg.book_id,
             chapter_id = %msg.chapter_id,
             force_refresh = msg.force_refresh,
-            "open paragraphs stream"
+            "get paragraphs"
         );
         let feed = self.resolve_feed(&msg.feed_id).await?;
         if msg.force_refresh {
@@ -460,42 +440,26 @@ impl Handler<OpenParagraphsStream> for FeedActor {
         let book_id = msg.book_id;
         let chapter_id = msg.chapter_id;
 
-        if transform_chain.is_empty() {
-            // Fast path — no transforms, avoid per-paragraph overhead.
-            Ok(spawn_pull_stream(|tx| async move {
-                drive_stream(
-                    feed.paragraphs(&book_id, &chapter_id),
-                    tx,
-                    |paragraph| match paragraph {
-                        Paragraph::Title { id, text } => ParagraphContent::Title {
-                            id: ParagraphId::from(id),
-                            text,
-                        },
-                        Paragraph::Text { id, content } => ParagraphContent::Text {
-                            id: ParagraphId::from(id),
-                            content,
-                        },
-                        Paragraph::Image { id, url, alt } => ParagraphContent::Image {
-                            id: ParagraphId::from(id),
-                            url,
-                            alt,
-                        },
-                    },
-                )
-                .await
-            }))
-        } else {
-            // Transform path — init the chain and apply to each paragraph.
-            transform_chain.init(&chapter_id);
-            Ok(spawn_pull_stream(|tx| async move {
-                drive_stream_transformed(
-                    feed.paragraphs(&book_id, &chapter_id),
-                    tx,
-                    transform_chain,
-                )
-                .await
-            }))
-        }
+        transform_chain.init(&chapter_id);
+        Ok(tokio::spawn(async move {
+            let stream = feed.paragraphs(&book_id, &chapter_id);
+            tokio::pin!(stream);
+            let mut items = Vec::new();
+            while let Some(paragraph) = stream.next().await {
+                let paragraph = paragraph.map_err(BridgeError::from)?;
+                if transform_chain.is_empty() {
+                    items.push(paragraph_content(paragraph));
+                } else {
+                    items.extend(
+                        transform_chain
+                            .apply(paragraph)
+                            .into_iter()
+                            .map(paragraph_content),
+                    );
+                }
+            }
+            Ok(items)
+        }))
     }
 }
 

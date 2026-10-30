@@ -37,13 +37,14 @@ void main() {
     bool Function(String chapterId)? failFor,
   }) {
     return FakeFeedService(
-      paragraphsHandler: (feedId, bookId, chapterId, {forceRefresh = false}) {
-        calls.add((feedId, bookId, chapterId, forceRefresh));
-        if (failFor?.call(chapterId) ?? false) {
-          return Stream.error(StateError('boom'));
-        }
-        return Stream.fromIterable(data[chapterId] ?? const []);
-      },
+      paragraphsHandler:
+          (feedId, bookId, chapterId, {forceRefresh = false}) async {
+            calls.add((feedId, bookId, chapterId, forceRefresh));
+            if (failFor?.call(chapterId) ?? false) {
+              throw StateError('boom');
+            }
+            return data[chapterId] ?? const [];
+          },
     );
   }
 

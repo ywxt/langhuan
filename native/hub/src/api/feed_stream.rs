@@ -1,7 +1,7 @@
 use crate::actors::addresses;
 use crate::actors::feed_actor::{
-    GetBookInfo, OpenAggregatedSearchStream, OpenChaptersStream, OpenParagraphsStream,
-    OpenSearchStream, PullStream,
+    GetBookInfo, GetChapters, GetParagraphs, OpenAggregatedSearchStream, OpenSearchStream,
+    PullStream,
 };
 
 use super::types::BookInfo;
@@ -31,32 +31,6 @@ pub struct AggregatedSearchStream(PullStream<AggregatedSearchEvent>);
 
 impl AggregatedSearchStream {
     pub async fn next(&mut self) -> Result<Option<AggregatedSearchEvent>, BridgeError> {
-        self.0.next().await
-    }
-
-    pub fn cancel(&mut self) {
-        self.0.cancel();
-    }
-}
-
-/// A pull-based stream of chapter items.
-pub struct FeedChaptersStream(PullStream<ChapterItem>);
-
-impl FeedChaptersStream {
-    pub async fn next(&mut self) -> Result<Option<ChapterItem>, BridgeError> {
-        self.0.next().await
-    }
-
-    pub fn cancel(&mut self) {
-        self.0.cancel();
-    }
-}
-
-/// A pull-based stream of paragraph content.
-pub struct FeedParagraphsStream(PullStream<ParagraphContent>);
-
-impl FeedParagraphsStream {
-    pub async fn next(&mut self) -> Result<Option<ParagraphContent>, BridgeError> {
         self.0.next().await
     }
 
@@ -97,60 +71,27 @@ pub async fn open_aggregated_search_stream(
     Ok(AggregatedSearchStream(stream))
 }
 
-/// Open a pull-based chapters stream.
-pub async fn open_chapters_stream(
-    feed_id: String,
-    book_id: String,
-    force_refresh: bool,
-) -> Result<FeedChaptersStream, BridgeError> {
-    let stream = addresses()?
-        .feed
-        .clone()
-        .send(OpenChaptersStream {
-            feed_id,
-            book_id,
-            force_refresh,
-        })
-        .await??;
-    Ok(FeedChaptersStream(stream))
-}
-
 /// Fetch a complete chapter list in one bridge call.
 ///
 /// Reader startup needs the whole list before it can restore a saved
-/// position. Batching here avoids one Dart/Rust bridge round-trip per chapter
-/// on large books while retaining the pull-stream API for other callers.
-pub async fn list_chapters(
+/// position. The actor collects it in one background task, avoiding both
+/// per-item channels and per-item Dart/Rust bridge round-trips.
+pub async fn chapters(
     feed_id: String,
     book_id: String,
     force_refresh: bool,
 ) -> Result<Vec<ChapterItem>, BridgeError> {
-    let mut stream = open_chapters_stream(feed_id, book_id, force_refresh).await?;
-    let mut items = Vec::new();
-    while let Some(item) = stream.next().await? {
-        items.push(item);
-    }
-    Ok(items)
-}
-
-/// Open a pull-based paragraphs stream.
-pub async fn open_paragraphs_stream(
-    feed_id: String,
-    book_id: String,
-    chapter_id: String,
-    force_refresh: bool,
-) -> Result<FeedParagraphsStream, BridgeError> {
-    let stream = addresses()?
+    let task = addresses()?
         .feed
         .clone()
-        .send(OpenParagraphsStream {
+        .send(GetChapters {
             feed_id,
             book_id,
-            chapter_id,
             force_refresh,
         })
         .await??;
-    Ok(FeedParagraphsStream(stream))
+    task.await
+        .map_err(|error| BridgeError::from(format!("chapter task failed: {error}")))?
 }
 
 /// Fetch one complete chapter in one bridge call.
@@ -158,18 +99,24 @@ pub async fn open_paragraphs_stream(
 /// A reader page cannot paginate until all paragraphs are available, so
 /// crossing the bridge once is substantially cheaper than pulling every
 /// paragraph separately, especially on cache hits.
-pub async fn list_paragraphs(
+pub async fn paragraphs(
     feed_id: String,
     book_id: String,
     chapter_id: String,
     force_refresh: bool,
 ) -> Result<Vec<ParagraphContent>, BridgeError> {
-    let mut stream = open_paragraphs_stream(feed_id, book_id, chapter_id, force_refresh).await?;
-    let mut items = Vec::new();
-    while let Some(item) = stream.next().await? {
-        items.push(item);
-    }
-    Ok(items)
+    let task = addresses()?
+        .feed
+        .clone()
+        .send(GetParagraphs {
+            feed_id,
+            book_id,
+            chapter_id,
+            force_refresh,
+        })
+        .await??;
+    task.await
+        .map_err(|error| BridgeError::from(format!("paragraph task failed: {error}")))?
 }
 
 /// Fetch book info (single value, not a stream).

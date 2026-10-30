@@ -65,11 +65,11 @@ void main() {
   }
 
   FakeFeedService baseService({
-    Stream<ChapterInfoModel> Function(String, String)? chapterStream,
+    Future<List<ChapterInfoModel>> Function(String, String)? chapterStream,
     Future<ReadingProgressModel?> Function(String, String)? progress,
     List<(String, String, int)>? seen,
     void Function(String, String, String, String, int)? onProgressSaved,
-    Stream<ParagraphContent> Function(
+    Future<List<ParagraphContent>> Function(
       String,
       String,
       String, {
@@ -78,7 +78,7 @@ void main() {
     paragraphs,
   }) {
     return FakeFeedService(
-      chaptersHandler: chapterStream ?? (f, b) => Stream.fromIterable(chapters),
+      chaptersHandler: chapterStream ?? (f, b) async => chapters,
       getReadingProgressHandler: progress ?? (f, b) async => null,
       markBookshelfSeenHandler: (f, b, count) async {
         seen?.add((f, b, count));
@@ -173,7 +173,7 @@ void main() {
 
     testWidgets('a failing chapter load records the error', (tester) async {
       final service = baseService(
-        chapterStream: (f, b) => Stream.error(StateError('boom')),
+        chapterStream: (f, b) => Future.error(StateError('boom')),
       );
       final (controller, _, _) = await pumpHost(tester, service: service);
 
@@ -276,15 +276,15 @@ void main() {
       final refreshCalls = <(String, bool)>[];
       final gate = Completer<void>();
       final service = baseService(
-        paragraphs: (f, b, chapterId, {forceRefresh = false}) {
+        paragraphs: (f, b, chapterId, {forceRefresh = false}) async {
           refreshCalls.add((chapterId, forceRefresh));
-          return () async* {
-            await gate.future;
-            yield ParagraphContent_Text(
+          await gate.future;
+          return [
+            ParagraphContent_Text(
               id: const ParagraphId.id('p0'),
               content: 'refreshed',
-            );
-          }();
+            ),
+          ];
         },
       );
       final (controller, _, reader) = await pumpHost(tester, service: service);

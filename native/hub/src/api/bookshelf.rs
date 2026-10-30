@@ -5,7 +5,7 @@ use super::types::{
 use crate::actors::{
     addresses,
     bookshelf_actor::{BookshelfAdd, BookshelfList, BookshelfMarkSeen, BookshelfRemove},
-    feed_actor::{OpenChaptersStream, PullStream, spawn_pull_stream},
+    feed_actor::{GetChapters, PullStream, spawn_pull_stream},
     hub_db,
 };
 
@@ -117,15 +117,15 @@ pub async fn open_bookshelf_updates_stream() -> Result<BookshelfUpdatesStream, B
                 error: None,
             };
 
-            let mut chapters = match feed_addr
-                .send(OpenChaptersStream {
+            let chapters_task = match feed_addr
+                .send(GetChapters {
                     feed_id: item.feed_id.clone(),
                     book_id: item.book_id.clone(),
                     force_refresh: true,
                 })
                 .await
             {
-                Ok(Ok(stream)) => stream,
+                Ok(Ok(task)) => task,
                 Ok(Err(e)) => {
                     result.error = Some(e.message);
                     let _ = tx.send(Ok(result)).await;
@@ -138,18 +138,18 @@ pub async fn open_bookshelf_updates_stream() -> Result<BookshelfUpdatesStream, B
                 }
             };
 
-            let mut fresh_count: i64 = 0;
-            loop {
-                match chapters.next().await {
-                    Ok(Some(_)) => fresh_count += 1,
-                    Ok(None) => break,
-                    Err(e) => {
-                        result.error = Some(e.message);
-                        break;
-                    }
+            let chapters = match chapters_task.await {
+                Ok(Ok(items)) => items,
+                Ok(Err(error)) => {
+                    result.error = Some(error.message);
+                    Vec::new()
                 }
-            }
-            chapters.cancel();
+                Err(error) => {
+                    result.error = Some(format!("chapter task failed: {error}"));
+                    Vec::new()
+                }
+            };
+            let fresh_count = chapters.len() as i64;
 
             if result.error.is_none() {
                 if item.last_seen_chapters < 0 {
