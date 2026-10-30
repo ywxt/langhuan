@@ -255,6 +255,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                       controller: _readerController,
                       pageMode: settings.pageMode,
                       onToggleControls: _toggleControls,
+                      onPageTurnStart: _clearSelection,
                       fontScale: settings.fontScale,
                       fontFamily: settings.fontFamily,
                       letterSpacing: settings.letterSpacing,

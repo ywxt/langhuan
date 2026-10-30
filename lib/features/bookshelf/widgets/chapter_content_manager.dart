@@ -35,6 +35,7 @@ class ChapterContentManager extends StatefulWidget {
     required this.controller,
     required this.pageMode,
     required this.onToggleControls,
+    this.onPageTurnStart,
     required this.fontScale,
     this.fontFamily,
     this.letterSpacing = 0.0,
@@ -56,6 +57,7 @@ class ChapterContentManager extends StatefulWidget {
   final ReaderController controller;
   final ReaderPageMode pageMode;
   final VoidCallback onToggleControls;
+  final VoidCallback? onPageTurnStart;
   final double fontScale;
   final String? fontFamily;
   final double letterSpacing;
@@ -643,6 +645,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       onNextPage: _onHorizontalNextPage,
       onPrevPage: _onHorizontalPrevPage,
       onToggleControls: widget.onToggleControls,
+      onPageTurnStart: widget.onPageTurnStart,
       onRetryChapter: (chapterId) => window.retry(chapterId),
       onParagraphLongPress: widget.onParagraphLongPress,
       selectedChapterId: widget.selectedChapterId,

@@ -28,6 +28,7 @@ Widget _host({
   VoidCallback? onNext,
   VoidCallback? onPrev,
   VoidCallback? onToggle,
+  VoidCallback? onPageTurnStart,
   void Function(String chapterId)? onRetryChapter,
   void Function(
     String chapterId,
@@ -54,6 +55,7 @@ Widget _host({
           onNextPage: onNext ?? () {},
           onPrevPage: onPrev ?? () {},
           onToggleControls: onToggle ?? () {},
+          onPageTurnStart: onPageTurnStart,
           onRetryChapter: onRetryChapter,
           onParagraphLongPress: onParagraphLongPress,
         ),
@@ -86,6 +88,26 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(nextCalls, 1);
+    });
+
+    testWidgets('right third dismisses paragraph actions immediately', (
+      tester,
+    ) async {
+      var dismissed = false;
+      var dismissedBeforeTurn = false;
+      await tester.pumpWidget(
+        _host(
+          next: ReaderSlotPage(_page('p2', 'page two')),
+          onPageTurnStart: () => dismissed = true,
+          onNext: () => dismissedBeforeTurn = dismissed,
+        ),
+      );
+
+      await tester.tapAt(const Offset(600, 300));
+      await tester.pumpAndSettle();
+
+      expect(dismissed, isTrue);
+      expect(dismissedBeforeTurn, isTrue);
     });
 
     testWidgets('left third turns to the previous page', (tester) async {

@@ -70,6 +70,7 @@ class HorizontalReaderView extends StatefulWidget {
     required this.onNextPage,
     required this.onPrevPage,
     required this.onToggleControls,
+    this.onPageTurnStart,
     this.onRetryChapter,
     this.onParagraphLongPress,
     this.selectedChapterId,
@@ -90,6 +91,7 @@ class HorizontalReaderView extends StatefulWidget {
   final VoidCallback onNextPage;
   final VoidCallback onPrevPage;
   final VoidCallback onToggleControls;
+  final VoidCallback? onPageTurnStart;
   final void Function(String chapterId)? onRetryChapter;
 
   final void Function(
@@ -206,6 +208,7 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
       _anim.stop();
       _isSettling = false;
     }
+    widget.onPageTurnStart?.call();
     _isDragging = true;
   }
 
@@ -244,11 +247,13 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
       // Animate the strip exactly like a swipe settle so tap turns and
       // drag turns share one motion language.
       if (_canGoPrev) {
+        widget.onPageTurnStart?.call();
         _settleDir = 1;
         _animateTo(pageWidth, pageWidth);
       }
     } else if (dx > pageWidth * 2 / 3) {
       if (_canGoNext) {
+        widget.onPageTurnStart?.call();
         _settleDir = -1;
         _animateTo(-pageWidth, pageWidth);
       }
