@@ -422,8 +422,8 @@
   "feedDetailAccessDomains": "Access domains",
   "@feedDetailAccessDomains": { "description": "Feed detail sheet: access domains label" },
 
-  "feedDetailNoDomainRestriction": "No domain restrictions",
-  "@feedDetailNoDomainRestriction": { "description": "Feed detail sheet: shown when the feed declares no access domain" },
+  "feedDetailNoDomainRestriction": "Network access disabled",
+  "@feedDetailNoDomainRestriction": { "description": "Feed detail sheet: shown when the feed declares no access domain and therefore cannot make requests" },
 
   "feedDetailSource": "Source",
   "@feedDetailSource": { "description": "Feed detail sheet: label for the URL the feed was installed from" },
@@ -680,8 +680,8 @@
   "addFeedAllowedDomains": "Accesses domains",
   "@addFeedAllowedDomains": { "description": "Label for the access domains list in the feed preview" },
 
-  "addFeedNoDomainRestriction": "No domain restrictions",
-  "@addFeedNoDomainRestriction": { "description": "Shown when access_domains is empty" },
+  "addFeedNoDomainRestriction": "Network access disabled",
+  "@addFeedNoDomainRestriction": { "description": "Shown when access_domains is empty, which blocks every network request" },
 
   "addFeedIsUpgrade": "Upgrading {from} \u2192 {to}",
   "@addFeedIsUpgrade": {

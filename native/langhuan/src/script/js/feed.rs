@@ -456,6 +456,12 @@ impl JsFeed {
                     next_state,
                 } => {
                     Self::validate_user_agent(&user_agent)?;
+                    if !http::domain_allowed(&url, &self.meta.access_domains) {
+                        return Err(Error::domain_not_allowed(
+                            url,
+                            self.meta.access_domains.clone(),
+                        ));
+                    }
                     spend_step(&mut steps_left)?;
                     let handler = self.webview_handler()?.ok_or_else(|| {
                         Error::expected(

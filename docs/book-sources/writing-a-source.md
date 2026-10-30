@@ -37,7 +37,7 @@ Every source starts with a header:
 Use a reverse-domain ID that you control. `@access_domain` is a security
 allowlist, not documentation: every hostname a request may reach must be
 declared. `*.cdn.example.org` permits subdomains but not `cdn.example.org`
-itself.
+itself. Omitting every entry blocks all request and WebView steps.
 
 The parsed header is available to the script as frozen global `meta`.
 

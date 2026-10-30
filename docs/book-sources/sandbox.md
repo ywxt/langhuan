@@ -80,6 +80,8 @@ A `webview` step delegates one URL and source-selected User-Agent to a platform
 browser controlled by the application. The user interacts with it. The source
 does not receive a WebView object or JavaScript bridge; it receives a snapshot
 containing the final URL, HTML, and cookies after the host closes the page.
+The initial URL must match the source's domain allowlist; an empty allowlist
+blocks the browser from opening.
 
 ```js
 return {

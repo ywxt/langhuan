@@ -441,7 +441,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedDetailAccessDomains => '允許訪問的域名';
 
   @override
-  String get feedDetailNoDomainRestriction => '無域名限制';
+  String get feedDetailNoDomainRestriction => '網絡訪問已禁用';
 
   @override
   String get feedDetailSource => '來源';
@@ -724,7 +724,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addFeedAllowedDomains => '允許訪問的域名';
 
   @override
-  String get addFeedNoDomainRestriction => '無域名限制';
+  String get addFeedNoDomainRestriction => '網絡訪問已禁用';
 
   @override
   String addFeedIsUpgrade(String from, String to) {

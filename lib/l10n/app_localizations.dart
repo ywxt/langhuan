@@ -890,10 +890,10 @@ abstract class AppLocalizations {
   /// **'Access domains'**
   String get feedDetailAccessDomains;
 
-  /// Feed detail sheet: shown when the feed declares no access domain
+  /// Feed detail sheet: shown when the feed declares no access domain and therefore cannot make requests
   ///
   /// In en, this message translates to:
-  /// **'No domain restrictions'**
+  /// **'Network access disabled'**
   String get feedDetailNoDomainRestriction;
 
   /// Feed detail sheet: label for the URL the feed was installed from
@@ -1424,10 +1424,10 @@ abstract class AppLocalizations {
   /// **'Accesses domains'**
   String get addFeedAllowedDomains;
 
-  /// Shown when access_domains is empty
+  /// Shown when access_domains is empty, which blocks every network request
   ///
   /// In en, this message translates to:
-  /// **'No domain restrictions'**
+  /// **'Network access disabled'**
   String get addFeedNoDomainRestriction;
 
   /// Shown when installing a feed that replaces an existing version

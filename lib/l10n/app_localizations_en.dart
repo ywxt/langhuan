@@ -446,7 +446,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get feedDetailAccessDomains => 'Access domains';
 
   @override
-  String get feedDetailNoDomainRestriction => 'No domain restrictions';
+  String get feedDetailNoDomainRestriction => 'Network access disabled';
 
   @override
   String get feedDetailSource => 'Source';
@@ -746,7 +746,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addFeedAllowedDomains => 'Accesses domains';
 
   @override
-  String get addFeedNoDomainRestriction => 'No domain restrictions';
+  String get addFeedNoDomainRestriction => 'Network access disabled';
 
   @override
   String addFeedIsUpgrade(String from, String to) {

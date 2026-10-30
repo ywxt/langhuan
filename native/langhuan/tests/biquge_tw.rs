@@ -24,11 +24,14 @@ fn load_script_for_server(server: &ServerGuard) -> String {
         &format!("// @base_url     {base}"),
     );
 
-    // Remove all @access_domain entries so the domain allowlist is empty
-    // (empty list = no restriction), allowing requests to the local mock server.
+    // Replace the first access domain with the local mock server. An empty
+    // allowlist intentionally denies every network request.
 
     script
-        .replace("// @access_domain www.biquge.tw", "")
+        .replace(
+            "// @access_domain www.biquge.tw",
+            "// @access_domain 127.0.0.1",
+        )
         .replace("// @access_domain m.biquge.tw", "")
         .replace("// @access_domain img.biquge.tw", "")
 }

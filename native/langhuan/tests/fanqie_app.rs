@@ -12,7 +12,7 @@
 //! the real gateway — see the ignored live smoke test at the bottom.
 //!
 //! Network-facing URLs in the script are rewritten to the mock server and
-//! the domain allowlist header is emptied, mirroring `tests/fanqie.rs`.
+//! the allowlist is restricted to localhost, mirroring `tests/fanqie.rs`.
 
 use aes::cipher::{BlockEncryptMut, KeyIvInit, block_padding::Pkcs7};
 use langhuan::error::Result;
@@ -79,7 +79,7 @@ impl StorageHandler for MemoryStorage {
 }
 
 /// Rewrite every network-facing URL in the script to the mock server and
-/// drop the domain allowlist (empty list = no restriction).
+/// restrict the domain allowlist to localhost.
 fn load_script_for_server(server: &ServerGuard) -> String {
     let base = server.url();
     include_str!("../../../docs/book-sources/fanqie-app.js")
@@ -99,7 +99,10 @@ fn load_script_for_server(server: &ServerGuard) -> String {
             "// @base_url     https://reading.snssdk.com",
             &format!("// @base_url     {base}"),
         )
-        .replace("// @access_domain reading.snssdk.com", "")
+        .replace(
+            "// @access_domain reading.snssdk.com",
+            "// @access_domain 127.0.0.1",
+        )
         .replace("// @access_domain i.snssdk.com", "")
         .replace("// @access_domain fanqienovel.com", "")
 }

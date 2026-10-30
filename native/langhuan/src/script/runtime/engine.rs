@@ -106,6 +106,8 @@ mod tests {
 // @name Test
 // @version 3.0.0
 // @base_url https://example.com
+// @access_domain example.com
+// @access_domain 127.0.0.1
 // @schema_version {schema}
 // ==/Feed==
 {body}
@@ -644,6 +646,39 @@ mod tests {
         assert_eq!(requests[0].feed_id, "test");
         assert_eq!(requests[0].feed_name, "Test");
         assert_eq!(requests[0].user_agent, "TestWebView/1.0");
+    }
+
+    #[tokio::test]
+    async fn webview_step_is_blocked_when_allowlist_is_empty() {
+        let body = r#"
+          const empty = () => ({ type: "complete", items: [] });
+          function search() {
+            return {
+              type: "webview",
+              url: "https://example.com/verify",
+              user_agent: "TestWebView/1.0",
+            };
+          }
+          const bookInfo = () => ({
+            type: "complete", value: { id: "1", title: "One", author: "Test" },
+          });
+          export default { search, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
+        let script = source(4, body)
+            .replace("// @access_domain example.com\n", "")
+            .replace("// @access_domain 127.0.0.1\n", "");
+        let feed = ScriptEngine::new().load_script(&script).await.unwrap();
+        let handler = CannedWebview::with_snapshot(sample_snapshot());
+        feed.set_webview_handler(Some(handler.clone())).unwrap();
+
+        let items = feed.search("x").collect::<Vec<_>>().await;
+        assert_eq!(items.len(), 1);
+        assert!(matches!(
+            items[0].as_ref().expect_err("must fail"),
+            Error::Script(ScriptError::DomainNotAllowed { access_domains, .. })
+                if access_domains.is_empty()
+        ));
+        assert!(handler.requests.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

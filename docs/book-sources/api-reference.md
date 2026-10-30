@@ -27,7 +27,7 @@ and must default-export a Feed object.
 | `author` | No | Publisher or maintainer displayed to the user. |
 | `description` | No | Short user-facing description. |
 | `base_url` | Yes | Non-empty primary site URL exposed as `meta.base_url`. It is not automatically added to the allowlist. |
-| `access_domain` | No | One exact hostname or leftmost subdomain wildcard per line. Repeated lines form a deduplicated set. When at least one entry exists, requests to every other host—including an undeclared `base_url` host—are blocked. When no entry exists, domain filtering is disabled. |
+| `access_domain` | No | One exact hostname or leftmost subdomain wildcard per line. Repeated lines form a deduplicated set. Requests to every other host—including an undeclared `base_url` host—are blocked. When no entry exists, all network requests are blocked. |
 | `schema_version` | Yes | Integer contract version. It must be `4` for this runtime. |
 
 Exact IP hosts are accepted for development. Domain entries cannot contain a
@@ -235,7 +235,7 @@ returned in the snapshot.
 | Field | Required | Value and behaviour |
 | --- | :---: | --- |
 | `type` | Yes | Must be `"webview"`. |
-| `url` | Yes | Initial absolute URL opened by the platform WebView. |
+| `url` | Yes | Initial absolute URL opened by the platform WebView. Its hostname must match `access_domain`; an empty allowlist blocks the step before the browser opens. |
 | `user_agent` | Yes | User-Agent applied before first navigation; must be non-empty, contain no control characters, and be at most 512 bytes. Reuse it in later requests. |
 | `title` | No | User-facing title for the browser page. |
 | `next_state` | No | Value returned through `event.state` with the snapshot. |

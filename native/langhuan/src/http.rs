@@ -345,7 +345,7 @@ pub async fn execute(
     let start = trace.is_some().then(Instant::now);
 
     // Enforce access_domains before making any network call.
-    if !access_domains.is_empty() && !domain_allowed(&req.url, access_domains) {
+    if !domain_allowed(&req.url, access_domains) {
         tracing::warn!(
             feed_id = %feed_id,
             url = %req.url,
@@ -496,7 +496,7 @@ pub(crate) fn redact_url_secrets(url: &str) -> String {
 /// the suffix itself, and matching always observes a DNS-label boundary.
 /// Returns `true` if the host is allowed, `false` if the URL cannot be parsed
 /// or the host is not in the list.
-fn domain_allowed(url: &str, access_domains: &HashSet<String>) -> bool {
+pub(crate) fn domain_allowed(url: &str, access_domains: &HashSet<String>) -> bool {
     let parsed = match reqwest::Url::parse(url) {
         Ok(u) => u,
         Err(_) => return false,
@@ -572,6 +572,37 @@ mod tests {
         ));
     }
 
+    #[tokio::test]
+    async fn execute_rejects_every_request_when_allowlist_is_empty() {
+        let request = HttpRequest {
+            url: "https://example.com/books".to_owned(),
+            method: "GET".to_owned(),
+            params: HashMap::new(),
+            headers: Vec::new(),
+            body: None,
+        };
+
+        let error = execute(
+            shared_client(),
+            "test",
+            &HashSet::new(),
+            &request,
+            Duration::from_secs(1),
+        )
+        .await
+        .expect_err("an empty allowlist must deny network access");
+
+        let crate::error::Error::Script(crate::error::ScriptError::DomainNotAllowed {
+            url,
+            access_domains,
+        }) = error
+        else {
+            panic!("expected a domain-not-allowed error, got: {error}");
+        };
+        assert_eq!(url, request.url);
+        assert!(access_domains.is_empty());
+    }
+
     #[test]
     fn http_body_from_str_works() {
         let body: HttpBody = "abc".parse().expect("infallible parse should succeed");
@@ -608,7 +639,7 @@ mod tests {
         let error = execute(
             shared_client(),
             "test",
-            &HashSet::new(),
+            &HashSet::from(["127.0.0.1".to_owned()]),
             &request,
             Duration::from_millis(300),
         )

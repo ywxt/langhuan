@@ -25,14 +25,17 @@ fn load_script_for_server(server: &ServerGuard) -> String {
 
     let script = include_str!("../../../docs/book-sources/qidian.js");
 
-    // Replace the base_url header line and remove all @access_domain entries
-    // so the domain allowlist is empty (empty list = no restriction).
+    // Replace the base URL and declare only the local mock server. An empty
+    // allowlist intentionally denies every network request.
     script
         .replace(
             "// @base_url     https://m.qidian.com",
             &format!("// @base_url     {base}"),
         )
-        .replace("// @access_domain m.qidian.com", "")
+        .replace(
+            "// @access_domain m.qidian.com",
+            "// @access_domain 127.0.0.1",
+        )
         .replace("// @access_domain *.image.myqcloud.com", "")
 }
 

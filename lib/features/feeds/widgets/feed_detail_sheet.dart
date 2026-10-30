@@ -404,8 +404,7 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
 }
 
 /// Labelled chip row of the feed's access-domain patterns, mirroring the
-/// add-feed preview. An empty list means the feed declared no domain
-/// restriction.
+/// add-feed preview. An empty list means all network requests are blocked.
 class _AccessDomains extends StatelessWidget {
   const _AccessDomains({required this.domains});
 
