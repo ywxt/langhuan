@@ -437,10 +437,15 @@ final readerSettingsProvider =
 ThemeData resolveReaderTheme(
   ThemeData base,
   ReaderThemeMode mode, {
+  Brightness? systemBrightness,
   ReaderCustomTheme customTheme = const ReaderCustomTheme(),
 }) {
   return switch (mode) {
-    ReaderThemeMode.system => base,
+    ReaderThemeMode.system => switch (systemBrightness) {
+      Brightness.light => LanghuanTheme.light(),
+      Brightness.dark => LanghuanTheme.dark(),
+      null => base,
+    },
     ReaderThemeMode.light => LanghuanTheme.light(),
     ReaderThemeMode.dark => LanghuanTheme.dark(),
     ReaderThemeMode.sepia => _sepiaTheme(),

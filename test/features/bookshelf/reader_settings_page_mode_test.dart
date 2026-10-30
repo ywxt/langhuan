@@ -85,4 +85,20 @@ void main() {
     expect(theme.colorScheme.onSurface, custom.foreground);
     expect(theme.colorScheme.primary, custom.accent);
   });
+
+  test('system reader theme follows platform brightness directly', () {
+    final light = resolveReaderTheme(
+      ThemeData.dark(),
+      ReaderThemeMode.system,
+      systemBrightness: Brightness.light,
+    );
+    final dark = resolveReaderTheme(
+      ThemeData.light(),
+      ReaderThemeMode.system,
+      systemBrightness: Brightness.dark,
+    );
+
+    expect(light.brightness, Brightness.light);
+    expect(dark.brightness, Brightness.dark);
+  });
 }

@@ -165,6 +165,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     final readerTheme = resolveReaderTheme(
       baseTheme,
       settings.themeMode,
+      systemBrightness: MediaQuery.platformBrightnessOf(context),
       customTheme: settings.customTheme,
     );
 
