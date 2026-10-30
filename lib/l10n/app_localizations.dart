@@ -1280,6 +1280,18 @@ abstract class AppLocalizations {
   /// **'Unknown'**
   String get feedsImportChangeUnknown;
 
+  /// Security warning title shown before installing feed scripts
+  ///
+  /// In en, this message translates to:
+  /// **'Only install sources you trust'**
+  String get feedSecurityWarningTitle;
+
+  /// Security warning body shown before installing feed scripts
+  ///
+  /// In en, this message translates to:
+  /// **'Feed scripts can request data from the listed domains and process login session data. A malicious source could expose private information or consume excessive resources. Review its author and domains before continuing.'**
+  String get feedSecurityWarningBody;
+
   /// Settings row: write a full data snapshot
   ///
   /// In en, this message translates to:

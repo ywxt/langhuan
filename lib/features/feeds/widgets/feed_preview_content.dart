@@ -5,6 +5,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart' show VersionChange;
 import '../feed_service.dart';
+import 'feed_security_warning.dart';
 
 // ---------------------------------------------------------------------------
 // URL text field
@@ -127,6 +128,8 @@ class FeedPreviewContent extends StatelessWidget {
               ),
             ),
           ],
+          const SizedBox(height: LanghuanTheme.spaceMd),
+          const FeedSecurityWarning(),
           const SizedBox(height: LanghuanTheme.spaceMd),
           Divider(color: colorScheme.outline),
           const SizedBox(height: LanghuanTheme.spaceMd),

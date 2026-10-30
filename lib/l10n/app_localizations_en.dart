@@ -667,6 +667,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get feedsImportChangeUnknown => 'Unknown';
 
   @override
+  String get feedSecurityWarningTitle => 'Only install sources you trust';
+
+  @override
+  String get feedSecurityWarningBody =>
+      'Feed scripts can request data from the listed domains and process login session data. A malicious source could expose private information or consume excessive resources. Review its author and domains before continuing.';
+
+  @override
   String get settingsBackup => 'Export backup';
 
   @override

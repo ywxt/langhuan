@@ -3,6 +3,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:langhuan/features/feeds/widgets/feed_import_dialog.dart';
+import 'package:langhuan/features/feeds/feed_service.dart';
+import 'package:langhuan/features/feeds/widgets/feed_preview_content.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
 import 'package:langhuan/src/rust/api/types.dart';
 
@@ -59,6 +61,7 @@ void main() {
     expect(find.byType(FeedImportDialog), findsOneWidget);
     expect(find.text('Import feeds'), findsOneWidget);
     expect(find.text('3 feeds found'), findsOneWidget);
+    expect(find.text('Only install sources you trust'), findsOneWidget);
     for (final name in ['Source A', 'Source B', 'Source C']) {
       expect(find.text(name), findsOneWidget);
     }
@@ -84,5 +87,41 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(find.byType(FeedImportDialog), findsNothing);
+  });
+
+  testWidgets('single-source preview warns before installation', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: FeedPreviewContent(
+              preview: const FeedPreviewModel(
+                requestId: 'request',
+                id: 'org.example.feed',
+                name: 'Example',
+                version: '1.0.0',
+                baseUrl: 'https://example.com',
+                accessDomains: ['example.com'],
+                versionChange: VersionChange.new_,
+              ),
+              colorScheme: Theme.of(context).colorScheme,
+              l10n: AppLocalizations.of(context),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Only install sources you trust'), findsOneWidget);
+    expect(find.textContaining('process login session data'), findsOneWidget);
   });
 }

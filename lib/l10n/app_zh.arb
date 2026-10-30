@@ -214,6 +214,8 @@
   "feedsImportChangeDowngrade": "降級",
   "feedsImportChangeSame": "已安裝",
   "feedsImportChangeUnknown": "未知",
+  "feedSecurityWarningTitle": "只安裝你信任的書源",
+  "feedSecurityWarningBody": "書源腳本可以向列出的域名請求資料，並處理登入會話資料。惡意書源可能洩露私隱或過度消耗資源；繼續前請核對作者和允許訪問的域名。",
   "settingsBackup": "導出備份",
   "settingsBackupDescription": "將書源、書架、閱讀進度與書籤保存爲文件",
   "settingsBackupSuccess": "備份已保存",

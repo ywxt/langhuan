@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../src/rust/api/types.dart';
+import 'feed_security_warning.dart';
 
 /// Confirmation dialog for a feed import: lists every entry with how its
 /// version relates to the installed one. Pops with `true` when the user
@@ -27,6 +28,8 @@ class FeedImportDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const FeedSecurityWarning(),
+            const SizedBox(height: LanghuanTheme.spaceMd),
             Text(
               l10n.feedsImportCount(entries.length),
               style: theme.textTheme.bodyMedium?.copyWith(

@@ -649,6 +649,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedsImportChangeUnknown => '未知';
 
   @override
+  String get feedSecurityWarningTitle => '只安裝你信任的書源';
+
+  @override
+  String get feedSecurityWarningBody =>
+      '書源腳本可以向列出的域名請求資料，並處理登入會話資料。惡意書源可能洩露私隱或過度消耗資源；繼續前請核對作者和允許訪問的域名。';
+
+  @override
   String get settingsBackup => '導出備份';
 
   @override
