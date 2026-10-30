@@ -175,8 +175,6 @@ import { HTML } from "langhuan:html";
 
   let sessionCookieHeader = null;
   let sessionRiskBlocked = false;
-  let activeSearchKeyword = null;
-  const searchSeenIds = new Set();
 
   function isFanqieDomain(domain) {
     const host = String(domain ?? "").replace(/^\./, "").toLowerCase();
@@ -316,10 +314,7 @@ import { HTML } from "langhuan:html";
     for (const book of books) {
       const id = String(book?.book_id ?? "");
       const title = decode(book?.book_name ?? "").trim();
-      // 番茄的游標頁偶爾會重複上一頁末項；runtime 會把重複 ID 視為
-      // 書源契約錯誤，因此在來源邊界去重，而不是把錯誤留給 UI 掩蓋。
-      if (!id || !title || searchSeenIds.has(id)) continue;
-      searchSeenIds.add(id);
+      if (!id || !title) continue;
       items.push({
         id,
         title,
@@ -414,10 +409,6 @@ import { HTML } from "langhuan:html";
       }
       // 參見檔頭注釋：搜尋 API 只接受 POST 查詢串，GET 會被風控挑戰攔截。
       const pageIndex = event.cursor == null ? 0 : Number(event.cursor);
-      if (event.cursor == null || activeSearchKeyword !== keyword) {
-        activeSearchKeyword = keyword;
-        searchSeenIds.clear();
-      }
       return {
         type: "request",
         request: searchRequest(keyword, pageIndex),

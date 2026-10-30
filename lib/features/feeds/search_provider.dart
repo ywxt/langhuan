@@ -90,7 +90,10 @@ class SearchNotifier extends Notifier<SearchState> {
   String? _lastFeedName;
 
   @override
-  SearchState build() => const SearchState();
+  SearchState build() {
+    ref.onDispose(_disposeIterator);
+    return const SearchState();
+  }
 
   Future<void> search({
     required String feedId,
@@ -173,10 +176,6 @@ class SearchNotifier extends Notifier<SearchState> {
       for (final group in state.groups) {
         groups[group.feedId] = group.copyWith(items: List.of(group.items));
       }
-      final seenIds = <String, Set<String>>{
-        for (final group in groups.values)
-          group.feedId: group.items.map((item) => item.id).toSet(),
-      };
       var exhausted = false;
 
       for (var i = 0; i < _pageSize; i++) {
@@ -198,11 +197,6 @@ class SearchNotifier extends Notifier<SearchState> {
           );
         } else {
           final item = event.item!;
-          final ids = seenIds.putIfAbsent(event.feedId, () => <String>{});
-          // Search backends may repeat the last item of the previous page.
-          // Keeping one item per source/book also keeps Hero tags unique when
-          // the user returns from details and continues scrolling.
-          if (!ids.add(item.id)) continue;
           groups[event.feedId] = SearchFeedGroup(
             feedId: event.feedId,
             feedName: event.feedName,
@@ -236,6 +230,7 @@ class SearchNotifier extends Notifier<SearchState> {
   }
 }
 
-final searchProvider = NotifierProvider<SearchNotifier, SearchState>(
-  SearchNotifier.new,
-);
+final searchProvider =
+    NotifierProvider.autoDispose<SearchNotifier, SearchState>(
+      SearchNotifier.new,
+    );

@@ -52,11 +52,29 @@ class _TestSearchNotifier extends SearchNotifier {
   SearchState build() => initial;
 }
 
-Widget _testApp(GoRouter router, SearchState searchState) {
+class _TrackingSearchNotifier extends _TestSearchNotifier {
+  _TrackingSearchNotifier(super.initial);
+
+  int disposeCalls = 0;
+
+  @override
+  SearchState build() {
+    ref.onDispose(() => disposeCalls++);
+    return initial;
+  }
+}
+
+Widget _testApp(
+  GoRouter router,
+  SearchState searchState, {
+  SearchNotifier? searchNotifier,
+}) {
   return ProviderScope(
     overrides: [
       feedListProvider.overrideWith(_TestFeedListNotifier.new),
-      searchProvider.overrideWith(() => _TestSearchNotifier(searchState)),
+      searchProvider.overrideWith(
+        () => searchNotifier ?? _TestSearchNotifier(searchState),
+      ),
       appDataDirectorySetProvider.overrideWith(
         (ref) async => const AppDataDirectoryResult(feedCount: 2),
       ),
@@ -84,11 +102,56 @@ GoRouter _router() {
         builder: (_, _) =>
             const Text('Feed auth', textDirection: TextDirection.ltr),
       ),
+      GoRoute(
+        path: '/detail',
+        builder: (_, _) =>
+            const Text('Detail', textDirection: TextDirection.ltr),
+      ),
+      GoRoute(
+        path: '/other',
+        builder: (_, _) =>
+            const Text('Other', textDirection: TextDirection.ltr),
+      ),
     ],
   );
 }
 
 void main() {
+  testWidgets('leaving search clears its results and pull cursor', (
+    tester,
+  ) async {
+    const state = SearchState(
+      keyword: 'kw',
+      hasMore: false,
+      groups: [
+        SearchFeedGroup(
+          feedId: 'feed-a',
+          feedName: 'Source A',
+          items: [_resultA1],
+        ),
+      ],
+    );
+    final notifier = _TrackingSearchNotifier(state);
+    final router = _router();
+    addTearDown(router.dispose);
+    await tester.pumpWidget(_testApp(router, state, searchNotifier: notifier));
+    await tester.pumpAndSettle();
+
+    // A details page is stacked above search, so returning keeps the exact
+    // result page and iterator.
+    router.push('/detail');
+    await tester.pumpAndSettle();
+    expect(notifier.disposeCalls, 0);
+    router.pop();
+    await tester.pumpAndSettle();
+    expect(find.text('Book A1'), findsOneWidget);
+
+    // Leaving search itself disposes the route and resets the search run.
+    router.go('/other');
+    await tester.pumpAndSettle();
+    expect(notifier.disposeCalls, 1);
+  });
+
   testWidgets('the All chip leads the selector and is selected by default', (
     tester,
   ) async {
