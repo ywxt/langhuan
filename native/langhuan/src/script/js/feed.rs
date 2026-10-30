@@ -27,6 +27,10 @@ use crate::model::{BookInfo, ChapterInfo, Page, Paragraph, RawParagraph, SearchR
 
 const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30);
 const COMPUTE_TIMEOUT: Duration = Duration::from_secs(5);
+/// Total budget for one HTTP attempt (connect + send + body read). Feed
+/// bodies are KB-scale chapter payloads, so half a minute is generous even
+/// on slow links.
+const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_INTERNAL_STEPS: usize = 8;
 const MAX_USER_AGENT_BYTES: usize = 512;
 const MAX_RETRIES: u32 = 3;
@@ -315,6 +319,13 @@ impl JsFeed {
         })
     }
 
+    /// Execute one feed HTTP request, retrying transient failures.
+    ///
+    /// Each attempt carries its own [`HTTP_TIMEOUT`] budget. An elapsed
+    /// budget surfaces as a reqwest timeout error, which `is_retryable`
+    /// classifies as transient, so a stalled gateway — connection accepted,
+    /// no bytes — costs one attempt here and eventually fails honestly
+    /// instead of hanging the operation until the host cancels it.
     async fn execute_http_with_retry(&self, request: &HttpRequest) -> Result<HttpResponse> {
         let mut attempt = 0u32;
         loop {
@@ -323,6 +334,7 @@ impl JsFeed {
                 &self.meta.id,
                 &self.meta.access_domains,
                 request,
+                HTTP_TIMEOUT,
             )
             .await
             {

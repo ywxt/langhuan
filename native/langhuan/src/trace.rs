@@ -307,6 +307,7 @@ fn mask_authorization_value(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+    use std::time::Duration;
 
     use super::{
         TRACE_BODY_BUDGET_BYTES, TRACE_ENTRY_LIMIT, TraceEntry, TraceRecorder, mask_request_headers,
@@ -354,8 +355,16 @@ mod tests {
             body: None,
         };
 
+        // The request is blocked by `access_domains` before any network I/O,
+        // so the budget value never elapses; it just satisfies the signature.
         let result = recorder
-            .scope(execute(shared_client(), "feed", &domains, &req))
+            .scope(execute(
+                shared_client(),
+                "feed",
+                &domains,
+                &req,
+                Duration::from_secs(30),
+            ))
             .await;
 
         assert!(result.is_err());

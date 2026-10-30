@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use reqwest::Client;
@@ -323,7 +323,12 @@ pub struct HttpResponse {
 /// [`HttpResponse`].
 ///
 /// `feed_id` and `access_domains` are used for domain allowlist enforcement
-/// and tracing. When a trace recorder is active for the current task
+/// and tracing. `timeout` is the total budget for the attempt — connection
+/// establishment, sending the request, and reading the response body —
+/// applied as a per-request timeout so an elapsed budget surfaces as an
+/// ordinary reqwest timeout error. The budget stays a caller parameter
+/// because the shared client also serves bulk downloads with different
+/// needs. When a trace recorder is active for the current task
 /// (developer tools only — see [`crate::trace`]), the request and its
 /// outcome are recorded, including requests blocked by the allowlist.
 pub async fn execute(
@@ -331,6 +336,7 @@ pub async fn execute(
     feed_id: &str,
     access_domains: &HashSet<String>,
     req: &HttpRequest,
+    timeout: Duration,
 ) -> Result<HttpResponse> {
     // Developer tools: while a trace recorder is active for this task,
     // report this request's outcome to it. Outside a debug run this is one
@@ -361,7 +367,7 @@ pub async fn execute(
         url = %req.url,
         "sending HTTP request"
     );
-    let mut builder = client.request(method, &req.url);
+    let mut builder = client.request(method, &req.url).timeout(timeout);
 
     if !req.params.is_empty() {
         builder = builder.query(&req.params);
@@ -518,10 +524,12 @@ fn domain_allowed(url: &str, access_domains: &HashSet<String>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
+    use std::time::{Duration, Instant};
 
     use super::{
-        HttpBody, collect_response_headers, domain_allowed, redact_url_secrets, shared_client,
+        HttpBody, HttpRequest, collect_response_headers, domain_allowed, execute,
+        redact_url_secrets, shared_client,
     };
 
     #[test]
@@ -575,6 +583,53 @@ mod tests {
         // The shared client must hand out the same instance on every call so
         // all cookie-free callers reuse one connection pool.
         assert!(std::ptr::eq(shared_client(), shared_client()));
+    }
+
+    #[tokio::test]
+    async fn execute_elapses_the_budget_against_a_stalled_server() {
+        // A server that accepts the connection and never writes a byte — the
+        // exact hang this budget exists to break. A plain std thread parks
+        // while holding the socket open, so no tokio "net" feature is needed.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind stall listener");
+        let addr = listener.local_addr().expect("stall listener address");
+        std::thread::spawn(move || {
+            let _socket = listener.accept().expect("accept stalled connection");
+            std::thread::park();
+        });
+
+        let request = HttpRequest {
+            url: format!("http://{addr}/stall"),
+            method: "GET".to_owned(),
+            params: HashMap::new(),
+            headers: Vec::new(),
+            body: None,
+        };
+        let start = Instant::now();
+        let error = execute(
+            shared_client(),
+            "test",
+            &HashSet::new(),
+            &request,
+            Duration::from_millis(300),
+        )
+        .await
+        .expect_err("a stalled server must trip the request budget");
+
+        // An elapsed budget is an ordinary reqwest timeout error: classified
+        // transient, so the retry layer sees it and the operation can fail
+        // honestly instead of hanging forever.
+        let crate::error::Error::Http(reqwest_error) = &error else {
+            panic!("expected an http error, got {error}");
+        };
+        assert!(reqwest_error.is_timeout(), "not a timeout error: {error}");
+        assert!(
+            error.is_retryable(),
+            "a timeout must stay retryable: {error}"
+        );
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "budget elapse took {start:?}"
+        );
     }
 
     #[test]
