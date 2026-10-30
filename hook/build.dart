@@ -20,6 +20,7 @@ void main(List<String> args) async {
 /// platform. Use the NDK compiler bundled in the build input to make Android
 /// header lookup hermetic in every Flutter build mode.
 Map<String, String> _androidBindgenEnvironment(BuildInput input) {
+  if (!input.config.buildCodeAssets) return const {};
   final codeConfig = input.config.code;
   final isNixHost =
       Platform.isLinux &&
