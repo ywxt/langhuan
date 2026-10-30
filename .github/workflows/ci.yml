@@ -17,30 +17,21 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  FLUTTER_VERSION: "3.47.4"
+  FRB_VERSION: "2.13.0"
+
 jobs:
+  # Both jobs regenerate the FRB bindings first: they are gitignored,
+  # and the hub crate declares `mod frb_generated`, so neither the Rust
+  # nor the Dart side of the workspace even resolves on a fresh checkout
+  # without them. Each job is self-contained and parallel rather than
+  # one fetching the other's artifacts.
+
   rust:
     name: Rust checks
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-
-      # -D warnings turns the local zero-warning bar into a hard failure.
-      - run: cargo fmt --check
-      - run: cargo clippy --workspace --lib --tests -- -D warnings
-      - run: cargo test --workspace
-
-  flutter:
-    name: Flutter checks
-    runs-on: ubuntu-24.04
     timeout-minutes: 30
-    env:
-      FLUTTER_VERSION: "3.47.4"
-      FRB_VERSION: "2.13.0"
     steps:
       - uses: actions/checkout@v7
 
@@ -52,15 +43,47 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # cache-all-crates keeps the cargo-installed FRB code generator warm
-      # across runs.
+      # cache-all-crates keeps the cargo-installed FRB code generator
+      # warm across runs.
       - uses: Swatinem/rust-cache@v2
         with:
           cache-all-crates: true
 
-      # The generated bindings are gitignored, so analyze and test need
-      # the same codegen step the release bindings job runs. flutter test
-      # then compiles the native crate for the host through the
+      - name: Install flutter_rust_bridge code generator
+        run: cargo install flutter_rust_bridge_codegen --version "$FRB_VERSION" --locked
+
+      - name: Resolve Dart packages and generate bindings
+        run: |
+          flutter pub get
+          flutter_rust_bridge_codegen generate
+
+      # -D warnings turns the local zero-warning bar into a hard failure.
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --lib --tests -- -D warnings
+      - run: cargo test --workspace
+
+  flutter:
+    name: Flutter checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # cache-all-crates keeps the cargo-installed FRB code generator
+      # warm across runs.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+
+      # flutter test compiles the native crate for the host through the
       # native-assets build hook (hook/build.dart).
       - name: Install flutter_rust_bridge code generator
         run: cargo install flutter_rust_bridge_codegen --version "$FRB_VERSION" --locked

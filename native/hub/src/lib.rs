@@ -1,7 +1,12 @@
 //! This `hub` crate is the
 //! entry point of the Rust logic.
 
+// The generated bindings are formatted by FRB's own prettyplease pass,
+// which orders use-items differently from rustfmt; skipping keeps
+// `cargo fmt --check` green on freshly generated bindings (CI
+// regenerates them every run — they are gitignored).
 #[allow(clippy::wildcard_imports)]
+#[rustfmt::skip]
 mod frb_generated;
 
 #[macro_use]
