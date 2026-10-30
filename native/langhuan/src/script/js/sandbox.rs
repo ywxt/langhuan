@@ -13,7 +13,9 @@ use super::crypto;
 use super::encoding;
 use super::html;
 use super::protobuf;
+use super::storage;
 use crate::error::{Error, Result};
+use crate::feed::storage::SharedStorageHandler;
 
 const QUICKJS_HEAP_LIMIT: usize = 32 * 1024 * 1024;
 const QUICKJS_STACK_LIMIT: usize = 1024 * 1024;
@@ -175,6 +177,34 @@ impl Sandbox {
             deadline,
             timeout,
         })
+    }
+
+    /// Declare `langhuan:storage` and wire the per-feed backend for it.
+    ///
+    /// Only called for feeds whose host installed a backend; feeds without
+    /// one fail the import at link time, so the declared-module list stays
+    /// the capability list.
+    pub(super) fn install_storage(
+        &mut self,
+        handler: SharedStorageHandler,
+        feed_id: &str,
+    ) -> Result<()> {
+        self.context.with(|ctx| {
+            bootstrap_step(&ctx, |ctx| {
+                storage::declare(ctx)?;
+                let backend = storage::backend(ctx, handler, feed_id)?;
+                ctx.globals().set(storage::WIRING_GLOBAL, backend)?;
+                Ok(())
+            })
+        })
+    }
+
+    /// Remove the storage wiring global if the feed source never imported
+    /// `langhuan:storage`; after bootstrap the backend is reachable only
+    /// through the module.
+    pub(super) fn clear_storage_wiring(&mut self) -> Result<()> {
+        self.context
+            .with(|ctx| bootstrap_step(&ctx, |ctx| ctx.globals().remove(storage::WIRING_GLOBAL)))
     }
 
     /// Execute website-provided programs in a fresh, capability-free realm.

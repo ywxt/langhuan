@@ -7,5 +7,6 @@ mod module;
 mod prelude;
 mod protobuf;
 mod sandbox;
+mod storage;
 
 pub use feed::{JsFeed, JsSupportAuth};

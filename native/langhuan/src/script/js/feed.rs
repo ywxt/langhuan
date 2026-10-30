@@ -20,7 +20,7 @@ use super::sandbox::{JsObject, Sandbox};
 use crate::error::{Error, ExpectedErrorCode, Result};
 use crate::feed::{
     AuthEntry, AuthInfo, AuthPageContext, AuthStatus, Feed, FeedAuthFlow, FeedMeta, FeedStream,
-    SharedWebviewHandler, WebviewRequest,
+    SharedStorageHandler, SharedWebviewHandler, WebviewRequest,
 };
 use crate::http::{self, HttpRequest, HttpResponse};
 use crate::model::{BookInfo, ChapterInfo, Page, Paragraph, RawParagraph, SearchResult};
@@ -162,14 +162,23 @@ struct Complete {
 }
 
 impl JsFeed {
-    pub(crate) fn new(source: String, meta: FeedMeta, client: reqwest::Client) -> Result<Self> {
+    pub(crate) fn new(
+        source: String,
+        meta: FeedMeta,
+        client: reqwest::Client,
+        storage: Option<SharedStorageHandler>,
+    ) -> Result<Self> {
         let meta_json =
             serde_json::to_string(&meta).map_err(|error| Error::javascript(error.to_string()))?;
         let mut sandbox = Sandbox::new(SCRIPT_TIMEOUT)?;
+        if let Some(handler) = storage {
+            sandbox.install_storage(handler, &meta.id)?;
+        }
         sandbox.eval_script(&format!(
             "{PRELUDE}\nglobalThis.meta = Object.freeze({meta_json});"
         ))?;
         let feed_object = sandbox.eval_module_default(&source)?;
+        sandbox.clear_storage_wiring()?;
         Self::require_handlers(&feed_object)?;
         let (has_login, has_auth_status) = Self::login_capabilities(&feed_object)?;
 

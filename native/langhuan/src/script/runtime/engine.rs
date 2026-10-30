@@ -3,6 +3,7 @@ use std::sync::Arc;
 use reqwest::Client;
 
 use crate::error::Result;
+use crate::feed::SharedStorageHandler;
 use crate::http::new_client;
 use crate::script::feed::ScriptFeed;
 use crate::script::js::JsFeed;
@@ -12,19 +13,29 @@ use crate::script::meta;
 #[derive(Clone)]
 pub struct ScriptEngine {
     client: Arc<Client>,
+    storage: Option<SharedStorageHandler>,
 }
 
 impl ScriptEngine {
     pub fn new() -> Self {
         Self {
             client: Arc::new(new_client()),
+            storage: None,
         }
     }
 
     pub fn with_client(client: Client) -> Self {
         Self {
             client: Arc::new(client),
+            storage: None,
         }
+    }
+
+    /// Install a per-feed storage backend for the feeds this engine loads;
+    /// feeds may then `import { storage } from "langhuan:storage"`.
+    pub fn with_storage(mut self, storage: SharedStorageHandler) -> Self {
+        self.storage = Some(storage);
+        self
     }
 
     pub async fn load_script(&self, script: &str) -> Result<ScriptFeed> {
@@ -61,6 +72,7 @@ impl ScriptEngine {
             script[body_offset..].to_owned(),
             feed_meta,
             (*self.client).clone(),
+            self.storage.clone(),
         )
     }
 }
@@ -73,10 +85,15 @@ impl Default for ScriptEngine {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    use serde_json::Value;
+
     use crate::error::{Error, ExpectedErrorCode, ScriptError};
     use crate::feed::{
-        CookieEntry, Feed, FeedAuthFlow, WebviewFuture, WebviewHandler, WebviewRequest,
-        WebviewSnapshot,
+        CookieEntry, Feed, FeedAuthFlow, StorageHandler, WebviewFuture, WebviewHandler,
+        WebviewRequest, WebviewSnapshot,
     };
     use tokio_stream::StreamExt as _;
 
@@ -703,5 +720,226 @@ mod tests {
             ),
             "unexpected error: {error:?}"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // langhuan:storage
+    // -----------------------------------------------------------------------
+
+    /// An in-memory [`StorageHandler`] shared across feeds.
+    #[derive(Default)]
+    struct MemoryStorage(Mutex<HashMap<(String, String), Value>>);
+
+    impl StorageHandler for MemoryStorage {
+        fn get(&self, feed_id: &str, key: &str) -> Result<Option<Value>> {
+            Ok(self
+                .0
+                .lock()
+                .unwrap()
+                .get(&(feed_id.to_owned(), key.to_owned()))
+                .cloned())
+        }
+
+        fn set(&self, feed_id: &str, key: &str, value: Value) -> Result<()> {
+            self.0
+                .lock()
+                .unwrap()
+                .insert((feed_id.to_owned(), key.to_owned()), value);
+            Ok(())
+        }
+
+        fn delete(&self, feed_id: &str, key: &str) -> Result<()> {
+            self.0
+                .lock()
+                .unwrap()
+                .remove(&(feed_id.to_owned(), key.to_owned()));
+            Ok(())
+        }
+    }
+
+    /// A feed that stores its "device" in `search`, reads it in `bookInfo`,
+    /// and deletes it in `chapters`.
+    const STORAGE_FEED: &str = r#"
+      import { storage } from "langhuan:storage";
+      const empty = () => ({ type: "complete", items: [] });
+      function search() {
+        storage.set("device", { device_id: "abc" });
+        return { type: "complete", items: [] };
+      }
+      function bookInfo() {
+        const device = storage.get("device");
+        return {
+          type: "complete",
+          value: { id: "1", title: device ? device.device_id : "none", author: "Test" },
+        };
+      }
+      function chapters() {
+        storage.delete("device");
+        return { type: "complete", items: [] };
+      }
+      export default { search, bookInfo, chapters, paragraphs: empty };
+    "#;
+
+    #[tokio::test]
+    async fn storage_round_trips_persists_and_isolates_feeds() {
+        let engine = ScriptEngine::new().with_storage(Arc::new(MemoryStorage::default()) as _);
+
+        let feed = engine.load_script(&source(4, STORAGE_FEED)).await.unwrap();
+        feed.search("x").collect::<Vec<_>>().await;
+        assert_eq!(feed.book_info("1").await.unwrap().title, "abc");
+        feed.chapters("1").collect::<Vec<_>>().await;
+        assert_eq!(feed.book_info("1").await.unwrap().title, "none");
+
+        // A freshly loaded feed reads what the previous instance stored:
+        // values live in the host backend, not in the realm.
+        feed.search("x").collect::<Vec<_>>().await;
+        let reloaded = engine.load_script(&source(4, STORAGE_FEED)).await.unwrap();
+        assert_eq!(reloaded.book_info("1").await.unwrap().title, "abc");
+
+        // Another feed never sees the first feed's namespace.
+        let other = format!(
+            r#"// ==Feed==
+// @id other
+// @name Other
+// @version 3.0.0
+// @base_url https://example.com
+// @schema_version 4
+// ==/Feed==
+{STORAGE_FEED}
+"#
+        );
+        let other = engine.load_script(&other).await.unwrap();
+        assert_eq!(other.book_info("1").await.unwrap().title, "none");
+    }
+
+    #[tokio::test]
+    async fn storage_module_fails_to_load_without_a_backend() {
+        let error = ScriptEngine::new()
+            .load_script(&source(4, STORAGE_FEED))
+            .await
+            .expect_err("importing langhuan:storage without a backend must fail");
+        assert!(
+            error.to_string().contains("langhuan:storage"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn storage_handler_errors_reach_the_operation() {
+        struct FailingStorage;
+        impl StorageHandler for FailingStorage {
+            fn get(&self, _: &str, _: &str) -> Result<Option<Value>> {
+                Err(Error::database("disk on fire"))
+            }
+            fn set(&self, _: &str, _: &str, _: Value) -> Result<()> {
+                Err(Error::database("disk on fire"))
+            }
+            fn delete(&self, _: &str, _: &str) -> Result<()> {
+                Err(Error::database("disk on fire"))
+            }
+        }
+
+        let engine = ScriptEngine::new().with_storage(Arc::new(FailingStorage) as _);
+        let feed = engine.load_script(&source(4, STORAGE_FEED)).await.unwrap();
+        let collected = feed.search("x").collect::<Vec<_>>().await;
+        let error = collected[0]
+            .as_ref()
+            .expect_err("handler failure must surface");
+        assert!(
+            error.to_string().contains("disk on fire"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn storage_rejects_bad_keys_undefined_values_and_bytes() {
+        let body = r#"
+          import { storage } from "langhuan:storage";
+          function search() {
+            storage.get("");
+            return { type: "complete", items: [] };
+          }
+          function bookInfo() {
+            storage.set("k", undefined);
+            return { type: "complete", value: { id: "1", title: "t", author: "a" } };
+          }
+          function chapters() {
+            storage.set("k", new Uint8Array(4));
+            return { type: "complete", items: [] };
+          }
+          function paragraphs() {
+            storage.get("x".repeat(257));
+            return { type: "complete", items: [] };
+          }
+          export default { search, bookInfo, chapters, paragraphs };
+        "#;
+        let engine = ScriptEngine::new().with_storage(Arc::new(MemoryStorage::default()) as _);
+        let feed = engine.load_script(&source(4, body)).await.unwrap();
+
+        let search = feed.search("x").collect::<Vec<_>>().await;
+        let chapters = feed.chapters("1").collect::<Vec<_>>().await;
+        let paragraphs = feed.paragraphs("1", "1").collect::<Vec<_>>().await;
+        let cases = [
+            (
+                "empty key",
+                search[0]
+                    .as_ref()
+                    .expect_err("empty key must fail")
+                    .to_string(),
+                "storage.get: `key` must be between 1 and 256 bytes",
+            ),
+            (
+                "undefined value",
+                feed.book_info("1")
+                    .await
+                    .expect_err("undefined must fail")
+                    .to_string(),
+                "storage.set: `value` must not be undefined",
+            ),
+            (
+                "bytes value",
+                chapters[0]
+                    .as_ref()
+                    .expect_err("bytes must fail")
+                    .to_string(),
+                "Bytes.toBase64/Bytes.toHex first",
+            ),
+            (
+                "oversized key",
+                paragraphs[0]
+                    .as_ref()
+                    .expect_err("oversized key must fail")
+                    .to_string(),
+                "storage.get: `key` must be between 1 and 256 bytes",
+            ),
+        ];
+        for (name, error, expected) in cases {
+            assert!(error.contains(expected), "{name}: {error}");
+        }
+    }
+
+    #[tokio::test]
+    async fn storage_wiring_global_is_swept_after_load() {
+        let body = r#"
+          import { storage } from "langhuan:storage";
+          function bookInfo() {
+            storage.set("probe", 1);
+            return {
+              type: "complete",
+              value: {
+                id: "1",
+                title: typeof globalThis.__langhuan_storage + ":" + storage.get("probe"),
+                author: "Test",
+              },
+            };
+          }
+          const empty = () => ({ type: "complete", items: [] });
+          export default { search: empty, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
+        let engine = ScriptEngine::new().with_storage(Arc::new(MemoryStorage::default()) as _);
+        let feed = engine.load_script(&source(4, body)).await.unwrap();
+        // The wiring global is gone once the feed is loaded, while the
+        // module's own handle keeps working.
+        assert_eq!(feed.book_info("1").await.unwrap().title, "undefined:1");
     }
 }

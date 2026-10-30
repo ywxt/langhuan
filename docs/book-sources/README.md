@@ -66,6 +66,12 @@ time, before any code runs:
 | `langhuan:encoding`  | `TextDecoder`, `TextEncoder`, `Bytes`        |     ✓      |       ✓        |
 | `langhuan:crypto`    | `Crypto`, `Compression`                      |     ✓      |       ✓        |
 | `langhuan:html`      | `HTML`                                       |     ✓      |       —        |
+| `langhuan:protobuf`  | `Protobuf`                                   |     ✓      |       ✓        |
+| `langhuan:storage`   | `storage`                                    |    ✓ \*    |       —        |
+
+`langhuan:storage` is declared only when the host application installed a
+storage backend for the feed; without one the import fails at link time like
+any undeclared module.
 
 Host modules are native values, not parsed JSON: importing one and calling it
 never serializes arguments or results. The modules are evaluated lazily on
@@ -385,7 +391,8 @@ Crypto.md5(data)                 // -> Uint8Array digest
 Crypto.sha1(data)
 Crypto.sha256(data)
 Crypto.sha512(data)
-Crypto.hmac("sha256", key, data) // algorithm: "md5"|"sha1"|"sha256"|"sha512"
+Crypto.sm3(data)                 // GB/T 32905
+Crypto.hmac("sha256", key, data) // algorithm: "md5"|"sha1"|"sha256"|"sha512"|"sm3"
 
 Crypto.aes({
   op: "encrypt" | "decrypt",
@@ -398,6 +405,9 @@ Crypto.aes({
 })
 // -> Uint8Array. GCM follows the WebCrypto convention: `data` on decrypt and
 //    the returned value are ciphertext||tag (16-byte tag); `iv` is the nonce.
+
+Crypto.simon(key, data)          // Simon128/256, ECB + PKCS#7; key: 32 bytes
+Crypto.speck(key, data)          // Speck128/256, ECB + PKCS#7; key: 32 bytes
 
 Crypto.randomBytes(length)      // -> Uint8Array from the system RNG
 
@@ -416,6 +426,57 @@ Notes:
 - A common site pattern decrypts as
   `Crypto.aes({ op: "decrypt", mode: "cbc", key, iv, data: payload })` where
   `payload = base64(iv || ciphertext)` was split beforehand.
+- `Crypto.simon`/`Crypto.speck` exist for one reason: app APIs that sign
+  requests with ByteDance's x-argus / x-ladon scheme encrypt with these
+  lightweight block ciphers. They are encrypt-only (signing never decrypts)
+  and ECB is what the scheme uses; prefer `Crypto.aes` for anything else.
+
+## Protobuf encoding
+
+App-API request signing also encodes payloads in protobuf's wire format.
+`langhuan:protobuf` provides a writer for the field shapes those payloads
+use — varints and length-delimited strings, bytes, and submessages:
+
+```js
+import { Protobuf } from "langhuan:protobuf";
+
+const writer = new Protobuf();
+writer.varint(1, 150);          // field 1, wire type 0
+writer.string(4, "1.6.1");      // field 4, UTF-8, length-delimited
+writer.bytes(12, queryHash);    // field 12, raw bytes, length-delimited
+
+const inner = new Protobuf();   // a submessage is nested bytes
+inner.varint(1, 1);
+writer.bytes(15, inner.finish());
+
+const payload = writer.finish(); // -> Uint8Array
+```
+
+`varint` accepts non-negative integers up to 2^53; field numbers must be
+1–536870911. `finish()` returns a copy, so a writer can be finished more
+than once.
+
+## Persistent storage
+
+Feeds that register a device or negotiate a key need state that outlives a
+single operation. `langhuan:storage` is a per-feed key-value store backed by
+the host application — the module is only declared when the host installed a
+backend, and every call is stamped with the feed's identifier, so a feed
+sees only its own keys:
+
+```js
+import { storage } from "langhuan:storage";
+
+const device = storage.get("device"); // stored JSON value, or undefined
+storage.set("device", { device_id, install_id });
+storage.delete("device");
+```
+
+The calls follow `localStorage` semantics: `get` returns the stored value or
+`undefined`, `set` and `delete` return nothing and fail by throwing. Keys
+are strings of 1–256 bytes; values are JSON (`undefined` is not a value, and
+typed arrays must be encoded with `Bytes.toBase64` or `Bytes.toHex` first).
+Values persist across operations and across feed reloads.
 
 ## Authentication
 

@@ -10,6 +10,12 @@
 //! A native module is a `ModuleDef` whose `declare` names its exports and
 //! whose `evaluate` fills them on first import; the values are built with
 //! the [`Namespace`] chain, [`constructor`], and [`set_function`] below.
+//!
+//! `langhuan:storage` is the one module that cannot fit this shape: its
+//! backend is per-feed, and `ModuleDef` is static. Feed bootstrap wires the
+//! backend in under an internal global, the module takes the global over on
+//! first import, and bootstrap removes it if the source never imports it —
+//! so no host global survives load either way. See `storage.rs`.
 
 use rquickjs::function::IntoJsFunc;
 use rquickjs::module::ModuleDef;

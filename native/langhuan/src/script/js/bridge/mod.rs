@@ -30,9 +30,7 @@ use rquickjs::{Ctx, IntoJs, Object, Value as JsValue};
 use super::sandbox::{JsObject, resolve_owner};
 use crate::error::Result;
 
-#[cfg(test)]
-pub(super) use convert::js_to_json;
-pub(super) use convert::{JsData, js_to_jsdata, typed_bytes};
+pub(super) use convert::{JsData, js_to_jsdata, js_to_json, typed_bytes};
 pub(super) use event::{OpaqueJsValue, OperationSpec, Round, StepOutcome, build_event};
 pub(super) use fields::{Fields, conversion_detail};
 pub(super) use step::{Step, read_auth_entry, read_auth_result, read_patched_request, read_step};
