@@ -492,3 +492,106 @@ async fn live_gateway_smoke() {
         .expect("live paragraphs yielded an error");
     assert!(!paragraphs.is_empty(), "no paragraphs");
 }
+
+/// Real-gateway VIP verification: reads a web-gated chapter anonymously.
+///
+/// Ignored like `live_gateway_smoke`. The public, unsigned web directory
+/// API marks most chapters of a book `isChapterLock: true` — everything
+/// past the ~10-chapter free preview, exactly the chapters the web route
+/// renders as the SVIP login wall. This test confirms the wall on the web
+/// reader page, then reads the same chapter through the app gateway —
+/// verifying first-hand the route's core claim: web-gated chapters decrypt
+/// to full text with no account.
+#[tokio::test]
+#[ignore = "hits real website"]
+async fn live_vip_chapter_decrypts_anonymously() {
+    const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
+                              (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+    let script = include_str!("../../../docs/book-sources/fanqie-app.js");
+    let engine = ScriptEngine::new()
+        .with_storage(Arc::new(MemoryStorage::default()) as SharedStorageHandler);
+    let feed = engine.load_script(script).await.expect("load failed");
+
+    let search_future = feed.search("深空").take(10).collect::<Vec<_>>();
+    let results = tokio::time::timeout(std::time::Duration::from_secs(60), search_future)
+        .await
+        .expect("live search timed out after 60s");
+    let books: Vec<_> = results
+        .into_iter()
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("live search yielded an error");
+    assert!(!books.is_empty(), "no search results to probe");
+
+    let client = langhuan::http::shared_client();
+    for book in books.iter().take(5) {
+        let response = client
+            .get(format!(
+                "https://fanqienovel.com/api/reader/directory/detail?bookId={}",
+                book.id
+            ))
+            .header("User-Agent", BROWSER_UA)
+            .send()
+            .await
+            .expect("web directory request");
+        let text = response.text().await.expect("web directory text");
+        let directory: Value = serde_json::from_str(&text).expect("web directory json");
+        let volumes = directory["data"]["chapterListWithVolume"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let mut total = 0usize;
+        let mut locked = 0usize;
+        let mut gated_chapter = None;
+        for volume in &volumes {
+            for chapter in volume.as_array().into_iter().flatten() {
+                total += 1;
+                let chapter_locked = chapter["isChapterLock"].as_bool().unwrap_or(false);
+                locked += usize::from(chapter_locked);
+                if chapter_locked && gated_chapter.is_none() {
+                    gated_chapter = Some(
+                        chapter["itemId"]
+                            .as_str()
+                            .expect("locked chapter itemId")
+                            .to_owned(),
+                    );
+                }
+            }
+        }
+        let Some(chapter_id) = gated_chapter else {
+            eprintln!("book {} has no locked chapters, trying next", book.id);
+            continue;
+        };
+        eprintln!(
+            "book {} ({}): {total} chapters, isChapterLock={locked}; first locked is {chapter_id}",
+            book.id, book.title
+        );
+
+        // Confirm the web route really gates this chapter (SVIP wall marker
+        // in the server-rendered reader page).
+        let page = client
+            .get(format!("https://fanqienovel.com/reader/{chapter_id}"))
+            .header("User-Agent", BROWSER_UA)
+            .send()
+            .await
+            .expect("web reader page request")
+            .text()
+            .await
+            .expect("web reader page text");
+        let web_gated = page.contains("muye-to-vip-login");
+        eprintln!("web reader page gates this chapter: {web_gated}");
+        assert!(web_gated, "expected the web route to gate this chapter");
+
+        // The app gateway should hand over the full chapter anonymously.
+        let paragraphs: Vec<_> = feed.paragraphs(&book.id, &chapter_id).collect().await;
+        let paragraphs: Vec<_> = paragraphs
+            .into_iter()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .expect("live gated chapter yielded an error");
+        assert!(
+            !paragraphs.is_empty(),
+            "web-gated chapter decrypted to zero paragraphs"
+        );
+        return;
+    }
+    panic!("no locked chapter found among the first search results");
+}

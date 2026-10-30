@@ -27,7 +27,10 @@
 // 讀段落，登入而無 SVIP 權益仍是同一頁。APP 端不同：閱讀網關
 // （reading.snssdk.com/reading/*）按「設備」而非「帳號」放行——註冊一
 // 台匿名設備、激活設備級會員（privilege/add，設備維度的權益），即可讀
-// 全文。據 fanqie-assistant 的協議記錄，此路線匿名可讀 VIP 章節。
+// 全文。此主張已實測：tests/fanqie_app.rs 的 live_vip_chapter_decrypts_
+// anonymously（#[ignore]）先以網頁目錄 API 的 isChapterLock 標記選出網
+// 頁端被牆章節、確認其閱讀頁確為 SVIP 牆（muye-to-vip-login），再經本
+// 源匿名讀出全文。
 //
 // ── 協議棧（全部為請求側編排，記錄自 fanqie-assistant）────────────────
 //
