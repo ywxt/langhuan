@@ -471,47 +471,39 @@ function deviceIdBytesLE(deviceId, take) {
 
 // ── 設備會話（storage 持久化 + 空體恢復）────────────────────────────────
 
-// 模塊級緩存：同一 feed 的調用串行，無並發問題。
-let cachedDevice = null;
-let cachedKeyinfo = null;
-// 剛換過設備且還沒有任何業務請求成功過：繼續換設備只會惡性註冊。
+// 唯一的模塊級可變狀態：剛換過設備且還沒有任何業務請求成功過——繼續換只
+// 會惡性註冊。這是會話級運行時守衛而非持久數據（feed 重載即重置，新會
+// 話允許再試一次），所以不進 storage；同一 feed 的操作在 realm 鎖下串行
+// 執行，無並發問題。與 fanqie.js 的風控攔截會話鎖同一模式。
 let deviceUnverified = false;
 
+// 持久狀態的事實來源就是 storage：每次按需讀取，不做模塊內緩存——一次
+// 橋接調用比維護緩存一致性的代價低。
 function currentDevice() {
-  if (cachedDevice) return cachedDevice;
   const stored = storage.get("device");
-  if (stored && stored.device_id && stored.install_id) cachedDevice = stored;
-  return cachedDevice;
+  return stored && stored.device_id && stored.install_id ? stored : null;
 }
 
 function saveDevice(device) {
-  cachedDevice = device;
   storage.set("device", device);
 }
 
 function dropDevice() {
-  cachedDevice = null;
-  cachedKeyinfo = null;
   storage.delete("device");
   storage.delete("keyinfo");
 }
 
 function currentKeyinfo() {
-  if (cachedKeyinfo) return cachedKeyinfo;
   const stored = storage.get("keyinfo");
-  if (stored && stored.key) {
-    cachedKeyinfo = { key: Bytes.fromBase64(stored.key), keyver: stored.keyver };
-  }
-  return cachedKeyinfo;
+  if (!stored || !stored.key) return null;
+  return { key: Bytes.fromBase64(stored.key), keyver: stored.keyver };
 }
 
 function saveKeyinfo(keyinfo) {
-  cachedKeyinfo = keyinfo;
   storage.set("keyinfo", { key: Bytes.toBase64(keyinfo.key), keyver: keyinfo.keyver });
 }
 
 function dropKeyinfo() {
-  cachedKeyinfo = null;
   storage.delete("keyinfo");
 }
 
