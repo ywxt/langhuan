@@ -1,5 +1,5 @@
 // ==Feed==
-// @id           qidian
+// @id           org.eu.ywxt.langhuan.qidian
 // @name         起點中文網
 // @version      3.3.0
 // @author       Langhuan

@@ -1,5 +1,5 @@
 // ==Feed==
-// @id           fanqie
+// @id           org.eu.ywxt.langhuan.fanqie
 // @name         番茄小說
 // @version      1.4.0
 // @author       Langhuan

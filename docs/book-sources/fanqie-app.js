@@ -1,5 +1,5 @@
 // ==Feed==
-// @id           fanqie-app
+// @id           org.eu.ywxt.langhuan.fanqie_app
 // @name         番茄小說（APP 直連）
 // @version      1.0.0
 // @author       Langhuan

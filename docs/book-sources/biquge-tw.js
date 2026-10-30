@@ -1,5 +1,5 @@
 // ==Feed==
-// @id           biquge-tw
+// @id           org.eu.ywxt.langhuan.biquge_tw
 // @name         筆趣閣（biquge.tw）
 // @version      2.1.0
 // @author       Langhuan

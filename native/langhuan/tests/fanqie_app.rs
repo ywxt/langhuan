@@ -282,7 +282,9 @@ async fn app_flow_registers_device_signs_and_reads_chapter() {
     // The registered device and content key are persisted for later
     // operations. `device_type` is a random model from the registration
     // body; assert its presence rather than its value.
-    let device = storage.get("fanqie-app", "device").unwrap();
+    let device = storage
+        .get("org.eu.ywxt.langhuan.fanqie_app", "device")
+        .unwrap();
     let device = device.expect("device persisted");
     assert_eq!(device["device_id"], json!(DEVICE_ID));
     assert_eq!(device["install_id"], json!(INSTALL_ID));
@@ -292,7 +294,9 @@ async fn app_flow_registers_device_signs_and_reads_chapter() {
             .is_some_and(|m| !m.is_empty()),
         "device_type is a random model: {device}"
     );
-    let keyinfo = storage.get("fanqie-app", "keyinfo").unwrap();
+    let keyinfo = storage
+        .get("org.eu.ywxt.langhuan.fanqie_app", "keyinfo")
+        .unwrap();
     let keyinfo = keyinfo.expect("keyinfo persisted");
     assert_eq!(keyinfo["keyver"].as_f64(), Some(KEYVER as f64));
     assert_eq!(keyinfo["key"].as_str().map(str::len), Some(24));
@@ -439,7 +443,9 @@ async fn app_flow_rekeys_when_content_is_invalid() {
     );
     assert_eq!(items.len(), 3, "expected paragraphs after rekey");
 
-    let keyinfo = storage.get("fanqie-app", "keyinfo").unwrap();
+    let keyinfo = storage
+        .get("org.eu.ywxt.langhuan.fanqie_app", "keyinfo")
+        .unwrap();
     let keyinfo = keyinfo.expect("keyinfo persisted");
     assert_eq!(keyinfo["keyver"].as_f64(), Some((KEYVER + 1) as f64));
 }

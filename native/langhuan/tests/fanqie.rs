@@ -462,7 +462,7 @@ async fn search_verifies_in_webview_and_retries_with_cookies() {
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
          (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
     );
-    assert_eq!(requests[0].feed_id, "fanqie");
+    assert_eq!(requests[0].feed_id, "org.eu.ywxt.langhuan.fanqie");
     assert_eq!(requests[0].feed_name, "番茄小說");
 }
 

@@ -52,7 +52,7 @@ Every file starts with a comment header:
 
 ```js
 // ==Feed==
-// @id           example
+// @id           org.example.books.example
 // @name         Example Source
 // @version      3.0.0
 // @author       You
@@ -64,8 +64,11 @@ Every file starts with a comment header:
 // ==/Feed==
 ```
 
-`id`, `name`, `version`, `base_url`, and `schema_version` are required. Declare
-every hostname the Rust host may contact with one `access_domain` line. A
+`id`, `name`, `version`, `base_url`, and `schema_version` are required. Use a
+reverse-domain identifier owned by the source publisher (for example,
+`org.example.books.example`) so independently distributed sources do not
+collide. Declare every hostname the Rust host may contact with one
+`access_domain` line. A
 leftmost wildcard such as `*.static.example.com` permits subdomains but not the
 root `static.example.com`; other wildcard positions are rejected. Domain checks
 apply to every request descriptor returned by the source.
