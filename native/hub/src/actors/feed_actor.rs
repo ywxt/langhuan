@@ -533,9 +533,11 @@ mod tests {
 // @description  Fixture feed backed by a mockito server
 // @base_url     __BASE_URL__
 // @access_domain 127.0.0.1
-// @schema_version 3
+// @schema_version 4
 // ==/Feed==
-(() => {
+import { TextDecoder } from "langhuan:encoding";
+export default (() => {
+  const DECODER = new TextDecoder("utf-8");
   const request = (path) => ({
     type: "request",
     request: { url: meta.base_url + path, method: "GET", headers: {} },
@@ -543,7 +545,7 @@ mod tests {
   });
   function search(event) {
     if (event.state == null) return request("/search");
-    const count = Number(event.response?.body ?? "");
+    const count = Number(event.response ? DECODER.decode(event.response.body) : "");
     if (!Number.isInteger(count)) throw new Error("fixture: invalid search count");
     return {
       type: "complete",
@@ -575,7 +577,7 @@ mod tests {
     ] };
   }
   return { search, bookInfo, chapters, paragraphs };
-})()
+})();
 "#;
 
     fn fixture_script(id: &str, name: &str, base_url: &str) -> String {
@@ -596,7 +598,7 @@ mod tests {
             description: None,
             base_url: base_url.to_owned(),
             access_domains,
-            schema_version: 3,
+            schema_version: 4,
         }
     }
 

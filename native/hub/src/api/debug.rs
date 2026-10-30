@@ -440,9 +440,11 @@ mod tests {
 // @version      3.0.0
 // @base_url     {base_url}
 // @access_domain 127.0.0.1
-// @schema_version 3
+// @schema_version 4
 // ==/Feed==
-(() => {{
+import {{ TextDecoder }} from "langhuan:encoding";
+export default (() => {{
+  const DECODER = new TextDecoder("utf-8");
   const request = (path) => ({{
     type: "request",
     request: {{ url: meta.base_url + path, method: "GET" }},
@@ -450,14 +452,14 @@ mod tests {
   }});
   function search(event) {{
     if (event.state == null) return request("/search");
-    const ids = JSON.parse(event.response.body).ids;
+    const ids = JSON.parse(DECODER.decode(event.response.body)).ids;
     return {{ type: "complete", items: ids.map((id) => ({{
       id, title: "Book " + id, author: "Author",
     }})) }};
   }}
   function bookInfo(event) {{
     if (event.state == null) return request("/book/" + event.input.bookId);
-    return {{ type: "complete", value: JSON.parse(event.response.body) }};
+    return {{ type: "complete", value: JSON.parse(DECODER.decode(event.response.body)) }};
   }}
   function chapters(event) {{
     return event.state == null
