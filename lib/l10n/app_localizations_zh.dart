@@ -836,6 +836,51 @@ class AppLocalizationsZh extends AppLocalizations {
   String get devToolsEntryDescription => '書源腳本調試環境';
 
   @override
+  String get devAgentApi => 'Agent API';
+
+  @override
+  String get devAgentApiTitle => '本地 Agent API';
+
+  @override
+  String get devAgentApiHint => '僅監聽本機回環地址；關閉此開發者工具頁後，API 會自動停止。';
+
+  @override
+  String get devAgentEndpoint => '接口地址';
+
+  @override
+  String get devAgentToken => 'Bearer 令牌';
+
+  @override
+  String get devAgentCopyCurl => '複製 curl';
+
+  @override
+  String get devAgentStop => '停止 API';
+
+  @override
+  String get devClose => '關閉';
+
+  @override
+  String get debugOperations => '操作';
+
+  @override
+  String debugStepTitle(int count) {
+    return 'Reducer 步驟（$count）';
+  }
+
+  @override
+  String get debugStepEmpty => '沒有記錄到 Reducer 步驟。';
+
+  @override
+  String debugStepDropped(int count) {
+    return '另有 $count 個步驟未被記錄。';
+  }
+
+  @override
+  String debugStepRound(String operation, int round) {
+    return '$operation · 第 $round 輪';
+  }
+
+  @override
   String devUnlockCountdown(int count) {
     return '再點擊 $count 次開啟開發者模式';
   }
@@ -911,6 +956,30 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get debugStageAuthStatus => '登錄狀態';
+
+  @override
+  String get debugStageManual => '高級單頁調用';
+
+  @override
+  String get debugManualOperation => 'Operation';
+
+  @override
+  String get debugManualInput => 'Input JSON';
+
+  @override
+  String get debugManualInputHint => '作爲 event.input 傳入';
+
+  @override
+  String get debugManualCursor => 'Cursor JSON';
+
+  @override
+  String get debugManualCursorHint => '作爲 event.cursor 傳入；第一頁使用 null';
+
+  @override
+  String get debugManualUseNextCursor => '使用下一頁 Cursor';
+
+  @override
+  String get debugManualNoNextCursor => '沒有 next_cursor，操作已完成。';
 
   @override
   String get debugInputKeyword => '關鍵詞';

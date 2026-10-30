@@ -25,6 +25,7 @@ use langhuan::feed::{AuthStatus as FeedAuthStatus, Feed, FeedAuthFlow};
 use langhuan::model::Paragraph;
 use langhuan::script::feed::ScriptFeed;
 use langhuan::script::runtime::ScriptEngine;
+use langhuan::step_trace::{StepTraceEntry, StepTraceRecorder};
 use langhuan::trace::{TraceEntry, TraceRecorder};
 use tokio_stream::StreamExt;
 
@@ -54,15 +55,37 @@ pub enum DebugStage {
     Paragraphs { book_id: String, chapter_id: String },
     /// The login-status probe (requires a feed with a `login` block).
     AuthStatus,
+    /// Execute exactly one operation/page with raw JSON input and cursor.
+    /// This is the advanced debugger path; it never follows `next_cursor`.
+    Manual {
+        operation: String,
+        input_json: String,
+        cursor_json: String,
+    },
 }
 
 /// Typed output of a stage run, using the reading pipeline's own models.
 pub enum DebugStageOutput {
-    Search { items: Vec<SearchResultItem> },
-    BookInfo { info: BookInfo },
-    Chapters { items: Vec<ChapterItem> },
-    Paragraphs { items: Vec<ParagraphContent> },
-    AuthStatus { status: AuthStatus },
+    Search {
+        items: Vec<SearchResultItem>,
+    },
+    BookInfo {
+        info: BookInfo,
+    },
+    Chapters {
+        items: Vec<ChapterItem>,
+    },
+    Paragraphs {
+        items: Vec<ParagraphContent>,
+    },
+    AuthStatus {
+        status: AuthStatus,
+    },
+    Manual {
+        items_json: Option<String>,
+        value_json: Option<String>,
+        next_cursor_json: Option<String>,
+    },
 }
 
 /// Metadata of the compiled script, reported with every run so the
@@ -117,6 +140,30 @@ impl From<TraceEntry> for HttpTraceEntry {
     }
 }
 
+/// One JavaScript reducer round returned by the feed handler.
+pub struct DebugStepTraceEntry {
+    /// Feed operation (`search`, `book_info`, …).
+    pub operation: String,
+    /// Zero-based reducer round within one page/value execution.
+    pub round: u32,
+    /// Step kind (`request`, `compute`, `webview`, `complete`, or `fail`).
+    pub kind: String,
+    /// Bounded description of the step. Request and WebView URLs are
+    /// credential-redacted; script-provided failure messages are verbatim.
+    pub summary: String,
+}
+
+impl From<StepTraceEntry> for DebugStepTraceEntry {
+    fn from(entry: StepTraceEntry) -> Self {
+        Self {
+            operation: entry.operation,
+            round: entry.round,
+            kind: entry.kind,
+            summary: entry.summary,
+        }
+    }
+}
+
 /// The outcome of a debug run: what the stage produced, what failed, and
 /// the HTTP traffic it generated.
 pub struct DebugRunResult {
@@ -136,6 +183,10 @@ pub struct DebugRunResult {
     pub trace: Vec<HttpTraceEntry>,
     /// Requests recorded past the trace's entry limit.
     pub dropped_entries: u32,
+    /// Reducer steps in execution order, including pagination rounds.
+    pub steps: Vec<DebugStepTraceEntry>,
+    /// Reducer steps omitted after the per-run limit.
+    pub dropped_steps: u32,
     /// Wall-clock duration of the run in milliseconds.
     pub duration_ms: u64,
 }
@@ -150,11 +201,15 @@ pub struct DebugRunResult {
 pub async fn debug_run_stage(script: String, stage: DebugStage) -> DebugRunResult {
     let start = Instant::now();
     let recorder = TraceRecorder::new();
+    let step_recorder = StepTraceRecorder::new();
 
     // Compilation and the stage run both happen inside the scope: script
     // loading performs no HTTP, so only the stage's own traffic is traced.
-    let core = recorder.scope(run_script_stage(script, stage)).await;
+    let core = recorder
+        .scope(step_recorder.scope(run_script_stage(script, stage)))
+        .await;
     let (trace, dropped) = recorder.finish();
+    let (steps, dropped_steps) = step_recorder.finish();
 
     DebugRunResult {
         script_meta: core.script_meta,
@@ -163,6 +218,8 @@ pub async fn debug_run_stage(script: String, stage: DebugStage) -> DebugRunResul
         error: core.error,
         trace: trace.into_iter().map(HttpTraceEntry::from).collect(),
         dropped_entries: dropped,
+        steps: steps.into_iter().map(DebugStepTraceEntry::from).collect(),
+        dropped_steps,
         duration_ms: start.elapsed().as_millis() as u64,
     }
 }
@@ -373,6 +430,57 @@ async fn run_stage(
                 Err(e) => (None, Some(e.into())),
             }
         }
+        DebugStage::Manual {
+            operation,
+            input_json,
+            cursor_json,
+        } => {
+            let input = match serde_json::from_str::<serde_json::Value>(&input_json) {
+                Ok(value) if value.is_object() => value,
+                Ok(_) => {
+                    return (
+                        None,
+                        Some(BridgeError::from(
+                            "Operation input must be a JSON object".to_owned(),
+                        )),
+                    );
+                }
+                Err(error) => {
+                    return (
+                        None,
+                        Some(BridgeError::from(format!(
+                            "Invalid operation input JSON: {error}"
+                        ))),
+                    );
+                }
+            };
+            let cursor = match serde_json::from_str::<serde_json::Value>(&cursor_json) {
+                Ok(value) => value,
+                Err(error) => {
+                    return (
+                        None,
+                        Some(BridgeError::from(format!("Invalid cursor JSON: {error}"))),
+                    );
+                }
+            };
+            match feed.debug_operation_page(&operation, input, cursor).await {
+                Ok(page) => (
+                    Some(DebugStageOutput::Manual {
+                        items_json: page
+                            .items
+                            .map(|value| serde_json::to_string_pretty(&value).unwrap()),
+                        value_json: page
+                            .value
+                            .map(|value| serde_json::to_string_pretty(&value).unwrap()),
+                        next_cursor_json: page
+                            .next_cursor
+                            .map(|value| serde_json::to_string_pretty(&value).unwrap()),
+                    }),
+                    None,
+                ),
+                Err(error) => (None, Some(error.into())),
+            }
+        }
     }
 }
 
@@ -425,7 +533,6 @@ mod tests {
     use langhuan::trace::TraceRecorder;
 
     use super::*;
-    use crate::api::types::ErrorKind;
 
     type TestResult = Result<(), Box<dyn Error>>;
 
@@ -477,6 +584,31 @@ export default (() => {{
         )
     }
 
+    fn paged_fixture_script() -> &'static str {
+        r#"
+// ==Feed==
+// @id           dbg-paged-fixture
+// @name         Debug Paged Fixture
+// @version      1.0.0
+// @base_url     https://example.com
+// @access_domain example.com
+// @schema_version 4
+// ==/Feed==
+function search(event) {
+  const page = event.cursor?.page ?? 1;
+  return {
+    type: "complete",
+    items: [{ id: String(page), title: "Page " + page, author: "Author" }],
+    next_cursor: page < 2 ? { page: page + 1 } : null,
+  };
+}
+function bookInfo() { return { type: "complete", value: {} }; }
+function chapters() { return { type: "complete", items: [] }; }
+function paragraphs() { return { type: "complete", items: [] }; }
+export default { search, bookInfo, chapters, paragraphs };
+"#
+    }
+
     async fn mock_search(server: &mut mockito::Server, body: &'static str) -> mockito::Mock {
         server
             .mock("GET", "/search")
@@ -515,11 +647,81 @@ export default (() => {{
         Ok(())
     }
 
-    /// A duplicate id mid-stream terminates the stage: the items before the
-    /// duplicate survive alongside the error — the exact situation the
-    /// debug page must be able to show.
     #[tokio::test]
-    async fn duplicate_id_keeps_partial_items_and_reports_error() -> TestResult {
+    async fn manual_operation_runs_one_page_and_returns_cursor() -> TestResult {
+        let feed = ScriptEngine::new()
+            .load_script(paged_fixture_script())
+            .await?;
+
+        let (pipeline_output, pipeline_error) = run_stage(
+            &feed,
+            DebugStage::Search {
+                keyword: "k".to_owned(),
+            },
+        )
+        .await;
+        assert!(pipeline_error.is_none());
+        let Some(DebugStageOutput::Search { items }) = pipeline_output else {
+            panic!("expected full search output");
+        };
+        assert_eq!(items.len(), 2, "default mode must follow pagination");
+
+        let (first_output, first_error) = run_stage(
+            &feed,
+            DebugStage::Manual {
+                operation: "search".to_owned(),
+                input_json: r#"{"keyword":"k"}"#.to_owned(),
+                cursor_json: "null".to_owned(),
+            },
+        )
+        .await;
+        assert!(first_error.is_none());
+        let Some(DebugStageOutput::Manual {
+            items_json: Some(items),
+            next_cursor_json: Some(next_cursor),
+            ..
+        }) = first_output
+        else {
+            panic!("expected first manual page with a cursor");
+        };
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&items)?[0]["id"],
+            "1"
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&next_cursor)?,
+            serde_json::json!({ "page": 2 })
+        );
+
+        let (second_output, second_error) = run_stage(
+            &feed,
+            DebugStage::Manual {
+                operation: "search".to_owned(),
+                input_json: r#"{"keyword":"k"}"#.to_owned(),
+                cursor_json: next_cursor,
+            },
+        )
+        .await;
+        assert!(second_error.is_none());
+        let Some(DebugStageOutput::Manual {
+            items_json: Some(items),
+            next_cursor_json: None,
+            ..
+        }) = second_output
+        else {
+            panic!("expected terminal second manual page");
+        };
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&items)?[0]["id"],
+            "2"
+        );
+        Ok(())
+    }
+
+    /// Search pagination overlaps are recoverable: keep the first identity
+    /// and continue, exactly like the production search surface.
+    #[tokio::test]
+    async fn duplicate_search_id_is_skipped() -> TestResult {
         let mut server = mockito::Server::new_async().await;
         let _mock = mock_search(&mut server, r#"{"ids":["1","2","2","3"]}"#).await;
         let feed = ScriptEngine::new()
@@ -537,17 +739,12 @@ export default (() => {{
         )
         .await;
 
-        let error = error.expect("duplicate id must surface as an error");
-        assert!(matches!(
-            error.kind,
-            ErrorKind::ScriptConfig | ErrorKind::ScriptRuntime
-        ));
+        assert!(error.is_none());
         let Some(DebugStageOutput::Search { items }) = output else {
-            panic!("partial items must survive");
+            panic!("expected de-duplicated search output");
         };
-        // Items 1 and 2 were yielded before the duplicate was detected.
         let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
-        assert_eq!(ids, ["1", "2"]);
+        assert_eq!(ids, ["1", "2", "3"]);
         Ok(())
     }
 
@@ -609,19 +806,29 @@ export default (() => {{
             .await?;
 
         let recorder = TraceRecorder::new();
+        let step_recorder = StepTraceRecorder::new();
         let (output, error) = recorder
-            .scope(run_stage(
+            .scope(step_recorder.scope(run_stage(
                 &feed,
                 DebugStage::Search {
                     keyword: "k".to_owned(),
                 },
-            ))
+            )))
             .await;
         let (trace, dropped) = recorder.finish();
+        let (steps, dropped_steps) = step_recorder.finish();
 
         assert!(error.is_none());
         assert!(output.is_some());
         assert_eq!(dropped, 0);
+        assert_eq!(dropped_steps, 0);
+        assert_eq!(
+            steps
+                .iter()
+                .map(|entry| entry.kind.as_str())
+                .collect::<Vec<_>>(),
+            ["request", "complete"]
+        );
         assert_eq!(trace.len(), 1, "one request, one entry");
         let entry = &trace[0];
         assert_eq!(entry.method, "GET");

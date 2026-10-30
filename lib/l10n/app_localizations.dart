@@ -1628,6 +1628,84 @@ abstract class AppLocalizations {
   /// **'Feed script debugging environment'**
   String get devToolsEntryDescription;
 
+  /// No description provided for @devAgentApi.
+  ///
+  /// In en, this message translates to:
+  /// **'Agent API'**
+  String get devAgentApi;
+
+  /// No description provided for @devAgentApiTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Local Agent API'**
+  String get devAgentApiTitle;
+
+  /// No description provided for @devAgentApiHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Loopback only. The API stops when this developer page closes.'**
+  String get devAgentApiHint;
+
+  /// No description provided for @devAgentEndpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'Endpoint'**
+  String get devAgentEndpoint;
+
+  /// No description provided for @devAgentToken.
+  ///
+  /// In en, this message translates to:
+  /// **'Bearer token'**
+  String get devAgentToken;
+
+  /// No description provided for @devAgentCopyCurl.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy curl'**
+  String get devAgentCopyCurl;
+
+  /// No description provided for @devAgentStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop API'**
+  String get devAgentStop;
+
+  /// No description provided for @devClose.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get devClose;
+
+  /// No description provided for @debugOperations.
+  ///
+  /// In en, this message translates to:
+  /// **'Operations'**
+  String get debugOperations;
+
+  /// Developer inspector reducer step count
+  ///
+  /// In en, this message translates to:
+  /// **'Reducer steps ({count})'**
+  String debugStepTitle(int count);
+
+  /// No description provided for @debugStepEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No reducer steps were recorded.'**
+  String get debugStepEmpty;
+
+  /// Developer inspector omitted reducer step count
+  ///
+  /// In en, this message translates to:
+  /// **'{count} further steps were omitted.'**
+  String debugStepDropped(int count);
+
+  /// Reducer operation and zero-based round
+  ///
+  /// In en, this message translates to:
+  /// **'{operation} · round {round}'**
+  String debugStepRound(String operation, int round);
+
   /// Snackbar while tapping the version row towards unlocking
   ///
   /// In en, this message translates to:
@@ -1771,6 +1849,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Auth status'**
   String get debugStageAuthStatus;
+
+  /// Stage runner: manually execute one operation page
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced single page'**
+  String get debugStageManual;
+
+  /// No description provided for @debugManualOperation.
+  ///
+  /// In en, this message translates to:
+  /// **'Operation'**
+  String get debugManualOperation;
+
+  /// No description provided for @debugManualInput.
+  ///
+  /// In en, this message translates to:
+  /// **'Input JSON'**
+  String get debugManualInput;
+
+  /// No description provided for @debugManualInputHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Passed to event.input'**
+  String get debugManualInputHint;
+
+  /// No description provided for @debugManualCursor.
+  ///
+  /// In en, this message translates to:
+  /// **'Cursor JSON'**
+  String get debugManualCursor;
+
+  /// No description provided for @debugManualCursorHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Passed to event.cursor; use null for the first page'**
+  String get debugManualCursorHint;
+
+  /// No description provided for @debugManualUseNextCursor.
+  ///
+  /// In en, this message translates to:
+  /// **'Use next cursor'**
+  String get debugManualUseNextCursor;
+
+  /// No description provided for @debugManualNoNextCursor.
+  ///
+  /// In en, this message translates to:
+  /// **'No next cursor; this operation is complete.'**
+  String get debugManualNoNextCursor;
 
   /// Stage runner input: search keyword
   ///

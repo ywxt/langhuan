@@ -862,6 +862,52 @@ class AppLocalizationsEn extends AppLocalizations {
   String get devToolsEntryDescription => 'Feed script debugging environment';
 
   @override
+  String get devAgentApi => 'Agent API';
+
+  @override
+  String get devAgentApiTitle => 'Local Agent API';
+
+  @override
+  String get devAgentApiHint =>
+      'Loopback only. The API stops when this developer page closes.';
+
+  @override
+  String get devAgentEndpoint => 'Endpoint';
+
+  @override
+  String get devAgentToken => 'Bearer token';
+
+  @override
+  String get devAgentCopyCurl => 'Copy curl';
+
+  @override
+  String get devAgentStop => 'Stop API';
+
+  @override
+  String get devClose => 'Close';
+
+  @override
+  String get debugOperations => 'Operations';
+
+  @override
+  String debugStepTitle(int count) {
+    return 'Reducer steps ($count)';
+  }
+
+  @override
+  String get debugStepEmpty => 'No reducer steps were recorded.';
+
+  @override
+  String debugStepDropped(int count) {
+    return '$count further steps were omitted.';
+  }
+
+  @override
+  String debugStepRound(String operation, int round) {
+    return '$operation · round $round';
+  }
+
+  @override
   String devUnlockCountdown(int count) {
     return '$count more taps to enable developer tools';
   }
@@ -938,6 +984,32 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get debugStageAuthStatus => 'Auth status';
+
+  @override
+  String get debugStageManual => 'Advanced single page';
+
+  @override
+  String get debugManualOperation => 'Operation';
+
+  @override
+  String get debugManualInput => 'Input JSON';
+
+  @override
+  String get debugManualInputHint => 'Passed to event.input';
+
+  @override
+  String get debugManualCursor => 'Cursor JSON';
+
+  @override
+  String get debugManualCursorHint =>
+      'Passed to event.cursor; use null for the first page';
+
+  @override
+  String get debugManualUseNextCursor => 'Use next cursor';
+
+  @override
+  String get debugManualNoNextCursor =>
+      'No next cursor; this operation is complete.';
 
   @override
   String get debugInputKeyword => 'Keyword';

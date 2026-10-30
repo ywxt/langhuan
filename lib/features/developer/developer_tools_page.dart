@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -14,10 +15,12 @@ import '../../src/rust/api/debug.dart';
 import '../../src/rust/api/types.dart';
 import '../feeds/feed_providers.dart';
 import 'debug_trace_view.dart';
+import 'debug_step_view.dart';
+import 'developer_agent_server.dart';
 
 /// Pipeline stages the runner can execute, mirroring the reading
 /// pipeline's operations.
-enum _StageKind { search, bookInfo, chapters, paragraphs, authStatus }
+enum _StageKind { search, bookInfo, chapters, paragraphs, authStatus, manual }
 
 /// One executed debug run, kept for the in-session history.
 class _RunRecord {
@@ -58,25 +61,123 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
   final _keywordController = TextEditingController();
   final _bookIdController = TextEditingController();
   final _chapterIdController = TextEditingController();
+  final _manualInputController = TextEditingController(
+    text: '{\n  "keyword": ""\n}',
+  );
+  final _manualCursorController = TextEditingController(text: 'null');
+  String _manualOperation = 'search';
 
   bool _running = false;
   bool _importing = false;
+  bool _agentServerChanging = false;
+  late final DeveloperAgentServer _agentServer;
   final List<_RunRecord> _history = [];
   _RunRecord? _selected;
 
   @override
   void initState() {
     super.initState();
+    _agentServer = DeveloperAgentServer(
+      currentScript: () => _scriptController.text,
+    );
     _restoreScript();
   }
 
   @override
   void dispose() {
+    unawaited(_agentServer.stop());
     _scriptController.dispose();
     _keywordController.dispose();
     _bookIdController.dispose();
     _chapterIdController.dispose();
+    _manualInputController.dispose();
+    _manualCursorController.dispose();
     super.dispose();
+  }
+
+  Future<void> _toggleAgentServer() async {
+    if (_agentServerChanging) return;
+    setState(() => _agentServerChanging = true);
+    try {
+      if (_agentServer.isRunning) {
+        await _agentServer.stop();
+      } else {
+        await _agentServer.start();
+      }
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (!mounted) return;
+      showErrorSnack(ScaffoldMessenger.of(context), error.toString());
+    } finally {
+      if (mounted) setState(() => _agentServerChanging = false);
+    }
+  }
+
+  Future<void> _showAgentApi() async {
+    if (!_agentServer.isRunning) await _toggleAgentServer();
+    if (!mounted || !_agentServer.isRunning) return;
+    final uri = _agentServer.baseUri!;
+    final token = _agentServer.token!;
+    final command =
+        "curl -s '${uri.resolve('/v1/run')}' "
+        "-H 'Authorization: Bearer $token' "
+        "-H 'Content-Type: application/json' "
+        "--data '{\"operation\":\"search\",\"input\":{\"keyword\":\"test\"}}'";
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(AppLocalizations.of(context).devAgentApiTitle),
+        content: SizedBox(
+          width: 640,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(AppLocalizations.of(context).devAgentApiHint),
+              const SizedBox(height: LanghuanTheme.spaceMd),
+              _AgentValue(
+                label: AppLocalizations.of(context).devAgentEndpoint,
+                value: uri.toString(),
+              ),
+              _AgentValue(
+                label: AppLocalizations.of(context).devAgentToken,
+                value: token,
+              ),
+              const SizedBox(height: LanghuanTheme.spaceMd),
+              SelectionArea(
+                child: Text(
+                  command,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              unawaited(_toggleAgentServer());
+            },
+            icon: const Icon(Icons.stop_circle_outlined),
+            label: Text(AppLocalizations.of(context).devAgentStop),
+          ),
+          TextButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: command));
+            },
+            icon: const Icon(Icons.copy_rounded),
+            label: Text(AppLocalizations.of(context).devAgentCopyCurl),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(AppLocalizations.of(context).devClose),
+          ),
+        ],
+      ),
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -280,6 +381,14 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
         return DebugStage.paragraphs(bookId: bookId, chapterId: chapterId);
       case _StageKind.authStatus:
         return const DebugStage.authStatus();
+      case _StageKind.manual:
+        return DebugStage.manual(
+          operation: _manualOperation,
+          inputJson: _manualInputController.text,
+          cursorJson: _manualCursorController.text.trim().isEmpty
+              ? 'null'
+              : _manualCursorController.text,
+        );
     }
   }
 
@@ -294,7 +403,32 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
             '${_chapterIdController.text.trim()}';
       case _StageKind.authStatus:
         return '';
+      case _StageKind.manual:
+        return '$_manualOperation · cursor '
+            '${_manualCursorController.text.trim().isEmpty ? 'null' : _manualCursorController.text.trim()}';
     }
+  }
+
+  void _setManualOperation(String operation) {
+    const templates = {
+      'search': '{\n  "keyword": ""\n}',
+      'bookInfo': '{\n  "bookId": ""\n}',
+      'chapters': '{\n  "bookId": ""\n}',
+      'paragraphs': '{\n  "bookId": "",\n  "chapterId": ""\n}',
+      'authStatus': '{}',
+    };
+    setState(() {
+      _manualOperation = operation;
+      _manualInputController.text = templates[operation] ?? '{}';
+      _manualCursorController.text = 'null';
+    });
+  }
+
+  void _useManualCursor(String cursor) {
+    setState(() {
+      _stage = _StageKind.manual;
+      _manualCursorController.text = cursor;
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -325,65 +459,483 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
     final l10n = AppLocalizations.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.devToolsTitle)),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            LanghuanTheme.spaceLg,
-            LanghuanTheme.spaceMd,
-            LanghuanTheme.spaceLg,
-            LanghuanTheme.spaceXl,
+      appBar: AppBar(
+        title: Text(l10n.devToolsTitle),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: LanghuanTheme.spaceSm),
+            child: TextButton.icon(
+              onPressed: _agentServerChanging ? null : _showAgentApi,
+              icon: _agentServerChanging
+                  ? const LanghuanSpinner(size: 16)
+                  : Icon(
+                      Icons.smart_toy_outlined,
+                      color: _agentServer.isRunning
+                          ? theme.colorScheme.primary
+                          : null,
+                    ),
+              label: Text(l10n.devAgentApi),
+            ),
           ),
-          children: [
-            _ScriptSection(
-              controller: _scriptController,
-              importing: _importing,
-              onImport: _importFromInstalled,
-              onClear: _clearScript,
-            ),
-            const SizedBox(height: LanghuanTheme.spaceLg),
-            _StageSelector(
-              stage: _stage,
-              onChanged: (stage) => setState(() => _stage = stage),
-            ),
-            const SizedBox(height: LanghuanTheme.spaceMd),
-            _InputArea(
-              stage: _stage,
-              keywordController: _keywordController,
-              bookIdController: _bookIdController,
-              chapterIdController: _chapterIdController,
-            ),
-            const SizedBox(height: LanghuanTheme.spaceMd),
-            FilledButton.icon(
-              onPressed: _running ? null : _run,
-              icon: _running
-                  ? const LanghuanSpinner(size: 18)
-                  : const Icon(Icons.play_arrow_rounded),
-              label: Text(l10n.debugRun),
-            ),
-            const SizedBox(height: LanghuanTheme.spaceLg),
-            if (_selected != null)
-              _ResultSection(
-                record: _selected!,
+        ],
+      ),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth >= 1100) {
+              return _DesktopWorkbench(
+                scriptController: _scriptController,
+                importing: _importing,
+                onImport: _importFromInstalled,
+                onClear: _clearScript,
+                stage: _stage,
+                onStageChanged: (stage) => setState(() => _stage = stage),
+                keywordController: _keywordController,
+                bookIdController: _bookIdController,
+                chapterIdController: _chapterIdController,
+                manualOperation: _manualOperation,
+                onManualOperationChanged: _setManualOperation,
+                manualInputController: _manualInputController,
+                manualCursorController: _manualCursorController,
+                running: _running,
+                onRun: _run,
+                selected: _selected,
+                history: _history,
+                onSelectHistory: (record) => setState(() => _selected = record),
                 onChainToBookInfo: _chainToBookInfo,
                 onChainToParagraphs: _chainToParagraphs,
-              )
-            else
-              _EmptyHint(l10n: l10n, theme: theme),
-            if (_history.length > 1) ...[
-              const SizedBox(height: LanghuanTheme.spaceLg),
-              _HistorySection(
-                history: _history,
-                selected: _selected,
-                onSelect: (record) => setState(() => _selected = record),
+                onUseManualCursor: _useManualCursor,
+              );
+            }
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(
+                LanghuanTheme.spaceLg,
+                LanghuanTheme.spaceMd,
+                LanghuanTheme.spaceLg,
+                LanghuanTheme.spaceXl,
               ),
-            ],
-          ],
+              children: [
+                _ScriptSection(
+                  controller: _scriptController,
+                  importing: _importing,
+                  onImport: _importFromInstalled,
+                  onClear: _clearScript,
+                ),
+                const SizedBox(height: LanghuanTheme.spaceLg),
+                _StageSelector(
+                  stage: _stage,
+                  onChanged: (stage) => setState(() => _stage = stage),
+                ),
+                const SizedBox(height: LanghuanTheme.spaceMd),
+                _InputArea(
+                  stage: _stage,
+                  keywordController: _keywordController,
+                  bookIdController: _bookIdController,
+                  chapterIdController: _chapterIdController,
+                  manualOperation: _manualOperation,
+                  onManualOperationChanged: _setManualOperation,
+                  manualInputController: _manualInputController,
+                  manualCursorController: _manualCursorController,
+                ),
+                const SizedBox(height: LanghuanTheme.spaceMd),
+                FilledButton.icon(
+                  onPressed: _running ? null : _run,
+                  icon: _running
+                      ? const LanghuanSpinner(size: 18)
+                      : const Icon(Icons.play_arrow_rounded),
+                  label: Text(l10n.debugRun),
+                ),
+                const SizedBox(height: LanghuanTheme.spaceLg),
+                if (_selected != null)
+                  _ResultSection(
+                    record: _selected!,
+                    onChainToBookInfo: _chainToBookInfo,
+                    onChainToParagraphs: _chainToParagraphs,
+                    onUseManualCursor: _useManualCursor,
+                  )
+                else
+                  _EmptyHint(l10n: l10n, theme: theme),
+                if (_history.length > 1) ...[
+                  const SizedBox(height: LanghuanTheme.spaceLg),
+                  _HistorySection(
+                    history: _history,
+                    selected: _selected,
+                    onSelect: (record) => setState(() => _selected = record),
+                  ),
+                ],
+              ],
+            );
+          },
         ),
       ),
     );
   }
 }
+
+class _AgentValue extends StatelessWidget {
+  const _AgentValue({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: LanghuanTheme.spaceSm),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 96, child: Text(label)),
+          Expanded(
+            child: SelectionArea(
+              child: Text(
+                value,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Desktop workbench: source, operation launcher, and inspector stay visible
+/// at the same time so script authors do not lose context while comparing
+/// reducer steps and HTTP traffic.
+class _DesktopWorkbench extends StatelessWidget {
+  const _DesktopWorkbench({
+    required this.scriptController,
+    required this.importing,
+    required this.onImport,
+    required this.onClear,
+    required this.stage,
+    required this.onStageChanged,
+    required this.keywordController,
+    required this.bookIdController,
+    required this.chapterIdController,
+    required this.manualOperation,
+    required this.onManualOperationChanged,
+    required this.manualInputController,
+    required this.manualCursorController,
+    required this.running,
+    required this.onRun,
+    required this.selected,
+    required this.history,
+    required this.onSelectHistory,
+    required this.onChainToBookInfo,
+    required this.onChainToParagraphs,
+    required this.onUseManualCursor,
+  });
+
+  final TextEditingController scriptController;
+  final bool importing;
+  final VoidCallback onImport;
+  final VoidCallback onClear;
+  final _StageKind stage;
+  final ValueChanged<_StageKind> onStageChanged;
+  final TextEditingController keywordController;
+  final TextEditingController bookIdController;
+  final TextEditingController chapterIdController;
+  final String manualOperation;
+  final ValueChanged<String> onManualOperationChanged;
+  final TextEditingController manualInputController;
+  final TextEditingController manualCursorController;
+  final bool running;
+  final VoidCallback onRun;
+  final _RunRecord? selected;
+  final List<_RunRecord> history;
+  final ValueChanged<_RunRecord> onSelectHistory;
+  final ValueChanged<String> onChainToBookInfo;
+  final ValueChanged<String> onChainToParagraphs;
+  final ValueChanged<String> onUseManualCursor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      key: const ValueKey('developer-desktop-workbench'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          flex: 5,
+          child: KeyedSubtree(
+            key: const ValueKey('developer-source-pane'),
+            child: _DesktopScriptPane(
+              controller: scriptController,
+              importing: importing,
+              onImport: onImport,
+              onClear: onClear,
+            ),
+          ),
+        ),
+        const VerticalDivider(width: 1),
+        SizedBox(
+          key: const ValueKey('developer-operation-pane'),
+          width: 300,
+          child: _DesktopOperationPane(
+            stage: stage,
+            onStageChanged: onStageChanged,
+            keywordController: keywordController,
+            bookIdController: bookIdController,
+            chapterIdController: chapterIdController,
+            manualOperation: manualOperation,
+            onManualOperationChanged: onManualOperationChanged,
+            manualInputController: manualInputController,
+            manualCursorController: manualCursorController,
+            running: running,
+            onRun: onRun,
+            history: history,
+            selected: selected,
+            onSelectHistory: onSelectHistory,
+          ),
+        ),
+        const VerticalDivider(width: 1),
+        Expanded(
+          key: const ValueKey('developer-inspector-pane'),
+          flex: 5,
+          child: selected == null
+              ? Padding(
+                  padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
+                  child: _EmptyHint(
+                    l10n: AppLocalizations.of(context),
+                    theme: Theme.of(context),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
+                  children: [
+                    _ResultSection(
+                      record: selected!,
+                      onChainToBookInfo: onChainToBookInfo,
+                      onChainToParagraphs: onChainToParagraphs,
+                      onUseManualCursor: onUseManualCursor,
+                    ),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DesktopScriptPane extends StatelessWidget {
+  const _DesktopScriptPane({
+    required this.controller,
+    required this.importing,
+    required this.onImport,
+    required this.onClear,
+  });
+
+  final TextEditingController controller;
+  final bool importing;
+  final VoidCallback onImport;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.code_rounded, size: 18),
+              const SizedBox(width: LanghuanTheme.spaceSm),
+              Text(l10n.devScriptLabel, style: theme.textTheme.titleSmall),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: importing ? null : onImport,
+                icon: importing
+                    ? const LanghuanSpinner(size: 14)
+                    : const Icon(Icons.download_rounded, size: 16),
+                label: Text(l10n.devScriptImport),
+              ),
+              IconButton(
+                tooltip: l10n.devScriptClear,
+                onPressed: onClear,
+                icon: const Icon(Icons.delete_outline_rounded),
+              ),
+            ],
+          ),
+          Text(
+            l10n.devScriptHint,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: LanghuanTheme.spaceSm),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              expands: true,
+              minLines: null,
+              maxLines: null,
+              textAlignVertical: TextAlignVertical.top,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                height: 1.45,
+              ),
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.all(LanghuanTheme.spaceMd),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DesktopOperationPane extends StatelessWidget {
+  const _DesktopOperationPane({
+    required this.stage,
+    required this.onStageChanged,
+    required this.keywordController,
+    required this.bookIdController,
+    required this.chapterIdController,
+    required this.manualOperation,
+    required this.onManualOperationChanged,
+    required this.manualInputController,
+    required this.manualCursorController,
+    required this.running,
+    required this.onRun,
+    required this.history,
+    required this.selected,
+    required this.onSelectHistory,
+  });
+
+  final _StageKind stage;
+  final ValueChanged<_StageKind> onStageChanged;
+  final TextEditingController keywordController;
+  final TextEditingController bookIdController;
+  final TextEditingController chapterIdController;
+  final String manualOperation;
+  final ValueChanged<String> onManualOperationChanged;
+  final TextEditingController manualInputController;
+  final TextEditingController manualCursorController;
+  final bool running;
+  final VoidCallback onRun;
+  final List<_RunRecord> history;
+  final _RunRecord? selected;
+  final ValueChanged<_RunRecord> onSelectHistory;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final labels = _stageLabels(l10n);
+    return ListView(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            LanghuanTheme.spaceMd,
+            LanghuanTheme.spaceLg,
+            LanghuanTheme.spaceMd,
+            LanghuanTheme.spaceSm,
+          ),
+          child: Text(
+            l10n.debugOperations,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+        ),
+        for (final entry in labels.entries)
+          ListTile(
+            dense: true,
+            selected: stage == entry.key,
+            leading: Icon(_stageIcon(entry.key), size: 19),
+            title: Text(entry.value),
+            onTap: () => onStageChanged(entry.key),
+          ),
+        const Divider(),
+        Padding(
+          padding: const EdgeInsets.all(LanghuanTheme.spaceMd),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _InputArea(
+                stage: stage,
+                keywordController: keywordController,
+                bookIdController: bookIdController,
+                chapterIdController: chapterIdController,
+                manualOperation: manualOperation,
+                onManualOperationChanged: onManualOperationChanged,
+                manualInputController: manualInputController,
+                manualCursorController: manualCursorController,
+              ),
+              const SizedBox(height: LanghuanTheme.spaceMd),
+              FilledButton.icon(
+                onPressed: running ? null : onRun,
+                icon: running
+                    ? const LanghuanSpinner(size: 18)
+                    : const Icon(Icons.play_arrow_rounded),
+                label: Text(l10n.debugRun),
+              ),
+            ],
+          ),
+        ),
+        const Divider(),
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: LanghuanTheme.spaceMd,
+            vertical: LanghuanTheme.spaceSm,
+          ),
+          child: Text(
+            l10n.debugHistoryTitle(history.length),
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+        ),
+        for (final record in history.reversed)
+          ListTile(
+            dense: true,
+            selected: selected == record,
+            leading: Icon(
+              record.result.error == null
+                  ? Icons.check_circle_outline
+                  : Icons.error_outline,
+              size: 18,
+              color: record.result.error == null
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.error,
+            ),
+            title: Text(
+              labels[record.stage]!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              record.inputSummary,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: Text('${record.result.durationMs} ms'),
+            onTap: () => onSelectHistory(record),
+          ),
+      ],
+    );
+  }
+}
+
+Map<_StageKind, String> _stageLabels(AppLocalizations l10n) => {
+  _StageKind.search: l10n.debugStageSearch,
+  _StageKind.bookInfo: l10n.debugStageBookInfo,
+  _StageKind.chapters: l10n.debugStageChapters,
+  _StageKind.paragraphs: l10n.debugStageParagraphs,
+  _StageKind.authStatus: l10n.debugStageAuthStatus,
+  _StageKind.manual: l10n.debugStageManual,
+};
+
+IconData _stageIcon(_StageKind stage) => switch (stage) {
+  _StageKind.search => Icons.search_rounded,
+  _StageKind.bookInfo => Icons.menu_book_outlined,
+  _StageKind.chapters => Icons.format_list_numbered_rounded,
+  _StageKind.paragraphs => Icons.subject_rounded,
+  _StageKind.authStatus => Icons.key_rounded,
+  _StageKind.manual => Icons.tune_rounded,
+};
 
 // ---------------------------------------------------------------------------
 // Script source editor
@@ -481,6 +1033,7 @@ class _StageSelector extends StatelessWidget {
       _StageKind.chapters: l10n.debugStageChapters,
       _StageKind.paragraphs: l10n.debugStageParagraphs,
       _StageKind.authStatus: l10n.debugStageAuthStatus,
+      _StageKind.manual: l10n.debugStageManual,
     };
 
     return Wrap(
@@ -504,12 +1057,20 @@ class _InputArea extends StatelessWidget {
     required this.keywordController,
     required this.bookIdController,
     required this.chapterIdController,
+    required this.manualOperation,
+    required this.onManualOperationChanged,
+    required this.manualInputController,
+    required this.manualCursorController,
   });
 
   final _StageKind stage;
   final TextEditingController keywordController;
   final TextEditingController bookIdController;
   final TextEditingController chapterIdController;
+  final String manualOperation;
+  final ValueChanged<String> onManualOperationChanged;
+  final TextEditingController manualInputController;
+  final TextEditingController manualCursorController;
 
   @override
   Widget build(BuildContext context) {
@@ -557,6 +1118,68 @@ class _InputArea extends StatelessWidget {
         );
       case _StageKind.authStatus:
         return const SizedBox.shrink();
+      case _StageKind.manual:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DropdownButtonFormField<String>(
+              initialValue: manualOperation,
+              decoration: InputDecoration(
+                labelText: l10n.debugManualOperation,
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: const [
+                DropdownMenuItem(value: 'search', child: Text('search')),
+                DropdownMenuItem(value: 'bookInfo', child: Text('bookInfo')),
+                DropdownMenuItem(value: 'chapters', child: Text('chapters')),
+                DropdownMenuItem(
+                  value: 'paragraphs',
+                  child: Text('paragraphs'),
+                ),
+                DropdownMenuItem(
+                  value: 'authStatus',
+                  child: Text('authStatus'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) onManualOperationChanged(value);
+              },
+            ),
+            const SizedBox(height: LanghuanTheme.spaceSm),
+            TextField(
+              controller: manualInputController,
+              minLines: 3,
+              maxLines: 8,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+              decoration: InputDecoration(
+                labelText: l10n.debugManualInput,
+                helperText: l10n.debugManualInputHint,
+                border: const OutlineInputBorder(),
+                alignLabelWithHint: true,
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: LanghuanTheme.spaceSm),
+            TextField(
+              controller: manualCursorController,
+              minLines: 1,
+              maxLines: 4,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+              decoration: InputDecoration(
+                labelText: l10n.debugManualCursor,
+                helperText: l10n.debugManualCursorHint,
+                border: const OutlineInputBorder(),
+                alignLabelWithHint: true,
+                isDense: true,
+              ),
+            ),
+          ],
+        );
     }
   }
 }
@@ -570,11 +1193,13 @@ class _ResultSection extends StatelessWidget {
     required this.record,
     required this.onChainToBookInfo,
     required this.onChainToParagraphs,
+    required this.onUseManualCursor,
   });
 
   final _RunRecord record;
   final ValueChanged<String> onChainToBookInfo;
   final ValueChanged<String> onChainToParagraphs;
+  final ValueChanged<String> onUseManualCursor;
 
   @override
   Widget build(BuildContext context) {
@@ -627,8 +1252,28 @@ class _ResultSection extends StatelessWidget {
             output: result.output!,
             onChainToBookInfo: onChainToBookInfo,
             onChainToParagraphs: onChainToParagraphs,
+            onUseManualCursor: onUseManualCursor,
           ),
 
+        const SizedBox(height: LanghuanTheme.spaceLg),
+        Row(
+          children: [
+            Icon(
+              Icons.account_tree_outlined,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: LanghuanTheme.spaceSm),
+            Text(
+              l10n.debugStepTitle(result.steps.length),
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: LanghuanTheme.spaceSm),
+        DebugStepTraceView(entries: result.steps, dropped: result.droppedSteps),
         const SizedBox(height: LanghuanTheme.spaceLg),
         DebugTraceSection(
           entries: result.trace,
@@ -823,11 +1468,13 @@ class _OutputView extends StatelessWidget {
     required this.output,
     required this.onChainToBookInfo,
     required this.onChainToParagraphs,
+    required this.onUseManualCursor,
   });
 
   final DebugStageOutput output;
   final ValueChanged<String> onChainToBookInfo;
   final ValueChanged<String> onChainToParagraphs;
+  final ValueChanged<String> onUseManualCursor;
 
   @override
   Widget build(BuildContext context) {
@@ -870,8 +1517,88 @@ class _OutputView extends StatelessWidget {
           DebugStageOutput_AuthStatus(:final status) => _AuthStatusOutput(
             status: status,
           ),
+          DebugStageOutput_Manual(
+            :final itemsJson,
+            :final valueJson,
+            :final nextCursorJson,
+          ) =>
+            _ManualOutput(
+              itemsJson: itemsJson,
+              valueJson: valueJson,
+              nextCursorJson: nextCursorJson,
+              onUseCursor: onUseManualCursor,
+            ),
         },
       ],
+    );
+  }
+}
+
+class _ManualOutput extends StatelessWidget {
+  const _ManualOutput({
+    required this.itemsJson,
+    required this.valueJson,
+    required this.nextCursorJson,
+    required this.onUseCursor,
+  });
+
+  final String? itemsJson;
+  final String? valueJson;
+  final String? nextCursorJson;
+  final ValueChanged<String> onUseCursor;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (itemsJson != null)
+          _JsonResultBlock(label: 'items', value: itemsJson!),
+        if (valueJson != null)
+          _JsonResultBlock(label: 'value', value: valueJson!),
+        if (nextCursorJson != null) ...[
+          _JsonResultBlock(label: 'next_cursor', value: nextCursorJson!),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => onUseCursor(nextCursorJson!),
+              icon: const Icon(Icons.skip_next_rounded),
+              label: Text(l10n.debugManualUseNextCursor),
+            ),
+          ),
+        ] else
+          Text(l10n.debugManualNoNextCursor),
+      ],
+    );
+  }
+}
+
+class _JsonResultBlock extends StatelessWidget {
+  const _JsonResultBlock({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: LanghuanTheme.spaceSm),
+      child: Container(
+        padding: const EdgeInsets.all(LanghuanTheme.spaceSm),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainer,
+          borderRadius: LanghuanTheme.borderRadiusSm,
+        ),
+        child: SelectionArea(
+          child: Text(
+            '$label\n$value',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -806,6 +806,35 @@
   "devToolsEntryDescription": "Feed script debugging environment",
   "@devToolsEntryDescription": { "description": "Subtitle of the developer tools entry in settings" },
 
+  "devAgentApi": "Agent API",
+  "devAgentApiTitle": "Local Agent API",
+  "devAgentApiHint": "Loopback only. The API stops when this developer page closes.",
+  "devAgentEndpoint": "Endpoint",
+  "devAgentToken": "Bearer token",
+  "devAgentCopyCurl": "Copy curl",
+  "devAgentStop": "Stop API",
+  "devClose": "Close",
+  "debugOperations": "Operations",
+  "debugStepTitle": "Reducer steps ({count})",
+  "@debugStepTitle": {
+    "description": "Developer inspector reducer step count",
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "debugStepEmpty": "No reducer steps were recorded.",
+  "debugStepDropped": "{count} further steps were omitted.",
+  "@debugStepDropped": {
+    "description": "Developer inspector omitted reducer step count",
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "debugStepRound": "{operation} · round {round}",
+  "@debugStepRound": {
+    "description": "Reducer operation and zero-based round",
+    "placeholders": {
+      "operation": { "type": "String" },
+      "round": { "type": "int" }
+    }
+  },
+
   "devUnlockCountdown": "{count} more taps to enable developer tools",
   "@devUnlockCountdown": {
     "description": "Snackbar while tapping the version row towards unlocking",
@@ -879,6 +908,15 @@
   "@debugStageParagraphs": { "description": "Stage runner: paragraphs stage" },
   "debugStageAuthStatus": "Auth status",
   "@debugStageAuthStatus": { "description": "Stage runner: auth status probe stage" },
+  "debugStageManual": "Advanced single page",
+  "@debugStageManual": { "description": "Stage runner: manually execute one operation page" },
+  "debugManualOperation": "Operation",
+  "debugManualInput": "Input JSON",
+  "debugManualInputHint": "Passed to event.input",
+  "debugManualCursor": "Cursor JSON",
+  "debugManualCursorHint": "Passed to event.cursor; use null for the first page",
+  "debugManualUseNextCursor": "Use next cursor",
+  "debugManualNoNextCursor": "No next cursor; this operation is complete.",
 
   "debugInputKeyword": "Keyword",
   "@debugInputKeyword": { "description": "Stage runner input: search keyword" },

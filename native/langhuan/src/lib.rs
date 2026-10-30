@@ -6,5 +6,6 @@ pub mod hash;
 pub mod http;
 pub mod model;
 pub mod script;
+pub mod step_trace;
 pub mod trace;
 pub mod transform;

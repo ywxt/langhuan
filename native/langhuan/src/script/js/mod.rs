@@ -9,4 +9,4 @@ mod protobuf;
 mod sandbox;
 mod storage;
 
-pub use feed::{JsFeed, JsSupportAuth};
+pub use feed::{DebugOperationPage, JsFeed, JsSupportAuth};

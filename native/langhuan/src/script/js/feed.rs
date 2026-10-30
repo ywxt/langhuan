@@ -82,6 +82,65 @@ enum JsOperation<'a> {
         chapter_id: &'a str,
     },
     AuthStatus,
+    Debug {
+        operation: DebugOperation,
+        input: &'a JsData,
+    },
+}
+
+#[derive(Clone, Copy)]
+enum DebugOperation {
+    Search,
+    BookInfo,
+    Chapters,
+    Paragraphs,
+    AuthStatus,
+}
+
+impl DebugOperation {
+    fn parse(value: &str) -> Result<Self> {
+        match value {
+            "search" => Ok(Self::Search),
+            "bookInfo" | "book_info" => Ok(Self::BookInfo),
+            "chapters" => Ok(Self::Chapters),
+            "paragraphs" => Ok(Self::Paragraphs),
+            "authStatus" | "auth_status" => Ok(Self::AuthStatus),
+            _ => Err(Error::invalid_feed(format!(
+                "unsupported debug operation: {value}"
+            ))),
+        }
+    }
+
+    fn handler(self) -> JsMethodPath {
+        match self {
+            Self::Search => SEARCH_HANDLER,
+            Self::BookInfo => BOOK_INFO_HANDLER,
+            Self::Chapters => CHAPTERS_HANDLER,
+            Self::Paragraphs => PARAGRAPHS_HANDLER,
+            Self::AuthStatus => LOGIN_STATUS_HANDLER,
+        }
+    }
+
+    fn kind(self) -> &'static str {
+        match self {
+            Self::Search => "search",
+            Self::BookInfo => "book_info",
+            Self::Chapters => "chapters",
+            Self::Paragraphs => "paragraphs",
+            Self::AuthStatus => "auth_status",
+        }
+    }
+}
+
+/// Raw result of exactly one feed reducer operation/page in developer mode.
+///
+/// Unlike the production [`Feed`] methods, this does not follow
+/// `next_cursor` automatically and does not deserialize items into a model.
+/// It is intentionally exposed only as a diagnostic primitive.
+pub struct DebugOperationPage {
+    pub items: Option<Value>,
+    pub value: Option<Value>,
+    pub next_cursor: Option<Value>,
 }
 
 impl JsOperation<'_> {
@@ -93,6 +152,7 @@ impl JsOperation<'_> {
             Self::Chapters { .. } => CHAPTERS_HANDLER,
             Self::Paragraphs { .. } => PARAGRAPHS_HANDLER,
             Self::AuthStatus => LOGIN_STATUS_HANDLER,
+            Self::Debug { operation, .. } => operation.handler(),
         }
     }
 
@@ -104,6 +164,7 @@ impl JsOperation<'_> {
             Self::Chapters { .. } => "chapters",
             Self::Paragraphs { .. } => "paragraphs",
             Self::AuthStatus => "auth_status",
+            Self::Debug { operation, .. } => operation.kind(),
         }
     }
 
@@ -121,6 +182,7 @@ impl JsOperation<'_> {
                 ("chapterId", JsData::str(*chapter_id)),
             ]),
             Self::AuthStatus => JsData::obj([]),
+            Self::Debug { input, .. } => (*input).clone(),
         }
     }
 
@@ -166,6 +228,40 @@ struct Complete {
 }
 
 impl JsFeed {
+    /// Run exactly one public feed operation with caller-provided JSON input
+    /// and cursor. This is used by developer tooling; normal app code should
+    /// use the typed [`Feed`] methods, which follow pagination automatically.
+    pub async fn debug_operation_page(
+        &self,
+        operation: &str,
+        input: Value,
+        cursor: Value,
+    ) -> Result<DebugOperationPage> {
+        if !input.is_object() {
+            return Err(Error::invalid_feed(
+                "debug operation input must be an object",
+            ));
+        }
+        let operation_kind = DebugOperation::parse(operation)?;
+        if matches!(operation_kind, DebugOperation::AuthStatus) && !self.has_auth_status {
+            return Err(Error::invalid_feed(
+                "feed does not define the login.status operation",
+            ));
+        }
+        let input = JsData::from_json(&input);
+        let cursor = JsData::from_json(&cursor);
+        let operation = JsOperation::Debug {
+            operation: operation_kind,
+            input: &input,
+        };
+        let complete = self.run_operation(&operation, &cursor).await?;
+        Ok(DebugOperationPage {
+            items: complete.items,
+            value: complete.value,
+            next_cursor: complete.next_cursor.map(JsData::into_json),
+        })
+    }
+
     pub(crate) fn new(
         source: String,
         meta: FeedMeta,
@@ -403,11 +499,11 @@ impl JsFeed {
         let mut steps_left = MAX_INTERNAL_STEPS;
 
         loop {
-            let round = MAX_INTERNAL_STEPS - steps_left;
+            let round_index = MAX_INTERNAL_STEPS - steps_left;
             tracing::debug!(
                 feed_id = %self.meta.id,
                 operation = operation.kind(),
-                round,
+                round = round_index,
                 "invoking reducer"
             );
             let auth = self.auth_info()?;
@@ -418,6 +514,8 @@ impl JsFeed {
                 auth: auth.as_ref(),
             };
             let step = self.invoke(operation, round)?;
+            let (kind, summary) = step_trace_description(&step);
+            crate::step_trace::record(operation.kind(), round_index, kind, summary);
             match step {
                 Step::Request {
                     request,
@@ -582,6 +680,87 @@ impl JsFeed {
             }
         })
     }
+
+    /// Search providers commonly repeat the tail item of the previous page.
+    /// Keep the first stable book identity and continue pulling instead of
+    /// turning a recoverable pagination overlap into a terminal stream error.
+    fn unique_search_stream<'a>(
+        &'a self,
+        inner: FeedStream<'a, SearchResult>,
+    ) -> FeedStream<'a, SearchResult> {
+        Box::pin(stream! {
+            let mut seen = HashSet::new();
+            let mut inner = std::pin::pin!(inner);
+            while let Some(result) = inner.next().await {
+                match result {
+                    Ok(item) => {
+                        if seen.insert(item.id.clone()) {
+                            yield Ok(item);
+                        }
+                    }
+                    Err(error) => {
+                        yield Err(error);
+                        break;
+                    }
+                }
+            }
+        })
+    }
+}
+
+fn step_trace_description(step: &Step) -> (&'static str, String) {
+    match step {
+        Step::Request {
+            request, cache_key, ..
+        } => (
+            "request",
+            format!(
+                "{} {}{}",
+                request.method,
+                crate::http::redact_url_secrets(&request.url),
+                cache_key
+                    .as_deref()
+                    .map(|_| " · cache yes".to_owned())
+                    .unwrap_or_default()
+            ),
+        ),
+        Step::Compute {
+            programs, input, ..
+        } => (
+            "compute",
+            format!(
+                "{} program(s) · {} input bytes",
+                programs.len(),
+                input.measure()
+            ),
+        ),
+        Step::Webview { url, title, .. } => (
+            "webview",
+            title
+                .as_deref()
+                .map(|title| format!("{title} · {}", crate::http::redact_url_secrets(url)))
+                .unwrap_or_else(|| crate::http::redact_url_secrets(url)),
+        ),
+        Step::Complete {
+            items,
+            value,
+            next_cursor,
+        } => {
+            let item_count = items
+                .as_ref()
+                .and_then(serde_json::Value::as_array)
+                .map_or(0, Vec::len);
+            (
+                "complete",
+                format!(
+                    "{item_count} item(s) · value {} · next cursor {}",
+                    if value.is_some() { "yes" } else { "no" },
+                    if next_cursor.is_some() { "yes" } else { "no" }
+                ),
+            )
+        }
+        Step::Fail { code, message } => ("fail", format!("{code} · {message}")),
+    }
 }
 
 /// Count one internal step, failing once the loop budget is spent.
@@ -596,7 +775,7 @@ impl Feed for JsFeed {
     fn search<'a>(&'a self, keyword: &'a str) -> FeedStream<'a, SearchResult> {
         let operation = JsOperation::Search { keyword };
         let stream = self.paged_stream(operation);
-        self.dedup_stream(stream, "book", |item: &SearchResult| item.id.clone())
+        self.unique_search_stream(stream)
     }
 
     async fn book_info(&self, id: &str) -> Result<BookInfo> {

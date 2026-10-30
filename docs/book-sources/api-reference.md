@@ -54,7 +54,7 @@ All four content handlers are required synchronous functions.
 
 | Handler | Parameter | Host behaviour |
 | --- | --- | --- |
-| `search` | One `Event` with `input.keyword` | Called page by page. A completion with `next_cursor` allows the host to request another page; without it the stream ends. |
+| `search` | One `Event` with `input.keyword` | Called page by page. A completion with `next_cursor` allows the host to request another page; without it the stream ends. If pages overlap, the host keeps the first result for each book ID. |
 | `bookInfo` | One `Event` with `input.bookId` | Must eventually complete with one valid `Book` in `value`. Pagination is not used. |
 | `chapters` | One `Event` with `input.bookId` | May paginate with `next_cursor`; the host concatenates pages and rejects duplicate chapter IDs. |
 | `paragraphs` | One `Event` with `input.bookId` and `input.chapterId` | May paginate with `next_cursor`; the host concatenates pages and assigns indices to paragraphs without explicit IDs. |
@@ -303,7 +303,7 @@ type Book = {
 
 | Field | Required | Behaviour |
 | --- | :---: | --- |
-| `id` | Yes | Source-owned book identity. It should be non-empty, must remain stable when title/author changes, and must be unique across one search stream. |
+| `id` | Yes | Source-owned book identity. It should be non-empty and must remain stable when title/author changes. When pagination repeats an ID, the host keeps its first occurrence. |
 | `title` | Yes | Display title. |
 | `author` | Yes | Display author; use an explicit fallback string when the site omits it. |
 | `cover_url` | No | Absolute or site-usable cover URL, or `null`. It is consumed by the application image loader rather than a reducer request. |
@@ -331,8 +331,10 @@ type Paragraph =
   | { type: "image"; id?: string; url: string; alt?: string | null };
 ```
 
-Book and chapter IDs are required, stable, and unique across all pages of one
-operation. Paragraph IDs are optional; the host assigns sequential indices
+Book and chapter IDs are required and stable. Repeated search-book IDs are
+discarded after their first occurrence because remote search pagination can
+overlap. Chapter IDs remain strictly unique across all pages of one operation.
+Paragraph IDs are optional; the host assigns sequential indices
 when omitted.
 
 | Variant | Fields and behaviour |

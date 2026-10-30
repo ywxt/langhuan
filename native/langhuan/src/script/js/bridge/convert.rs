@@ -82,8 +82,11 @@ impl JsData {
         )
     }
 
-    /// Render back to JSON (test helpers and diagnostics).
-    #[cfg(test)]
+    /// Render back to JSON for diagnostics and debug-operation results.
+    ///
+    /// `undefined` and byte arrays cannot be represented by JSON and are
+    /// therefore rendered as `null`. Feed cursors are expected to remain
+    /// JSON-shaped, so a byte cursor is not part of the public contract.
     pub fn into_json(self) -> Value {
         match self {
             Self::Undefined | Self::Null => Value::Null,

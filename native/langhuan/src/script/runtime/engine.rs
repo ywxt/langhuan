@@ -398,6 +398,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn search_keeps_first_book_when_pages_overlap() {
+        let body = r#"
+          function search(event) {
+            if (event.cursor == null) {
+              return {
+                type: "complete",
+                items: [
+                  { id: "1", title: "One", author: "Test" },
+                  { id: "2", title: "Two", author: "Test" },
+                ],
+                next_cursor: 1,
+              };
+            }
+            return {
+              type: "complete",
+              items: [
+                { id: "2", title: "Two repeated", author: "Test" },
+                { id: "3", title: "Three", author: "Test" },
+              ],
+            };
+          }
+          const empty = () => ({ type: "complete", items: [] });
+          const bookInfo = () => ({
+            type: "complete", value: { id: "1", title: "One", author: "Test" },
+          });
+          export default { search, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(4, body))
+            .await
+            .unwrap();
+
+        let books = feed
+            .search("x")
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .expect("overlapping search pages must remain usable");
+        assert_eq!(
+            books.into_iter().map(|book| book.id).collect::<Vec<_>>(),
+            ["1", "2", "3"]
+        );
+    }
+
+    #[tokio::test]
     async fn keeps_returned_feed_object_between_calls() {
         let body = r#"
           let calls = 0;

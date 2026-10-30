@@ -93,9 +93,10 @@ reader position or laying out a chapter. The native layer therefore consumes
 all source pages in a background task and crosses the Dart/Rust bridge once
 with a list. Source authors do not need a different handler shape.
 
-Items must have stable IDs and must be unique across every page of one
-operation. Duplicate IDs are source errors; UI-side deduplication would hide a
-broken cursor or parser.
+Items must have stable IDs. Search pagination may overlap, so the host keeps
+the first book with a given ID. Chapter and explicit paragraph IDs must remain
+unique across every page of one operation; their duplicates are source errors
+because UI-side deduplication would hide a broken directory cursor or parser.
 
 ## Request ownership
 
