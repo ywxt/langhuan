@@ -225,9 +225,13 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     final mediaQuery = MediaQuery.of(context);
     final topPadding = mediaQuery.padding.top;
     final brightness = readerTheme.brightness;
-    final overlayStyle = brightness == Brightness.dark
+    // Icon contrast follows the reader theme; the bar itself stays
+    // transparent (edge-to-edge, see main()) so it always matches the
+    // reader surface.
+    final baseStyle = brightness == Brightness.dark
         ? SystemUiOverlayStyle.light
         : SystemUiOverlayStyle.dark;
+    final overlayStyle = baseStyle.copyWith(statusBarColor: Colors.transparent);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,

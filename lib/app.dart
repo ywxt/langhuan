@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:langhuan/features/feeds/feed_providers.dart';
@@ -81,6 +82,28 @@ class _LanghuanAppState extends ConsumerState<LanghuanApp> {
       darkTheme: LanghuanTheme.dark(),
       themeMode: ThemeMode.system,
       routerConfig: router,
+      // The app runs edge-to-edge (see main()), so the system bars are
+      // transparent and the scaffold shows through them — only the icon
+      // contrast is left to set, and it must follow the effective theme.
+      // The reader annotates on top of this while it is shown; this value
+      // re-applies when its route pops.
+      builder: (context, child) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: isDark
+                ? Brightness.light
+                : Brightness.dark,
+            statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarIconBrightness: isDark
+                ? Brightness.light
+                : Brightness.dark,
+          ),
+          child: child!,
+        );
+      },
     );
   }
 }
