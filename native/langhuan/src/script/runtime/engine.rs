@@ -942,4 +942,28 @@ mod tests {
         // module's own handle keeps working.
         assert_eq!(feed.book_info("1").await.unwrap().title, "undefined:1");
     }
+
+    /// Every checked-in book source must load: schema header, module
+    /// imports, and the exported handler contract. `fanqie-app.js` imports
+    /// `langhuan:storage`, so it needs an engine with a backend installed.
+    #[test]
+    fn checked_in_book_sources_load() {
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        let sources = [
+            ("../../docs/book-sources/fanqie.js", false),
+            ("../../docs/book-sources/fanqie-app.js", true),
+        ];
+        for (path, needs_storage) in sources {
+            let script =
+                std::fs::read_to_string(format!("{manifest}/{path}")).expect("source file");
+            let engine = if needs_storage {
+                ScriptEngine::new().with_storage(Arc::new(MemoryStorage::default()) as _)
+            } else {
+                ScriptEngine::new()
+            };
+            engine
+                .load_js_feed(&script)
+                .unwrap_or_else(|error| panic!("{path} should load: {error}"));
+        }
+    }
 }

@@ -21,6 +21,24 @@ Current examples:
   the web — an entitlement wall rather than anti-crawling — which the source
   reports as an explicit sign-in or entitlement error instead of returning
   partial content.
+- [`fanqie-app.js`](fanqie-app.js) — the same site through its APP gateway
+  (`reading.snssdk.com`) instead of the server-rendered web: it registers an
+  anonymous device (ttencrypt-wrapped registration body), activates
+  device-level premium, and registers a per-device content key before
+  reading. Requests carry the Argus/Ladon signature stack — byte-level
+  orchestration over `langhuan:crypto`'s SM3 / Simon / Speck and
+  `langhuan:protobuf` — and chapters arrive as AES-CBC ciphertext
+  (optionally gzipped) that decrypts to clean text with no font
+  obfuscation. The device and content key persist through
+  `langhuan:storage` (keys `device` / `keyinfo`), making this the first
+  source that requires a host storage backend. A 200 response with an
+  empty body is the gateway silently rejecting the device; the source
+  re-registers at most once per operation, with a cool-down lock between
+  replacements, and rotates the content key when the reader answers
+  `Invalid`. **License note:** unlike its MIT-licensed siblings in this
+  directory, this file is GPL-3.0-or-later — its protocol orchestration is
+  derived from the
+  [fanqie-assistant](https://github.com/naiyQAQ/fanqie-assistant) project.
 
 There is no legacy runtime compatibility. Schema 4 sources must use `.js`,
 must be ES modules, and must `export default` their Feed object. Assigning
@@ -476,7 +494,9 @@ The calls follow `localStorage` semantics: `get` returns the stored value or
 `undefined`, `set` and `delete` return nothing and fail by throwing. Keys
 are strings of 1–256 bytes; values are JSON (`undefined` is not a value, and
 typed arrays must be encoded with `Bytes.toBase64` or `Bytes.toHex` first).
-Values persist across operations and across feed reloads.
+Values persist across operations and across feed reloads. See `fanqie-app.js`
+for a real consumer: it stores its registered device under `device` and the
+rotated content key under `keyinfo`.
 
 ## Authentication
 

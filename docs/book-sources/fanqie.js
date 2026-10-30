@@ -39,9 +39,14 @@
 // 不改走此路線。已知的替代路線是 APP 匿名裝置閘道
 // （reading.snssdk.com 的 /reading/*，需 Argus/Ladon 請求簽名、ttencrypt 裝
 // 置註冊與 AES 內容密鑰；據 GPL-3.0 的 fanqie-assistant 專案，此路線可匿名
-// 讀到 VIP 章節），但這套簽名/加密棧逾兩千行，且資料中心 IP 下無論簽名正確
-// 與否都只得到空回應、無法穩定驗證，因此刻意不採用。本書源對權益牆如實回
-// 報：未登入先提示登入，已登入而無權益則明確告知需要 SVIP。
+// 讀到 VIP 章節），已由姊妹書源 fanqie-app.js（GPL-3.0，衍生自
+// fanqie-assistant）實現——公開密碼原語由 Rust 宿主模組（langhuan:crypto 的
+// SM3/Simon/Speck 與 langhuan:protobuf）提供，書源僅保留位元組級協議編排，
+// 並已實測：簽名正確時機房 IP 也能完成裝置註冊並讀到全文，200 空體是閘道
+// 對未認可裝置的靜默拒絕（換裝置即恢復），並非 IP 封鎖——早先「機房 IP 無
+// 論簽名正確與否都只得到空回應」的舊歸因是當時缺簽名所致，特此更正。本書
+// 源維持網頁路線，對權益牆如實回報：未登入先提示登入，已登入而無權益則
+// 明確告知需要 SVIP。
 
 import { TextDecoder } from "langhuan:encoding";
 import { HTML } from "langhuan:html";
