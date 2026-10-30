@@ -63,9 +63,15 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # The verification bar from push CI (ci.yml via workflow_call): a
+  # release cannot ship with rustfmt, clippy, or tests red.
+  tests:
+    name: Rust checks
+    uses: ./.github/workflows/ci.yml
+
   android:
     name: Android APKs
-    needs: bindings
+    needs: [bindings, tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -129,7 +135,7 @@ jobs:
 
   linux:
     name: Linux x64
-    needs: bindings
+    needs: [bindings, tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -182,7 +188,7 @@ jobs:
 
   macos:
     name: macOS arm64
-    needs: bindings
+    needs: [bindings, tests]
     # The release ships an arm64 build only — the Intel job is gone.
     runs-on: macos-15
     timeout-minutes: 60
@@ -232,7 +238,7 @@ jobs:
 
   windows:
     name: Windows x64
-    needs: bindings
+    needs: [bindings, tests]
     # Flutter 3.47's native-assets toolchain expects the Visual Studio 2022
     # environment. windows-2025 has moved to Visual Studio 18 and fails while
     # compiling the flutter_rust_bridge native hook.
