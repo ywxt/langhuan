@@ -36,20 +36,10 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: LanghuanTheme.spaceMd),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.auto_stories_outlined,
-                        size: 18,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: LanghuanTheme.spaceSm),
-                      Text(
-                        l10n.readerModeLabel,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
+                  Text(
+                    l10n.readerModeLabel,
+                    key: const ValueKey('reader-mode-title'),
+                    style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
                   Center(

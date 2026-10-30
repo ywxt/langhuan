@@ -47,6 +47,36 @@ void main() {
     );
   }
 
+  group('showReaderInterfaceSheet layout', () {
+    testWidgets('left-aligns the reading mode title with other labels', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: localized(
+            Scaffold(
+              body: sheetLauncher(
+                (ref, context) => showReaderInterfaceSheet(context),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      final titleLeft = tester.getTopLeft(
+        find.byKey(const ValueKey('reader-mode-title')),
+      );
+      final fontLabelLeft = tester.getTopLeft(find.text('Font File'));
+      expect(titleLeft.dx, closeTo(fontLabelLeft.dx, 0.5));
+    });
+  });
+
   group('showReaderSettingsSheet theme picker', () {
     testWidgets('shows the current theme and applies a picked one', (
       tester,
