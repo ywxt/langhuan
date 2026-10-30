@@ -342,9 +342,7 @@ abstract final class LanghuanTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: ButtonStyle(
           backgroundColor: WidgetStatePropertyAll(scheme.primaryContainer),
-          foregroundColor: WidgetStatePropertyAll(
-            isLight ? forestGreen : const Color(0xFF121511),
-          ),
+          foregroundColor: WidgetStatePropertyAll(scheme.onPrimaryContainer),
           elevation: const WidgetStatePropertyAll(0),
           shape: const WidgetStatePropertyAll(StadiumBorder()),
           minimumSize: const WidgetStatePropertyAll(Size(0, 48)),
@@ -385,7 +383,7 @@ abstract final class LanghuanTheme {
         hoverElevation: 0,
         highlightElevation: 0,
         backgroundColor: scheme.primaryContainer,
-        foregroundColor: isLight ? forestGreen : const Color(0xFF121511),
+        foregroundColor: scheme.onPrimaryContainer,
         shape: const CircleBorder(),
       ),
 
