@@ -4,7 +4,7 @@
 //! incrementally. Finite chapter and paragraph queries are collected in a
 //! background task and returned as one value.
 
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 
 use async_trait::async_trait;
 use langhuan::cache::CachedFeed;
@@ -37,6 +37,34 @@ use super::registry_actor::{GetFeed, ListFeeds, RegistryActor};
 pub struct PullStream<T: Send + 'static> {
     rx: mpsc::Receiver<Result<T, BridgeError>>,
     _task: JoinHandle<()>,
+}
+
+/// A finite feed query running outside the actor mailbox.
+///
+/// The wrapper keeps Tokio's task type and join-error mapping out of message
+/// handlers' callers while allowing the actor to accept the next request as
+/// soon as the query has been started.
+pub struct FeedQueryTask<T> {
+    operation: &'static str,
+    task: JoinHandle<Result<T, BridgeError>>,
+}
+
+impl<T: Send + 'static> FeedQueryTask<T> {
+    fn spawn<F>(operation: &'static str, future: F) -> Self
+    where
+        F: Future<Output = Result<T, BridgeError>> + Send + 'static,
+    {
+        Self {
+            operation,
+            task: tokio::spawn(future),
+        }
+    }
+
+    pub async fn resolve(self) -> Result<T, BridgeError> {
+        self.task.await.map_err(|error| {
+            BridgeError::from(format!("{} task failed: {error}", self.operation))
+        })?
+    }
 }
 
 impl<T: Send + 'static> PullStream<T> {
@@ -387,7 +415,7 @@ async fn emit_feed_error(
 
 #[async_trait]
 impl Handler<GetChapters> for FeedActor {
-    type Result = Result<JoinHandle<Result<Vec<ChapterItem>, BridgeError>>, BridgeError>;
+    type Result = Result<FeedQueryTask<Vec<ChapterItem>>, BridgeError>;
 
     async fn handle(&mut self, msg: GetChapters, _: &Context<Self>) -> Self::Result {
         tracing::debug!(feed_id = %msg.feed_id, book_id = %msg.book_id, force_refresh = msg.force_refresh, "get chapters");
@@ -396,7 +424,7 @@ impl Handler<GetChapters> for FeedActor {
             feed.clear_chapters_cache(&msg.book_id).await?;
         }
         let book_id = msg.book_id;
-        Ok(tokio::spawn(async move {
+        Ok(FeedQueryTask::spawn("chapter", async move {
             let stream = feed.chapters(&book_id);
             tokio::pin!(stream);
             let mut items = Vec::new();
@@ -414,7 +442,7 @@ impl Handler<GetChapters> for FeedActor {
 
 #[async_trait]
 impl Handler<GetParagraphs> for FeedActor {
-    type Result = Result<JoinHandle<Result<Vec<ParagraphContent>, BridgeError>>, BridgeError>;
+    type Result = Result<FeedQueryTask<Vec<ParagraphContent>>, BridgeError>;
 
     async fn handle(&mut self, msg: GetParagraphs, _: &Context<Self>) -> Self::Result {
         tracing::debug!(
@@ -441,7 +469,7 @@ impl Handler<GetParagraphs> for FeedActor {
         let chapter_id = msg.chapter_id;
 
         transform_chain.init(&chapter_id);
-        Ok(tokio::spawn(async move {
+        Ok(FeedQueryTask::spawn("paragraph", async move {
             let stream = feed.paragraphs(&book_id, &chapter_id);
             tokio::pin!(stream);
             let mut items = Vec::new();

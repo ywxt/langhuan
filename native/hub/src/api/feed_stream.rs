@@ -90,8 +90,7 @@ pub async fn chapters(
             force_refresh,
         })
         .await??;
-    task.await
-        .map_err(|error| BridgeError::from(format!("chapter task failed: {error}")))?
+    task.resolve().await
 }
 
 /// Fetch one complete chapter in one bridge call.
@@ -115,8 +114,7 @@ pub async fn paragraphs(
             force_refresh,
         })
         .await??;
-    task.await
-        .map_err(|error| BridgeError::from(format!("paragraph task failed: {error}")))?
+    task.resolve().await
 }
 
 /// Fetch book info (single value, not a stream).

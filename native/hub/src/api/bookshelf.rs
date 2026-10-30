@@ -138,14 +138,10 @@ pub async fn open_bookshelf_updates_stream() -> Result<BookshelfUpdatesStream, B
                 }
             };
 
-            let chapters = match chapters_task.await {
-                Ok(Ok(items)) => items,
-                Ok(Err(error)) => {
-                    result.error = Some(error.message);
-                    Vec::new()
-                }
+            let chapters = match chapters_task.resolve().await {
+                Ok(items) => items,
                 Err(error) => {
-                    result.error = Some(format!("chapter task failed: {error}"));
+                    result.error = Some(error.message);
                     Vec::new()
                 }
             };
