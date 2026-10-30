@@ -37,6 +37,7 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                   ),
                   const SizedBox(height: LanghuanTheme.spaceMd),
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
                         Icons.auto_stories_outlined,
@@ -51,24 +52,26 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                     ],
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
-                  SegmentedButton<ReaderPageMode>(
-                    segments: [
-                      ButtonSegment(
-                        value: ReaderPageMode.horizontal,
-                        icon: const Icon(Icons.swap_horiz, size: 18),
-                        label: Text(l10n.readerModeHorizontal),
-                      ),
-                      ButtonSegment(
-                        value: ReaderPageMode.vertical,
-                        icon: const Icon(Icons.swap_vert, size: 18),
-                        label: Text(l10n.readerModeVertical),
-                      ),
-                    ],
-                    selected: {settings.pageMode},
-                    onSelectionChanged: (selection) {
-                      setModalState(() {});
-                      notifier.setPageMode(selection.first);
-                    },
+                  Center(
+                    child: SegmentedButton<ReaderPageMode>(
+                      segments: [
+                        ButtonSegment(
+                          value: ReaderPageMode.horizontal,
+                          icon: const Icon(Icons.swap_horiz, size: 18),
+                          label: Text(l10n.readerModeHorizontal),
+                        ),
+                        ButtonSegment(
+                          value: ReaderPageMode.vertical,
+                          icon: const Icon(Icons.swap_vert, size: 18),
+                          label: Text(l10n.readerModeVertical),
+                        ),
+                      ],
+                      selected: {settings.pageMode},
+                      onSelectionChanged: (selection) {
+                        setModalState(() {});
+                        notifier.setPageMode(selection.first);
+                      },
+                    ),
                   ),
                   const SizedBox(height: LanghuanTheme.spaceMd),
                   Text(l10n.readerFontFileLabel),
