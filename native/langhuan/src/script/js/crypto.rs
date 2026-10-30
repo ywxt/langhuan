@@ -1,9 +1,10 @@
 //! The `langhuan:crypto` module: cryptography and compression.
 //!
 //! Book sources need to run the same algorithms sites use — digests, HMAC,
-//! AES, and gzip — but the sandbox must never hand them a native code loader.
-//! Everything here is a pure function over explicit arguments, so it is safe
-//! to declare in the feed realm and in every disposable compute realm.
+//! AES, Simon/Speck signing ciphers, and gzip — but the sandbox must never
+//! hand them a native code loader. Everything here is a pure function over
+//! explicit arguments, so it is safe to declare in the feed realm and in
+//! every disposable compute realm.
 
 use aes::cipher::block_padding::{NoPadding, Pkcs7};
 use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit, StreamCipher};
@@ -58,6 +59,9 @@ fn crypto<'js>(ctx: &Ctx<'js>) -> JsResult<Object<'js>> {
         .function("sha512", |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
             digest_call::<sha2::Sha512>(&ctx, &data)
         })?
+        .function("sm3", |ctx: Ctx<'js>, data: TypedArray<'js, u8>| {
+            digest_call::<sm3::Sm3>(&ctx, &data)
+        })?
         .function(
             "hmac",
             |ctx: Ctx<'js>,
@@ -85,6 +89,28 @@ fn crypto<'js>(ctx: &Ctx<'js>) -> JsResult<Object<'js>> {
                     )
                 })?;
                 let output = aes_run(&ctx, &request)?;
+                bytes_out(&ctx, output)
+            },
+        )?
+        .function(
+            "simon",
+            |ctx: Ctx<'js>, key: TypedArray<'js, u8>, data: TypedArray<'js, u8>| {
+                let key = typed_bytes(&ctx, &key)?;
+                let data = typed_bytes(&ctx, &data)?;
+                let output = simon_run(&key, &data).map_err(|message| {
+                    Exception::throw_message(&ctx, &format!("Crypto.simon: {message}"))
+                })?;
+                bytes_out(&ctx, output)
+            },
+        )?
+        .function(
+            "speck",
+            |ctx: Ctx<'js>, key: TypedArray<'js, u8>, data: TypedArray<'js, u8>| {
+                let key = typed_bytes(&ctx, &key)?;
+                let data = typed_bytes(&ctx, &data)?;
+                let output = speck_run(&key, &data).map_err(|message| {
+                    Exception::throw_message(&ctx, &format!("Crypto.speck: {message}"))
+                })?;
                 bytes_out(&ctx, output)
             },
         )?
@@ -162,11 +188,13 @@ fn hmac_digest(algorithm: &str, key: &[u8], data: &[u8]) -> Option<Vec<u8>> {
     type HmacSha1 = hmac::Hmac<sha1::Sha1>;
     type HmacSha256 = hmac::Hmac<sha2::Sha256>;
     type HmacSha512 = hmac::Hmac<sha2::Sha512>;
+    type HmacSm3 = hmac::Hmac<sm3::Sm3>;
     match algorithm {
         "md5" => Some(hmac_of::<HmacMd5>(key, data)),
         "sha1" => Some(hmac_of::<HmacSha1>(key, data)),
         "sha256" => Some(hmac_of::<HmacSha256>(key, data)),
         "sha512" => Some(hmac_of::<HmacSha512>(key, data)),
+        "sm3" => Some(hmac_of::<HmacSm3>(key, data)),
         _ => None,
     }
 }
@@ -416,6 +444,128 @@ fn gcm_run(op: Op, key: &[u8], iv: &[u8], data: &[u8], aad: &[u8]) -> Result<Vec
 }
 
 // ---------------------------------------------------------------------------
+// Simon and Speck
+// ---------------------------------------------------------------------------
+
+// Simon128/256 and Speck128/256 from the NSA's Simon and Speck paper: the
+// lightweight block ciphers behind ByteDance's x-argus / x-ladon request
+// signing, which book sources must reproduce byte for byte. Signing uses them
+// in ECB mode with PKCS#7 padding over a 32-byte key; only encryption is
+// exposed because signing never decrypts.
+
+/// Simon128/256 round count (Simon and Speck paper, table 1).
+const SIMON_ROUNDS: usize = 72;
+/// The 62-bit z4 sequence that whitens the Simon128/256 key schedule.
+const SIMON_Z4: u64 = 0x3dc94c3a046d678b;
+/// Speck128/256 round count (Simon and Speck paper, table 1).
+const SPECK_ROUNDS: usize = 34;
+
+/// Read the four little-endian 64-bit words of a 32-byte cipher key.
+fn cipher_key_words(key: &[u8]) -> Result<[u64; 4], String> {
+    if key.len() != 32 {
+        return Err(format!("key must be 32 bytes, got {}", key.len()));
+    }
+    let word = |index: usize| {
+        u64::from_le_bytes(
+            key[index * 8..index * 8 + 8]
+                .try_into()
+                .expect("8-byte chunk"),
+        )
+    };
+    Ok([word(0), word(1), word(2), word(3)])
+}
+
+/// PKCS#7-pad `data` to a multiple of `block` bytes (RFC 5652 §6.3);
+/// aligned data gains a full padding block.
+fn pkcs7_pad(data: &[u8], block: usize) -> Vec<u8> {
+    let pad = block - data.len() % block;
+    let mut padded = Vec::with_capacity(data.len() + pad);
+    padded.extend_from_slice(data);
+    padded.resize(data.len() + pad, pad as u8);
+    padded
+}
+
+fn simon_key_schedule(key: &[u64; 4]) -> [u64; SIMON_ROUNDS] {
+    let mut keys = [0u64; SIMON_ROUNDS];
+    keys[..4].copy_from_slice(key);
+    for index in 4..SIMON_ROUNDS {
+        let mixed = keys[index - 1].rotate_right(3) ^ keys[index - 3];
+        let mixed = mixed ^ mixed.rotate_right(1);
+        let z_bit = (SIMON_Z4 >> ((index - 4) % 62)) & 1;
+        keys[index] = !keys[index - 4] ^ mixed ^ z_bit ^ 3;
+    }
+    keys
+}
+
+/// One Simon round: `y' = x ^ (S¹y & S⁸y) ^ S²y ^ k`, `x' = y`.
+fn simon_encrypt_block(keys: &[u64; SIMON_ROUNDS], x: u64, y: u64) -> (u64, u64) {
+    let (mut x, mut y) = (x, y);
+    for &key in keys {
+        let f = y.rotate_left(1) & y.rotate_left(8);
+        let next = x ^ f ^ y.rotate_left(2) ^ key;
+        x = y;
+        y = next;
+    }
+    (x, y)
+}
+
+fn simon_run(key: &[u8], data: &[u8]) -> Result<Vec<u8>, String> {
+    let schedule = simon_key_schedule(&cipher_key_words(key)?);
+    let padded = pkcs7_pad(data, 16);
+    let mut out = vec![0u8; padded.len()];
+    let (blocks, _) = padded.as_chunks::<16>();
+    let (outputs, _) = out.as_chunks_mut::<16>();
+    for (block, output) in blocks.iter().zip(outputs.iter_mut()) {
+        let x = u64::from_le_bytes(block[..8].try_into().expect("8-byte half"));
+        let y = u64::from_le_bytes(block[8..].try_into().expect("8-byte half"));
+        let (low, high) = simon_encrypt_block(&schedule, x, y);
+        output[..8].copy_from_slice(&low.to_le_bytes());
+        output[8..].copy_from_slice(&high.to_le_bytes());
+    }
+    Ok(out)
+}
+
+fn speck_key_schedule(key: &[u64; 4]) -> [u64; SPECK_ROUNDS] {
+    let [k0, l1, l2, l3] = *key;
+    let mut keys = [0u64; SPECK_ROUNDS];
+    keys[0] = k0;
+    let mut window = [l1, l2, l3];
+    for index in 0..SPECK_ROUNDS - 1 {
+        let next = window[0].rotate_right(8).wrapping_add(keys[index]) ^ index as u64;
+        let rotated = keys[index].rotate_left(3);
+        window = [window[1], window[2], next];
+        keys[index + 1] = next ^ rotated;
+    }
+    keys
+}
+
+/// One Speck round: `x' = k ^ (S⁻⁸x + y)`, `y' = x' ^ S³y`.
+fn speck_encrypt_block(keys: &[u64; SPECK_ROUNDS], y: u64, x: u64) -> (u64, u64) {
+    let (mut y, mut x) = (y, x);
+    for &key in keys {
+        x = key ^ x.rotate_right(8).wrapping_add(y);
+        y = x ^ y.rotate_left(3);
+    }
+    (y, x)
+}
+
+fn speck_run(key: &[u8], data: &[u8]) -> Result<Vec<u8>, String> {
+    let schedule = speck_key_schedule(&cipher_key_words(key)?);
+    let padded = pkcs7_pad(data, 16);
+    let mut out = vec![0u8; padded.len()];
+    let (blocks, _) = padded.as_chunks::<16>();
+    let (outputs, _) = out.as_chunks_mut::<16>();
+    for (block, output) in blocks.iter().zip(outputs.iter_mut()) {
+        let y = u64::from_le_bytes(block[..8].try_into().expect("8-byte half"));
+        let x = u64::from_le_bytes(block[8..].try_into().expect("8-byte half"));
+        let (first, second) = speck_encrypt_block(&schedule, y, x);
+        output[..8].copy_from_slice(&first.to_le_bytes());
+        output[8..].copy_from_slice(&second.to_le_bytes());
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
 // Compression
 // ---------------------------------------------------------------------------
 
@@ -528,6 +678,141 @@ mod tests {
             "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
         );
         assert!(hmac_digest("sha3", b"k", b"d").is_none());
+    }
+
+    #[test]
+    fn sm3_matches_the_standard_vector_and_hmac_follows() {
+        // sm3("abc") is the worked example in GB/T 32905 itself.
+        let mut digest = sm3::Sm3::new();
+        digest.update(b"abc");
+        assert_eq!(
+            hex(&digest.finalize()),
+            "66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0"
+        );
+        let mut digest = sm3::Sm3::new();
+        digest.update("langhuan-番茄测试".as_bytes());
+        assert_eq!(
+            hex(&digest.finalize()),
+            "fc3d6414499926ff7562eaddff0cd1203e3359ee82c6795277076d8f8521be57"
+        );
+        let data: Vec<u8> = (0..100).collect();
+        let mut digest = sm3::Sm3::new();
+        digest.update(&data);
+        assert_eq!(
+            hex(&digest.finalize()),
+            "4b2833c158dd41614b76e37f18889243bd6b4a744e36de60920a2f89e409c64e"
+        );
+        let mac = hmac_digest("sm3", b"Jefe", b"what do ya want for nothing?").unwrap();
+        assert_eq!(
+            hex(&mac),
+            "2e87f1d16862e6d964b50a5200bf2b10b764faa9680a296a2405f24bec39f882"
+        );
+        let key: Vec<u8> = (0..100).map(|index| index + 7).collect();
+        let mac = hmac_digest("sm3", &key, b"second").unwrap();
+        assert_eq!(
+            hex(&mac),
+            "d5be25eca79dc9c10ea8976a191654196474f03d10331944029e334ee552c32e"
+        );
+    }
+
+    #[test]
+    fn simon_matches_the_signing_stack_vectors() {
+        let key: Vec<u8> = (0..=31).collect();
+        // One input block: the plaintext block plus a full padding block.
+        let one_block: Vec<u8> = (0..=15).collect();
+        assert_eq!(
+            hex(&simon_run(&key, &one_block).unwrap()),
+            "708c031e1d44519f5d235198757c23940f1b843de8b876190ebefc6e5be42113"
+        );
+        // 23 bytes: 9 bytes of padding over two blocks.
+        let partial: Vec<u8> = (3..=25).collect();
+        assert_eq!(
+            hex(&simon_run(&key, &partial).unwrap()),
+            "6a079365a83dbc1eb8df54d58a2f874a8897e81466b8471d72b5a0138e07f558"
+        );
+        // 100 bytes across seven blocks.
+        let multi: Vec<u8> = (11..=110).collect();
+        assert_eq!(
+            hex(&simon_run(&key, &multi).unwrap()),
+            "980b5b84ab8750bbbc8cbe611667b359d379df95371f8fe255696d3055c003aa\
+             cd3539c32ac2a2fb31ff05cf38a4aa4172c8868ec125a1dd39fb3657b667ee77\
+             606f289b59e9b6d2ff1603c75c045da74849d6e3d6bde0813aedba0854339907\
+             bc655256066954f2f48a81c7675c97da"
+        );
+        assert_eq!(
+            simon_run(&key[..16], &one_block).unwrap_err(),
+            "key must be 32 bytes, got 16"
+        );
+    }
+
+    #[test]
+    fn speck_matches_the_signing_stack_vectors() {
+        let key: Vec<u8> = (0..=31).collect();
+        // A single byte still encrypts to a full padded block.
+        assert_eq!(
+            hex(&speck_run(&key, &[9]).unwrap()),
+            "3aa52de3780437b60def656294c8c3f7"
+        );
+        let partial: Vec<u8> = (5..=19).collect();
+        assert_eq!(
+            hex(&speck_run(&key, &partial).unwrap()),
+            "a7b07cf02374992b886d9fb7ba0fd412"
+        );
+        // Aligned input gains a full padding block.
+        let aligned: Vec<u8> = (0..=15).collect();
+        assert_eq!(
+            hex(&speck_run(&key, &aligned).unwrap()),
+            "ff3a8de8800e57794bda791b326d035f5cc41d1af28ab6b39cef907bb0a7ec0d"
+        );
+        let multi: Vec<u8> = (13..=112).collect();
+        assert_eq!(
+            hex(&speck_run(&key, &multi).unwrap()),
+            "4f821507d18764c8288823fef7d573c6aff1b9036340ffef0147f13b857a1833\
+             766f24b319ee8970ac0a2ec0e5a8f1b109492243ad56592e10909f367674deb5a\
+             ad54af3f4b6e78deca5816f66e6a15d60a05167930ac3172d108f1d9d5b277c9\
+             64d2af1442bccc5d6d82116b333ed1b"
+        );
+        assert_eq!(
+            speck_run(&[7; 16], &aligned).unwrap_err(),
+            "key must be 32 bytes, got 16"
+        );
+    }
+
+    #[test]
+    fn sm3_and_signing_ciphers_round_trip_through_the_realm() {
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let result = sandbox
+            .eval_module_json(
+                r#"import { Crypto } from "langhuan:crypto";
+                   import { TextEncoder, Bytes } from "langhuan:encoding";
+                   const key = Bytes.fromHex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+                   const enc = new TextEncoder();
+                   export default [
+                       Bytes.toHex(Crypto.sm3(enc.encode("abc"))),
+                       Bytes.toHex(Crypto.hmac("sm3", enc.encode("Jefe"),
+                                               enc.encode("what do ya want for nothing?"))),
+                       Bytes.toHex(Crypto.simon(key, Bytes.fromHex("000102030405060708090a0b0c0d0e0f"))),
+                       Bytes.toHex(Crypto.speck(key, Bytes.fromHex("000102030405060708090a0b0c0d0e0f"))),
+                   ].join("\n");"#,
+            )
+            .unwrap();
+        let lines: Vec<&str> = result.split('\n').collect();
+        assert_eq!(
+            lines[0],
+            "66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0"
+        );
+        assert_eq!(
+            lines[1],
+            "2e87f1d16862e6d964b50a5200bf2b10b764faa9680a296a2405f24bec39f882"
+        );
+        assert_eq!(
+            lines[2],
+            "708c031e1d44519f5d235198757c23940f1b843de8b876190ebefc6e5be42113"
+        );
+        assert_eq!(
+            lines[3],
+            "ff3a8de8800e57794bda791b326d035f5cc41d1af28ab6b39cef907bb0a7ec0d"
+        );
     }
 
     #[test]

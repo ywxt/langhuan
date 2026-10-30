@@ -12,6 +12,7 @@ use super::bridge::{call_handler, js_to_json};
 use super::crypto;
 use super::encoding;
 use super::html;
+use super::protobuf;
 use crate::error::{Error, Result};
 
 const QUICKJS_HEAP_LIMIT: usize = 32 * 1024 * 1024;
@@ -156,12 +157,14 @@ impl Sandbox {
         // it to load source. The feed profile removes every JavaScript-visible
         // dynamic compiler below, before any untrusted feed source runs.
         let context = Context::full(&runtime).map_err(sandbox_error)?;
-        // Pure host modules (text, bytes, crypto, compression) are declared
-        // in both profiles: they leak no capabilities, and compute programs
-        // may import them just like feed reducers do. The HTML parser is
-        // feed-only, so the declared-module list stays the capability list.
+        // Pure host modules (text, bytes, crypto, compression, protobuf) are
+        // declared in both profiles: they leak no capabilities, and compute
+        // programs may import them just like feed reducers do. The HTML
+        // parser is feed-only, so the declared-module list stays the
+        // capability list.
         context.with(|ctx| bootstrap_step(&ctx, encoding::declare))?;
         context.with(|ctx| bootstrap_step(&ctx, crypto::declare))?;
+        context.with(|ctx| bootstrap_step(&ctx, protobuf::declare))?;
         if matches!(profile, SandboxProfile::Feed) {
             context.with(|ctx| bootstrap_step(&ctx, html::declare))?;
             context.with(|ctx| bootstrap_step(&ctx, disable_dynamic_compilation))?;

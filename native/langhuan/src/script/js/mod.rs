@@ -5,6 +5,7 @@ mod feed;
 mod html;
 mod module;
 mod prelude;
+mod protobuf;
 mod sandbox;
 
 pub use feed::{JsFeed, JsSupportAuth};
