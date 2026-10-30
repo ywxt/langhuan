@@ -132,6 +132,27 @@ void main() {
       expect(state.groups.single.items.map((item) => item.id), ['1', '2']);
     });
 
+    test('deduplicates book ids across result pages for each feed', () async {
+      final events = <AggregatedSearchEventModel>[
+        for (var i = 0; i < 20; i++) _item('fanqie', 'Fanqie', 'book-$i'),
+        _item('fanqie', 'Fanqie', 'book-19'),
+        _item('fanqie', 'Fanqie', 'book-20'),
+      ];
+      final c = container(
+        FakeFeedService(
+          searchAllHandler: (keyword) => Stream.fromIterable(events),
+        ),
+      );
+      final notifier = c.read(searchProvider.notifier);
+
+      await notifier.searchAll(keyword: 'kw');
+      await notifier.loadMore();
+
+      final items = c.read(searchProvider).groups.single.items;
+      expect(items, hasLength(21));
+      expect(items.map((item) => item.id).toSet(), hasLength(21));
+    });
+
     test('retry repeats the last search kind', () async {
       var searchCalls = 0;
       var searchAllCalls = 0;
