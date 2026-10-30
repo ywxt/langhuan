@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/rust/api/types.dart';
+import '../../shared/utils/app_log.dart';
 import '../feeds/feed_providers.dart';
 import '../feeds/feed_service.dart';
 import 'bookmark_provider.dart';
@@ -57,6 +58,13 @@ class ReaderScreenController extends ChangeNotifier {
 
   Future<void> initialize() async {
     if (feedId.isEmpty || bookId.isEmpty) return;
+
+    final stopwatch = Stopwatch()..start();
+    AppLog.info(
+      'reader.controller',
+      'initialization started',
+      fields: {'feed_id': feedId, 'book_id': bookId},
+    );
 
     _isInitializing = true;
     _initError = null;
@@ -123,6 +131,28 @@ class ReaderScreenController extends ChangeNotifier {
         paragraphId: startParagraphId,
         charOffset: startCharOffset,
       );
+      AppLog.info(
+        'reader.controller',
+        'initialization completed',
+        fields: {
+          'feed_id': feedId,
+          'book_id': bookId,
+          'chapters': chapters.length,
+          'chapter_id': startChapterId,
+          'elapsed_ms': stopwatch.elapsedMilliseconds,
+        },
+      );
+      // Opening a chapter is itself a valid reading position. Report it
+      // before paragraph loading completes so a failed/empty chapter still
+      // becomes the persisted current chapter. A later paragraph report
+      // replaces this pending chapter-only position within the debounce.
+      onPositionChanged(
+        ReaderPosition(
+          chapterId: startChapterId,
+          paragraphId: startParagraphId,
+          charOffset: startCharOffset,
+        ),
+      );
 
       unawaited(
         _ref
@@ -138,19 +168,27 @@ class ReaderScreenController extends ChangeNotifier {
       _isInitializing = false;
       _initError = error;
       _notify();
+      AppLog.warning(
+        'reader.controller',
+        'initialization failed',
+        fields: {
+          'feed_id': feedId,
+          'book_id': bookId,
+          'elapsed_ms': stopwatch.elapsedMilliseconds,
+        },
+        error: error,
+      );
     }
   }
 
   void onPositionChanged(ReaderPosition pos) {
     final progressNotifier = _ref.read(readingProgressProvider.notifier);
-    progressNotifier.setActiveChapter(
-      pos.chapterId,
+    progressNotifier.setActivePosition(
+      chapterId: pos.chapterId,
       paragraphId: pos.paragraphId,
+      paragraphOffset: pos.paragraphOffset,
+      paragraphCharOffset: pos.charOffset,
     );
-    progressNotifier.setActiveOffset(pos.paragraphOffset);
-    progressNotifier.setActiveCharOffset(pos.charOffset);
-
-    if (pos.paragraphId.trim().isEmpty) return;
 
     final pending = _PendingProgress(
       chapterId: pos.chapterId,
@@ -183,6 +221,14 @@ class ReaderScreenController extends ChangeNotifier {
   }
 
   void jumpToChapter(String chapterId, {String paragraphId = ''}) {
+    AppLog.info(
+      'reader.controller',
+      'chapter jump requested',
+      fields: {
+        'chapter_id': chapterId,
+        'paragraph_id': paragraphId.isEmpty ? null : paragraphId,
+      },
+    );
     _readerController.jumpTo(chapterId: chapterId, paragraphId: paragraphId);
   }
 
@@ -191,6 +237,12 @@ class ReaderScreenController extends ChangeNotifier {
 
     _isRefreshingChapter = true;
     _notify();
+    final stopwatch = Stopwatch()..start();
+    AppLog.info(
+      'reader.controller',
+      'chapter refresh started',
+      fields: {'chapter_id': chapterId},
+    );
     try {
       await _ref
           .read(feedServiceProvider)
@@ -203,6 +255,26 @@ class ReaderScreenController extends ChangeNotifier {
       // The backend cache is warm now — make the reader re-read the chapter
       // so the new content actually shows.
       _readerController.requestChapterReload(chapterId);
+      AppLog.info(
+        'reader.controller',
+        'chapter refresh completed',
+        fields: {
+          'chapter_id': chapterId,
+          'elapsed_ms': stopwatch.elapsedMilliseconds,
+        },
+      );
+    } catch (error, stackTrace) {
+      AppLog.warning(
+        'reader.controller',
+        'chapter refresh failed',
+        fields: {
+          'chapter_id': chapterId,
+          'elapsed_ms': stopwatch.elapsedMilliseconds,
+        },
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
     } finally {
       _isRefreshingChapter = false;
       _notify();
@@ -281,6 +353,15 @@ class ReaderScreenController extends ChangeNotifier {
     if (_lastSavedProgress?.isNear(pending, _offsetEpsilon) ?? false) return;
 
     _lastSavedProgress = pending;
+    AppLog.debug(
+      'reader.progress',
+      'progress save scheduled',
+      fields: {
+        'chapter_id': pending.chapterId,
+        'paragraph_id': pending.paragraphId,
+        'char_offset': pending.charOffset,
+      },
+    );
     unawaited(
       _ref
           .read(readingProgressProvider.notifier)

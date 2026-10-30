@@ -338,6 +338,7 @@ pub async fn execute(
     req: &HttpRequest,
     timeout: Duration,
 ) -> Result<HttpResponse> {
+    let request_started = Instant::now();
     // Developer tools: while a trace recorder is active for this task,
     // report this request's outcome to it. Outside a debug run this is one
     // task-local lookup and nothing else.
@@ -424,6 +425,15 @@ pub async fn execute(
             return Err(e.into());
         }
     };
+
+    tracing::debug!(
+        feed_id = %feed_id,
+        status,
+        url = %redact_url_secrets(&url),
+        body_bytes = body.len(),
+        elapsed_ms = request_started.elapsed().as_millis(),
+        "HTTP request completed"
+    );
 
     if let Some(trace) = &trace {
         trace.record_response(req, status, &url, &body, start);

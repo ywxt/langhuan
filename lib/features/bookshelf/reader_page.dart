@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../shared/theme/app_theme.dart';
+import '../../shared/utils/app_log.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/loading.dart';
@@ -15,6 +16,7 @@ import 'reading_progress_provider.dart';
 import 'widgets/chapter_content_manager.dart';
 import 'widgets/reader_controller.dart';
 import 'widgets/reader_feedback.dart';
+import 'widgets/reader_frame_monitor.dart';
 import 'widgets/reader_overlays.dart';
 import 'widgets/reader_sheets.dart';
 import 'widgets/reader_types.dart';
@@ -40,6 +42,7 @@ class ReaderPage extends ConsumerStatefulWidget {
 class _ReaderPageState extends ConsumerState<ReaderPage> {
   late final ReaderController _readerController;
   late final ReaderScreenController _screenController;
+  ReaderFrameMonitor? _frameMonitor;
 
   @override
   void initState() {
@@ -62,7 +65,39 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final display = View.of(context).display;
+    final monitor = _frameMonitor;
+    if (monitor == null) {
+      _frameMonitor = ReaderFrameMonitor(refreshRate: display.refreshRate)
+        ..start();
+      AppLog.info(
+        'reader.lifecycle',
+        'reader opened',
+        fields: {
+          'feed_id': widget.feedId,
+          'book_id': widget.bookId,
+          'chapter_id': widget.chapterId,
+          'display_hz': display.refreshRate.toStringAsFixed(1),
+          'physical_width': display.size.width.toInt(),
+          'physical_height': display.size.height.toInt(),
+          'device_pixel_ratio': display.devicePixelRatio.toStringAsFixed(2),
+        },
+      );
+    } else {
+      monitor.updateRefreshRate(display.refreshRate);
+    }
+  }
+
+  @override
   void dispose() {
+    _frameMonitor?.stop();
+    AppLog.info(
+      'reader.lifecycle',
+      'reader closed',
+      fields: {'feed_id': widget.feedId, 'book_id': widget.bookId},
+    );
     _screenController.removeListener(_onScreenControllerChanged);
     _screenController.dispose();
     _readerController.onPositionChanged = null;
@@ -259,6 +294,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                       onPageTurnStart: _clearSelection,
                       fontScale: settings.fontScale,
                       fontFamily: settings.fontFamily,
+                      prewarmCustomFont:
+                          settings.customFontFilePath != null &&
+                          settings.fontFamily != null,
                       letterSpacing: settings.letterSpacing,
                       paragraphSpacing: settings.paragraphSpacing,
                       lineHeight: settings.lineHeight,

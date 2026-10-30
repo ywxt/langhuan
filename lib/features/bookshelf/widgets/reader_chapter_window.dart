@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../shared/utils/app_log.dart';
+
 import '../../../src/rust/api/types.dart';
 import '../../feeds/feed_service.dart' show ChapterInfoModel;
 import 'reader_types.dart';
@@ -308,16 +310,41 @@ class ReaderChapterWindow extends ChangeNotifier {
   }
 
   Future<void> _fetch(String chapterId, bool forceRefresh) async {
+    final stopwatch = Stopwatch()..start();
+    AppLog.debug(
+      'reader.chapter_window',
+      'chapter load started',
+      fields: {'chapter_id': chapterId, 'force_refresh': forceRefresh},
+    );
     try {
       final paragraphs = await _loader(chapterId, forceRefresh: forceRefresh);
       _putCache(chapterId, paragraphs);
       if (_records.containsKey(chapterId)) {
         _records[chapterId] = ChapterLoaded(paragraphs);
       }
-    } catch (error) {
+      AppLog.debug(
+        'reader.chapter_window',
+        'chapter load completed',
+        fields: {
+          'chapter_id': chapterId,
+          'paragraphs': paragraphs.length,
+          'elapsed_ms': stopwatch.elapsedMilliseconds,
+        },
+      );
+    } catch (error, stackTrace) {
       if (_records.containsKey(chapterId)) {
         _records[chapterId] = ChapterLoadError(error: error);
       }
+      AppLog.warning(
+        'reader.chapter_window',
+        'chapter load failed',
+        fields: {
+          'chapter_id': chapterId,
+          'elapsed_ms': stopwatch.elapsedMilliseconds,
+        },
+        error: error,
+        stackTrace: stackTrace,
+      );
     } finally {
       _inFlight.remove(chapterId);
       _notify();

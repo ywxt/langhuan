@@ -4,7 +4,7 @@
 //! incrementally. Finite chapter and paragraph queries are collected in a
 //! background task and returned as one value.
 
-use std::{future::Future, sync::Arc};
+use std::{future::Future, sync::Arc, time::Instant};
 
 use async_trait::async_trait;
 use langhuan::cache::CachedFeed;
@@ -423,18 +423,39 @@ impl Handler<GetChapters> for FeedActor {
         if msg.force_refresh {
             feed.clear_chapters_cache(&msg.book_id).await?;
         }
+        let feed_id = msg.feed_id;
         let book_id = msg.book_id;
         Ok(FeedQueryTask::spawn("chapter", async move {
+            let started = Instant::now();
             let stream = feed.chapters(&book_id);
             tokio::pin!(stream);
             let mut items = Vec::new();
             while let Some(item) = stream.next().await {
-                let item = item.map_err(BridgeError::from)?;
+                let item = match item {
+                    Ok(item) => item,
+                    Err(error) => {
+                        tracing::warn!(
+                            feed_id = %feed_id,
+                            book_id = %book_id,
+                            elapsed_ms = started.elapsed().as_millis(),
+                            error = %error,
+                            "chapter query failed"
+                        );
+                        return Err(BridgeError::from(error));
+                    }
+                };
                 items.push(ChapterItem {
                     id: item.id,
                     title: item.title,
                 });
             }
+            tracing::debug!(
+                feed_id = %feed_id,
+                book_id = %book_id,
+                item_count = items.len(),
+                elapsed_ms = started.elapsed().as_millis(),
+                "chapter query completed"
+            );
             Ok(items)
         }))
     }
@@ -465,16 +486,31 @@ impl Handler<GetParagraphs> for FeedActor {
             .await
             .map_err(BridgeError::from)?;
 
+        let feed_id = msg.feed_id;
         let book_id = msg.book_id;
         let chapter_id = msg.chapter_id;
 
         transform_chain.init(&chapter_id);
         Ok(FeedQueryTask::spawn("paragraph", async move {
+            let started = Instant::now();
             let stream = feed.paragraphs(&book_id, &chapter_id);
             tokio::pin!(stream);
             let mut items = Vec::new();
             while let Some(paragraph) = stream.next().await {
-                let paragraph = paragraph.map_err(BridgeError::from)?;
+                let paragraph = match paragraph {
+                    Ok(paragraph) => paragraph,
+                    Err(error) => {
+                        tracing::warn!(
+                            feed_id = %feed_id,
+                            book_id = %book_id,
+                            chapter_id = %chapter_id,
+                            elapsed_ms = started.elapsed().as_millis(),
+                            error = %error,
+                            "paragraph query failed"
+                        );
+                        return Err(BridgeError::from(error));
+                    }
+                };
                 if transform_chain.is_empty() {
                     items.push(paragraph_content(paragraph));
                 } else {
@@ -486,6 +522,14 @@ impl Handler<GetParagraphs> for FeedActor {
                     );
                 }
             }
+            tracing::debug!(
+                feed_id = %feed_id,
+                book_id = %book_id,
+                chapter_id = %chapter_id,
+                item_count = items.len(),
+                elapsed_ms = started.elapsed().as_millis(),
+                "paragraph query completed"
+            );
             Ok(items)
         }))
     }

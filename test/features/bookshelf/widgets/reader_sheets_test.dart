@@ -48,7 +48,7 @@ void main() {
   }
 
   group('showReaderInterfaceSheet layout', () {
-    testWidgets('left-aligns the reading mode title with other labels', (
+    testWidgets('aligns the reading mode item with other interface items', (
       tester,
     ) async {
       SharedPreferences.setMockInitialValues({});
@@ -74,6 +74,15 @@ void main() {
       );
       final fontLabelLeft = tester.getTopLeft(find.text('Font File'));
       expect(titleLeft.dx, closeTo(fontLabelLeft.dx, 0.5));
+
+      final modeRect = tester.getRect(
+        find.byKey(const ValueKey('reader-mode-control')),
+      );
+      final fontActionsRect = tester.getRect(
+        find.byKey(const ValueKey('reader-font-actions')),
+      );
+      expect(modeRect.left, closeTo(fontActionsRect.left, 0.5));
+      expect(modeRect.right, closeTo(fontActionsRect.right, 0.5));
     });
   });
 

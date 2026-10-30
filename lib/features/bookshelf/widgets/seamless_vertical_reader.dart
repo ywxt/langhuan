@@ -128,6 +128,8 @@ class SeamlessVerticalReader extends StatefulWidget {
 
 class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   ScrollController? _controller;
+  late Map<String, int> _chapterIndices;
+  late Map<String, String> _chapterTitles;
 
   /// A stable zero point immediately before the current anchor chapter.
   /// Keeping the inset in its own center sliver means a TOC jump starts the
@@ -158,6 +160,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   @override
   void initState() {
     super.initState();
+    _indexChapters();
     widget.window.addListener(_onWindowChanged);
     _pendingTarget = widget.scrollTarget;
     _consumedTargetToken = widget.scrollTarget?.token ?? -1;
@@ -189,6 +192,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   @override
   void didUpdateWidget(covariant SeamlessVerticalReader oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.chapters != widget.chapters) _indexChapters();
     if (oldWidget.window != widget.window) {
       oldWidget.window.removeListener(_onWindowChanged);
       widget.window.addListener(_onWindowChanged);
@@ -214,6 +218,15 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
       (target != null && target.paragraphId.isNotEmpty)
       ? target.paragraphId
       : null;
+
+  void _indexChapters() {
+    _chapterIndices = <String, int>{
+      for (var i = 0; i < widget.chapters.length; i++) widget.chapters[i].id: i,
+    };
+    _chapterTitles = <String, String>{
+      for (final chapter in widget.chapters) chapter.id: chapter.title,
+    };
+  }
 
   void _onWindowChanged() {
     if (!mounted) return;
@@ -374,6 +387,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
       if (sliverContext == null) continue;
       final sliverObject = sliverContext.findRenderObject();
       if (sliverObject is! RenderSliverMultiBoxAdaptor) continue;
+      final beforeAnchor = _isBeforeAnchor(chapterId);
 
       RenderBox? child = sliverObject.firstChild;
       while (child != null) {
@@ -389,7 +403,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
           if (top < activeTop) {
             final index = sliverObject.indexOf(child);
             if (index >= 0 && index < paragraphs.length) {
-              final paragraphIndex = _isBeforeAnchor(chapterId)
+              final paragraphIndex = beforeAnchor
                   ? paragraphs.length - 1 - index
                   : index;
               activeTop = top;
@@ -443,10 +457,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   }
 
   int _chapterIndex(String chapterId) {
-    for (var i = 0; i < widget.chapters.length; i++) {
-      if (widget.chapters[i].id == chapterId) return i;
-    }
-    return -1;
+    return _chapterIndices[chapterId] ?? -1;
   }
 
   bool _isBeforeAnchor(String chapterId) {
@@ -563,6 +574,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
       if (paragraphs.isEmpty) {
         return SliverToBoxAdapter(key: key, child: const SizedBox.shrink());
       }
+      final beforeAnchor = _isBeforeAnchor(chapterId);
       return SliverList(
         key: key,
         delegate: SliverChildBuilderDelegate((context, index) {
@@ -570,7 +582,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
           // child zero is placed closest to the center (the visual bottom).
           // Reverse their data index so paragraphs still read top-to-bottom
           // and the preceding chapter's title stays at its beginning.
-          final paragraphIndex = _isBeforeAnchor(chapterId)
+          final paragraphIndex = beforeAnchor
               ? paragraphs.length - 1 - index
               : index;
           return _buildParagraphItem(chapterId, paragraphs[paragraphIndex]);
@@ -608,10 +620,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   }
 
   String? _chapterTitleOf(String chapterId) {
-    for (final chapter in widget.chapters) {
-      if (chapter.id == chapterId) return chapter.title;
-    }
-    return null;
+    return _chapterTitles[chapterId];
   }
 
   Widget _buildParagraphItem(String chapterId, ParagraphContent paragraph) {

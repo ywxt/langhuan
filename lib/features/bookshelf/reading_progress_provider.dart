@@ -127,6 +127,20 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
     );
   }
 
+  void setActivePosition({
+    required String chapterId,
+    required String paragraphId,
+    required double paragraphOffset,
+    required int paragraphCharOffset,
+  }) {
+    state = state.copyWith(
+      activeChapterId: chapterId,
+      activeParagraphId: paragraphId,
+      activeParagraphOffset: paragraphOffset,
+      activeParagraphCharOffset: paragraphCharOffset,
+    );
+  }
+
   void setActiveParagraph(String paragraphId) {
     state = state.copyWith(activeParagraphId: paragraphId);
   }

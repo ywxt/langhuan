@@ -11,6 +11,7 @@ import 'horizontal_reader_view.dart';
 import 'page_breaker.dart';
 import 'reader_chapter_window.dart';
 import 'reader_controller.dart';
+import 'reader_glyph_warmup.dart';
 import 'reader_types.dart';
 import 'seamless_vertical_reader.dart';
 
@@ -38,6 +39,7 @@ class ChapterContentManager extends StatefulWidget {
     this.onPageTurnStart,
     required this.fontScale,
     this.fontFamily,
+    this.prewarmCustomFont = false,
     this.letterSpacing = 0.0,
     this.paragraphSpacing = LanghuanTheme.spaceMd,
     required this.lineHeight,
@@ -60,6 +62,7 @@ class ChapterContentManager extends StatefulWidget {
   final VoidCallback? onPageTurnStart;
   final double fontScale;
   final String? fontFamily;
+  final bool prewarmCustomFont;
   final double letterSpacing;
   final double paragraphSpacing;
   final double lineHeight;
@@ -101,6 +104,7 @@ class _FlatEntry {
 
 class _ChapterContentManagerState extends State<ChapterContentManager> {
   ReaderChapterWindow? _window;
+  final ReaderGlyphWarmup _glyphWarmup = ReaderGlyphWarmup();
 
   PageBreaker? _breaker;
   Size _lastPageSize = Size.zero;
@@ -160,13 +164,52 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   Future<List<ParagraphContent>> _loadChapterParagraphs(
     String chapterId, {
     bool forceRefresh = false,
-  }) {
-    return widget.feedService.paragraphs(
+  }) async {
+    final paragraphs = await widget.feedService.paragraphs(
       feedId: widget.feedId,
       bookId: widget.bookId,
       chapterId: chapterId,
       forceRefresh: forceRefresh,
     );
+    _scheduleGlyphWarmup(chapterId, paragraphs);
+    return paragraphs;
+  }
+
+  void _scheduleGlyphWarmup(
+    String chapterId,
+    List<ParagraphContent> paragraphs,
+  ) {
+    if (!widget.prewarmCustomFont || widget.fontFamily == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.prewarmCustomFont) return;
+      final theme = Theme.of(context);
+      final family = widget.fontFamily;
+      if (family == null) return;
+      final width =
+          MediaQuery.sizeOf(context).width - widget.contentPadding.horizontal;
+      _glyphWarmup.schedule(
+        chapterId: chapterId,
+        paragraphs: paragraphs,
+        bodyStyle: (theme.textTheme.bodyLarge ?? const TextStyle()).copyWith(
+          fontSize:
+              (theme.textTheme.bodyLarge?.fontSize ?? 16) * widget.fontScale,
+          fontFamily: family,
+          letterSpacing: widget.letterSpacing,
+          height: widget.lineHeight,
+        ),
+        titleStyle: (theme.textTheme.headlineSmall ?? const TextStyle())
+            .copyWith(
+              fontSize:
+                  (theme.textTheme.headlineSmall?.fontSize ?? 24) *
+                  widget.fontScale,
+              fontFamily: family,
+              letterSpacing: widget.letterSpacing,
+            ),
+        width: width,
+        devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+        textDirection: Directionality.of(context),
+      );
+    });
   }
 
   // ── Controller commands ─────────────────────────────────────────────────
@@ -528,6 +571,14 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       _pagesByChapter.clear();
       _breaker = null;
       _lastPageSize = Size.zero;
+      if (widget.prewarmCustomFont) {
+        for (final chapterId in _window!.windowChapterIds) {
+          final paragraphs = _window!.paragraphsOf(chapterId);
+          if (paragraphs != null) {
+            _scheduleGlyphWarmup(chapterId, paragraphs);
+          }
+        }
+      }
       _restorePositionAfterReflow();
       return;
     }

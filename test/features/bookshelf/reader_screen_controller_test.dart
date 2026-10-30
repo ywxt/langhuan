@@ -112,7 +112,7 @@ void main() {
       final (controller, _, reader) = await pumpHost(tester, service: service);
 
       await controller.initialize();
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
 
       expect(controller.isInitializing, false);
       expect(controller.initError, isNull);
@@ -144,11 +144,30 @@ void main() {
       );
 
       await controller.initialize();
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
 
       expect(reader.pendingChapterId, 'c3');
       expect(reader.pendingParagraphId, 'p9');
       expect(reader.pendingCharOffset, 0);
+    });
+
+    testWidgets('persists an opened chapter before its paragraphs load', (
+      tester,
+    ) async {
+      final saves = <(String, String, String, String, int)>[];
+      final service = baseService(
+        onProgressSaved: (f, b, c, p, off) => saves.add((f, b, c, p, off)),
+      );
+      final (controller, _, _) = await pumpHost(
+        tester,
+        service: service,
+        initialChapterId: 'c3',
+      );
+
+      await controller.initialize();
+      await tester.pump(const Duration(milliseconds: 600));
+
+      expect(saves, [('f1', 'b1', 'c3', '', 0)]);
     });
 
     testWidgets('saved progress outside the chapter list falls back to first', (
@@ -166,7 +185,7 @@ void main() {
       final (controller, _, reader) = await pumpHost(tester, service: service);
 
       await controller.initialize();
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
 
       expect(reader.pendingChapterId, 'c1');
     });
@@ -260,12 +279,14 @@ void main() {
       await tester.pump(const Duration(milliseconds: 600));
       expect(saves.length, 2);
 
-      // Positions without a paragraph never schedule a save.
+      // A chapter-only position must still save: failed and empty chapters
+      // never produce a paragraph position later.
       controller.onPositionChanged(
         const ReaderPosition(chapterId: 'c2', paragraphId: ''),
       );
       await tester.pump(const Duration(milliseconds: 600));
-      expect(saves.length, 2);
+      expect(saves.length, 3);
+      expect(saves.last, ('f1', 'b1', 'c2', '', 0));
     });
   });
 

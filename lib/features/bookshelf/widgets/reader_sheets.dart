@@ -42,26 +42,26 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
-                  Center(
-                    child: SegmentedButton<ReaderPageMode>(
-                      segments: [
-                        ButtonSegment(
-                          value: ReaderPageMode.horizontal,
-                          icon: const Icon(Icons.swap_horiz, size: 18),
-                          label: Text(l10n.readerModeHorizontal),
-                        ),
-                        ButtonSegment(
-                          value: ReaderPageMode.vertical,
-                          icon: const Icon(Icons.swap_vert, size: 18),
-                          label: Text(l10n.readerModeVertical),
-                        ),
-                      ],
-                      selected: {settings.pageMode},
-                      onSelectionChanged: (selection) {
-                        setModalState(() {});
-                        notifier.setPageMode(selection.first);
-                      },
-                    ),
+                  SegmentedButton<ReaderPageMode>(
+                    key: const ValueKey('reader-mode-control'),
+                    expandedInsets: EdgeInsets.zero,
+                    segments: [
+                      ButtonSegment(
+                        value: ReaderPageMode.horizontal,
+                        icon: const Icon(Icons.swap_horiz, size: 18),
+                        label: Text(l10n.readerModeHorizontal),
+                      ),
+                      ButtonSegment(
+                        value: ReaderPageMode.vertical,
+                        icon: const Icon(Icons.swap_vert, size: 18),
+                        label: Text(l10n.readerModeVertical),
+                      ),
+                    ],
+                    selected: {settings.pageMode},
+                    onSelectionChanged: (selection) {
+                      setModalState(() {});
+                      notifier.setPageMode(selection.first);
+                    },
                   ),
                   const SizedBox(height: LanghuanTheme.spaceMd),
                   Text(l10n.readerFontFileLabel),
@@ -73,6 +73,7 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
                   Row(
+                    key: const ValueKey('reader-font-actions'),
                     children: [
                       Expanded(
                         child: FilledButton.icon(
