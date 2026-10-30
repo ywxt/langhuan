@@ -155,6 +155,53 @@ void main() {
   });
 
   group('swipe', () {
+    testWidgets('snapshots text pages for the turn animation', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          current: ReaderSlotPage(_page('p2', 'current page')),
+          prev: ReaderSlotPage(_page('p1', 'previous page')),
+          next: ReaderSlotPage(_page('p3', 'next page')),
+        ),
+      );
+
+      final snapshots = tester.widgetList<SnapshotWidget>(
+        find.byType(SnapshotWidget),
+      );
+      expect(snapshots, hasLength(3));
+      expect(
+        snapshots.map((widget) => widget.controller).toSet(),
+        hasLength(1),
+      );
+      expect(snapshots.first.controller.allowSnapshotting, isTrue);
+    });
+
+    testWidgets('settle animation translates a retained page strip', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          current: ReaderSlotPage(_page('p1', 'page one')),
+          next: ReaderSlotPage(_page('p2', 'page two')),
+        ),
+      );
+
+      await tester.tapAt(const Offset(600, 300));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+
+      final transform = tester.widget<Transform>(
+        find.byKey(const ValueKey('horizontal-reader-page-strip')),
+      );
+      expect(transform.transform.storage[12], lessThan(0));
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('horizontal-reader-page-strip')),
+          matching: find.byType(RepaintBoundary),
+        ),
+        findsNothing,
+      );
+    });
+
     testWidgets('drag left past the threshold settles onto next', (
       tester,
     ) async {

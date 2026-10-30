@@ -110,6 +110,8 @@ class HorizontalReaderView extends StatefulWidget {
 class _HorizontalReaderViewState extends State<HorizontalReaderView>
     with SingleTickerProviderStateMixin {
   late AnimationController _anim;
+  late final SnapshotController _pageSnapshots;
+  bool _dependenciesInitialized = false;
 
   /// Pixel offset of the 3-page strip. 0 = center visible.
   /// Driven by drag or animation. Updated via ValueNotifier to avoid rebuild.
@@ -146,12 +148,40 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
     _anim = AnimationController(vsync: this)
       ..addListener(_onAnimTick)
       ..addStatusListener(_onAnimStatus);
+    _pageSnapshots = SnapshotController(allowSnapshotting: true);
     _syncSnapshot();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_dependenciesInitialized) {
+      // Theme, text scale, locale or device-pixel-ratio changes invalidate
+      // the texture even when the PageContent object itself stayed stable.
+      _pageSnapshots.clear();
+    }
+    _dependenciesInitialized = true;
+  }
+
+  @override
+  void didUpdateWidget(covariant HorizontalReaderView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fontScale != widget.fontScale ||
+        oldWidget.fontFamily != widget.fontFamily ||
+        oldWidget.letterSpacing != widget.letterSpacing ||
+        oldWidget.paragraphSpacing != widget.paragraphSpacing ||
+        oldWidget.lineHeight != widget.lineHeight ||
+        oldWidget.contentPadding != widget.contentPadding ||
+        oldWidget.selectedChapterId != widget.selectedChapterId ||
+        oldWidget.selectedParagraphId != widget.selectedParagraphId) {
+      _pageSnapshots.clear();
+    }
   }
 
   @override
   void dispose() {
     _anim.dispose();
+    _pageSnapshots.dispose();
     _offset.dispose();
     super.dispose();
   }
@@ -308,6 +338,37 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
         final currentChild = _buildCurrentPage(context);
         final nextChild = _buildSlot(_snapNext, isNext: true);
 
+        // Keep page layout outside the animation builder and retain each text
+        // page as a texture. On Impeller/OpenGLES, sliding live custom-font
+        // text rebuilt the CJK glyph atlas on almost every frame. Stable keys
+        // let a page carry its snapshot from next → current → previous while
+        // the animation only translates the three-page strip.
+        final pageStrip = Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              key: _slotKey(_snapPrev, 'previous'),
+              left: -pageWidth,
+              top: 0,
+              bottom: 0,
+              width: pageWidth,
+              child: _snapshotSlot(context, _snapPrev, prevChild),
+            ),
+            Positioned.fill(
+              key: _slotKey(_snapCurrent, 'current'),
+              child: _snapshotSlot(context, _snapCurrent, currentChild),
+            ),
+            Positioned(
+              key: _slotKey(_snapNext, 'next'),
+              left: pageWidth,
+              top: 0,
+              bottom: 0,
+              width: pageWidth,
+              child: _snapshotSlot(context, _snapNext, nextChild),
+            ),
+          ],
+        );
+
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onHorizontalDragStart: _onDragStart,
@@ -317,31 +378,13 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
           child: ClipRect(
             child: ValueListenableBuilder<double>(
               valueListenable: _offset,
-              builder: (context, offset, _) {
-                return Stack(
-                  children: [
-                    Positioned(
-                      left: offset - pageWidth,
-                      top: 0,
-                      bottom: 0,
-                      width: pageWidth,
-                      child: prevChild,
-                    ),
-                    Positioned(
-                      left: offset,
-                      top: 0,
-                      bottom: 0,
-                      width: pageWidth,
-                      child: currentChild,
-                    ),
-                    Positioned(
-                      left: offset + pageWidth,
-                      top: 0,
-                      bottom: 0,
-                      width: pageWidth,
-                      child: nextChild,
-                    ),
-                  ],
+              child: pageStrip,
+              builder: (context, offset, child) {
+                return Transform.translate(
+                  key: const ValueKey('horizontal-reader-page-strip'),
+                  offset: Offset(offset, 0),
+                  transformHitTests: false,
+                  child: child,
                 );
               },
             ),
@@ -353,6 +396,32 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
 
   Widget _buildCurrentPage(BuildContext context) {
     return _buildSlotContent(_snapCurrent!, isCurrent: true);
+  }
+
+  Key _slotKey(ReaderSlot? slot, String fallback) {
+    return switch (slot) {
+      ReaderSlotPage(:final page) => ObjectKey(page),
+      ReaderSlotLoading(:final chapterId) => ValueKey(
+        '$fallback-loading-$chapterId',
+      ),
+      ReaderSlotError(:final chapterId) => ValueKey(
+        '$fallback-error-$chapterId',
+      ),
+      null => ValueKey('$fallback-empty'),
+    };
+  }
+
+  Widget _snapshotSlot(BuildContext context, ReaderSlot? slot, Widget child) {
+    final page = ColoredBox(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: child,
+    );
+    if (slot is! ReaderSlotPage) return page;
+    return SnapshotWidget(
+      controller: _pageSnapshots,
+      mode: SnapshotMode.permissive,
+      child: page,
+    );
   }
 
   Widget _buildSlot(
