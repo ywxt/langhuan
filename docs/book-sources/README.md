@@ -498,6 +498,27 @@ Values persist across operations and across feed reloads. See `fanqie-app.js`
 for a real consumer: it stores its registered device under `device` and the
 rotated content key under `keyinfo`.
 
+### Where state belongs
+
+A source has exactly three state channels, one per lifetime:
+
+- **One operation** — `next_state`, threaded through the reducer's steps.
+- **One session** (one load of the source; a reload or restart resets it) —
+  module scope. The realm evaluates the module once and retains it, so a
+  module-level variable is precisely session state: it survives across
+  operations but never across reloads. It is module-private, not a
+  `globalThis` global — no other module can see or collide with it.
+  Session-scoped guards (cool-downs, risk-shaping locks) belong here:
+  `fanqie-app.js`'s device-replacement lock and `fanqie.js`'s risk-control
+  lock are the in-tree examples.
+- **Forever** — `langhuan:storage`, the only channel that survives feed
+  reloads and app restarts.
+
+Giving state the wrong channel breaks it in one direction or the other: a
+session lock stored in `langhuan:storage` keeps firing after the condition
+it guarded is gone, while a device ID held only in module scope is
+re-registered on every reload.
+
 ## Authentication
 
 The optional `login` object contains:
