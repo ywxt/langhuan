@@ -113,9 +113,28 @@ jobs:
           name: generated-bindings
           path: .
 
+      - name: Prepare Android release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_STORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" \
+            | base64 --decode > "$RUNNER_TEMP/langhuan-release.jks"
+          test -s "$RUNNER_TEMP/langhuan-release.jks"
+
       - name: Build release APKs
         env:
           VERSION: ${{ needs.bindings.outputs.version }}
+          LANGHUAN_ANDROID_KEYSTORE: ${{ runner.temp }}/langhuan-release.jks
+          LANGHUAN_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          LANGHUAN_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          LANGHUAN_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           flutter pub get
           flutter build apk --release --split-per-abi \
@@ -125,6 +144,14 @@ jobs:
           for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
             abi="$(basename "$apk" | sed -E 's/^app-(.*)-release\.apk$/\1/')"
             cp "$apk" "dist/langhuan-${VERSION}-android-${abi}.apk"
+          done
+
+      - name: Verify Android signatures
+        run: |
+          apksigner="$(find -L "$ANDROID_HOME/build-tools" -name apksigner -type f -print | sort -V | tail -1)"
+          test -x "$apksigner"
+          for apk in dist/*.apk; do
+            "$apksigner" verify --verbose --print-certs "$apk"
           done
 
       - uses: actions/upload-artifact@v7
