@@ -142,6 +142,12 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
   static const _kChineseConversion = 'reader.chineseConversion';
   static const _kPageMode = 'reader.pageMode';
 
+  /// Font families registered this session, by source file path. The
+  /// engine cannot unload a `FontLoader` registration, so re-picking or
+  /// restoring the same file must reuse its family instead of stacking
+  /// another copy of the font data onto the process.
+  static final Map<String, String> _fontFamiliesByPath = {};
+
   @override
   ReaderSettingsState build() {
     _restoreFromStorage();
@@ -175,6 +181,21 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
     final trimmed = filePath.trim();
     if (trimmed.isEmpty) return;
 
+    // Already registered this session: reuse the family (see
+    // [_fontFamiliesByPath] for why re-registering is not an option).
+    final existing = _fontFamiliesByPath[trimmed];
+    if (existing != null) {
+      state = state.copyWith(
+        fontFamily: () => existing,
+        customFontFilePath: () => trimmed,
+        customFontDisplayName: () => _fileNameFromPath(trimmed),
+      );
+      if (persist) {
+        _persistState();
+      }
+      return;
+    }
+
     final file = File(trimmed);
     final bytes = await file.readAsBytes();
     if (bytes.isEmpty) {
@@ -185,6 +206,7 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
     final loader = FontLoader(family)
       ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
     await loader.load();
+    _fontFamiliesByPath[trimmed] = family;
 
     state = state.copyWith(
       fontFamily: () => family,
@@ -325,6 +347,12 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
     final storedDisplayName = prefs.getString(_kCustomFontDisplayName);
     final storedFontFamily = prefs.getString(_kFontFamily);
 
+    // A stored font FILE gets its family from the load below: the stored
+    // name is from a previous session and resolves to nothing — applying
+    // it would flash the default font and reflow every page twice.
+    // Only preset families ('serif', …) restore directly.
+    final hasFileFont = storedFilePath != null && storedFilePath.isNotEmpty;
+
     state = state.copyWith(
       fontScale: fontScale,
       letterSpacing: letterSpacing,
@@ -334,7 +362,7 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
       customTheme: customTheme,
       chineseConversion: restoredConversion,
       pageMode: restoredPageMode,
-      fontFamily: () => storedFontFamily,
+      fontFamily: () => hasFileFont ? null : storedFontFamily,
       customFontFilePath: () => storedFilePath,
       customFontDisplayName: () => storedDisplayName,
     );

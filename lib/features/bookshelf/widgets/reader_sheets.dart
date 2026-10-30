@@ -120,66 +120,48 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                     ],
                   ),
                   const SizedBox(height: LanghuanTheme.spaceMd),
-                  Text(
-                    l10n.readerFontScale(settings.fontScale.toStringAsFixed(2)),
-                  ),
-                  Slider(
+                  // Typography changes invalidate every cached page, so
+                  // each commit re-paginates the loaded window — committing
+                  // per drag tick froze every animation in flight. The
+                  // sliders preview locally and commit once on release.
+                  _TypoSlider(
+                    labelBuilder: (v) =>
+                        l10n.readerFontScale(v.toStringAsFixed(2)),
                     value: settings.fontScale,
                     min: 0.8,
                     max: 1.8,
                     divisions: 10,
-                    onChanged: (v) {
-                      notifier.setFontScale(v);
-                      setModalState(() {});
-                    },
+                    onCommit: notifier.setFontScale,
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
-                  Text(
-                    l10n.readerLetterSpacing(
-                      settings.letterSpacing.toStringAsFixed(2),
-                    ),
-                  ),
-                  Slider(
+                  _TypoSlider(
+                    labelBuilder: (v) =>
+                        l10n.readerLetterSpacing(v.toStringAsFixed(2)),
                     value: settings.letterSpacing,
                     min: 0,
                     max: 4,
                     divisions: 16,
-                    onChanged: (v) {
-                      notifier.setLetterSpacing(v);
-                      setModalState(() {});
-                    },
+                    onCommit: notifier.setLetterSpacing,
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
-                  Text(
-                    l10n.readerParagraphSpacing(
-                      settings.paragraphSpacing.toStringAsFixed(0),
-                    ),
-                  ),
-                  Slider(
+                  _TypoSlider(
+                    labelBuilder: (v) =>
+                        l10n.readerParagraphSpacing(v.toStringAsFixed(0)),
                     value: settings.paragraphSpacing,
                     min: 4,
                     max: 32,
                     divisions: 14,
-                    onChanged: (v) {
-                      notifier.setParagraphSpacing(v);
-                      setModalState(() {});
-                    },
+                    onCommit: notifier.setParagraphSpacing,
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
-                  Text(
-                    l10n.readerLineHeight(
-                      settings.lineHeight.toStringAsFixed(2),
-                    ),
-                  ),
-                  Slider(
+                  _TypoSlider(
+                    labelBuilder: (v) =>
+                        l10n.readerLineHeight(v.toStringAsFixed(2)),
                     value: settings.lineHeight,
                     min: 1.2,
                     max: 2.4,
                     divisions: 12,
-                    onChanged: (v) {
-                      notifier.setLineHeight(v);
-                      setModalState(() {});
-                    },
+                    onCommit: notifier.setLineHeight,
                   ),
                 ],
               ),
@@ -189,6 +171,61 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
       },
     ),
   );
+}
+
+/// A typography slider that never commits mid-drag.
+///
+/// Committing a typography change re-paginates the whole loaded chapter
+/// window synchronously; doing that per drag tick stalled the frame
+/// budget (worst with user-loaded fonts) and made the sheet, its slider
+/// and every reader animation stutter. The thumb now previews locally
+/// (label included) and commits once when the drag ends.
+class _TypoSlider extends StatefulWidget {
+  const _TypoSlider({
+    required this.labelBuilder,
+    required this.value,
+    required this.min,
+    required this.max,
+    this.divisions,
+    required this.onCommit,
+  });
+
+  final String Function(double value) labelBuilder;
+  final double value;
+  final double min;
+  final double max;
+  final int? divisions;
+  final ValueChanged<double> onCommit;
+
+  @override
+  State<_TypoSlider> createState() => _TypoSliderState();
+}
+
+class _TypoSliderState extends State<_TypoSlider> {
+  double? _dragValue;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = _dragValue ?? widget.value;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(widget.labelBuilder(current)),
+        Slider(
+          value: current.clamp(widget.min, widget.max),
+          min: widget.min,
+          max: widget.max,
+          divisions: widget.divisions,
+          onChanged: (v) => setState(() => _dragValue = v),
+          onChangeEnd: (v) {
+            setState(() => _dragValue = null);
+            widget.onCommit(v);
+          },
+        ),
+      ],
+    );
+  }
 }
 
 Future<void> showReaderSettingsSheet(BuildContext context) async {

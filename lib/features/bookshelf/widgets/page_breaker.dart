@@ -151,7 +151,6 @@ class PageBreaker {
           source: item,
           width: w,
           pageHeight: h,
-          spacing: spacing,
           remaining: remaining,
           currentItems: cur,
           pages: pages,
@@ -203,29 +202,48 @@ class PageBreaker {
     required ParagraphContent_Text source,
     required double width,
     required double pageHeight,
-    required double spacing,
     required double remaining,
     required List<PageItem> currentItems,
     required List<PageContent> pages,
     required void Function(List<PageItem>, double) onUpdate,
   }) {
-    int charStart = 0;
+    // Shape the paragraph once and split pages from its line metrics.
+    // Re-shaping the remaining substring after every split made pagination
+    // quadratic in paragraph length — several times slower with ordinary
+    // reading fonts, pathological with user-loaded ones, whose missing
+    // glyphs pay a per-glyph fallback lookup on every layout.
+    //
+    // Splits therefore follow the paragraph's own line grid. The old
+    // substring version re-wrapped whatever followed a split as a fresh
+    // paragraph, so a split landing before a line's hung trailing spaces
+    // shifted every later line boundary and under-filled the remaining
+    // pages; keeping the grid fills pages to their true capacity.
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: textStyle),
+      textDirection: textDirection,
+      maxLines: null,
+    )..layout(maxWidth: width);
+
+    final lineMetrics = tp.computeLineMetrics();
+    // Suffix sums of line heights: "does the rest of the paragraph fit?"
+    // in O(1).
+    final suffixHeights = List<double>.filled(lineMetrics.length + 1, 0);
+    for (var i = lineMetrics.length - 1; i >= 0; i--) {
+      suffixHeights[i] = suffixHeights[i + 1] + lineMetrics[i].height;
+    }
+
+    double spacingFor(List<PageItem> items) =>
+        items.isEmpty ? 0.0 : paragraphSpacing;
+
+    var charStart = 0;
+    var lineIdx = 0;
+    var remainingSpace = remaining;
 
     while (charStart < text.length) {
-      final substring = text.substring(charStart);
-      final tp = TextPainter(
-        text: TextSpan(text: substring, style: textStyle),
-        textDirection: textDirection,
-        maxLines: null,
-      )..layout(maxWidth: width);
-
-      final fullH = tp.height;
-      final sp = currentItems.isEmpty ? 0.0 : paragraphSpacing;
-      final space = remaining - sp;
-
-      if (space >= fullH) {
-        tp.dispose();
-        remaining -= sp + fullH;
+      if (lineIdx >= lineMetrics.length) {
+        // Degenerate tail: characters that lay out to no lines (e.g. a
+        // whitespace run past the last line). Keep them as an item on the
+        // current page, like the substring-layout version did.
         currentItems.add(
           PageItem(
             source: source,
@@ -234,63 +252,65 @@ class PageBreaker {
             startOffset: charStart == 0 ? null : charStart,
           ),
         );
-        onUpdate(currentItems, remaining);
+        pages.add(PageContent(chapterId: chapterId, items: currentItems));
+        currentItems = [];
+        remainingSpace = pageHeight;
+        tp.dispose();
+        onUpdate(currentItems, remainingSpace);
+        return;
+      }
+
+      final sp = spacingFor(currentItems);
+      final space = remainingSpace - sp;
+
+      // Everything left fits on the current page.
+      if (space >= suffixHeights[lineIdx]) {
+        tp.dispose();
+        remainingSpace -= sp + suffixHeights[lineIdx];
+        currentItems.add(
+          PageItem(
+            source: source,
+            paragraphIndex: paragraphIndex,
+            paragraphId: paragraphId,
+            startOffset: charStart == 0 ? null : charStart,
+          ),
+        );
+        onUpdate(currentItems, remainingSpace);
         return;
       }
 
       if (space <= 0 ||
-          (space < tp.preferredLineHeight && currentItems.isNotEmpty)) {
-        tp.dispose();
+          (space < lineMetrics[lineIdx].height && currentItems.isNotEmpty)) {
         pages.add(PageContent(chapterId: chapterId, items: currentItems));
         currentItems = [];
-        remaining = pageHeight;
+        remainingSpace = pageHeight;
         continue;
       }
 
-      final lineMetrics = tp.computeLineMetrics();
-      double accH = 0;
-      int fitLines = 0;
-      for (final line in lineMetrics) {
-        if (accH + line.height > space + 0.5) break;
-        accH += line.height;
+      var accH = 0.0;
+      var fitLines = 0;
+      for (var i = lineIdx; i < lineMetrics.length; i++) {
+        if (accH + lineMetrics[i].height > space + 0.5) break;
+        accH += lineMetrics[i].height;
         fitLines++;
       }
 
       if (fitLines == 0) {
-        tp.dispose();
         if (currentItems.isNotEmpty) {
           pages.add(PageContent(chapterId: chapterId, items: currentItems));
           currentItems = [];
-          remaining = pageHeight;
+          remainingSpace = pageHeight;
           continue;
         }
         fitLines = 1;
-        if (lineMetrics.isEmpty) {
-          currentItems.add(
-            PageItem(
-              source: source,
-              paragraphIndex: paragraphIndex,
-              paragraphId: paragraphId,
-              startOffset: charStart == 0 ? null : charStart,
-            ),
-          );
-          tp.dispose();
-          pages.add(PageContent(chapterId: chapterId, items: currentItems));
-          currentItems = [];
-          remaining = pageHeight;
-          onUpdate(currentItems, remaining);
-          return;
-        }
       }
 
-      final lastLine = lineMetrics[fitLines - 1];
+      final lastLine = lineMetrics[lineIdx + fitLines - 1];
       final bottom = lastLine.baseline + lastLine.descent;
       final position = tp.getPositionForOffset(Offset(width, bottom - 1));
-      int splitChar = charStart + position.offset;
+      var splitChar = position.offset;
       if (splitChar <= charStart) splitChar = charStart + 1;
       if (splitChar > text.length) splitChar = text.length;
-
-      tp.dispose();
 
       currentItems.add(
         PageItem(
@@ -304,11 +324,13 @@ class PageBreaker {
 
       pages.add(PageContent(chapterId: chapterId, items: currentItems));
       currentItems = [];
-      remaining = pageHeight;
+      remainingSpace = pageHeight;
       charStart = splitChar;
+      lineIdx += fitLines;
     }
 
-    onUpdate(currentItems, remaining);
+    tp.dispose();
+    onUpdate(currentItems, remainingSpace);
   }
 
   static int pageForParagraph(List<PageContent> pages, String paragraphId) {
