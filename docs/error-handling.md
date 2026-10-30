@@ -1,10 +1,12 @@
-# Error Handling for JavaScript Feed Sources
+# Error handling for JavaScript book sources
 
-Schema-3 feeds distinguish expected website states from script bugs.
+Schema-4 sources distinguish expected website states from source defects and
+native failures.
 
 ## Expected failures
 
-Return a `FeedError` value from a reducer:
+Return a `FeedError` value when the website is behaving as understood but the
+operation cannot complete:
 
 ```js
 if (!event.auth) {
@@ -16,24 +18,25 @@ if (event.response.status === 429) {
 }
 ```
 
-| Helper | Code | Meaning |
-| --- | --- | --- |
-| `FeedError.authRequired(message)` | `auth_required` | Login is missing or expired |
-| `FeedError.cfChallenge(message)` | `cf_challenge` | An anti-bot challenge blocked the page |
-| `FeedError.rateLimited(message)` | `rate_limited` | Retryable throttling |
-| `FeedError.contentNotFound(message)` | `content_not_found` | Book or chapter content is unavailable |
-| `FeedError.sourceUnavailable(message)` | `source_unavailable` | Retryable source outage |
-| `FeedError.raise(code, message)` | custom | Source-specific anticipated state |
+| Helper | Code | Meaning | Retryable |
+| --- | --- | --- | :---: |
+| `FeedError.authRequired(message)` | `auth_required` | Login is missing or expired | No |
+| `FeedError.cfChallenge(message)` | `cf_challenge` | Human or anti-bot verification blocked the page | No |
+| `FeedError.rateLimited(message)` | `rate_limited` | Source throttling | Yes |
+| `FeedError.contentNotFound(message)` | `content_not_found` | Book/chapter content is unavailable | No |
+| `FeedError.sourceUnavailable(message)` | `source_unavailable` | Temporary source outage | Yes |
+| `FeedError.raise(code, message)` | Custom | Source-specific anticipated state | No |
 
-Rust converts `{ type: "fail", code, message }` into
-`ScriptError::Expected`. The bridge exposes it as `ErrorKind::ScriptExpected`,
-so the UI can present an appropriate action without treating the source as
-broken.
+The host converts the returned `{ type: "fail", code, message }` into a typed
+expected script error so the UI can offer a suitable action without labeling
+the source as broken.
+
+`login.parse` may also return a `FeedError` value to reject an incomplete login
+without storing credentials.
 
 ## Runtime failures
 
-Throw an `Error` only for defects or malformed responses the source does not
-know how to handle:
+Throw only for defects or response shapes the source does not understand:
 
 ```js
 const payload = JSON.parse(bodyText(event.response));
@@ -42,24 +45,32 @@ if (!Array.isArray(payload.records)) {
 }
 ```
 
-Exceptions, syntax errors, sandbox limits, out-of-memory conditions, and
-deadline exhaustion become `ScriptError::JavaScript` and bridge
-`ErrorKind::ScriptRuntime`.
+Syntax errors, exceptions, invalid handler/result shapes, duplicate IDs,
+sandbox limits, out-of-memory conditions, and deadline exhaustion are runtime
+errors. Their details are intended for source authors, not for control flow.
+
+Do not catch a broad exception and convert it to “content not found”; doing so
+hides parser regressions and can cache an incorrect empty chapter.
 
 ## Native failures
 
-HTTP execution, redirects, access-domain checks, response-size limits, and
-authentication persistence are owned by Rust. Their errors never need to be
-caught in JavaScript. Retryable native network failures follow the host retry
-policy; permanent failures are returned directly to the UI.
+Rust owns URL parsing, domain checks, HTTP, redirects, retries, authentication
+persistence, caching, database access, and WebView hosting. These errors do not
+need to be caught in JavaScript. Retryable network failures follow the native
+retry policy before reaching the UI.
 
-## Debugging guidance
+## Messages and secrets
 
-- Use expected failures for normal site states users can act on.
-- Never include cookies, authorization values, tokens, or signed query
-  parameters in messages.
-- Let unexpected exceptions retain their stack; the developer trace view
-  redacts known secrets before display.
-- Persist multi-request state through `next_state`. The returned Feed object is
-  retained while loaded, but closure state is not durable across application
-  restarts or source reloads.
+- Write messages that tell the user what action is possible.
+- Never include cookies, authorization headers, tokens, signed query values,
+  encryption keys, or response bodies in an error.
+- Keep technical parser details in thrown runtime errors.
+- Avoid dynamic secret values in request URLs where possible; trace redaction
+  masks known fields but cannot infer every site-specific secret.
+
+## Debugging
+
+Use the [developer stage runner](feed-debug-tools.md) to inspect partial output,
+typed errors, redirects, bounded body previews, and redacted request traces.
+Use `next_state.stage` to make multi-request failures attributable to a clear
+phase.

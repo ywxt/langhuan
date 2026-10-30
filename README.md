@@ -1,100 +1,95 @@
 # Langhuan (琅嬛)
 
-A cross-platform web novel reader with **user-defined book sources**. Write a sandboxed JavaScript reducer, point it at any website, and start reading — no app update required.
-
-Built with Flutter (UI), Rust (backend), and an isolated native QuickJS runtime (scripting).
+Langhuan is a cross-platform reader that brings books from different websites
+into one quiet, consistent reading experience. Add the sources you trust,
+search across them, keep a personal bookshelf, and continue reading without
+being tied to one catalogue or one website.
 
 > [中文版](README.zh.md)
 
-## Features
+## What you can do
 
-- **Sandboxed JavaScript Book Sources** — Define how to search and parse novel content with schema-4 reducers. Rust owns HTTP and authentication; scripts run in a capability-free native QuickJS runtime.
-- **Cache Management** — Local chapter caching with automatic stale data cleanup; bookshelf items are preserved.
-- **Localization** — English and Chinese.
+- **Read from your own sources** — Import JavaScript book sources without
+  waiting for an app release. Sources can cover ordinary HTML sites, logged-in
+  accounts, and multi-request chapter APIs.
+- **Search in one place** — Search one source or aggregate results from all
+  enabled sources while keeping failures isolated to the source that failed.
+- **Keep a real bookshelf** — Open a shelved book directly, see reading and
+  chapter progress, check for updates, bookmark passages, and manage books with
+  familiar swipe actions.
+- **Choose how reading feels** — Switch between horizontal pages and seamless
+  vertical reading, change fonts and spacing, and create custom reader themes.
+- **Read Chinese your way** — Convert content to Traditional Chinese, Taiwan
+  usage, or Hong Kong variants while reading.
+- **Keep useful data local** — Cache books and chapters for fast reopening,
+  preserve shelved content during maintenance, and export or import sources.
+- **Sign in when a source needs it** — Complete login or human verification in
+  an embedded browser; the source then reuses the captured session for native
+  requests.
 
-## Tech Stack
+## Designed around source safety
 
-| Layer     | Technology                    |
-| --------- | ----------------------------- |
-| UI        | Flutter + Riverpod + GoRouter |
-| Bridge    | flutter_rust_bridge v2        |
-| Backend   | Rust + Tokio (Actor model)    |
-| Scripting | Native QuickJS sandbox          |
-| HTTP      | reqwest + rustls              |
+A book source does not receive an HTTP client, filesystem access, environment
+variables, or process access. It describes what it needs; the Rust host checks
+the destination against the source's declared domains and performs the request.
+Scripts run in a bounded native QuickJS sandbox, and powerful helpers such as
+HTML parsing, encoding, and cryptography are exposed as explicit modules.
 
-## Project Structure
+Book sources are still third-party code. Review their identity, declared
+domains, and publisher before importing them. Only sign in through a source you
+trust.
 
-```
-lib/                        # Flutter frontend
-├── features/               # Feature modules (bookshelf, feeds, settings)
-├── router/                 # GoRouter configuration
-├── shared/                 # Shared services, theme, widgets
-└── l10n/                   # Localization resources (ARB)
+## Platforms
 
-native/langhuan/            # Core Rust library (pure domain logic)
-├── src/
-│   ├── script/             # Native QuickJS sandbox and feed runtime
-│   ├── cache/              # Cache storage
-│   ├── bookshelf/          # Bookshelf persistence
-│   ├── progress/           # Reading progress
-│   ├── auth/               # Login & authentication
-│   └── feed/               # Feed loading & registry
+The application targets Android, Linux, macOS, and Windows. Platform packages
+are produced by tagged releases; availability may vary while the project is
+under active development.
 
-native/hub/                 # FRB bridge layer + Actor system
-├── src/
-│   ├── api/                # FRB API (public functions callable from Dart)
-│   └── actors/             # Message-passing actors
-```
+## Book sources
 
-## Building
+Start with the [book-source documentation](docs/book-sources/README.md):
 
-### With Nix (recommended)
+- [architecture and execution model](docs/book-sources/architecture.md);
+- [step-by-step authoring guide](docs/book-sources/writing-a-source.md);
+- [sandbox capabilities and limits](docs/book-sources/sandbox.md);
+- [complete host-module API reference](docs/book-sources/api-reference.md).
 
-The development environment is fully declarative: a Nix flake provides Flutter (stable), a stable Rust toolchain with the Android cross-targets, the binding generator, the Android SDK/NDK with licenses already accepted, the emulator, and one Pixel 7 AVD (Android 16) provisioned into the project-local `.avd/` directory. The SDK carries every platform the app and its plugins compile against (API 35 and 36) plus only the one system image its AVD boots (API 36), so nothing is ever downloaded at build time.
+The repository includes sources for a conventional HTML site and more involved
+authenticated or encrypted sites under [`docs/book-sources`](docs/book-sources).
 
-Requirements: Nix (with flakes) on an x86_64-linux host. If you use [direnv](https://direnv.net/), create a local `.envrc` containing `use flake` (the file is gitignored).
+## Development
 
-```bash
-nix develop                            # or: direnv allow with your local .envrc
-flutter doctor                          # everything should be green
-flutter_rust_bridge_codegen generate    # required before the first build
-emulator -avd Pixel_7_API_36            # optional: launch an emulator
-flutter run                             # run on a device or emulator
-flutter build apk --release             # or --debug; APK in build/app/outputs/flutter-apk/
-```
-
-`flutter run -d linux` works as well.
-
-### Without Nix
-
-Install the toolchain manually:
-
-- [Flutter SDK](https://docs.flutter.dev/get-started/install) (stable, Dart ≥ 3.11.3)
-- [Rust toolchain](https://www.rust-lang.org/tools/install) with the Android cross-targets:
-
-  ```bash
-  rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
-  ```
-
-- The Android SDK with accepted licenses and the NDK version Flutter pins (`flutter doctor` points out anything missing)
+The recommended environment is the repository's Nix flake on x86_64 Linux. It
+provides Flutter, Rust, Android SDK/NDK, the emulator, and the matching
+`flutter_rust_bridge` generator.
 
 ```bash
-cargo install flutter_rust_bridge_codegen --version 2.13.0   # first time only
-flutter doctor
-flutter_rust_bridge_codegen generate    # required before the first build
+nix develop
+flutter_rust_bridge_codegen generate
 flutter run
 ```
 
-### Bindings
+Without Nix, install Flutter, Rust, the required platform toolchain, and
+`flutter_rust_bridge_codegen` 2.13.0. When changing functions in
+`native/hub/src/api/`, regenerate the bridge before building. Generated files
+under `lib/src/rust/` and `native/hub/src/frb_generated.rs` must not be edited
+manually.
 
-When you later modify the Rust API surface (functions in `native/hub/src/api/`), re-run `flutter_rust_bridge_codegen generate` to update the bindings. The generated Dart code lives in `lib/src/rust/` and the generated Rust code in `native/hub/src/frb_generated.rs` — do not edit these files manually.
+Useful checks:
 
-> The `flutter_rust_bridge` version must stay aligned across the Dart runtime (`pubspec.lock`), the Rust crate (`native/hub/Cargo.toml`), and the codegen. In the Nix environment, run `flutter pub upgrade flutter_rust_bridge` after `nix flake update` — the next `generate` auto-upgrades the Rust crate. With a manual setup, keep the `cargo install`ed codegen at the same version.
+```bash
+flutter analyze
+flutter test
+cargo test --workspace
+```
 
-## Book Source Scripts
+## Project status
 
-Book sources are schema-4 JavaScript reducers that return request descriptors while native Rust owns all HTTP. See the [book source documentation](docs/book-sources/README.md) for the full scripting guide, sandbox contract, and examples.
+Langhuan is under active development. Book-source contracts may evolve before
+the first stable release, and checked-in sources are examples rather than a
+promise that a third-party website will remain unchanged.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+Langhuan is licensed under the [MIT License](LICENSE). Individual example book
+sources can carry their own license notice.
