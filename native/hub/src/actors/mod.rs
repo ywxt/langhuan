@@ -95,7 +95,7 @@ pub async fn create_actors() {
     let locale_actor = LocaleActor::new();
     spawn(locale_context.run(locale_actor));
 
-    let engine = ScriptEngine::new();
+    let engine = ScriptEngine::new().with_storage(crate::feed_storage::FeedStorage::shared());
     tracing::debug!("script engine initialized");
 
     // RegistryActor — owns the script registry and handles feed management.

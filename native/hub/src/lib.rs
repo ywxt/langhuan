@@ -11,6 +11,7 @@ rust_i18n::i18n!("locales", fallback = "en");
 
 mod actors;
 pub mod api;
+mod feed_storage;
 mod logging;
 
 // Uncomment below to target the web.

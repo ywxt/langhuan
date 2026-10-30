@@ -27,6 +27,7 @@ pub mod feeds;
 pub mod maintenance;
 pub mod meta;
 pub mod progress;
+pub mod storage;
 #[cfg(test)]
 pub(crate) mod test_support;
 
@@ -36,6 +37,7 @@ pub use cache::{BookRow, CoverState};
 pub use feeds::{FeedRow, ScriptRow};
 pub use maintenance::{CacheStats, RemovalReport};
 pub use progress::ProgressRow;
+pub use storage::FeedStorageEntry;
 
 use tokio_rusqlite::rusqlite::Connection;
 

@@ -211,10 +211,26 @@ const MIGRATIONS: &[Migration] = &[
             ADD COLUMN description TEXT;
     "#,
     },
+    Migration {
+        version: 7,
+        sql: r#"
+        -- Per-feed key-value storage for feed scripts -----------------------
+        -- Backs the langhuan:storage module: registered device credentials,
+        -- negotiated keys, sync points. One JSON value per (feed, key); rows
+        -- cascade with their feed like auth, so uninstalling a feed drops
+        -- its namespace.
+        CREATE TABLE feed_storage (
+            feed_id TEXT NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+            key     TEXT NOT NULL,
+            value   TEXT NOT NULL,
+            PRIMARY KEY (feed_id, key)
+        ) WITHOUT ROWID;
+    "#,
+    },
 ];
 
 /// The schema version this build understands (the last migration's version).
-pub(crate) const CURRENT_VERSION: i64 = 6;
+pub(crate) const CURRENT_VERSION: i64 = 7;
 
 /// Apply all pending migrations in order.
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {

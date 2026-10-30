@@ -104,6 +104,14 @@ impl AppDataActor {
             .send(InitializeAppDataDirectory { db: db.clone() })
             .await??;
 
+        // Feed script storage: hydrate the read cache from the new
+        // database and start the async writer (the script engine holds the
+        // singleton). Before this point no feed can run — feeds live in
+        // the database — so storage calls cannot precede the attach.
+        crate::feed_storage::FeedStorage::shared()
+            .attach(db.clone())
+            .await?;
+
         // Publish the handle for the api layer (covers, stats, maintenance).
         if crate::actors::set_hub_db(db.clone()).is_err() {
             tracing::warn!("database handle already published — ignoring duplicate");
