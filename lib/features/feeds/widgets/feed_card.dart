@@ -40,7 +40,9 @@ class FeedCard extends ConsumerWidget {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final hasError = feed.error != null;
-    final authAsync = ref.watch(feedAuthStatusProvider(feed.id));
+    final authAsync = ref.watch(
+      feedAuthStatusProvider((feedId: feed.id, isValid: !hasError)),
+    );
     // Paused feeds keep their data but step back visually.
     final contentOpacity = feed.enabled ? 1.0 : 0.55;
 

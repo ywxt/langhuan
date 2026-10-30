@@ -1,7 +1,7 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.qidian
 // @name         起點中文網
-// @version      3.3.0
+// @version      3.3.1
 // @author       Langhuan
 // @description  起點中文網書源（m 站），支持登入及已購 VIP 章節
 // @base_url     https://m.qidian.com
@@ -133,18 +133,20 @@ function responseFailure(response, notFoundMessage) {
   return null;
 }
 
-function parseSearchItems(body) {
+function parseSearchPage(body) {
   const context = extractPageContext(body);
   if (!context) return null;
-  const records = nav(
+  const bookInfo = nav(
     context,
     "pageProps",
     "pageData",
     "bookInfo",
-    "records",
   );
-  if (!Array.isArray(records)) return [];
-  return records
+  const records = bookInfo?.records;
+  if (!Array.isArray(records)) {
+    return { items: [], pageNum: 1, hasNext: false };
+  }
+  const items = records
     .map((record) => ({
       id: formatId(record?.bid),
       title: cleanText(record?.bName),
@@ -153,6 +155,15 @@ function parseSearchItems(body) {
       description: cleanText(record?.desc),
     }))
     .filter((book) => book.id && book.title);
+  const pageNum = Number(bookInfo?.pageNum);
+  const isLast = Number(bookInfo?.isLast);
+  const hasPageMetadata = Number.isInteger(pageNum) && pageNum > 0;
+  return {
+    items,
+    pageNum: hasPageMetadata ? pageNum : 1,
+    // Older/trimmed fixtures have no paging metadata and represent one page.
+    hasNext: hasPageMetadata && isLast === 0,
+  };
 }
 
 function parseBookInfo(response, fallbackId) {
@@ -342,21 +353,36 @@ const EXCLUDED_COOKIES = new Set([
 
 function search(event) {
   if (event.state == null) {
+    const pageNum = Number(event.cursor?.pageNum ?? 1);
+    const safePageNum = Number.isInteger(pageNum) && pageNum > 0 ? pageNum : 1;
     return {
       type: "request",
       request: {
         url: `${meta.base_url}/soushu/${encodeURIComponent(event.input.keyword)}.html`,
         method: "GET",
+        params: { pageNum: String(safePageNum) },
         headers: requestHeaders(),
       },
-      next_state: { stage: "page" },
+      next_state: { stage: "page", requestedPageNum: safePageNum },
     };
   }
   const failure = responseFailure(event.response, "搜索頁不可用");
   if (failure) return failure;
-  const items = parseSearchItems(bodyText(event.response));
-  if (!items) return FeedError.sourceUnavailable("無法解析起點搜索頁");
-  return { type: "complete", items, next_cursor: null };
+  const page = parseSearchPage(bodyText(event.response));
+  if (!page) return FeedError.sourceUnavailable("無法解析起點搜索頁");
+  if (
+    page.pageNum !== event.state.requestedPageNum &&
+    event.state.requestedPageNum > 1
+  ) {
+    return FeedError.sourceUnavailable(
+      `起點搜索分頁異常：請求第 ${event.state.requestedPageNum} 頁，返回第 ${page.pageNum} 頁`,
+    );
+  }
+  return {
+    type: "complete",
+    items: page.items,
+    next_cursor: page.hasNext ? { pageNum: page.pageNum + 1 } : null,
+  };
 }
 
 function bookInfo(event) {

@@ -84,6 +84,30 @@ fn search_page_json() -> String {
         .to_owned()
 }
 
+fn paged_search_page_json(page_num: i64, is_last: i64, id: i64, title: &str) -> String {
+    serde_json::json!({
+        "pageProps": {
+            "pageData": {
+                "bookInfo": {
+                    "records": [{
+                        "bid": id,
+                        "bName": title,
+                        "bAuth": "測試作者",
+                        "desc": format!("第 {page_num} 頁"),
+                        "imgUrl": format!("//bookcover.yuewen.com/qdbimg/349573/{id}/180"),
+                    }],
+                    "isLast": is_last,
+                    "pageNum": page_num,
+                    "pageSize": 1,
+                    "total": 2,
+                },
+                "user": { "guid": 0, "isLogin": false },
+            },
+        },
+    })
+    .to_string()
+}
+
 fn book_page_json() -> String {
     r#"{"pageProps":{"pageData":{"bookInfo":{
         "bookId":1010868264,"bookName":"诡秘之主","authorName":"爱潜水的乌贼",
@@ -206,6 +230,44 @@ async fn search_parses_ssr_records() {
         "description should be extracted: {:?}",
         by_id("1010868264").description
     );
+}
+
+#[tokio::test]
+async fn search_follows_server_page_num_until_is_last() {
+    let mut server = mockito::Server::new_async().await;
+    let first = server
+        .mock("GET", mockito::Matcher::Regex(r"^/soushu/".to_owned()))
+        .match_query(mockito::Matcher::UrlEncoded("pageNum".into(), "1".into()))
+        .with_status(200)
+        .with_body(ssr_page(&paged_search_page_json(1, 0, 101, "第一頁")))
+        .expect(1)
+        .create_async()
+        .await;
+    let second = server
+        .mock("GET", mockito::Matcher::Regex(r"^/soushu/".to_owned()))
+        .match_query(mockito::Matcher::UrlEncoded("pageNum".into(), "2".into()))
+        .with_status(200)
+        .with_body(ssr_page(&paged_search_page_json(2, 1, 202, "第二頁")))
+        .expect(1)
+        .create_async()
+        .await;
+
+    let feed = load_feed(&server).await;
+    let results = feed.search("分頁").collect::<Vec<_>>().await;
+    let items = results
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("paged search should succeed");
+
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        ["101", "202"]
+    );
+    first.assert_async().await;
+    second.assert_async().await;
 }
 
 #[tokio::test]
@@ -955,6 +1017,33 @@ async fn search_live_site_smoke() {
         ),
         "expected auth_required for logged-out VIP chapter, got: {err:?}"
     );
+}
+
+#[tokio::test]
+#[ignore = "hits real website"]
+async fn search_live_site_reaches_second_page() {
+    let script = include_str!("../../../docs/book-sources/qidian.js");
+    let feed = ScriptEngine::new()
+        .load_js_feed(script)
+        .expect("load_feed failed");
+
+    let results = tokio::time::timeout(
+        Duration::from_secs(30),
+        feed.search("玄幻").take(25).collect::<Vec<_>>(),
+    )
+    .await
+    .expect("live paged search timed out");
+    let items = results
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("live paged search failed");
+
+    assert_eq!(items.len(), 25, "search did not reach the second page");
+    let unique = items
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(unique.len(), 25, "second page repeated first-page IDs");
 }
 
 /// Authenticated live smoke test for purchased VIP chapters spread throughout

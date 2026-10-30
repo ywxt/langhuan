@@ -113,7 +113,9 @@ class _FeedAuthPageState extends ConsumerState<FeedAuthPage> {
           );
 
       if (!mounted) return;
-      ref.invalidate(feedAuthStatusProvider(widget.feedId));
+      ref.invalidate(
+        feedAuthStatusProvider((feedId: widget.feedId, isValid: true)),
+      );
       await session.close();
       if (!mounted) return;
       Navigator.of(context).pop(true);

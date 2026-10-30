@@ -31,6 +31,15 @@ const _feedAPaused = FeedMetaItem(
   accessDomains: [],
 );
 
+const _invalidFeed = FeedMetaItem(
+  id: 'feed-invalid',
+  name: 'Broken source',
+  version: '1',
+  enabled: true,
+  accessDomains: [],
+  error: 'script failed to load',
+);
+
 Widget _testApp(Widget child) {
   return MaterialApp(
     localizationsDelegates: const [
@@ -45,6 +54,23 @@ Widget _testApp(Widget child) {
 }
 
 void main() {
+  test('an invalid feed skips auth capability and status checks', () async {
+    final container = ProviderContainer(
+      overrides: [
+        // Auth methods are deliberately not configured: reaching either one
+        // makes FakeFeedService throw and fails this regression test.
+        feedServiceProvider.overrideWithValue(FakeFeedService()),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final status = await container.read(
+      feedAuthStatusProvider((feedId: _invalidFeed.id, isValid: false)).future,
+    );
+
+    expect(status, isNull);
+  });
+
   testWidgets('the status button pauses a feed through the notifier', (
     tester,
   ) async {

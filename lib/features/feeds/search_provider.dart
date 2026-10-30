@@ -176,6 +176,10 @@ class SearchNotifier extends Notifier<SearchState> {
       for (final group in state.groups) {
         groups[group.feedId] = group.copyWith(items: List.of(group.items));
       }
+      final seenIds = <String, Set<String>>{
+        for (final group in groups.values)
+          group.feedId: group.items.map((item) => item.id).toSet(),
+      };
       var exhausted = false;
 
       for (var i = 0; i < _pageSize; i++) {
@@ -197,6 +201,11 @@ class SearchNotifier extends Notifier<SearchState> {
           );
         } else {
           final item = event.item!;
+          final ids = seenIds.putIfAbsent(event.feedId, () => <String>{});
+          // The native runtime already removes overlapping search pages.
+          // Keep the UI boundary defensive as well so route restoration can
+          // never create duplicate Hero identities from another service.
+          if (!ids.add(item.id)) continue;
           groups[event.feedId] = SearchFeedGroup(
             feedId: event.feedId,
             feedName: event.feedName,

@@ -284,8 +284,9 @@ async fn search_follows_pagination_cursor() {
         ])
     };
 
-    // Page 0: 2 books, total 15 → cursor 1. Page 1: 1 more book, total 15
-    // → (1+1)*10 >= 15 → no further cursor.
+    // Page 0: 2 books, total 15 → cursor 1. Page 1 repeats the page-0 tail
+    // before one new book, matching the overlap observed after returning to
+    // a suspended search route. The host must keep the stream usable.
     let _page0 = server
         .mock("POST", "/api/author/search/search_book/v1")
         .match_query(query("0"))
@@ -307,7 +308,10 @@ async fn search_follows_pagination_cursor() {
         .with_header("content-type", "application/json")
         .with_body(search_page_json(
             15,
-            &[("1000000000000000003", "深空三号", "作者三")],
+            &[
+                ("1000000000000000002", "深空二号", "作者二"),
+                ("1000000000000000003", "深空三号", "作者三"),
+            ],
         ))
         .create_async()
         .await;

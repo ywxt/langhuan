@@ -243,11 +243,19 @@ final selectedFeedProvider =
 
 /// Checks whether a feed supports auth, then fetches the auth status.
 ///
+/// Invalid feeds short-circuit before touching the native registry. Their
+/// script failed to load, so capability/status checks cannot produce useful
+/// information and would only repeat the same load error.
+///
 /// Returns `null` if auth is not supported by the feed.
 final feedAuthStatusProvider =
-    FutureProvider.family<FeedAuthStatusModel?, String>((ref, feedId) async {
+    FutureProvider.family<
+      FeedAuthStatusModel?,
+      ({String feedId, bool isValid})
+    >((ref, request) async {
+      if (!request.isValid) return null;
       final service = ref.watch(feedServiceProvider);
-      final supported = await service.isFeedAuthSupported(feedId);
+      final supported = await service.isFeedAuthSupported(request.feedId);
       if (!supported) return null;
-      return service.getFeedAuthStatus(feedId);
+      return service.getFeedAuthStatus(request.feedId);
     });

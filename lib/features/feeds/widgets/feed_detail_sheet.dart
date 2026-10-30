@@ -79,7 +79,9 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
 
     final feed = live ?? widget.feed;
     final hasError = feed.error != null;
-    final authAsync = ref.watch(feedAuthStatusProvider(feed.id));
+    final authAsync = ref.watch(
+      feedAuthStatusProvider((feedId: feed.id, isValid: !hasError)),
+    );
     final shelf = ref.watch(bookshelfProvider);
     final bookCount = shelf.items
         .where((item) => item.feedId == feed.id)
@@ -364,7 +366,9 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
   /// Re-runs the capability check and status probe, keeping the sheet
   /// open with the previous state while the fresh one loads.
   void _refreshAuthStatus() {
-    ref.invalidate(feedAuthStatusProvider(widget.feed.id));
+    ref.invalidate(
+      feedAuthStatusProvider((feedId: widget.feed.id, isValid: true)),
+    );
   }
 
   Future<void> _openLoginFlow() async {
@@ -374,7 +378,9 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
       queryParameters: {'feedId': widget.feed.id},
     );
     if (result == true && mounted) {
-      ref.invalidate(feedAuthStatusProvider(widget.feed.id));
+      ref.invalidate(
+        feedAuthStatusProvider((feedId: widget.feed.id, isValid: true)),
+      );
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
       showSuccessSnack(ScaffoldMessenger.of(context), l10n.feedAuthUpdated);
@@ -384,7 +390,9 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
   Future<void> _logout() async {
     try {
       await ref.read(feedServiceProvider).clearFeedAuth(widget.feed.id);
-      ref.invalidate(feedAuthStatusProvider(widget.feed.id));
+      ref.invalidate(
+        feedAuthStatusProvider((feedId: widget.feed.id, isValid: true)),
+      );
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
       showSuccessSnack(ScaffoldMessenger.of(context), l10n.feedAuthLoggedOut);
