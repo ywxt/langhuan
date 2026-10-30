@@ -464,15 +464,13 @@ class FeedService {
     required String bookId,
     bool forceRefresh = false,
   }) {
-    return _pull(
-      () => rust_stream.openChaptersStream(
+    return Stream.fromFuture(
+      rust_stream.listChapters(
         feedId: feedId,
         bookId: bookId,
         forceRefresh: forceRefresh,
       ),
-      (stream) => stream.next(),
-      (stream) => stream.cancel(),
-    ).map(ChapterInfoModel.fromRust);
+    ).expand((items) => items).map(ChapterInfoModel.fromRust);
   }
 
   // -------------------------------------------------------------------------
@@ -502,16 +500,14 @@ class FeedService {
     required String chapterId,
     bool forceRefresh = false,
   }) {
-    return _pull(
-      () => rust_stream.openParagraphsStream(
+    return Stream.fromFuture(
+      rust_stream.listParagraphs(
         feedId: feedId,
         bookId: bookId,
         chapterId: chapterId,
         forceRefresh: forceRefresh,
       ),
-      (stream) => stream.next(),
-      (stream) => stream.cancel(),
-    );
+    ).expand((items) => items);
   }
 
   // -------------------------------------------------------------------------

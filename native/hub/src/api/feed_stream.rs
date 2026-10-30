@@ -115,6 +115,24 @@ pub async fn open_chapters_stream(
     Ok(FeedChaptersStream(stream))
 }
 
+/// Fetch a complete chapter list in one bridge call.
+///
+/// Reader startup needs the whole list before it can restore a saved
+/// position. Batching here avoids one Dart/Rust bridge round-trip per chapter
+/// on large books while retaining the pull-stream API for other callers.
+pub async fn list_chapters(
+    feed_id: String,
+    book_id: String,
+    force_refresh: bool,
+) -> Result<Vec<ChapterItem>, BridgeError> {
+    let mut stream = open_chapters_stream(feed_id, book_id, force_refresh).await?;
+    let mut items = Vec::new();
+    while let Some(item) = stream.next().await? {
+        items.push(item);
+    }
+    Ok(items)
+}
+
 /// Open a pull-based paragraphs stream.
 pub async fn open_paragraphs_stream(
     feed_id: String,
@@ -133,6 +151,25 @@ pub async fn open_paragraphs_stream(
         })
         .await??;
     Ok(FeedParagraphsStream(stream))
+}
+
+/// Fetch one complete chapter in one bridge call.
+///
+/// A reader page cannot paginate until all paragraphs are available, so
+/// crossing the bridge once is substantially cheaper than pulling every
+/// paragraph separately, especially on cache hits.
+pub async fn list_paragraphs(
+    feed_id: String,
+    book_id: String,
+    chapter_id: String,
+    force_refresh: bool,
+) -> Result<Vec<ParagraphContent>, BridgeError> {
+    let mut stream = open_paragraphs_stream(feed_id, book_id, chapter_id, force_refresh).await?;
+    let mut items = Vec::new();
+    while let Some(item) = stream.next().await? {
+        items.push(item);
+    }
+    Ok(items)
 }
 
 /// Fetch book info (single value, not a stream).
