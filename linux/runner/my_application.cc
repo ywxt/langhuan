@@ -52,6 +52,27 @@ static void ensure_font_dpi() {
   g_object_set(settings, "gtk-xft-dpi", 96 * 1024, nullptr);
 }
 
+// Load the icon from the relocatable Flutter bundle. Linux packages place the
+// runner beside data/app_icon.png, so this does not depend on the process's
+// current working directory.
+static void set_window_icon(GtkWindow* window) {
+  g_autoptr(GError) link_error = nullptr;
+  g_autofree gchar* executable =
+      g_file_read_link("/proc/self/exe", &link_error);
+  if (executable == nullptr) {
+    g_warning("Failed to locate application icon: %s", link_error->message);
+    return;
+  }
+
+  g_autofree gchar* executable_dir = g_path_get_dirname(executable);
+  g_autofree gchar* icon_path =
+      g_build_filename(executable_dir, "data", "app_icon.png", nullptr);
+  g_autoptr(GError) icon_error = nullptr;
+  if (!gtk_window_set_icon_from_file(window, icon_path, &icon_error)) {
+    g_warning("Failed to load application icon: %s", icon_error->message);
+  }
+}
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
@@ -62,6 +83,7 @@ static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+  set_window_icon(window);
 
   // Fix WebKitGTK's DPI-derived page scale before an embedded WebView can be
   // created. Safe now that the display is open.
