@@ -4,11 +4,17 @@ import 'dart:io';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter/foundation.dart';
 
+typedef LocalVoiceKey = ({String id, String locale});
+
 class LocalVoice {
   const LocalVoice(this.id, this.name, this.locale);
   final String id;
   final String name;
   final String locale;
+
+  // Android engines can reuse a voice name for several locales. Keep the
+  // native identifier unchanged and use both fields for application identity.
+  LocalVoiceKey get key => (id: id, locale: locale);
 }
 
 abstract class SpeechEngine {
@@ -36,21 +42,29 @@ class LocalSpeechEngine implements SpeechEngine {
       return const [LocalVoice('cmn', 'eSpeak NG 中文', 'zh-CN')];
     }
     final values = await _tts.getVoices as List;
-    final voices = <LocalVoice>[];
+    final voicesByKey = <LocalVoiceKey, LocalVoice>{};
     for (final raw in values) {
       final value = Map<String, dynamic>.from(raw as Map);
       final name = value['name']?.toString();
       final locale = value['locale']?.toString();
       if (name == null || locale == null) continue;
-      voices.add(
-        LocalVoice(value['identifier']?.toString() ?? name, name, locale),
+      final voice = LocalVoice(
+        value['identifier']?.toString() ?? name,
+        name,
+        locale,
       );
+      voicesByKey.putIfAbsent(voice.key, () => voice);
     }
+    final voices = voicesByKey.values.toList();
     voices.sort((a, b) {
       final language = (a.locale.startsWith('zh') ? 0 : 1).compareTo(
         b.locale.startsWith('zh') ? 0 : 1,
       );
-      return language != 0 ? language : a.name.compareTo(b.name);
+      if (language != 0) return language;
+      final name = a.name.compareTo(b.name);
+      if (name != 0) return name;
+      final locale = a.locale.compareTo(b.locale);
+      return locale != 0 ? locale : a.id.compareTo(b.id);
     });
     return voices;
   }

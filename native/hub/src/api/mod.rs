@@ -13,7 +13,6 @@ pub mod conversion;
 pub mod debug;
 pub mod feed_stream;
 pub mod init;
-pub mod listening;
 pub mod locale;
 pub mod reading_progress;
 pub mod registry;

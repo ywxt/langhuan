@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../src/rust/api/listening.dart';
 import '../../../src/rust/api/types.dart';
 import '../../feeds/feed_providers.dart';
 import '../../feeds/feed_service.dart';
@@ -34,6 +33,10 @@ class ListeningController extends ChangeNotifier {
   final SpeechEngine _engine;
   int _generation = 0;
   int _configuration = 0;
+  bool _disposed = false;
+  Future<void>? _voiceLoad;
+  bool voicesLoading = false;
+  Object? voicesError;
   Timer? _sleepTimer;
   DateTime? sleepDeadline;
   ListeningStatus status = ListeningStatus.idle;
@@ -45,23 +48,48 @@ class ListeningController extends ChangeNotifier {
   List<LocalVoice> voices = [];
   LocalVoice? voice;
   double rate = 1;
+  bool get canMoveParagraph => _paragraphs.isNotEmpty;
   bool get active =>
       status == ListeningStatus.playing || status == ListeningStatus.loading;
   bool ownsBook(String feed, String book) =>
       active && feedId == feed && bookId == book;
 
+  /// Enumerate voices without starting playback or touching reading progress.
+  Future<void> loadVoices() {
+    if (_disposed) return Future.value();
+    return _voiceLoad ??= _loadVoices().whenComplete(() => _voiceLoad = null);
+  }
+
+  Future<void> _loadVoices() async {
+    voicesLoading = true;
+    voicesError = null;
+    notifyListeners();
+    try {
+      final available = await _engine.voices();
+      if (_disposed) return;
+      if (available.isEmpty) {
+        throw StateError('No voices available from the system TTS engine');
+      }
+      voices = available;
+      voice =
+          voices.where((v) => v.key == voice?.key).firstOrNull ?? voices.first;
+    } catch (e) {
+      if (!_disposed) voicesError = e;
+    } finally {
+      voicesLoading = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
   Future<void> start({
     required String feedId,
     required String bookId,
-    required String chapterId,
+    String chapterId = '',
     String paragraphId = '',
-    bool restore = true,
   }) async {
     final generation = ++_generation;
     try {
       await _engine.stop();
-      if (generation != _generation) return;
-      await _save();
       if (generation != _generation) return;
       this.feedId = feedId;
       this.bookId = bookId;
@@ -72,15 +100,13 @@ class ListeningController extends ChangeNotifier {
       status = ListeningStatus.loading;
       error = null;
       notifyListeners();
-      voices = await _engine.voices();
-      if (generation != _generation) return;
-      if (voices.isEmpty) {
-        throw StateError('No voices available from the system TTS engine');
+      if (voices.isEmpty || voicesError != null || _voiceLoad != null) {
+        await loadVoices();
       }
-      voice =
-          voices.where((v) => v.id == voice?.id).firstOrNull ?? voices.first;
-      final saved = restore
-          ? await _service.listeningPosition(feedId, bookId)
+      if (generation != _generation) return;
+      if (voicesError case final failure?) throw failure;
+      final saved = chapterId.isEmpty
+          ? await _service.getReadingProgress(feedId: feedId, bookId: bookId)
           : null;
       if (generation != _generation) return;
       if (saved != null) {
@@ -108,26 +134,29 @@ class ListeningController extends ChangeNotifier {
         }
         final nextChapter = _chapters[_chapterIndex].id;
         if (_paragraphs.isEmpty || nextChapter != chapterId) {
+          if (nextChapter != chapterId) {
+            chapterId = nextChapter;
+            paragraphId = '';
+          }
+          // Keep chapter-level progress even when the new chapter fails to load.
+          if (paragraphId.isEmpty) {
+            await _save();
+            if (generation != _generation) return;
+          }
           final content = await _service.paragraphs(
             feedId: feedId,
             bookId: bookId,
             chapterId: nextChapter,
           );
           if (generation != _generation) return;
-          if (nextChapter != chapterId) {
-            paragraphId = '';
-          }
           _paragraphs = content;
-          _paragraphIndex = nextChapter == chapterId
-              ? content.indexWhere((p) => _id(p) == paragraphId)
-              : 0;
+          _paragraphIndex = content.indexWhere((p) => _id(p) == paragraphId);
           if (_paragraphIndex < 0) {
             _paragraphIndex = content.indexWhere(
               (p) => sameOriginalParagraph(_id(p), paragraphId),
             );
             if (_paragraphIndex < 0) _paragraphIndex = 0;
           }
-          chapterId = nextChapter;
         }
         while (generation == _generation &&
             _paragraphIndex < _paragraphs.length) {
@@ -177,7 +206,6 @@ class ListeningController extends ChangeNotifier {
     try {
       await _engine.stop();
       if (generation != _generation) return;
-      await _save();
     } catch (e) {
       if (generation == _generation) _fail(e);
     }
@@ -185,22 +213,9 @@ class ListeningController extends ChangeNotifier {
 
   void resume() {
     if (active || feedId.isEmpty) return;
-    if (voice == null || _chapters.isEmpty) {
-      unawaited(
-        start(
-          feedId: feedId,
-          bookId: bookId,
-          chapterId: chapterId,
-          paragraphId: paragraphId,
-        ),
-      );
-      return;
-    }
-    final generation = ++_generation;
-    status = ListeningStatus.loading;
-    error = null;
-    notifyListeners();
-    unawaited(_run(generation));
+    // Reading progress is the only resume position, including manual reading
+    // that happened while speech was paused.
+    unawaited(start(feedId: feedId, bookId: bookId));
   }
 
   Future<void> stop() async {
@@ -212,7 +227,6 @@ class ListeningController extends ChangeNotifier {
     try {
       await _engine.stop();
       if (generation != _generation) return;
-      await _save();
     } catch (e) {
       if (generation == _generation) _fail(e);
     }
@@ -226,7 +240,12 @@ class ListeningController extends ChangeNotifier {
       _paragraphs.length - 1,
     );
     paragraphId = _id(_paragraphs[_paragraphIndex]);
-    resume();
+    await start(
+      feedId: feedId,
+      bookId: bookId,
+      chapterId: chapterId,
+      paragraphId: paragraphId,
+    );
   }
 
   Future<void> configure({LocalVoice? voice, double? rate}) async {
@@ -259,11 +278,14 @@ class ListeningController extends ChangeNotifier {
   }
 
   Future<void> _save() async {
-    if (feedId.isEmpty || chapterId.isEmpty || paragraphId.isEmpty) return;
-    await _service.saveListeningPosition(
-      feedId,
-      bookId,
-      ListeningPosition(chapterId: chapterId, paragraphId: paragraphId),
+    if (feedId.isEmpty || chapterId.isEmpty) return;
+    await _service.setReadingProgress(
+      feedId: feedId,
+      bookId: bookId,
+      chapterId: chapterId,
+      paragraphId: paragraphId,
+      paragraphCharOffset: 0,
+      updatedAtMs: DateTime.now().millisecondsSinceEpoch,
     );
   }
 
@@ -282,6 +304,7 @@ class ListeningController extends ChangeNotifier {
   };
   @override
   void dispose() {
+    _disposed = true;
     ++_generation;
     _sleepTimer?.cancel();
     unawaited(_engine.stop().catchError((Object _) {}));

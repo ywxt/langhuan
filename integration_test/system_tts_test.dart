@@ -18,6 +18,7 @@ void main() {
           'Install a voice in the device TTS engine before running this test.',
     );
     final voice = voices.first;
+    expect(voices.map((voice) => voice.key).toSet(), hasLength(voices.length));
     // Do not filter voices by their network flags: the system owns synthesis.
     await engine.speak('語音測試。', voice, 1).timeout(const Duration(seconds: 30));
     await engine.stop();

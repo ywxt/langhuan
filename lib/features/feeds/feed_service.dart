@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../../src/rust/api/comments.dart' as rust_comments;
-import '../../src/rust/api/listening.dart' as rust_listening;
 import '../../src/rust/api/auth.dart' as rust_auth;
 import '../../src/rust/api/bookmark.dart' as rust_bookmark;
 import '../../src/rust/api/bookshelf.dart' as rust_bookshelf;
@@ -555,21 +554,6 @@ class FeedService {
     paragraphId: paragraphId,
     parentId: parentId,
     cursorJson: cursorJson,
-  );
-
-  Future<rust_listening.ListeningPosition?> listeningPosition(
-    String feedId,
-    String bookId,
-  ) => rust_listening.getListeningPosition(feedId: feedId, bookId: bookId);
-
-  Future<void> saveListeningPosition(
-    String feedId,
-    String bookId,
-    rust_listening.ListeningPosition position,
-  ) => rust_listening.saveListeningPosition(
-    feedId: feedId,
-    bookId: bookId,
-    position: position,
   );
 
   Future<List<ParagraphContent>> paragraphs({

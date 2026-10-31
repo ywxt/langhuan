@@ -241,10 +241,14 @@ const MIGRATIONS: &[Migration] = &[
         ) WITHOUT ROWID;
         "#,
     },
+    Migration {
+        version: 9,
+        sql: "DROP TABLE listening_progress;",
+    },
 ];
 
 /// The schema version this build understands (the last migration's version).
-pub(crate) const CURRENT_VERSION: i64 = 8;
+pub(crate) const CURRENT_VERSION: i64 = 9;
 
 /// Apply all pending migrations in order.
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
@@ -267,6 +271,38 @@ pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn removing_listening_storage_preserves_reading_progress() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for migration in MIGRATIONS.iter().filter(|m| m.version <= 8) {
+            conn.execute_batch(migration.sql).unwrap();
+        }
+        conn.execute_batch(
+            r#"
+            PRAGMA user_version = 8;
+            INSERT INTO feeds (id,name,version,content_hash,installed_at_ms,updated_at_ms)
+                VALUES ('f','Feed','1','hash',1,1);
+            INSERT INTO reading_progress (feed_id,book_id,chapter_id,paragraph_id,updated_at_ms)
+                VALUES ('f','b','reading-chapter','reading-paragraph',1);
+            INSERT INTO listening_progress VALUES ('f','b','{}');
+        "#,
+        )
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        let chapter: String = conn
+            .query_row("SELECT chapter_id FROM reading_progress", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(chapter, "reading-chapter");
+        assert_eq!(
+            conn.query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name = 'listening_progress'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap(),
+            0
+        );
+    }
     use super::*;
 
     #[test]
@@ -314,7 +350,7 @@ mod tests {
             "c"
         );
         assert_eq!(
-            conn.query_row("SELECT count(*) FROM listening_progress", [], |r| r
+            conn.query_row("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'listening_progress'", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
             0

@@ -9,7 +9,6 @@ import 'package:langhuan/features/bookshelf/comments/comments_panel.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
 import 'package:langhuan/shared/app_service.dart';
-import 'package:langhuan/src/rust/api/listening.dart';
 import 'package:langhuan/src/rust/api/types.dart';
 import 'package:langhuan/src/rust/frb_generated.dart';
 import 'fixture_feed.dart';
@@ -17,7 +16,7 @@ import 'fixture_feed.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
-    'comments, typed paragraph identity and local listening storage',
+    'comments, typed paragraph identity and shared reading progress',
     (tester) async {
       await RustLib.init();
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -141,13 +140,13 @@ export default { search, bookInfo, chapters, paragraphs, comments: { chapter: co
       await tester.pumpWidget(const SizedBox());
       controller.dispose();
 
-      await service.saveListeningPosition(
-        'comments-test',
-        '1001',
-        ListeningPosition(chapterId: '1', paragraphId: encoded),
+      await service.setReadingProgress(
+        feedId: 'comments-test',
+        bookId: '1001',
+        chapterId: '1',
+        paragraphId: encoded,
+        updatedAtMs: DateTime.now().millisecondsSinceEpoch,
       );
-      final saved = await service.listeningPosition('comments-test', '1001');
-      expect(saved!.paragraphId, encoded);
       final reading = await service.getReadingProgress(
         feedId: 'comments-test',
         bookId: '1001',

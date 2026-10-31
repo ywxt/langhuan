@@ -238,16 +238,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
         paragraphId: progress.activeParagraphId,
       );
     },
-    onStartHere: () {
-      final progress = ref.read(readingProgressProvider);
-      _listening.start(
-        feedId: widget.feedId,
-        bookId: widget.bookId,
-        chapterId: progress.activeChapterId,
-        paragraphId: progress.activeParagraphId,
-        restore: false,
-      );
-    },
   );
 
   // ── Sheet and navigation actions (formerly ReaderPageActions) ────────────

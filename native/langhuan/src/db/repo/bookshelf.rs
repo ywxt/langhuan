@@ -91,9 +91,6 @@ impl Repo<'_> {
         self.conn
             .prepare_cached("DELETE FROM bookmarks WHERE feed_id = ?1 AND book_id = ?2")?
             .execute([feed_id, book_id])?;
-        self.conn
-            .prepare_cached("DELETE FROM listening_progress WHERE feed_id = ?1 AND book_id = ?2")?
-            .execute([feed_id, book_id])?;
         Ok(true)
     }
 

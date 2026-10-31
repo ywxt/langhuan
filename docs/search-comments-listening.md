@@ -219,21 +219,26 @@ last chapter enters `completed`.
 
 ### Paragraph-level progress
 
-A listening position contains chapter ID and the full typed paragraph ID, scoped
-by source and book. It contains no character offset, sentence index, revision,
-pixel offset, or page number. Pause/resume, voice/rate changes, and restoration
-restart the current paragraph, even if some chunks have already played.
+Listening and reading share one reading-progress record per source and book.
+There is no separate listening-position model, API, or database table. Starting
+from the reader uses its currently visible chapter and paragraph; resuming or
+starting outside the reader loads the same persisted reading progress.
 
-While listening, the reader follows and highlights the active paragraph. Manual
-reading interactions pause speech before taking over reading progress. Entering a
-spoken paragraph, pausing, and stopping save progress; individual chunks do not.
-Each save atomically updates listening progress and ordinary reading progress,
-with the latter's character offset set to zero.
+Playback records the target chapter before loading its first paragraph, so a
+failed chapter remains the retry position. Entering each spoken paragraph
+updates the same reading progress, with the character offset set to zero. The
+reader follows and highlights that paragraph,
+turning pages or scrolling as needed. Individual speech chunks do not write
+progress. Pause and stop do not write an older speech position over newer manual
+reading progress.
 
-SQLite stores listening positions in `listening_progress`, keyed by source and
-book. Voice and rate selection currently last for the application session.
-Removing a book clears its listening position; source deletion follows the same
-related-data cleanup path.
+Pause/resume and voice/rate changes restart the current paragraph. If the user
+has moved through the book while speech was paused, resuming uses the updated
+reading progress. Ordinary reading retains its existing character offsets;
+only speech updates use paragraph boundaries. While speech is active, its
+controller writes progress and the reader follows without competing scroll
+writes. Manual reading interactions pause speech before taking over progress.
+Voice and rate selection currently last for the application session.
 
 ### Lifecycle and remaining work
 
@@ -261,6 +266,7 @@ flutter test
 flutter test integration_test/aggregated_search_test.dart -d linux
 flutter test integration_test/reader_comments_listening_test.dart -d linux
 flutter test integration_test/listening_test.dart -d linux
+flutter test integration_test/listening_reader_test.dart -d linux
 flutter test integration_test/system_tts_test.dart -d DEVICE_ID --no-uninstall
 ```
 

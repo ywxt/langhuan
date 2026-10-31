@@ -23,7 +23,8 @@ class _Speech implements SpeechEngine {
 
   @override
   Future<List<LocalVoice>> voices() async => const [
-    LocalVoice('fixture', 'Fixture voice', 'en-US'),
+    LocalVoice('zh', 'Chinese', 'zh-CN'),
+    LocalVoice('zh', 'Chinese', 'zh-HK'),
   ];
 
   @override
@@ -136,7 +137,6 @@ return { type: "complete", result: JSON.parse(DECODER.decode(event.response.body
                       controller.start(
                         feedId: 'listening-fixture',
                         bookId: '1001',
-                        chapterId: '1',
                       ),
                     );
                   },
@@ -150,6 +150,21 @@ return { type: "complete", result: JSON.parse(DECODER.decode(event.response.body
     );
     await tester.tap(find.text('Open listening'));
     await tester.pumpAndSettle();
+    expect(controller.status, ListeningStatus.idle);
+    expect(speech.spoken, isEmpty);
+    await tester.tap(find.byKey(const ValueKey('listening-voice-selector')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ListTile, 'zh-HK'));
+    await tester.pumpAndSettle();
+    expect(controller.voice!.locale, 'zh-HK');
+    expect(speech.spoken, isEmpty);
+    expect(
+      await service.getReadingProgress(
+        feedId: 'listening-fixture',
+        bookId: '1001',
+      ),
+      isNull,
+    );
     await tester.tap(find.text('Start listening'));
     await _until(tester, () => speech.spoken.length == 1);
     expect(speech.spoken.single, 'Chapter one.');
@@ -158,7 +173,10 @@ return { type: "complete", result: JSON.parse(DECODER.decode(event.response.body
     expect(speech.spoken.last.trim(), 'First paragraph.'); // image skipped
     await tester.tap(find.text('Pause'));
     await _until(tester, () => controller.status == ListeningStatus.paused);
-    final paused = await service.listeningPosition('listening-fixture', '1001');
+    final paused = await service.getReadingProgress(
+      feedId: 'listening-fixture',
+      bookId: '1001',
+    );
     expect(paragraphIdFromString(paused!.paragraphId)?.sourceId, 'p1');
     final reading = await service.getReadingProgress(
       feedId: 'listening-fixture',
@@ -166,6 +184,17 @@ return { type: "complete", result: JSON.parse(DECODER.decode(event.response.body
     );
     expect(reading!.paragraphId, paused.paragraphId);
     expect(reading.paragraphCharOffset, 0);
+
+    // Android engines may reuse "zh" for different locales. The voice
+    // picker must show both and select the requested voice without an assertion.
+    await tester.tap(find.byKey(const ValueKey('listening-voice-selector')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'zh-HK');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ListTile, 'zh-HK'));
+    await tester.pumpAndSettle();
+    expect(controller.voice!.locale, 'zh-HK');
+    expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('Resume'));
     await _until(tester, () => speech.spoken.length == 3);
@@ -175,16 +204,11 @@ return { type: "complete", result: JSON.parse(DECODER.decode(event.response.body
     expect(speech.spoken.last.trim(), 'Second paragraph.');
     await tester.tap(find.byTooltip('Stop listening'));
     await _until(tester, () => controller.status == ListeningStatus.idle);
-    // Wait for the stop action's asynchronous SQLite write before rebuilding.
     await controller.stop();
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
     controller = ListeningController(service, speech);
-    await controller.start(
-      feedId: 'listening-fixture',
-      bookId: '1001',
-      chapterId: '1',
-    );
+    await controller.start(feedId: 'listening-fixture', bookId: '1001');
     await _until(tester, () => speech.spoken.length == 5);
     expect(speech.spoken.last.trim(), 'Second paragraph.');
     speech.finish();
@@ -196,9 +220,9 @@ return { type: "complete", result: JSON.parse(DECODER.decode(event.response.body
     expect(speech.spoken.last.trim(), 'Final paragraph.');
     speech.finish();
     await _until(tester, () => controller.status == ListeningStatus.completed);
-    final completed = await service.listeningPosition(
-      'listening-fixture',
-      '1001',
+    final completed = await service.getReadingProgress(
+      feedId: 'listening-fixture',
+      bookId: '1001',
     );
     expect(completed!.chapterId, '2');
     expect(paragraphIdFromString(completed.paragraphId)?.sourceId, 'p1');
@@ -208,7 +232,6 @@ return { type: "complete", result: JSON.parse(DECODER.decode(event.response.body
       feedId: 'listening-fixture',
       bookId: 'failure-book',
       chapterId: '2',
-      restore: false,
     );
     await _until(tester, () => controller.status == ListeningStatus.error);
     expect(controller.error, isNotNull);
