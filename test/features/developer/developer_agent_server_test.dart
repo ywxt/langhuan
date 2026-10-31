@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,6 +8,190 @@ import 'package:langhuan/features/developer/developer_agent_server.dart';
 import 'package:langhuan/src/rust/api/debug.dart';
 
 void main() {
+  Future<(int, Map<String, dynamic>)> post(
+    DeveloperAgentServer server,
+    String path, [
+    Map<String, Object?>? body,
+    bool authorized = true,
+  ]) async {
+    final client = HttpClient();
+    try {
+      final request = await client.postUrl(server.baseUri!.resolve(path));
+      request.headers.contentType = ContentType.json;
+      if (authorized) {
+        request.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer ${server.token}',
+        );
+      }
+      if (body != null) request.write(jsonEncode(body));
+      final response = await request.close();
+      return (
+        response.statusCode,
+        jsonDecode(await utf8.decoder.bind(response).join())
+            as Map<String, dynamic>,
+      );
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  test(
+    'loading excludes concurrent runs and loads until the editor is updated',
+    () async {
+      final started = Completer<void>();
+      final finish = Completer<void>();
+      var editor = 'old';
+      final server = DeveloperAgentServer(
+        currentScript: () => editor,
+        editorScriptWriter: (script) async {
+          started.complete();
+          await finish.future;
+          editor = script;
+        },
+      );
+      addTearDown(server.stop);
+      await server.start();
+      final load = post(server, '/v1/script/load', {'script': 'new'});
+      await started.future;
+      expect(
+        (await post(server, '/v1/run', {
+          'operation': 'search',
+          'input': {'keyword': 'book'},
+        })).$1,
+        HttpStatus.conflict,
+      );
+      expect(
+        (await post(server, '/v1/script/load', {'script': 'other'})).$1,
+        HttpStatus.conflict,
+      );
+      expect(editor, 'old');
+      finish.complete();
+      expect((await load).$1, HttpStatus.ok);
+      expect(editor, 'new');
+    },
+  );
+
+  test(
+    'loading and reloading a file changes editor source used by subsequent runs',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'langhuan-agent-',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final file = File('${directory.path}/source.js');
+      await file.writeAsString('version one');
+      var editor = 'old source';
+      String? executed;
+      final server = DeveloperAgentServer(
+        currentScript: () => editor,
+        editorScriptWriter: (source) async {
+          editor = source;
+        },
+        runner: ({required script, required stage}) async {
+          executed = script;
+          return const DebugRunResult(
+            auth: DebugAuthUse.notSupported,
+            trace: [],
+            droppedEntries: 0,
+            steps: [],
+            droppedSteps: 0,
+            durationMs: 0,
+          );
+        },
+      );
+      addTearDown(server.stop);
+      await server.start();
+      expect(
+        (await post(server, '/v1/script/load', {'path': file.path}, false)).$1,
+        HttpStatus.unauthorized,
+      );
+      expect(editor, 'old source');
+      expect(
+        (await post(server, '/v1/script/reload')).$1,
+        HttpStatus.badRequest,
+      );
+      final loaded = await post(server, '/v1/script/load', {'path': file.path});
+      expect(loaded.$1, HttpStatus.ok);
+      expect(loaded.$2['source'], 'path');
+      expect(editor, 'version one');
+      await file.writeAsString('version two');
+      expect((await post(server, '/v1/script/reload')).$1, HttpStatus.ok);
+      expect(editor, 'version two');
+      expect(
+        (await post(server, '/v1/run', {
+          'operation': 'search',
+          'input': {'keyword': 'book'},
+        })).$1,
+        HttpStatus.ok,
+      );
+      expect(executed, 'version two');
+      await file.writeAsBytes([0xff]);
+      expect(
+        (await post(server, '/v1/script/reload')).$1,
+        HttpStatus.badRequest,
+      );
+      expect(editor, 'version two');
+      await file.writeAsString('x' * (2 * 1024 * 1024 + 1));
+      expect(
+        (await post(server, '/v1/script/reload')).$1,
+        HttpStatus.requestEntityTooLarge,
+      );
+      expect(editor, 'version two');
+    },
+  );
+
+  test(
+    'script loading validates sources and respects workspace activity',
+    () async {
+      var editor = 'unchanged';
+      var busy = false;
+      var installed = 'installed version one';
+      final server = DeveloperAgentServer(
+        currentScript: () => editor,
+        workspaceBusy: () => busy,
+        editorScriptWriter: (source) async {
+          editor = source;
+        },
+        installedScriptLoader: ({required feedId}) async => installed,
+      );
+      addTearDown(server.stop);
+      await server.start();
+      for (final body in <Map<String, Object?>>[
+        {},
+        {'script': ''},
+        {'script': 1},
+        {'script': 'a', 'feed_id': 'b'},
+        {'path': 'relative.js'},
+      ]) {
+        expect(
+          (await post(server, '/v1/script/load', body)).$1,
+          HttpStatus.badRequest,
+        );
+        expect(editor, 'unchanged');
+      }
+      busy = true;
+      expect(
+        (await post(server, '/v1/script/load', {'script': 'new'})).$1,
+        HttpStatus.conflict,
+      );
+      busy = false;
+      expect(
+        (await post(server, '/v1/script/load', {'feed_id': 'source'})).$1,
+        HttpStatus.ok,
+      );
+      expect(editor, installed);
+      installed = 'installed version two';
+      expect((await post(server, '/v1/script/reload')).$1, HttpStatus.ok);
+      expect(editor, installed);
+      expect(
+        (await post(server, '/v1/script/load', {'script': 'inline source'})).$1,
+        HttpStatus.ok,
+      );
+      expect(editor, 'inline source');
+    },
+  );
+
   test(
     'agent API is loopback-only, authenticated, and runs an operation',
     () async {

@@ -79,6 +79,16 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
     super.initState();
     _agentServer = DeveloperAgentServer(
       currentScript: () => _scriptController.text,
+      workspaceBusy: () => _running || _importing,
+      editorScriptWriter: (script) async {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_kScriptKey, script);
+        if (!mounted) return;
+        setState(() {
+          _scriptController.text = script;
+          _selected = null;
+        });
+      },
     );
     _restoreScript();
   }

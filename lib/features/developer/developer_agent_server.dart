@@ -8,6 +8,7 @@ import '../../src/rust/api/debug.dart';
 import '../../src/rust/api/types.dart';
 
 typedef CurrentDebugScript = String Function();
+typedef EditorScriptWriter = Future<void> Function(String script);
 typedef DebugStageRunner =
     Future<DebugRunResult> Function({
       required String script,
@@ -26,14 +27,21 @@ class DeveloperAgentServer {
     required CurrentDebugScript currentScript,
     DebugStageRunner runner = debugRunStage,
     InstalledScriptLoader installedScriptLoader = debugGetInstalledScript,
+    EditorScriptWriter? editorScriptWriter,
+    bool Function()? workspaceBusy,
   }) : _currentScript = currentScript,
        _runner = runner,
-       _installedScriptLoader = installedScriptLoader;
+       _installedScriptLoader = installedScriptLoader,
+       _editorScriptWriter = editorScriptWriter,
+       _workspaceBusy = workspaceBusy ?? (() => false);
 
   static const _maxRequestBytes = 2 * 1024 * 1024;
   final CurrentDebugScript _currentScript;
   final DebugStageRunner _runner;
   final InstalledScriptLoader _installedScriptLoader;
+  final EditorScriptWriter? _editorScriptWriter;
+  final bool Function() _workspaceBusy;
+  ({String kind, String value})? _loadedSource;
 
   HttpServer? _server;
   StreamSubscription<HttpRequest>? _subscription;
@@ -109,11 +117,74 @@ class DeveloperAgentServer {
             },
             {'name': 'authStatus', 'input': <String, String>{}},
           ],
+          'script_endpoints': {
+            'load': '/v1/script/load',
+            'reload': '/v1/script/reload',
+          },
         });
       }
 
+      if (request.method == 'POST' &&
+          (request.uri.path == '/v1/script/load' ||
+              request.uri.path == '/v1/script/reload')) {
+        if (_busy || _workspaceBusy()) {
+          return _json(request.response, HttpStatus.conflict, {
+            'error': 'the debug workspace is busy',
+          });
+        }
+        final writer = _editorScriptWriter;
+        if (writer == null) {
+          return _json(request.response, HttpStatus.notImplemented, {
+            'error': 'editor loading is unavailable',
+          });
+        }
+        _busy = true;
+        try {
+          final body = await _readJsonObject(request, allowEmpty: true);
+          final source = request.uri.path.endsWith('/reload')
+              ? _loadedSource
+              : _parseScriptSource(body);
+          if (source == null) {
+            throw const _AgentRequestError(
+              HttpStatus.badRequest,
+              'load a script before reloading',
+            );
+          }
+          final script = await _loadSource(source);
+          if (script.trim().isEmpty) {
+            throw const _AgentRequestError(
+              HttpStatus.badRequest,
+              'script must not be empty',
+            );
+          }
+          final bytes = utf8.encode(script).length;
+          if (bytes > _maxRequestBytes) {
+            throw const _AgentRequestError(
+              HttpStatus.requestEntityTooLarge,
+              'script exceeds 2 MiB',
+            );
+          }
+          if (_workspaceBusy() || _server == null) {
+            throw const _AgentRequestError(
+              HttpStatus.conflict,
+              'the debug workspace is unavailable',
+            );
+          }
+          await writer(script);
+          _loadedSource = source;
+          return _json(request.response, HttpStatus.ok, {
+            'ok': true,
+            'source': source.kind,
+            if (source.kind != 'script') source.kind: source.value,
+            'bytes': bytes,
+          });
+        } finally {
+          _busy = false;
+        }
+      }
+
       if (request.method == 'POST' && request.uri.path == '/v1/run') {
-        if (_busy) {
+        if (_busy || _workspaceBusy()) {
           return _json(request.response, HttpStatus.conflict, {
             'error': 'another debug run is active',
           });
@@ -149,7 +220,10 @@ class DeveloperAgentServer {
         'Bearer $expected';
   }
 
-  Future<Map<String, Object?>> _readJsonObject(HttpRequest request) async {
+  Future<Map<String, Object?>> _readJsonObject(
+    HttpRequest request, {
+    bool allowEmpty = false,
+  }) async {
     final builder = BytesBuilder(copy: false);
     await for (final chunk in request) {
       builder.add(chunk);
@@ -161,6 +235,7 @@ class DeveloperAgentServer {
       }
     }
     Object? decoded;
+    if (allowEmpty && builder.length == 0) return {};
     try {
       decoded = jsonDecode(utf8.decode(builder.takeBytes()));
     } on FormatException {
@@ -176,6 +251,58 @@ class DeveloperAgentServer {
       );
     }
     return decoded;
+  }
+
+  ({String kind, String value}) _parseScriptSource(Map<String, Object?> body) {
+    final keys = ['script', 'path', 'feed_id'].where(body.containsKey).toList();
+    if (keys.length != 1 ||
+        body[keys.single] is! String ||
+        (body[keys.single] as String).trim().isEmpty) {
+      throw const _AgentRequestError(
+        HttpStatus.badRequest,
+        'provide exactly one non-empty string: script, path, or feed_id',
+      );
+    }
+    final key = keys.single;
+    final value = body[key] as String;
+    return (kind: key, value: key == 'script' ? value : value.trim());
+  }
+
+  Future<String> _loadSource(({String kind, String value}) source) async {
+    if (source.kind == 'script') return source.value;
+    if (source.kind == 'feed_id') {
+      return _installedScriptLoader(feedId: source.value);
+    }
+    final file = File(source.value);
+    if (!file.isAbsolute) {
+      throw const _AgentRequestError(
+        HttpStatus.badRequest,
+        'path must be absolute',
+      );
+    }
+    final bytes = BytesBuilder(copy: false);
+    try {
+      await for (final chunk in file.openRead()) {
+        bytes.add(chunk);
+        if (bytes.length > _maxRequestBytes) {
+          throw const _AgentRequestError(
+            HttpStatus.requestEntityTooLarge,
+            'script exceeds 2 MiB',
+          );
+        }
+      }
+      return utf8.decode(bytes.takeBytes());
+    } on FileSystemException {
+      throw const _AgentRequestError(
+        HttpStatus.badRequest,
+        'cannot read script file',
+      );
+    } on FormatException {
+      throw const _AgentRequestError(
+        HttpStatus.badRequest,
+        'script file must be UTF-8',
+      );
+    }
   }
 
   Future<String> _resolveScript(Map<String, Object?> body) async {
