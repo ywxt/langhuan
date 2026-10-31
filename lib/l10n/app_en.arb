@@ -1016,6 +1016,8 @@
   "commentsMore": "Load more",
   "commentsEnd": "No more comments",
   "commentsRefresh": "Refresh comments",
+  "commentsSortHot": "Hot",
+  "commentsSortLatest": "Latest",
   "listeningTitle": "System text-to-speech",
   "listeningStart": "Start listening",
   "listeningPause": "Pause",

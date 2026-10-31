@@ -1128,6 +1128,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commentsRefresh => '刷新評論';
 
   @override
+  String get commentsSortHot => '最熱';
+
+  @override
+  String get commentsSortLatest => '最新';
+
+  @override
   String get listeningTitle => '系統語音聽書';
 
   @override

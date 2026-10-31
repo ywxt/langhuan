@@ -4,6 +4,16 @@ import 'package:flutter/foundation.dart';
 import '../../../src/rust/api/comments.dart';
 import '../../feeds/feed_service.dart';
 
+/// UI-side ordering of the comment list. Sources keep sending pages in their
+/// own order; the panel re-sorts what has already arrived.
+enum CommentsSort {
+  /// Likes first (unknown counts rank as zero), then newest.
+  hot,
+
+  /// Newest first (unknown times rank as oldest).
+  latest,
+}
+
 class CommentsController extends ChangeNotifier {
   CommentsController(
     this.service, {
@@ -19,6 +29,11 @@ class CommentsController extends ChangeNotifier {
   final List<CommentItem> items = [];
   final Set<String> _seen = {};
   final Set<String> _cursors = {};
+
+  /// Arrival order per comment id — the stable final tiebreak, because
+  /// [List.sort] is not stable.
+  final Map<String, int> _arrival = {};
+  CommentsSort sort = CommentsSort.hot;
   String? _cursor;
   bool loading = false, hasMore = true;
   Object? error;
@@ -55,8 +70,12 @@ class CommentsController extends ChangeNotifier {
         throw const FormatException('Comment cursor cycle');
       }
       for (final item in page.items) {
-        if (_seen.add(item.id)) items.add(item);
+        if (_seen.add(item.id)) {
+          _arrival[item.id] = _arrival.length;
+          items.add(item);
+        }
       }
+      _applySort();
       if (next != null) _cursors.add(_canonical(jsonDecode(next)));
       _cursor = next;
       hasMore = next != null;
@@ -79,11 +98,35 @@ class CommentsController extends ChangeNotifier {
     items.clear();
     _seen.clear();
     _cursors.clear();
+    _arrival.clear();
     _cursor = null;
     loading = false;
     hasMore = true;
     error = null;
     await loadMore();
+  }
+
+  /// Re-orders [items] under [value]; already-loaded comments keep their new
+  /// relative order and pages loaded afterwards merge into it.
+  void setSort(CommentsSort value) {
+    if (value == sort) return;
+    sort = value;
+    _applySort();
+    notifyListeners();
+  }
+
+  void _applySort() {
+    items.sort(_compare);
+  }
+
+  int _compare(CommentItem a, CommentItem b) {
+    if (sort == CommentsSort.hot) {
+      final byLikes = (b.likeCount ?? 0).compareTo(a.likeCount ?? 0);
+      if (byLikes != 0) return byLikes;
+    }
+    final byTime = (b.createdAtMs ?? 0).compareTo(a.createdAtMs ?? 0);
+    if (byTime != 0) return byTime;
+    return _arrival[a.id]!.compareTo(_arrival[b.id]!);
   }
 
   @override

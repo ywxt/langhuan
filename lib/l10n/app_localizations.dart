@@ -2168,6 +2168,18 @@ abstract class AppLocalizations {
   /// **'Refresh comments'**
   String get commentsRefresh;
 
+  /// No description provided for @commentsSortHot.
+  ///
+  /// In en, this message translates to:
+  /// **'Hot'**
+  String get commentsSortHot;
+
+  /// No description provided for @commentsSortLatest.
+  ///
+  /// In en, this message translates to:
+  /// **'Latest'**
+  String get commentsSortLatest;
+
   /// No description provided for @listeningTitle.
   ///
   /// In en, this message translates to:

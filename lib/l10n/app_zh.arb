@@ -368,6 +368,8 @@
   "commentsMore": "加載更多",
   "commentsEnd": "沒有更多評論",
   "commentsRefresh": "刷新評論",
+  "commentsSortHot": "最熱",
+  "commentsSortLatest": "最新",
   "listeningTitle": "系統語音聽書",
   "listeningStart": "開始聽書",
   "listeningPause": "暫停",

@@ -1159,6 +1159,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commentsRefresh => 'Refresh comments';
 
   @override
+  String get commentsSortHot => 'Hot';
+
+  @override
+  String get commentsSortLatest => 'Latest';
+
+  @override
   String get listeningTitle => 'System text-to-speech';
 
   @override

@@ -182,6 +182,9 @@ class _CommentsPanelState extends State<CommentsPanel> {
         // Reply threads quote the comment they answer at the top of the
         // same page, so the context is always visible.
         if (frame.parent != null) _ParentCommentCard(comment: frame.parent!),
+        // Only the root thread offers ordering: replies read as a
+        // conversation and keep the source's order.
+        if (frame.parent == null) _SortBar(controller: frame.controller),
         Expanded(child: _buildBody(context, frame.controller)),
       ],
     );
@@ -292,6 +295,53 @@ class _CommentsPanelState extends State<CommentsPanel> {
               child: Text(l10n.feedAuthLogin),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Hot / latest ordering for the root comment list. Front-end only: the
+/// source keeps sending pages in its own order and the controller re-sorts
+/// what has already arrived.
+class _SortBar extends StatelessWidget {
+  const _SortBar({required this.controller});
+
+  final CommentsController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        LanghuanTheme.spaceMd,
+        LanghuanTheme.spaceSm,
+        LanghuanTheme.spaceMd,
+        0,
+      ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: SegmentedButton<CommentsSort>(
+          showSelectedIcon: false,
+          style: ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            textStyle: WidgetStatePropertyAll(
+              Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+          segments: [
+            ButtonSegment(
+              value: CommentsSort.hot,
+              label: Text(l10n.commentsSortHot),
+            ),
+            ButtonSegment(
+              value: CommentsSort.latest,
+              label: Text(l10n.commentsSortLatest),
+            ),
+          ],
+          selected: {controller.sort},
+          onSelectionChanged: (selection) =>
+              controller.setSort(selection.first),
+        ),
       ),
     );
   }
