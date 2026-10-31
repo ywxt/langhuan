@@ -150,6 +150,8 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   String? _activeTargetParagraphId;
   ReaderScrollTarget? _pendingTarget;
   int _consumedTargetToken = -1;
+  int _targetAttempts = 0;
+  bool _ensureTargetScheduled = false;
 
   String _reportedParagraphKey = '';
   bool _reportScheduled = false;
@@ -210,6 +212,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
       _pendingTarget = target;
       _consumedTargetToken = target.token;
       _activeTargetParagraphId = _paragraphIdOrNull(target);
+      _targetAttempts = 0;
       _applyTargetImmediately(target);
       _scheduleEnsureTargetVisible();
     }
@@ -266,10 +269,14 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   /// paragraph, once it has been built. Retries on window changes while the
   /// chapter is still loading; gives up once it finished without the item.
   void _scheduleEnsureTargetVisible() {
+    if (_ensureTargetScheduled) return;
+    _ensureTargetScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureTargetScheduled = false;
       if (!mounted || _pendingTarget == null) return;
       _ensureTargetVisible();
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   void _ensureTargetVisible() {
@@ -295,12 +302,59 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
     }
 
     final state = widget.window.stateOf(target.chapterId);
+    if (state is ChapterLoaded &&
+        _targetAttempts++ < 16 &&
+        _advanceTowardTarget(target, state.paragraphs)) {
+      _scheduleEnsureTargetVisible();
+      return;
+    }
     if (state is ChapterLoaded || state is ChapterLoadError) {
       // Content is there but the paragraph is not built — the coarse
       // estimate stands.
       _pendingTarget = null;
       _activeTargetParagraphId = null;
     }
+  }
+
+  // A page-based estimate can stop inside a very tall paragraph, leaving the
+  // next paragraph unbuilt. Use measured sliver boundaries to bring the target
+  // into the lazy layout before applying ensureVisible's exact correction.
+  bool _advanceTowardTarget(
+    ReaderScrollTarget target,
+    List<ParagraphContent> paragraphs,
+  ) {
+    final controller = _controller;
+    if (controller == null || !controller.hasClients) return false;
+    final index = paragraphs.indexWhere(
+      (p) => p.id.toStringValue() == target.paragraphId,
+    );
+    if (index < 0) return false;
+    final sliver = _sliverKeyOf(
+      target.chapterId,
+    ).currentContext?.findRenderObject();
+    if (sliver is! RenderSliverMultiBoxAdaptor) return false;
+    final first = sliver.firstChild;
+    final last = sliver.lastChild;
+    if (first == null || last == null) return false;
+    final reverse = _isBeforeAnchor(target.chapterId);
+    final targetIndex = reverse ? paragraphs.length - 1 - index : index;
+    final firstIndex = sliver.indexOf(first);
+    final lastIndex = sliver.indexOf(last);
+    if (targetIndex >= firstIndex && targetIndex <= lastIndex) return false;
+    final after = targetIndex > lastIndex;
+    final boundary = after ? last : first;
+    final viewport = RenderAbstractViewport.of(boundary);
+    final top = viewport.getOffsetToReveal(boundary, 0).offset;
+    final position = controller.position;
+    final offset =
+        (top +
+                ((after != reverse)
+                    ? boundary.size.height
+                    : -position.viewportDimension))
+            .clamp(position.minScrollExtent, position.maxScrollExtent);
+    if ((offset - position.pixels).abs() < 1) return false;
+    controller.jumpTo(offset);
+    return true;
   }
 
   // ── Scroll notifications ────────────────────────────────────────────────
@@ -673,7 +727,9 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
 
   Widget _buildParagraphItem(String chapterId, ParagraphContent paragraph) {
     final paragraphId = paragraph.id.toStringValue();
-    final isTarget = paragraphId == _activeTargetParagraphId;
+    final isTarget =
+        chapterId == _pendingTarget?.chapterId &&
+        paragraphId == _activeTargetParagraphId;
     final selected =
         widget.selectedChapterId == chapterId &&
         widget.selectedParagraphId == paragraphId;

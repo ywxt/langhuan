@@ -71,6 +71,84 @@ Future<void> _pumpLoaded(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('scroll targets scope repeated paragraph IDs to their chapter', (
+    tester,
+  ) async {
+    final id = const ParagraphId(
+      original: OriginalParagraphId.source('same'),
+      path: [],
+    );
+    final window = ReaderChapterWindow(
+      chapters: _chapters(3),
+      anchorChapterId: 'c1',
+      loader: (chapterId, {bool forceRefresh = false}) async => [
+        ParagraphContent.text(id: id, content: '$chapterId paragraph'),
+      ],
+    );
+    addTearDown(window.dispose);
+    await tester.pumpWidget(
+      _host(
+        window: window,
+        target: ReaderScrollTarget(
+          token: 1,
+          chapterId: 'c1',
+          paragraphId: id.toStringValue(),
+        ),
+      ),
+    );
+    await _pumpLoaded(tester);
+    await tester.pumpAndSettle();
+    expect(find.text('c1 paragraph'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('refines an underestimated jump beyond a tall paragraph', (
+    tester,
+  ) async {
+    final targetId = const ParagraphId(
+      original: OriginalParagraphId.source('target'),
+      path: [],
+    ).toStringValue();
+    final window = ReaderChapterWindow(
+      chapters: _chapters(1),
+      anchorChapterId: 'c0',
+      loader: (_, {bool forceRefresh = false}) async => [
+        ParagraphContent.text(
+          id: const ParagraphId(
+            original: OriginalParagraphId.source('long'),
+            path: [],
+          ),
+          content: List.filled(300, 'A tall paragraph. ').join(),
+        ),
+        ParagraphContent.text(
+          id: const ParagraphId(
+            original: OriginalParagraphId.source('target'),
+            path: [],
+          ),
+          content: 'Target paragraph',
+        ),
+      ],
+    );
+    addTearDown(window.dispose);
+    await tester.pumpWidget(_host(window: window));
+    await _pumpLoaded(tester);
+    expect(find.text('Target paragraph'), findsNothing);
+    await tester.pumpWidget(
+      _host(
+        window: window,
+        target: ReaderScrollTarget(
+          token: 1,
+          chapterId: 'c0',
+          paragraphId: targetId,
+        ),
+        estimate: (_, _) => 100,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final rect = tester.getRect(find.text('Target paragraph'));
+    expect(rect.top, lessThan(600));
+    expect(rect.bottom, greaterThan(0));
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('held drag preserves small movements in both directions', (
     tester,
   ) async {
