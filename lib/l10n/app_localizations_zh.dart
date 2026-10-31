@@ -114,6 +114,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get searchTitle => '搜索';
 
   @override
+  String get searchHistory => '搜索歷史';
+
+  @override
+  String get searchHistoryClear => '清空歷史';
+
+  @override
+  String get searchHistoryDelete => '刪除此記錄';
+
+  @override
   String get searchHintNoFeed => '請先選擇書源…';
 
   @override

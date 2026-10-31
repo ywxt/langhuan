@@ -116,6 +116,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchTitle => 'Search';
 
   @override
+  String get searchHistory => 'Search history';
+
+  @override
+  String get searchHistoryClear => 'Clear history';
+
+  @override
+  String get searchHistoryDelete => 'Remove from history';
+
+  @override
   String get searchHintNoFeed => 'Select a feed first…';
 
   @override

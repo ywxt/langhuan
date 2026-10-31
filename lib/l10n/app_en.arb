@@ -92,6 +92,9 @@
   "bookshelfFeedPausedHint": "This feed is paused. The saved book remains readable, but update checks are skipped.",
 
   "searchTitle": "Search",
+  "searchHistory": "Search history",
+  "searchHistoryClear": "Clear history",
+  "searchHistoryDelete": "Remove from history",
   "@searchTitle": { "description": "Search page title" },
 
   "searchHintNoFeed": "Select a feed first…",

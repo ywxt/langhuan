@@ -35,6 +35,9 @@
   "bookshelfFeedPausedHint": "書源已暫停；已收藏書籍仍可閱讀，但不會檢查更新。",
 
   "searchTitle": "搜索",
+  "searchHistory": "搜索歷史",
+  "searchHistoryClear": "清空歷史",
+  "searchHistoryDelete": "刪除此記錄",
   "searchHintNoFeed": "請先選擇書源…",
   "searchHintWithFeed": "在 {feedName} 中搜索…",
   "searchHintAllFeeds": "在全部書源中搜索…",

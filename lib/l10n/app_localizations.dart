@@ -284,6 +284,24 @@ abstract class AppLocalizations {
   /// **'Search'**
   String get searchTitle;
 
+  /// No description provided for @searchHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Search history'**
+  String get searchHistory;
+
+  /// No description provided for @searchHistoryClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear history'**
+  String get searchHistoryClear;
+
+  /// No description provided for @searchHistoryDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from history'**
+  String get searchHistoryDelete;
+
   /// Search bar hint when no feed is selected
   ///
   /// In en, this message translates to:

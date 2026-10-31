@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +14,7 @@ import '../../src/rust/api/types.dart';
 import '../feeds/feed_providers.dart';
 import '../feeds/search_provider.dart';
 import 'book_detail_page.dart';
+import 'search_history_provider.dart';
 import 'widgets/book_cover_hero.dart';
 import 'widgets/feed_selector.dart';
 import 'widgets/reader_types.dart';
@@ -114,6 +117,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
     final keyword = _searchController.text.trim();
     if (keyword.isEmpty) return;
+    unawaited(ref.read(searchHistoryProvider.notifier).record(keyword));
+    _searchFocusNode.unfocus();
 
     switch (selection) {
       case FeedSelectionOne(:final feed):
@@ -200,6 +205,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                   ),
               ],
               onSubmitted: (_) => _onSearch(),
+              onChanged: (_) => setState(() {}),
             ),
           ),
 
@@ -235,6 +241,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     FeedSelection selection,
     AppLocalizations l10n,
   ) {
+    if (searchState.keyword.isEmpty && !searchState.isLoading) {
+      return _buildHistory(context, l10n);
+    }
     if (searchState.hasError) {
       final showAuth =
           selection is FeedSelectionOne &&
@@ -293,9 +302,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     if (!searchState.isLoading && !searchState.hasItems && allGroupsHealthy) {
       return EmptyState(
         icon: Icons.search,
-        title: searchState.keyword.isEmpty
-            ? l10n.searchEmptyPrompt
-            : l10n.searchNoResults(searchState.keyword),
+        title: l10n.searchNoResults(searchState.keyword),
       );
     }
 
@@ -368,6 +375,59 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           );
         },
       ),
+    );
+  }
+
+  Widget _buildHistory(BuildContext context, AppLocalizations l10n) {
+    final history =
+        ref.watch(searchHistoryProvider).asData?.value ?? const <String>[];
+    if (history.isEmpty) {
+      return EmptyState(icon: Icons.search, title: l10n.searchEmptyPrompt);
+    }
+    return ListView(
+      padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                l10n.searchHistory,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => ref.read(searchHistoryProvider.notifier).clear(),
+              icon: const Icon(Icons.delete_outline),
+              label: Text(l10n.searchHistoryClear),
+            ),
+          ],
+        ),
+        const SizedBox(height: LanghuanTheme.spaceSm),
+        Wrap(
+          spacing: LanghuanTheme.spaceSm,
+          runSpacing: LanghuanTheme.spaceSm,
+          children: [
+            for (final keyword in history)
+              InputChip(
+                label: Text(
+                  keyword,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onPressed: () {
+                  _searchController.value = TextEditingValue(
+                    text: keyword,
+                    selection: TextSelection.collapsed(offset: keyword.length),
+                  );
+                  _onSearch();
+                },
+                onDeleted: () =>
+                    ref.read(searchHistoryProvider.notifier).remove(keyword),
+                deleteButtonTooltipMessage: l10n.searchHistoryDelete,
+              ),
+          ],
+        ),
+      ],
     );
   }
 

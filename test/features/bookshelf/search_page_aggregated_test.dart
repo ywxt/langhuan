@@ -3,6 +3,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:langhuan/features/bookshelf/search_history_provider.dart';
 import 'package:langhuan/features/bookshelf/search_page.dart';
 import 'package:langhuan/features/feeds/feed_providers.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
@@ -70,6 +72,16 @@ class _TrackingSearchNotifier extends _TestSearchNotifier {
   }
 }
 
+class _HistorySearchNotifier extends _TestSearchNotifier {
+  String? searchedKeyword;
+
+  @override
+  Future<void> searchAll({required String keyword}) async {
+    searchedKeyword = keyword;
+    state = SearchState(keyword: keyword, hasMore: false);
+  }
+}
+
 Widget _testApp(
   GoRouter router,
   SearchState searchState, {
@@ -128,6 +140,70 @@ GoRouter _router() {
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets(
+    'saved history can be searched again and records new submissions',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        SearchHistoryNotifier.storageKey: ['saved term', 'older term'],
+      });
+      final router = _router();
+      addTearDown(router.dispose);
+      final search = _HistorySearchNotifier();
+      await tester.pumpWidget(
+        _testApp(router, const SearchState(), searchNotifier: search),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Search history'), findsOneWidget);
+      await tester.tap(find.widgetWithText(InputChip, 'saved term'));
+      await tester.pumpAndSettle();
+      expect(search.searchedKeyword, 'saved term');
+      expect(
+        tester.widget<SearchBar>(find.byType(SearchBar)).controller!.text,
+        'saved term',
+      );
+      await tester.tap(find.byTooltip('Clear'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(InputChip, 'older term'), findsOneWidget);
+      await tester.enterText(find.byType(TextField).first, ' new term ');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      expect(search.searchedKeyword, 'new term');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList(SearchHistoryNotifier.storageKey), [
+        'new term',
+        'saved term',
+        'older term',
+      ]);
+    },
+  );
+
+  testWidgets('history entries can be deleted individually or cleared', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      SearchHistoryNotifier.storageKey: ['first', 'second'],
+    });
+    final router = _router();
+    addTearDown(router.dispose);
+    await tester.pumpWidget(_testApp(router, const SearchState()));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.widgetWithText(InputChip, 'second'),
+        matching: find.byTooltip('Remove from history'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(InputChip, 'second'), findsNothing);
+    expect(find.widgetWithText(InputChip, 'first'), findsOneWidget);
+    await tester.tap(find.text('Clear history'));
+    await tester.pumpAndSettle();
+    expect(find.byType(InputChip), findsNothing);
+    expect(find.text('Enter a keyword to start searching'), findsOneWidget);
+  });
+
   testWidgets('leaving search clears its results and pull cursor', (
     tester,
   ) async {
