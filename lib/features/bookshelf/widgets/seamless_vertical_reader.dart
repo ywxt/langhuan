@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
@@ -151,9 +153,14 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   String _reportedParagraphKey = '';
   bool _reportScheduled = false;
   bool _pendingReportEnd = false;
+  Timer? _reportThrottle;
+  final Stopwatch _reportClock = Stopwatch()..start();
+  bool _expandedAboveDuringScroll = false;
+  bool _expandedBelowDuringScroll = false;
   static const _pageDuration = Duration(milliseconds: 260);
   static const _expandThresholdFactor = 1.5;
   static const _tapPageOverlap = 0.9;
+  static const _reportInterval = Duration(milliseconds: 100);
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
 
@@ -210,6 +217,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   @override
   void dispose() {
     widget.window.removeListener(_onWindowChanged);
+    _reportThrottle?.cancel();
     _controller?.dispose();
     super.dispose();
   }
@@ -298,14 +306,38 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
 
   bool _onScrollNotification(ScrollNotification notification) {
     if (notification.depth != 0) return false;
-    if (notification is ScrollUpdateNotification ||
-        notification is ScrollEndNotification ||
-        notification is UserScrollNotification) {
-      if (notification is ScrollEndNotification) _pendingReportEnd = true;
+    if (notification is ScrollStartNotification) {
+      _expandedAboveDuringScroll = false;
+      _expandedBelowDuringScroll = false;
+    } else if (notification is ScrollUpdateNotification) {
       _maybeExpandWindow();
-      _scheduleReport();
+      _scheduleThrottledReport();
+    } else if (notification is ScrollEndNotification) {
+      _maybeExpandWindow();
+      _reportThrottle?.cancel();
+      _reportThrottle = null;
+      _scheduleReport(end: true);
     }
     return false;
+  }
+
+  /// Position discovery walks the laid-out paragraph render objects. Doing
+  /// that on every pointer event adds input latency without improving the
+  /// persisted reading position, so sample it while moving and always take
+  /// one exact sample when scrolling settles.
+  void _scheduleThrottledReport() {
+    if (_reportClock.elapsed >= _reportInterval) {
+      _reportClock.reset();
+      _scheduleReport();
+      return;
+    }
+    if (_reportThrottle != null) return;
+    _reportThrottle = Timer(_reportInterval - _reportClock.elapsed, () {
+      _reportThrottle = null;
+      if (!mounted) return;
+      _reportClock.reset();
+      _scheduleReport();
+    });
   }
 
   /// Scroll notifications fire inside `setPixels`, *before* the frame lays
@@ -313,7 +345,8 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   /// previous frame's layout. The probe is therefore deferred to a
   /// post-frame callback, with [ensureVisualUpdate] guaranteeing a frame
   /// runs even when the gesture already settled.
-  void _scheduleReport() {
+  void _scheduleReport({bool end = false}) {
+    _pendingReportEnd = _pendingReportEnd || end;
     if (_reportScheduled) return;
     _reportScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -332,11 +365,15 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
     final position = controller.position;
     final dim = position.viewportDimension;
     if (position.pixels - position.minScrollExtent <
-        dim * _expandThresholdFactor) {
+            dim * _expandThresholdFactor &&
+        !_expandedAboveDuringScroll) {
+      _expandedAboveDuringScroll = true;
       widget.window.expandAbove();
     }
     if (position.maxScrollExtent - position.pixels <
-        dim * _expandThresholdFactor) {
+            dim * _expandThresholdFactor &&
+        !_expandedBelowDuringScroll) {
+      _expandedBelowDuringScroll = true;
       widget.window.expandBelow();
     }
   }

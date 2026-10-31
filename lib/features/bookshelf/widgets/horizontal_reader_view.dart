@@ -417,11 +417,17 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
   }
 
   Widget _snapshotSlot(BuildContext context, ReaderSlot? slot, Widget child) {
-    final page = ColoredBox(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: child,
+    final page = RepaintBoundary(
+      child: ColoredBox(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        child: child,
+      ),
     );
     if (slot is! ReaderSlotPage) return page;
+    // Retain the live page in its own layer as well as freezing it for the
+    // translation. This lets Android reuse the already-painted page when a
+    // new snapshot is captured after a turn instead of repainting all glyphs
+    // into the snapshot from scratch.
     return SnapshotWidget(
       controller: _pageSnapshots,
       mode: SnapshotMode.permissive,

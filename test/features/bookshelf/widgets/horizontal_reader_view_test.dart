@@ -177,7 +177,9 @@ void main() {
   });
 
   group('swipe', () {
-    testWidgets('snapshots text pages for the turn animation', (tester) async {
+    testWidgets('snapshots retained text pages for the turn animation', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _host(
           current: ReaderSlotPage(_page('p2', 'current page')),
@@ -220,8 +222,9 @@ void main() {
           of: find.byKey(const ValueKey('horizontal-reader-page-strip')),
           matching: find.byType(RepaintBoundary),
         ),
-        findsNothing,
+        findsNWidgets(3),
       );
+      expect(find.byType(SnapshotWidget), findsNWidgets(2));
     });
 
     testWidgets('drag left past the threshold settles onto next', (
