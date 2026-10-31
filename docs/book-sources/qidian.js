@@ -1,9 +1,9 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.qidian
 // @name         起點中文網
-// @version      4.1.0
+// @version      4.2.0
 // @author       Langhuan
-// @description  起點中文網書源（m 站），支持登入及已購 VIP 章節，登錄後可讀章評與段評
+// @description  起點中文網書源（m 站），支持登入及已購 VIP 章節，登錄後可讀章評與段評，章節段落附帶評論數角標
 // @base_url     https://m.qidian.com
 // @access_domain m.qidian.com
 // @access_domain *.image.myqcloud.com
@@ -234,12 +234,82 @@ function pushParagraphSegments(items, chunk, id) {
   }
 }
 
-function completeParagraphs(title, content) {
+// 章節標題的 id 固定爲 "-1"（服務端章評單元 paragraphId=-1），使標題成
+// 爲一等可評論段落：角標、點擊、長按段評全鏈可用。"-1" 爲負數字符串，
+// 宿主永不會把它當作宿主索引。
+function completeParagraphs(title, content, event) {
   const items = [];
   const cleanTitle = cleanText(title);
-  if (cleanTitle) items.push({ type: "title", text: cleanTitle });
+  if (cleanTitle) items.push({ type: "title", id: "-1", text: cleanTitle });
   items.push(...splitParagraphs(content));
-  return { type: "complete", result: items, next_cursor: null };
+  // 評論計數（角標）登錄限定，與評論行爲一致：未登錄時不請求
+  // reviewsummary4m，段落不帶 comment_count。
+  const auth = event?.auth;
+  const csrfToken =
+    auth?.csrf_token ?? cookieMap(auth?.cookie_header).get("_csrfToken");
+  if (!csrfToken) {
+    return { type: "complete", result: items, next_cursor: null };
+  }
+  return {
+    type: "request",
+    request: {
+      url: `${meta.base_url}/webcommon/chapterreview/reviewsummary4m`,
+      method: "GET",
+      params: {
+        bookId: String(event.input.bookId),
+        chapterId: String(event.input.chapterId),
+        _csrfToken: csrfToken,
+      },
+      headers: {
+        ...requestHeaders(),
+        Accept: "application/json, text/plain, */*",
+        Cookie: `_csrfToken=${csrfToken}`,
+      },
+    },
+    next_state: { stage: "summary", items },
+  };
+}
+
+// reviewsummary4m（評論數角標）：data.data.list[] 每條 {paragraphId,
+// textCount}。paragraphId=-1 章評單元、-10 作者感言單元（兩單元 reviewId
+// 完全不相交，感言評論併入本章評論）、1..N 段落（與 splitParagraphs 的
+// 1-based id 對齊）；0 是壞別名（total=0 但返回章評樣內容），連同其余
+// 未知負數一並忽略。零評論段落被服務端省略 → 補 0。enableReview 爲假
+// （該章評論功能關閉）視同不支持，不帶計數。任何失敗均非致命：段落照
+// 常輸出、不帶計數（角標是裝飾層，報錯打擾閱讀）。
+function parseSummaryCounts(response) {
+  try {
+    if (responseFailure(response)) return null;
+    const payload = JSON.parse(bodyText(response));
+    if (payload?.code !== 0) return null;
+    const data = payload?.data;
+    if (!data?.enableReview || !Array.isArray(data.list)) return null;
+    return data.list;
+  } catch (_) {
+    return null;
+  }
+}
+
+function applySummaryCounts(items, list) {
+  let chapterCount = 0;
+  let noteCount = 0;
+  const byParagraph = new Map();
+  for (const entry of list) {
+    const count = toCount(entry?.textCount);
+    const paragraphId = Number(entry?.paragraphId);
+    if (count == null || !Number.isInteger(paragraphId)) continue;
+    if (paragraphId === -1) chapterCount = count;
+    else if (paragraphId === -10) noteCount = count;
+    else if (paragraphId >= 1) byParagraph.set(String(paragraphId), count);
+  }
+  for (const item of items) {
+    if (item.id == null) continue;
+    if (item.type === "title") {
+      if (item.id === "-1") item.comment_count = chapterCount + noteCount;
+    } else {
+      item.comment_count = byParagraph.get(item.id) ?? 0;
+    }
+  }
 }
 
 function responseCookies(headers) {
@@ -469,7 +539,7 @@ function paragraphs(event) {
     }
 
     if (chapter.content) {
-      return completeParagraphs(chapter.chapterName, chapter.content);
+      return completeParagraphs(chapter.chapterName, chapter.content, event);
     }
 
     return {
@@ -514,6 +584,7 @@ function paragraphs(event) {
       return completeParagraphs(
         chapter.chapterName ?? event.state.title,
         chapter.content,
+        event,
       );
     }
 
@@ -581,7 +652,14 @@ function paragraphs(event) {
     if (typeof event.compute !== "string") {
       return FeedError.sourceUnavailable("VIP 章節解密未返回文字內容");
     }
-    return completeParagraphs(event.state.title, event.compute);
+    return completeParagraphs(event.state.title, event.compute, event);
+  }
+
+  if (event.state.stage === "summary") {
+    const items = event.state.items;
+    const list = parseSummaryCounts(event.response);
+    if (list) applySummaryCounts(items, list);
+    return { type: "complete", result: items, next_cursor: null };
   }
 
   return FeedError.raise("invalid_state", "未知的起點章節解析狀態");
@@ -813,8 +891,11 @@ function chapterComments(event) {
 }
 
 function paragraphComments(event) {
-  // 段落 id 即 splitParagraphs 賦的 1-based <p> 序號（宿主以字符串傳遞）。
-  const paragraphId = Number(event.input.paragraphId);
+  // 段落 id 即 splitParagraphs 賦的 1-based <p> 序號（宿主以字符串傳遞）；
+  // "-1" 是章節標題的 id，路由到章評合並流（與工具欄章評按鈕同內容）。
+  const rawId = String(event.input.paragraphId ?? "");
+  if (rawId === "-1") return commentsMerged(event);
+  const paragraphId = Number(rawId);
   if (!Number.isInteger(paragraphId) || paragraphId < 1) {
     return FeedError.contentNotFound("無效的起點段落 ID");
   }

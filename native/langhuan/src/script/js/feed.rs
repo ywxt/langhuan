@@ -31,7 +31,12 @@ const COMPUTE_TIMEOUT: Duration = Duration::from_secs(5);
 /// bodies are KB-scale chapter payloads, so half a minute is generous even
 /// on slow links.
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
-const MAX_INTERNAL_STEPS: usize = 8;
+/// Internal steps (request/compute/webview) one operation may spend before
+/// completing. Sized for the deepest legitimate source flow — fanqie's
+/// device re-registration (4) plus key refreshes (4) plus the trailing
+/// comment-counts request — with headroom; anything longer is a runaway
+/// reducer loop the host must cut off.
+const MAX_INTERNAL_STEPS: usize = 16;
 const MAX_USER_AGENT_BYTES: usize = 512;
 const MAX_RETRIES: u32 = 3;
 const BASE_DELAY_MS: u64 = 200;

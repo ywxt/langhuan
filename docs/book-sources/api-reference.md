@@ -231,7 +231,8 @@ response cache. Only status-200 responses up to 1 MiB are stored.
 
 Before HTTP, `login.patchRequest` may return a modified request. Transient
 native failures use the host retry policy without invoking the reducer between
-attempts. A request step consumes one of the operation's eight internal steps.
+attempts. A request step consumes one of the operation's sixteen internal
+steps.
 
 ### `compute`
 

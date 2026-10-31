@@ -700,6 +700,183 @@ async fn app_flow_paragraph_comments_and_replies() {
     assert_all!(register, activate, registerkey, first, second, reply);
 }
 
+// ── Paragraph comment counts (idea/list, anonymous) ─────────────────────────
+
+/// The paragraphs flow chains the anonymous idea/list request once the
+/// chapter text is decrypted. Its map covers the whole chapter: listed
+/// paragraphs carry their counts, unlisted ones are zero-filled (known: no
+/// comments), and the title — fanqie has no chapter-level comment unit —
+/// stays unknown. The request must carry the verified recipe body.
+#[tokio::test]
+async fn app_flow_paragraphs_carry_idea_comment_counts() {
+    let mut server = mockito::Server::new_async().await;
+
+    let register = server
+        .mock("POST", "/service/2/device_register/?tt_data=a")
+        .with_status(200)
+        .with_body(device_register_json())
+        .expect(1)
+        .create_async()
+        .await;
+    let activate = server
+        .mock("POST", "/reading/user/privilege/add/v")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_body(json!({ "code": 0 }).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let registerkey = server
+        .mock("POST", "/reading/crypt/registerkey")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_body(registerkey_body(&CONTENT_KEY, KEYVER))
+        .expect(1)
+        .create_async()
+        .await;
+    let full = server
+        .mock("GET", "/reading/reader/full/v")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_body(chapter_body(&CONTENT_KEY, KEYVER))
+        .expect(1)
+        .create_async()
+        .await;
+    let idea_path = format!("/novel/commentapi/idea/list/{CHAPTER_ID}/v1");
+    let idea = server
+        .mock("POST", idea_path.as_str())
+        .match_query(mockito::Matcher::Any)
+        .match_header("x-argus", mockito::Matcher::Regex(".+".into()))
+        .match_header(
+            "x-ss-stub",
+            mockito::Matcher::Regex(r"^[0-9a-f]{32}$".into()),
+        )
+        .match_header("content-type", "application/json; charset=utf-8")
+        .match_body(mockito::Matcher::PartialJson(json!({
+            "chapter_id": CHAPTER_ID,
+            "item_version": "1",
+            "comment_source": 2,
+            "group_type": 15,
+            "business_param": { "book_id": BOOK_ID },
+        })))
+        .with_status(200)
+        .with_body(
+            json!({
+                "code": 0,
+                "data": { "data": { "0": { "count": 2 } } },
+            })
+            .to_string(),
+        )
+        .expect(1)
+        .create_async()
+        .await;
+
+    let script = load_script_for_server(&server);
+    let engine = ScriptEngine::new()
+        .with_storage(Arc::new(MemoryStorage::default()) as SharedStorageHandler);
+    let feed = engine.load_script(&script).await.expect("load failed");
+
+    let items: Vec<_> = feed
+        .paragraphs(BOOK_ID, CHAPTER_ID)
+        .collect::<Vec<_>>()
+        .await;
+    let items: Vec<_> = items
+        .into_iter()
+        .map(|item| item.expect("paragraph request failed"))
+        .collect();
+
+    assert_all!(register, activate, registerkey, full, idea);
+
+    // Fixture body: <h1>第1章 殞命</h1><p>第一段。</p><p>第二段。</p>
+    assert!(
+        matches!(items[0], langhuan::model::Paragraph::Title { .. }),
+        "first paragraph is the title"
+    );
+    assert_eq!(
+        items[0].comment_count(),
+        None,
+        "fanqie has no chapter-level comment unit, so the title stays unknown"
+    );
+    assert_eq!(items[1].id().source_id(), Some("0"));
+    assert_eq!(items[1].comment_count(), Some(2));
+    assert_eq!(items[2].id().source_id(), Some("1"));
+    assert_eq!(
+        items[2].comment_count(),
+        Some(0),
+        "a successful idea/list covers the whole chapter; unlisted means zero comments"
+    );
+}
+
+/// A failing idea/list is non-fatal: the chapter text already arrived, so
+/// the paragraphs complete without counts instead of failing the read
+/// (unknown stays distinct from zero).
+#[tokio::test]
+async fn app_flow_idea_counts_failure_is_non_fatal() {
+    let mut server = mockito::Server::new_async().await;
+
+    let register = server
+        .mock("POST", "/service/2/device_register/?tt_data=a")
+        .with_status(200)
+        .with_body(device_register_json())
+        .expect(1)
+        .create_async()
+        .await;
+    let activate = server
+        .mock("POST", "/reading/user/privilege/add/v")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_body(json!({ "code": 0 }).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let registerkey = server
+        .mock("POST", "/reading/crypt/registerkey")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_body(registerkey_body(&CONTENT_KEY, KEYVER))
+        .expect(1)
+        .create_async()
+        .await;
+    let full = server
+        .mock("GET", "/reading/reader/full/v")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_body(chapter_body(&CONTENT_KEY, KEYVER))
+        .expect(1)
+        .create_async()
+        .await;
+    let idea_path = format!("/novel/commentapi/idea/list/{CHAPTER_ID}/v1");
+    let idea = server
+        .mock("POST", idea_path.as_str())
+        .match_query(mockito::Matcher::Any)
+        .with_status(500)
+        .with_body(json!({ "code": 5, "message": "internal error" }).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+
+    let script = load_script_for_server(&server);
+    let engine = ScriptEngine::new()
+        .with_storage(Arc::new(MemoryStorage::default()) as SharedStorageHandler);
+    let feed = engine.load_script(&script).await.expect("load failed");
+
+    let items: Vec<_> = feed
+        .paragraphs(BOOK_ID, CHAPTER_ID)
+        .collect::<Vec<_>>()
+        .await;
+    assert!(!items.is_empty(), "a counts failure must not fail the read");
+    for item in &items {
+        let item = item.as_ref().expect("paragraph request failed");
+        assert_eq!(
+            item.comment_count(),
+            None,
+            "a failed counts request leaves counts unknown, not zero"
+        );
+    }
+
+    assert_all!(register, activate, registerkey, full, idea);
+}
+
 // ── Live gateway smoke ──────────────────────────────────────────────────────
 
 /// Real-gateway smoke test against reading.snssdk.com / i.snssdk.com.
@@ -850,4 +1027,106 @@ async fn live_vip_chapter_decrypts_anonymously() {
         return;
     }
     panic!("no locked chapter found among the first search results");
+}
+
+/// Live paragraph-comment model dump: reuses the production device state
+/// from the desktop database, reads one commented paragraph through the
+/// real comment API, and prints the normalized items next to the RAW
+/// response body captured by the trace recorder. This is how the comment
+/// model gets verified against the real payload (field names for the
+/// avatar, reply stats, …) — mocked fixtures cannot catch a wrong guess.
+#[tokio::test]
+#[ignore = "hits real app gateway"]
+async fn live_comment_model_dump() {
+    use langhuan::feed::comments::CommentsQuery;
+    use langhuan::model::Paragraph;
+    use langhuan::trace::TraceRecorder;
+
+    const FEED_ID: &str = "org.eu.ywxt.langhuan.fanqie_app";
+    const BOOK_ID: &str = "7287726057069743138";
+    const CHAPTER_ID: &str = "7287726575305359906";
+
+    // Production device state, read-only: reuse the registered device and
+    // negotiated keys instead of registering yet another one.
+    let home = std::env::var("HOME").expect("HOME");
+    let db_path = format!("{home}/.local/share/org.eu.ywxt.langhuan/langhuan.db");
+    let conn = tokio_rusqlite::rusqlite::Connection::open_with_flags(
+        &db_path,
+        tokio_rusqlite::rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .expect("open app database read-only");
+    let mut stmt = conn
+        .prepare("SELECT key, value FROM feed_storage WHERE feed_id = ?1")
+        .expect("prepare feed_storage query");
+    let rows: Vec<(String, String)> = stmt
+        .query_map([FEED_ID], |row| Ok((row.get(0)?, row.get(1)?)))
+        .expect("query feed_storage")
+        .collect::<std::result::Result<_, _>>()
+        .expect("read feed_storage rows");
+    let storage = MemoryStorage::default();
+    for (key, value) in rows {
+        let value: Value = serde_json::from_str(&value).expect("stored value is JSON");
+        storage.set(FEED_ID, &key, value).expect("preload storage");
+        println!("preloaded storage key: {key}");
+    }
+
+    let script = include_str!("../../../docs/book-sources/fanqie-app.js");
+    let engine =
+        ScriptEngine::new().with_storage(Arc::new(storage) as SharedStorageHandler);
+    let feed = engine.load_script(script).await.expect("load failed");
+
+    // Find a paragraph that actually carries comments.
+    let paragraphs: Vec<_> = feed.paragraphs(BOOK_ID, CHAPTER_ID).collect().await;
+    let paragraphs: Vec<_> = paragraphs
+        .into_iter()
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("live paragraphs yielded an error");
+    let target = paragraphs
+        .iter()
+        .find(|p| p.comment_count().unwrap_or(0) > 0)
+        .expect("no commented paragraph in this chapter");
+    let paragraph_id = match target {
+        Paragraph::Title { id, .. } | Paragraph::Text { id, .. } | Paragraph::Image { id, .. } => {
+            id.source_id()
+                .expect("commented paragraph has a source id")
+                .to_owned()
+        }
+    };
+    println!(
+        "target paragraph: {paragraph_id} ({} comments)",
+        target.comment_count().unwrap()
+    );
+
+    // One comment page with the HTTP trace capturing the raw body.
+    let recorder = TraceRecorder::new();
+    let query = CommentsQuery {
+        book_id: BOOK_ID.to_owned(),
+        chapter_id: CHAPTER_ID.to_owned(),
+        paragraph_id: Some(paragraph_id),
+        parent_id: None,
+    };
+    let page = recorder
+        .scope(feed.comments_page(&query, Value::Null))
+        .await
+        .expect("live paragraph comments page");
+    let (trace, _) = recorder.finish();
+
+    println!("== normalized items (total_count={:?}) ==", page.total_count);
+    for item in &page.items {
+        println!(
+            "  id={} name={} avatar={:?} like={:?} replies={:?}",
+            item.id,
+            item.author.name,
+            item.author.avatar_url,
+            item.like_count,
+            item.replies.as_ref().map(|r| r.total_count),
+        );
+    }
+    println!("== raw commentapi response bodies ==");
+    for entry in &trace {
+        if entry.url.contains("commentapi") {
+            println!("--- {} {} -> {:?}", entry.method, entry.url, entry.status);
+            println!("{}", entry.body_preview.as_deref().unwrap_or("<none>"));
+        }
+    }
 }

@@ -1,9 +1,9 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.fanqie_app
 // @name         番茄小說（APP 直連）
-// @version      2.1.0
+// @version      2.2.0
 // @author       Langhuan
-// @description  番茄小說 APP 網關書源（reading.snssdk.com）：匿名設備註冊後經 x-argus/x-ladon 簽名直連閱讀 API，VIP 章節全文解密，無需帳號；支持正文段落評論。需要宿主提供存儲後端（langhuan:storage）
+// @description  番茄小說 APP 網關書源（reading.snssdk.com）：匿名設備註冊後經 x-argus/x-ladon 簽名直連閱讀 API，VIP 章節全文解密，無需帳號；支持正文段落評論，章節段落附帶評論數角標。需要宿主提供存儲後端（langhuan:storage）
 // @base_url     https://reading.snssdk.com
 // @access_domain reading.snssdk.com
 // @access_domain i.snssdk.com
@@ -1098,6 +1098,14 @@ function paragraphs(event) {
   const pipelined = pipelineResponse(event);
   if (pipelined) return pipelined;
 
+  // 段評計數（idea/list）響應：任何失敗均非致命——無計數照常完成
+  // （角標是裝飾層，正文已到手，不值得爲計數報錯）。
+  if (event.state.ideaCounts) {
+    const items = event.state.ideaCounts.items;
+    applyIdeaCounts(items, parseIdeaCounts(event.response));
+    return { type: "complete", result: items };
+  }
+
   const state = event.state.paragraphs;
   const response = event.response;
   if (emptyResponse(response)) {
@@ -1149,7 +1157,45 @@ function paragraphs(event) {
   if (!items.length) {
     return FeedError.contentNotFound("章節正文解密後為空");
   }
-  return { type: "complete", result: items };
+  // 段評計數（角標）：idea/list 給出全章有評論段落的評論數 map（鍵爲
+  // 0-based para_index，與 paragraphsFromHtml 賦的段落 id 對齊），配方
+  // 移植自 mtongle 生產實現並經實測交叉驗證（idea/list count 與
+  // comment/list total 一致）。設備已在流內注冊，直接設備籤名即可。
+  return commentPostStep(
+    `/novel/commentapi/idea/list/${state.chapterId}/v1`,
+    {
+      chapter_id: state.chapterId,
+      item_version: "1",
+      comment_source: 2,
+      group_type: 15,
+      business_param: { book_id: state.bookId },
+    },
+    { ideaCounts: { items } },
+  );
+}
+
+// idea/list 響應：data.data 是「para_index 字符串 → {count,...}」的 map，
+// 只有有評論的段落出現；code 非 0、結構缺失、JSON 壞損一律視爲無計數。
+function parseIdeaCounts(response) {
+  try {
+    const payload = bodyJson(response);
+    if (payload?.code !== 0) return null;
+    const data = payload?.data?.data;
+    if (data == null || typeof data !== "object") return null;
+    return data;
+  } catch (_) {
+    return null;
+  }
+}
+
+function applyIdeaCounts(items, data) {
+  if (!data) return;
+  for (const item of items) {
+    if (item.type === "title" || item.id == null) continue;
+    // 成功的 idea/list 覆蓋全章：不在 map 中的段落即零評論（已知），
+    // 與「未知/不支持」區分開——契約語義與起點 summary 的補 0 一致。
+    item.comment_count = toCount(data[item.id]?.count) ?? 0;
+  }
 }
 
 // ── 段評與回覆（commentapi 中台，配方移植自 fqapp / mtongle 驗證實現）──

@@ -686,6 +686,26 @@ async fn paragraphs_vip_purchased_fetches_api_and_decrypts_fock_content() {
         )
         .create_async()
         .await;
+    // Decryption lands on completeParagraphs like the free-chapter path, so
+    // the summary request chains here as well (once per run).
+    let summary = server
+        .mock("GET", "/webcommon/chapterreview/reviewsummary4m")
+        .match_query(mockito::Matcher::AllOf(vec![
+            mockito::Matcher::UrlEncoded("bookId".into(), "1010868264".into()),
+            mockito::Matcher::UrlEncoded("chapterId".into(), "414074529".into()),
+            mockito::Matcher::UrlEncoded("_csrfToken".into(), "csrf-token".into()),
+        ]))
+        .with_status(200)
+        .with_body(summary_body(
+            1,
+            serde_json::json!([
+                { "paragraphId": -1, "textCount": 42 },
+                { "paragraphId": 1, "textCount": 7 },
+            ]),
+        ))
+        .expect(2)
+        .create_async()
+        .await;
 
     let feed = load_feed(&server).await;
     let support = feed.supports_auth().expect("qidian feed supports auth");
@@ -714,17 +734,26 @@ async fn paragraphs_vip_purchased_fetches_api_and_decrypts_fock_content() {
             .collect::<Vec<_>>()
             .await;
         assert!(results.iter().all(Result::is_ok), "{results:?}");
-        let texts = results
-            .into_iter()
-            .filter_map(Result::ok)
+        let paragraphs: Vec<_> = results.into_iter().filter_map(Result::ok).collect();
+        let texts: Vec<_> = paragraphs
+            .iter()
             .filter_map(|paragraph| match paragraph {
-                langhuan::model::Paragraph::Text { content, .. } => Some(content),
+                langhuan::model::Paragraph::Text { content, .. } => Some(content.as_str()),
                 _ => None,
             })
-            .collect::<Vec<_>>();
+            .collect();
         assert_eq!(texts, ["　　已購 VIP 正文。"]);
+        // The decrypted VIP content chains the summary request too, so the
+        // badge counts survive the fock path.
+        assert_eq!(
+            paragraphs[0].comment_count(),
+            Some(42),
+            "title keeps the merged chapter total"
+        );
+        assert_eq!(paragraphs[1].comment_count(), Some(7));
     }
     fock.assert_async().await;
+    summary.assert_async().await;
 }
 
 // ── Login flow ──────────────────────────────────────────────────────────────
@@ -1038,6 +1067,25 @@ fn reviewlist_empty_body(total: i64, is_end: i64) -> String {
     .to_string()
 }
 
+/// Mirrors the live reviewsummary4m shape: enableReview plus a list of
+/// {paragraphId, textCount} covering the chapter (-1), the author's note
+/// (-10), and individual paragraphs (1-based).
+fn summary_body(enable_review: i64, list: serde_json::Value) -> String {
+    serde_json::json!({
+        "code": 0,
+        "data": { "enableReview": enable_review, "list": list },
+    })
+    .to_string()
+}
+
+fn summary_matchers() -> mockito::Matcher {
+    mockito::Matcher::AllOf(vec![
+        mockito::Matcher::UrlEncoded("bookId".into(), "1010868264".into()),
+        mockito::Matcher::UrlEncoded("chapterId".into(), "402733549".into()),
+        mockito::Matcher::UrlEncoded("_csrfToken".into(), "token-abc".into()),
+    ])
+}
+
 #[tokio::test]
 async fn comments_require_login() {
     let server = mockito::Server::new_async().await;
@@ -1243,9 +1291,42 @@ async fn paragraph_comments_receive_source_paragraph_id() {
     assert_eq!(page.items.len(), 2);
 }
 
+/// The chapter title's paragraph id ("-1") routes to the merged chapter
+/// stream — the same content the toolbar chapter-comments button shows. A
+/// plain paragraph flow would request paragraphId=-1 directly; the merged
+/// stream probes the author's-note unit (-10) first.
+#[tokio::test]
+async fn title_paragraph_comments_route_to_the_merged_chapter_stream() {
+    let mut server = mockito::Server::new_async().await;
+
+    let note_probe = server
+        .mock("GET", "/webcommon/chapterreview/reviewlist4m")
+        .match_query(csrf_matchers("-10", "1"))
+        .with_status(200)
+        .with_body(reviewlist_body(14, 1))
+        .expect(1)
+        .create_async()
+        .await;
+
+    let feed = authed_feed(&server).await;
+    let page = feed
+        .comments_page(&comments_query(Some("-1")), serde_json::Value::Null)
+        .await
+        .expect("title paragraph comments page");
+    assert_eq!(page.total_count, Some(14));
+    assert_eq!(page.items.len(), 2);
+    assert_eq!(
+        page.next_cursor,
+        Some(serde_json::json!({ "chapter": 1, "noteTotal": 14 }))
+    );
+
+    note_probe.assert_async().await;
+}
+
 /// Paragraphs emitted for a free chapter must carry the 1-based source ids
-/// the comment API's paragraphId selects (title has no id; every `<p>` in
-/// order counts, `<br>`-split lines share their `<p>`'s id).
+/// the comment API's paragraphId selects (the title carries the chapter
+/// unit's "-1"; every `<p>` in order counts, `<br>`-split lines share their
+/// `<p>`'s id).
 #[tokio::test]
 async fn paragraphs_carry_source_ids_for_comment_alignment() {
     let mut server = mockito::Server::new_async().await;
@@ -1276,9 +1357,10 @@ async fn paragraphs_carry_source_ids_for_comment_alignment() {
         matches!(&paragraphs[0], langhuan::model::Paragraph::Title { .. }),
         "first paragraph is the title"
     );
-    assert!(
-        paragraphs[0].id().source_id().is_none(),
-        "the title has no server-side paragraph id"
+    assert_eq!(
+        paragraphs[0].id().source_id(),
+        Some("-1"),
+        "the title addresses the chapter comment unit"
     );
     for (index, paragraph) in paragraphs.iter().enumerate().skip(1) {
         assert_eq!(
@@ -1286,6 +1368,197 @@ async fn paragraphs_carry_source_ids_for_comment_alignment() {
             Some(index.to_string()),
             "paragraph {index} must carry its 1-based source id"
         );
+    }
+}
+
+/// Logged-in paragraphs chain a reviewsummary4m request whose query and
+/// Cookie header carry the same captured _csrfToken (the pairing the
+/// reviewlist4m API requires). Counts map onto paragraphs: -1 plus the
+/// author's-note -10 merge into the title's badge, listed paragraphs carry
+/// their totals, and unlisted ones are zero-filled.
+#[tokio::test]
+async fn paragraphs_with_login_carry_summary_comment_counts() {
+    let mut server = mockito::Server::new_async().await;
+
+    let _chapter = server
+        .mock("GET", "/chapter/1010868264/402733549/")
+        .with_status(200)
+        .with_body(ssr_page(&chapter_page_json(
+            0,
+            0,
+            true,
+            free_chapter_content(),
+        )))
+        .create_async()
+        .await;
+    let summary = server
+        .mock("GET", "/webcommon/chapterreview/reviewsummary4m")
+        .match_query(summary_matchers())
+        .match_header(
+            "Cookie",
+            mockito::Matcher::Regex(r"_csrfToken=token-abc".to_owned()),
+        )
+        .with_status(200)
+        .with_body(summary_body(
+            1,
+            serde_json::json!([
+                { "paragraphId": -1, "textCount": 11615 },
+                { "paragraphId": -10, "textCount": 14 },
+                { "paragraphId": 1, "textCount": 5139 },
+                // 0 is a broken alias and unknown negatives are ignored.
+                { "paragraphId": 0, "textCount": 999 },
+                { "paragraphId": -5, "textCount": 777 },
+            ]),
+        ))
+        .expect(1)
+        .create_async()
+        .await;
+
+    let feed = authed_feed(&server).await;
+    let results: Vec<_> = feed
+        .paragraphs("1010868264", "402733549")
+        .collect::<Vec<_>>()
+        .await;
+    let paragraphs: Vec<_> = results
+        .into_iter()
+        .map(|p| p.expect("paragraph"))
+        .collect();
+    assert!(paragraphs.len() >= 3);
+
+    assert!(matches!(paragraphs[0], langhuan::model::Paragraph::Title { .. }));
+    assert_eq!(paragraphs[0].id().source_id(), Some("-1"));
+    assert_eq!(
+        paragraphs[0].comment_count(),
+        Some(11615 + 14),
+        "the title merges the chapter and author's-note totals"
+    );
+
+    assert_eq!(paragraphs[1].id().source_id(), Some("1"));
+    assert_eq!(paragraphs[1].comment_count(), Some(5139));
+    for (index, paragraph) in paragraphs.iter().enumerate().skip(2) {
+        assert_eq!(
+            paragraph.comment_count(),
+            Some(0),
+            "paragraph {index} is supported with no comments and must be zero-filled"
+        );
+    }
+
+    summary.assert_async().await;
+}
+
+/// Comment counts are a login-only decoration: without auth the summary
+/// endpoint is never asked and paragraphs carry no commentCount at all
+/// (unknown is not zero).
+#[tokio::test]
+async fn paragraphs_without_login_skip_summary_counts() {
+    let mut server = mockito::Server::new_async().await;
+
+    let _chapter = server
+        .mock("GET", "/chapter/1010868264/402733549/")
+        .with_status(200)
+        .with_body(ssr_page(&chapter_page_json(
+            0,
+            0,
+            false,
+            free_chapter_content(),
+        )))
+        .create_async()
+        .await;
+    let summary = server
+        .mock("GET", "/webcommon/chapterreview/reviewsummary4m")
+        .expect(0)
+        .create_async()
+        .await;
+
+    let feed = load_feed(&server).await;
+    let paragraphs: Vec<_> = feed
+        .paragraphs("1010868264", "402733549")
+        .collect::<Vec<_>>()
+        .await;
+    assert!(!paragraphs.is_empty());
+    for paragraph in paragraphs {
+        let paragraph = paragraph.expect("paragraph");
+        assert!(
+            paragraph.comment_count().is_none(),
+            "unauthenticated paragraphs must not carry comment counts"
+        );
+    }
+
+    summary.assert_async().await;
+}
+
+/// A failing summary is non-fatal: the chapter text already arrived, so the
+/// paragraphs complete without counts instead of failing the read.
+#[tokio::test]
+async fn paragraphs_summary_failure_is_non_fatal() {
+    let mut server = mockito::Server::new_async().await;
+
+    let _chapter = server
+        .mock("GET", "/chapter/1010868264/402733549/")
+        .with_status(200)
+        .with_body(ssr_page(&chapter_page_json(
+            0,
+            0,
+            true,
+            free_chapter_content(),
+        )))
+        .create_async()
+        .await;
+    let _summary = server
+        .mock("GET", "/webcommon/chapterreview/reviewsummary4m")
+        .with_status(500)
+        .create_async()
+        .await;
+
+    let feed = authed_feed(&server).await;
+    let paragraphs: Vec<_> = feed
+        .paragraphs("1010868264", "402733549")
+        .collect::<Vec<_>>()
+        .await;
+    assert!(!paragraphs.is_empty());
+    for paragraph in paragraphs {
+        let paragraph = paragraph.expect("paragraph");
+        assert!(paragraph.comment_count().is_none());
+    }
+}
+
+/// enableReview=0 (the chapter's comment feature is off) reads as
+/// unsupported: no counts at all, not zeroes.
+#[tokio::test]
+async fn paragraphs_summary_with_reviews_disabled_carries_no_counts() {
+    let mut server = mockito::Server::new_async().await;
+
+    let _chapter = server
+        .mock("GET", "/chapter/1010868264/402733549/")
+        .with_status(200)
+        .with_body(ssr_page(&chapter_page_json(
+            0,
+            0,
+            true,
+            free_chapter_content(),
+        )))
+        .create_async()
+        .await;
+    let _summary = server
+        .mock("GET", "/webcommon/chapterreview/reviewsummary4m")
+        .match_query(summary_matchers())
+        .with_status(200)
+        .with_body(summary_body(
+            0,
+            serde_json::json!([{ "paragraphId": -1, "textCount": 5 }]),
+        ))
+        .create_async()
+        .await;
+
+    let feed = authed_feed(&server).await;
+    let paragraphs: Vec<_> = feed
+        .paragraphs("1010868264", "402733549")
+        .collect::<Vec<_>>()
+        .await;
+    assert!(!paragraphs.is_empty());
+    for paragraph in paragraphs {
+        let paragraph = paragraph.expect("paragraph");
+        assert!(paragraph.comment_count().is_none());
     }
 }
 
