@@ -271,6 +271,55 @@ async fn search_follows_server_page_num_until_is_last() {
 }
 
 #[tokio::test]
+async fn search_skips_cross_page_duplicates_and_keeps_paging() {
+    let mut server = mockito::Server::new_async().await;
+    let first = server
+        .mock("GET", mockito::Matcher::Regex(r"^/soushu/".to_owned()))
+        .match_query(mockito::Matcher::UrlEncoded("pageNum".into(), "1".into()))
+        .with_status(200)
+        .with_body(ssr_page(&paged_search_page_json(1, 0, 101, "第一頁")))
+        .expect(1)
+        .create_async()
+        .await;
+    let overlapping = server
+        .mock("GET", mockito::Matcher::Regex(r"^/soushu/".to_owned()))
+        .match_query(mockito::Matcher::UrlEncoded("pageNum".into(), "2".into()))
+        .with_status(200)
+        .with_body(ssr_page(&paged_search_page_json(2, 0, 101, "重複項")))
+        .expect(1)
+        .create_async()
+        .await;
+    let last = server
+        .mock("GET", mockito::Matcher::Regex(r"^/soushu/".to_owned()))
+        .match_query(mockito::Matcher::UrlEncoded("pageNum".into(), "3".into()))
+        .with_status(200)
+        .with_body(ssr_page(&paged_search_page_json(3, 1, 303, "第三頁")))
+        .expect(1)
+        .create_async()
+        .await;
+
+    let feed = load_feed(&server).await;
+    let items = feed
+        .search("分頁重複")
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("an overlapping search result must not terminate the stream");
+
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        ["101", "303"]
+    );
+    first.assert_async().await;
+    overlapping.assert_async().await;
+    last.assert_async().await;
+}
+
+#[tokio::test]
 async fn search_returns_empty_for_no_match() {
     let mut server = mockito::Server::new_async().await;
     let _mock = server

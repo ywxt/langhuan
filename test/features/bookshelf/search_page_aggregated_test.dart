@@ -56,11 +56,17 @@ class _TrackingSearchNotifier extends _TestSearchNotifier {
   _TrackingSearchNotifier(super.initial);
 
   int disposeCalls = 0;
+  int loadMoreCalls = 0;
 
   @override
   SearchState build() {
     ref.onDispose(() => disposeCalls++);
     return initial;
+  }
+
+  @override
+  Future<void> loadMore() async {
+    loadMoreCalls++;
   }
 }
 
@@ -108,6 +114,11 @@ GoRouter _router() {
             const Text('Detail', textDirection: TextDirection.ltr),
       ),
       GoRoute(
+        path: '/reader',
+        builder: (_, _) =>
+            const Text('Reader', textDirection: TextDirection.ltr),
+      ),
+      GoRoute(
         path: '/other',
         builder: (_, _) =>
             const Text('Other', textDirection: TextDirection.ltr),
@@ -120,14 +131,22 @@ void main() {
   testWidgets('leaving search clears its results and pull cursor', (
     tester,
   ) async {
-    const state = SearchState(
+    final state = SearchState(
       keyword: 'kw',
-      hasMore: false,
+      hasMore: true,
       groups: [
         SearchFeedGroup(
           feedId: 'feed-a',
           feedName: 'Source A',
-          items: [_resultA1],
+          items: [
+            _resultA1,
+            for (var i = 2; i <= 24; i++)
+              SearchResultModel(
+                id: 'a-$i',
+                title: 'Book A$i',
+                author: 'Author A$i',
+              ),
+          ],
         ),
       ],
     );
@@ -137,14 +156,31 @@ void main() {
     await tester.pumpWidget(_testApp(router, state, searchNotifier: notifier));
     await tester.pumpAndSettle();
 
-    // A details page is stacked above search, so returning keeps the exact
-    // result page and iterator.
+    // Detail and reader are stacked above search, so unwinding both routes
+    // must keep the exact result page without pulling another search page.
     router.push('/detail');
+    await tester.pumpAndSettle();
+    router.push('/reader');
     await tester.pumpAndSettle();
     expect(notifier.disposeCalls, 0);
     router.pop();
     await tester.pumpAndSettle();
+    expect(find.text('Detail'), findsOneWidget);
+    router.pop();
+    await tester.pumpAndSettle();
     expect(find.text('Book A1'), findsOneWidget);
+    expect(
+      notifier.loadMoreCalls,
+      0,
+      reason: 'restoring a nested route is not a pagination gesture',
+    );
+
+    final resultsList = find.byWidgetPredicate(
+      (widget) => widget is ListView && widget.scrollDirection == Axis.vertical,
+    );
+    await tester.drag(resultsList, const Offset(0, -5000));
+    await tester.pump();
+    expect(notifier.loadMoreCalls, 1);
 
     // Leaving search itself disposes the route and resets the search run.
     router.go('/other');

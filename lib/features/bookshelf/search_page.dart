@@ -55,6 +55,7 @@ class _GroupErrorRow extends _ResultRow {
 class _SearchPageState extends ConsumerState<SearchPage> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
+  bool _userScrollActive = false;
 
   List<FeedMetaItem> _visibleFeeds(FeedListState feedState) {
     return feedState.items
@@ -317,11 +318,18 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
-        if (notification is ScrollEndNotification &&
-            notification.metrics.extentAfter < 200 &&
-            !searchState.isLoadingMore &&
-            searchState.hasMore) {
-          ref.read(searchProvider.notifier).loadMore();
+        if (notification is ScrollStartNotification &&
+            notification.dragDetails != null) {
+          _userScrollActive = true;
+        } else if (notification is ScrollEndNotification) {
+          final userScrollEnded = _userScrollActive;
+          _userScrollActive = false;
+          if (userScrollEnded &&
+              notification.metrics.extentAfter < 200 &&
+              !searchState.isLoadingMore &&
+              searchState.hasMore) {
+            ref.read(searchProvider.notifier).loadMore();
+          }
         }
         return false;
       },

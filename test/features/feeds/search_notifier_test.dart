@@ -134,32 +134,27 @@ void main() {
       expect(state.groups.single.items.map((item) => item.id), ['1', '2']);
     });
 
-    test(
-      'resuming pagination after nested routes ignores an overlapping id',
-      () async {
-        final events = <AggregatedSearchEventModel>[
-          for (var i = 0; i < 20; i++) _item('feed-a', 'Source A', 'a$i'),
-          _item('feed-a', 'Source A', 'a19'),
-          _item('feed-a', 'Source A', 'a20'),
-        ];
-        final c = container(
-          FakeFeedService(
-            searchAllHandler: (keyword) => Stream.fromIterable(events),
-          ),
-        );
-        final notifier = c.read(searchProvider.notifier);
+    test('the Dart boundary ignores an overlapping search result id', () async {
+      final events = <AggregatedSearchEventModel>[
+        for (var i = 0; i < 20; i++) _item('feed-a', 'Source A', 'a$i'),
+        _item('feed-a', 'Source A', 'a19'),
+        _item('feed-a', 'Source A', 'a20'),
+      ];
+      final c = container(
+        FakeFeedService(
+          searchAllHandler: (keyword) => Stream.fromIterable(events),
+        ),
+      );
+      final notifier = c.read(searchProvider.notifier);
 
-        await notifier.searchAll(keyword: 'kw');
-        // Opening detail and reader leaves this route-scoped notifier alive.
-        // Returning to the search list resumes the same pull iterator.
-        await notifier.loadMore();
+      await notifier.searchAll(keyword: 'kw');
+      await notifier.loadMore();
 
-        final items = c.read(searchProvider).groups.single.items;
-        expect(items.map((item) => item.id).toSet(), hasLength(21));
-        expect(items, hasLength(21));
-        expect(c.read(searchProvider).hasError, isFalse);
-      },
-    );
+      final items = c.read(searchProvider).groups.single.items;
+      expect(items.map((item) => item.id).toSet(), hasLength(21));
+      expect(items, hasLength(21));
+      expect(c.read(searchProvider).hasError, isFalse);
+    });
 
     test('retry repeats the last search kind', () async {
       var searchCalls = 0;
