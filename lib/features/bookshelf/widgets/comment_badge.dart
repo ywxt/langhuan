@@ -115,17 +115,22 @@ class BadgedText extends StatelessWidget {
         text: text.substring(0, text.length - tailText(text).length),
         style: style,
         children: [
-          WidgetSpan(alignment: PlaceholderAlignment.middle, child: tail),
+          WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: tail,
+          ),
         ],
       );
 
-  static Size tailSize(
+  static PlaceholderDimensions tailDimensions(
     String text,
     TextStyle style,
     Size badgeSize,
     TextDirection direction,
-    Locale? locale,
-  ) {
+    Locale? locale, {
+    double scale = 1,
+  }) {
     final painter = TextPainter(
       text: TextSpan(text: tailText(text), style: style),
       textDirection: direction,
@@ -135,8 +140,16 @@ class BadgedText extends StatelessWidget {
       painter.width + badgeSize.width,
       painter.height > badgeSize.height ? painter.height : badgeSize.height,
     );
+    final baseline =
+        painter.computeDistanceToActualBaseline(TextBaseline.alphabetic) +
+        (size.height - painter.height) / 2;
     painter.dispose();
-    return size;
+    return PlaceholderDimensions(
+      size: size * scale,
+      alignment: PlaceholderAlignment.baseline,
+      baseline: TextBaseline.alphabetic,
+      baselineOffset: baseline * scale,
+    );
   }
 
   const BadgedText({
@@ -192,13 +205,16 @@ class BadgedText extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(tailText(text), style: layout.style),
-                  SizedBox.fromSize(
-                    size: layout.badgeSize(
-                      CommentBadge.inlineSize(context, count),
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.only(left: layout.gap),
-                      child: CommentBadge(count: count, onTap: onCommentTap),
+                  // The capsule's smaller label must not supply the Row's baseline.
+                  IgnoreBaseline(
+                    child: SizedBox.fromSize(
+                      size: layout.badgeSize(
+                        CommentBadge.inlineSize(context, count),
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.only(left: layout.gap),
+                        child: CommentBadge(count: count, onTap: onCommentTap),
+                      ),
                     ),
                   ),
                 ],
@@ -249,17 +265,13 @@ class CommentParagraphLayout {
       );
       if (withBadge) {
         painter.setPlaceholderDimensions([
-          PlaceholderDimensions(
-            size:
-                BadgedText.tailSize(
-                  text,
-                  layout.style,
-                  layout.badgeSize(badgeSize),
-                  direction,
-                  locale,
-                ) *
-                scale,
-            alignment: PlaceholderAlignment.middle,
+          BadgedText.tailDimensions(
+            text,
+            layout.style,
+            layout.badgeSize(badgeSize),
+            direction,
+            locale,
+            scale: scale,
           ),
         ]);
       }

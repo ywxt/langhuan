@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:langhuan/features/bookshelf/widgets/comment_badge.dart';
@@ -10,6 +11,53 @@ import 'package:langhuan/src/rust/api/types.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('device font tail uses the same baseline as the preceding text', (
+    tester,
+  ) async {
+    for (final scale in [1.0, 1.3]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: MediaQuery(
+              data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+              child: const Align(
+                alignment: Alignment.topLeft,
+                child: BadgedText(
+                  text: '正文對齊',
+                  style: TextStyle(fontSize: 32, height: 1.8),
+                  commentCount: 36,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final outer = tester.renderObject<RenderParagraph>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is RichText &&
+              widget.text.toPlainText().contains('\uFFFC'),
+        ),
+      );
+      final tail = tester.renderObject<RenderParagraph>(find.text('齊'));
+      double baseline(RenderParagraph paragraph) => paragraph
+          .localToGlobal(
+            Offset(
+              0,
+              paragraph.getDryBaseline(
+                paragraph.constraints,
+                TextBaseline.alphabetic,
+              )!,
+            ),
+          )
+          .dy;
+      expect(baseline(tail), closeTo(baseline(outer), 0.51));
+      expect(tester.takeException(), isNull);
+    }
+  });
 
   testWidgets('comment badges fit device pages across reading text sizes', (
     tester,

@@ -278,17 +278,13 @@ class PageBreaker {
       final fontSize = style.fontSize ?? 14;
       final scale = fontSize == 0 ? 0.0 : textScaler.scale(fontSize) / fontSize;
       painter.setPlaceholderDimensions([
-        PlaceholderDimensions(
-          size:
-              BadgedText.tailSize(
-                text,
-                style,
-                badgeSize,
-                textDirection,
-                locale,
-              ) *
-              scale,
-          alignment: PlaceholderAlignment.middle,
+        BadgedText.tailDimensions(
+          text,
+          style,
+          badgeSize,
+          textDirection,
+          locale,
+          scale: scale,
         ),
       ]);
     }

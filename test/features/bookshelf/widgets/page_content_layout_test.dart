@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:langhuan/features/bookshelf/widgets/comment_badge.dart';
 import 'package:langhuan/features/bookshelf/widgets/page_breaker.dart';
@@ -8,6 +9,64 @@ import 'package:langhuan/l10n/app_localizations.dart';
 import 'package:langhuan/src/rust/api/types.dart';
 
 void main() {
+  for (final fontSize in [10.0, 32.0]) {
+    for (final scale in [1.0, 1.3]) {
+      for (final height in [1.0, 1.8, 2.4]) {
+        testWidgets(
+          'inline tail shares the text baseline at $fontSize/$scale/$height',
+          (tester) async {
+            await tester.pumpWidget(
+              MaterialApp(
+                localizationsDelegates: AppLocalizations.localizationsDelegates,
+                supportedLocales: AppLocalizations.supportedLocales,
+                home: Scaffold(
+                  body: MediaQuery(
+                    data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: SizedBox(
+                        width: 500,
+                        child: BadgedText(
+                          text: '甲乙丙',
+                          style: TextStyle(
+                            fontFamily: 'Ahem',
+                            fontSize: fontSize,
+                            height: height,
+                          ),
+                          commentCount: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+            final outerFinder = find.byWidgetPredicate(
+              (widget) =>
+                  widget is RichText &&
+                  widget.text.toPlainText().contains('\uFFFC'),
+            );
+            final outer = tester.renderObject<RenderParagraph>(outerFinder);
+            final tail = tester.renderObject<RenderParagraph>(find.text('丙'));
+            double baseline(RenderParagraph paragraph) => paragraph
+                .localToGlobal(
+                  Offset(
+                    0,
+                    paragraph.getDryBaseline(
+                      paragraph.constraints,
+                      TextBaseline.alphabetic,
+                    )!,
+                  ),
+                )
+                .dy;
+            // Allow subpixel rounding of scaled inline placeholders.
+            expect(baseline(tail), closeTo(baseline(outer), 0.51));
+            expect(tester.takeException(), isNull);
+          },
+        );
+      }
+    }
+  }
   const compressionStyle = TextStyle(
     fontFamily: 'Ahem',
     fontSize: 20,
@@ -84,10 +143,13 @@ void main() {
         TextPainter(
           text: BadgedText.inlineSpan(text, style, const SizedBox()),
           textDirection: TextDirection.ltr,
-        )..setPlaceholderDimensions(const [
-          PlaceholderDimensions(
-            size: Size(80, 20),
-            alignment: PlaceholderAlignment.middle,
+        )..setPlaceholderDimensions([
+          BadgedText.tailDimensions(
+            text,
+            style,
+            const Size(60, 20),
+            TextDirection.ltr,
+            null,
           ),
         ]);
     painter.layout(maxWidth: 200);
