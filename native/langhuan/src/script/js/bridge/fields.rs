@@ -11,7 +11,7 @@ use rquickjs::{
 };
 use serde_json::Value;
 
-use super::convert::{JsData, js_to_jsdata, js_to_json};
+use super::convert::js_to_json;
 use crate::error::Error;
 
 /// The detail message of a conversion error, for boundaries that prefix a
@@ -156,25 +156,26 @@ impl<'js> Fields<'js> {
         }
     }
 
-    /// Read a field as realm-independent data, for values that travel back
-    /// into the realm untouched (unlike JSON fields, which the host
-    /// materializes for serde).
-    pub fn data_field(&self, field: &str) -> JsResult<Option<JsData>> {
+    pub fn optional_json(&self, ctx: &Ctx<'js>, field: &str) -> JsResult<Option<Value>> {
         let value = self.value(field)?;
         if value.is_undefined() || value.is_null() {
             return Ok(None);
         }
-        js_to_jsdata(&value)
-            .map(Some)
-            .map_err(|error| self.conversion_error(field, error))
+        self.json_value(ctx, field, &value).map(Some)
     }
 
-    /// Convert a field to JSON, rejecting bytes and other non-JSON values.
-    pub fn json_field(&self, ctx: &Ctx<'js>, field: &str) -> JsResult<Option<Value>> {
+    /// Required JSON payload. Explicit null is data, missing/undefined is not.
+    pub fn required_json(&self, ctx: &Ctx<'js>, field: &str) -> JsResult<Value> {
         let value = self.value(field)?;
-        if value.is_undefined() || value.is_null() {
-            return Ok(None);
+        if value.is_undefined() {
+            return Err(self.missing(field));
         }
-        js_to_json(ctx, &value).map_err(|error| self.conversion_error(field, error))
+        self.json_value(ctx, field, &value)
+    }
+
+    fn json_value(&self, ctx: &Ctx<'js>, field: &str, value: &JsValue<'js>) -> JsResult<Value> {
+        js_to_json(ctx, value)
+            .map_err(|error| self.conversion_error(field, error))?
+            .ok_or_else(|| self.error(field, "must be JSON-compatible"))
     }
 }

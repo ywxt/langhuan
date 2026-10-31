@@ -45,6 +45,8 @@ const SEARCH_HANDLER: JsMethodPath = &["search"];
 const BOOK_INFO_HANDLER: JsMethodPath = &["bookInfo"];
 const CHAPTERS_HANDLER: JsMethodPath = &["chapters"];
 const PARAGRAPHS_HANDLER: JsMethodPath = &["paragraphs"];
+const CHAPTER_COMMENTS_HANDLER: JsMethodPath = &["comments", "chapter"];
+const PARAGRAPH_COMMENTS_HANDLER: JsMethodPath = &["comments", "paragraph"];
 const LOGIN_ENTRY_HANDLER: JsMethodPath = &["login", "entry"];
 const LOGIN_PARSE_HANDLER: JsMethodPath = &["login", "parse"];
 const LOGIN_PATCH_REQUEST_HANDLER: JsMethodPath = &["login", "patchRequest"];
@@ -82,14 +84,16 @@ enum JsOperation<'a> {
         chapter_id: &'a str,
     },
     AuthStatus,
-    Debug {
-        operation: DebugOperation,
+    Invoke {
+        operation: OperationKind,
         input: &'a JsData,
     },
 }
 
 #[derive(Clone, Copy)]
-enum DebugOperation {
+enum OperationKind {
+    ChapterComments,
+    ParagraphComments,
     Search,
     BookInfo,
     Chapters,
@@ -97,14 +101,16 @@ enum DebugOperation {
     AuthStatus,
 }
 
-impl DebugOperation {
+impl OperationKind {
     fn parse(value: &str) -> Result<Self> {
         match value {
+            "comments.chapter" => Ok(Self::ChapterComments),
+            "comments.paragraph" => Ok(Self::ParagraphComments),
             "search" => Ok(Self::Search),
-            "bookInfo" | "book_info" => Ok(Self::BookInfo),
+            "bookInfo" => Ok(Self::BookInfo),
             "chapters" => Ok(Self::Chapters),
             "paragraphs" => Ok(Self::Paragraphs),
-            "authStatus" | "auth_status" => Ok(Self::AuthStatus),
+            "login.status" => Ok(Self::AuthStatus),
             _ => Err(Error::invalid_feed(format!(
                 "unsupported debug operation: {value}"
             ))),
@@ -113,6 +119,8 @@ impl DebugOperation {
 
     fn handler(self) -> JsMethodPath {
         match self {
+            Self::ChapterComments => CHAPTER_COMMENTS_HANDLER,
+            Self::ParagraphComments => PARAGRAPH_COMMENTS_HANDLER,
             Self::Search => SEARCH_HANDLER,
             Self::BookInfo => BOOK_INFO_HANDLER,
             Self::Chapters => CHAPTERS_HANDLER,
@@ -123,11 +131,13 @@ impl DebugOperation {
 
     fn kind(self) -> &'static str {
         match self {
+            Self::ChapterComments => "comments.chapter",
+            Self::ParagraphComments => "comments.paragraph",
             Self::Search => "search",
-            Self::BookInfo => "book_info",
+            Self::BookInfo => "bookInfo",
             Self::Chapters => "chapters",
             Self::Paragraphs => "paragraphs",
-            Self::AuthStatus => "auth_status",
+            Self::AuthStatus => "login.status",
         }
     }
 }
@@ -138,34 +148,27 @@ impl DebugOperation {
 /// `next_cursor` automatically and does not deserialize items into a model.
 /// It is intentionally exposed only as a diagnostic primitive.
 pub struct DebugOperationPage {
-    pub items: Option<Value>,
-    pub value: Option<Value>,
+    pub result: Value,
     pub next_cursor: Option<Value>,
 }
 
 impl JsOperation<'_> {
-    /// The handler path on the feed object.
-    fn handler(&self) -> JsMethodPath {
+    fn operation_kind(&self) -> OperationKind {
         match self {
-            Self::Search { .. } => SEARCH_HANDLER,
-            Self::BookInfo { .. } => BOOK_INFO_HANDLER,
-            Self::Chapters { .. } => CHAPTERS_HANDLER,
-            Self::Paragraphs { .. } => PARAGRAPHS_HANDLER,
-            Self::AuthStatus => LOGIN_STATUS_HANDLER,
-            Self::Debug { operation, .. } => operation.handler(),
+            Self::Search { .. } => OperationKind::Search,
+            Self::BookInfo { .. } => OperationKind::BookInfo,
+            Self::Chapters { .. } => OperationKind::Chapters,
+            Self::Paragraphs { .. } => OperationKind::Paragraphs,
+            Self::AuthStatus => OperationKind::AuthStatus,
+            Self::Invoke { operation, .. } => *operation,
         }
     }
 
-    /// The snake-case operation name delivered in the reducer event.
+    fn handler(&self) -> JsMethodPath {
+        self.operation_kind().handler()
+    }
     fn kind(&self) -> &'static str {
-        match self {
-            Self::Search { .. } => "search",
-            Self::BookInfo { .. } => "book_info",
-            Self::Chapters { .. } => "chapters",
-            Self::Paragraphs { .. } => "paragraphs",
-            Self::AuthStatus => "auth_status",
-            Self::Debug { operation, .. } => operation.kind(),
-        }
+        self.operation_kind().kind()
     }
 
     /// The `event.input` object, built from the typed arguments.
@@ -182,7 +185,7 @@ impl JsOperation<'_> {
                 ("chapterId", JsData::str(*chapter_id)),
             ]),
             Self::AuthStatus => JsData::obj([]),
-            Self::Debug { input, .. } => (*input).clone(),
+            Self::Invoke { input, .. } => (*input).clone(),
         }
     }
 
@@ -203,6 +206,7 @@ pub struct JsFeed {
     client: reqwest::Client,
     has_login: bool,
     has_auth_status: bool,
+    comment_support: (bool, bool),
     auth_info: RwLock<Option<AuthInfo>>,
     response_cache: AsyncMutex<HashMap<String, HttpResponse>>,
     webview_handler: RwLock<Option<SharedWebviewHandler>>,
@@ -222,8 +226,7 @@ impl std::fmt::Debug for JsFeed {
 /// The final outcome of an operation, separated from [`Step`] so the
 /// per-round union does not leak into callers.
 struct Complete {
-    items: Option<Value>,
-    value: Option<Value>,
+    result: Value,
     next_cursor: Option<JsData>,
 }
 
@@ -242,23 +245,114 @@ impl JsFeed {
                 "debug operation input must be an object",
             ));
         }
-        let operation_kind = DebugOperation::parse(operation)?;
-        if matches!(operation_kind, DebugOperation::AuthStatus) && !self.has_auth_status {
+        let operation_kind = OperationKind::parse(operation)?;
+        if matches!(operation_kind, OperationKind::AuthStatus) && !self.has_auth_status {
             return Err(Error::invalid_feed(
                 "feed does not define the login.status operation",
             ));
         }
         let input = JsData::from_json(&input);
         let cursor = JsData::from_json(&cursor);
-        let operation = JsOperation::Debug {
+        let operation = JsOperation::Invoke {
             operation: operation_kind,
             input: &input,
         };
         let complete = self.run_operation(&operation, &cursor).await?;
         Ok(DebugOperationPage {
-            items: complete.items,
-            value: complete.value,
+            result: complete.result,
             next_cursor: complete.next_cursor.map(JsData::into_json),
+        })
+    }
+
+    pub fn comment_support(&self) -> (bool, bool) {
+        self.comment_support
+    }
+
+    pub async fn comments_page(
+        &self,
+        query: &crate::feed::comments::CommentsQuery,
+        cursor: Value,
+    ) -> Result<crate::feed::comments::CommentPage> {
+        use crate::feed::comments::{Comment, CommentPage};
+        let supported = if query.paragraph_id.is_some() {
+            self.comment_support.1
+        } else {
+            self.comment_support.0
+        };
+        if !supported {
+            return Err(Error::invalid_feed("comments are not supported"));
+        }
+        if query.book_id.is_empty()
+            || query.chapter_id.is_empty()
+            || query
+                .paragraph_id
+                .as_ref()
+                .is_some_and(|s| s.is_empty() || s.len() > 4096)
+            || query
+                .parent_id
+                .as_ref()
+                .is_some_and(|s| s.is_empty() || s.len() > 4096)
+        {
+            return Err(Error::invalid_feed("invalid comment target"));
+        }
+        if serde_json::to_vec(&cursor).map_or(true, |v| v.len() > 4096) {
+            return Err(Error::invalid_feed("comment cursor exceeds 4096 bytes"));
+        }
+        let operation = if query.paragraph_id.is_some() {
+            OperationKind::ParagraphComments
+        } else {
+            OperationKind::ChapterComments
+        };
+        let input = JsData::from_json(&serde_json::json!({
+            "bookId": query.book_id, "chapterId": query.chapter_id,
+            "paragraphId": query.paragraph_id, "parentId": query.parent_id,
+        }));
+        let complete = self
+            .run_operation(
+                &JsOperation::Invoke {
+                    operation,
+                    input: &input,
+                },
+                &JsData::from_json(&cursor),
+            )
+            .await?;
+        #[derive(serde::Deserialize)]
+        struct CommentResult {
+            items: Vec<Comment>,
+            total_count: Option<u32>,
+        }
+        let page: CommentResult = serde_json::from_value(complete.result)
+            .map_err(|e| Error::javascript(format!("invalid comment page: {e}")))?;
+        let items = page.items;
+        if items.len() > 200
+            || items.iter().any(|c| {
+                c.id.is_empty()
+                    || c.id.len() > 4096
+                    || c.text.len() > 32768
+                    || c.author.name.len() > 1024
+                    || c.created_at_ms
+                        .is_some_and(|t| !(0..=8_640_000_000_000_000).contains(&t))
+                    || c.source_url.as_ref().is_some_and(|v| v.len() > 8192)
+                    || c.author.avatar_url.as_ref().is_some_and(|v| v.len() > 8192)
+            })
+        {
+            return Err(Error::invalid_feed(
+                "comment page exceeds item or text limits",
+            ));
+        }
+        let next_cursor = complete.next_cursor.map(JsData::into_json);
+        if let Some(next) = &next_cursor {
+            if *next == cursor || serde_json::to_vec(next).map_or(true, |v| v.len() > 4096) {
+                return Err(Error::invalid_feed(
+                    "comment cursor does not advance or exceeds limit",
+                ));
+            }
+        }
+        let total_count = page.total_count;
+        Ok(CommentPage {
+            items,
+            next_cursor,
+            total_count,
         })
     }
 
@@ -282,7 +376,9 @@ impl JsFeed {
         Self::require_handlers(&feed_object)?;
         let (has_login, has_auth_status) = Self::login_capabilities(&feed_object)?;
 
+        let comment_support = feed_object.comment_handlers()?;
         Ok(Self {
+            comment_support,
             meta,
             client,
             has_login,
@@ -450,7 +546,7 @@ impl JsFeed {
         request: &HttpRequest,
         cache_key: Option<&str>,
     ) -> Result<HttpResponse> {
-        let Some(cache_key) = cache_key.filter(|key| !key.is_empty() && key.len() <= 128) else {
+        let Some(cache_key) = cache_key else {
             return self.execute_http_with_retry(request).await;
         };
 
@@ -524,9 +620,15 @@ impl JsFeed {
                 } => {
                     spend_step(&mut steps_left)?;
                     let request = self.apply_auth_patch(operation, request)?;
-                    let http_response = self
-                        .execute_cached_http(&request, cache_key.as_deref())
-                        .await?;
+                    let http_response = if operation.kind().starts_with("comments.") {
+                        // Comments are explicit pages and may depend on the
+                        // current account. Never reuse a source's response
+                        // cache key across comment requests or auth changes.
+                        self.execute_http_with_retry(&request).await?
+                    } else {
+                        self.execute_cached_http(&request, cache_key.as_deref())
+                            .await?
+                    };
                     state = next_state;
                     outcome = Some(StepOutcome::Response(http_response));
                 }
@@ -579,13 +681,11 @@ impl JsFeed {
                     outcome = Some(StepOutcome::Webview(snapshot));
                 }
                 Step::Complete {
-                    items,
-                    value,
+                    result,
                     next_cursor,
                 } => {
                     return Ok(Complete {
-                        items,
-                        value,
+                        result,
                         next_cursor,
                     });
                 }
@@ -605,8 +705,8 @@ impl JsFeed {
         cursor: &JsData,
     ) -> Result<Page<T, JsData>> {
         let complete = self.run_operation(operation, cursor).await?;
-        let items = serde_json::from_value(complete.items.unwrap_or(Value::Array(Vec::new())))
-            .map_err(|error| Error::javascript(format!("invalid items: {error}")))?;
+        let items = serde_json::from_value(complete.result)
+            .map_err(|error| Error::javascript(format!("invalid result: {error}")))?;
         Ok(Page {
             items,
             next_cursor: complete.next_cursor,
@@ -615,7 +715,7 @@ impl JsFeed {
 
     async fn run_value<T: DeserializeOwned>(&self, operation: &JsOperation<'_>) -> Result<T> {
         let complete = self.run_operation(operation, &JsData::Null).await?;
-        serde_json::from_value(complete.value.unwrap_or(Value::Null))
+        serde_json::from_value(complete.result)
             .map_err(|error| Error::javascript(format!("invalid value: {error}")))
     }
 
@@ -741,24 +841,20 @@ fn step_trace_description(step: &Step) -> (&'static str, String) {
                 .map(|title| format!("{title} · {}", crate::http::redact_url_secrets(url)))
                 .unwrap_or_else(|| crate::http::redact_url_secrets(url)),
         ),
-        Step::Complete {
-            items,
-            value,
-            next_cursor,
-        } => {
-            let item_count = items
-                .as_ref()
-                .and_then(serde_json::Value::as_array)
-                .map_or(0, Vec::len);
-            (
-                "complete",
-                format!(
-                    "{item_count} item(s) · value {} · next cursor {}",
-                    if value.is_some() { "yes" } else { "no" },
-                    if next_cursor.is_some() { "yes" } else { "no" }
-                ),
-            )
-        }
+        Step::Complete { result, .. } => (
+            "complete",
+            format!(
+                "result: {}",
+                match result {
+                    Value::Object(_) => "object",
+                    Value::Array(_) => "array",
+                    Value::Null => "null",
+                    Value::Bool(_) => "boolean",
+                    Value::Number(_) => "number",
+                    Value::String(_) => "string",
+                }
+            ),
+        ),
         Step::Fail { code, message } => ("fail", format!("{code} · {message}")),
     }
 }

@@ -19,7 +19,7 @@ pub async fn set_reading_progress(
     feed_id: String,
     book_id: String,
     chapter_id: String,
-    paragraph_id: ParagraphId,
+    paragraph_id: Option<ParagraphId>,
     paragraph_char_offset: u32,
     updated_at_ms: i64,
 ) -> Result<(), BridgeError> {
@@ -30,7 +30,9 @@ pub async fn set_reading_progress(
             feed_id,
             book_id,
             chapter_id,
-            paragraph_id: paragraph_id.to_string_lossy(),
+            paragraph_id: paragraph_id
+                .map(|id| id.to_string_lossy())
+                .unwrap_or_default(),
             paragraph_char_offset,
             updated_at_ms,
         })

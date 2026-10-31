@@ -71,7 +71,7 @@ fn cookie(name: &str, value: &str, domain: &str) -> CookieEntry {
 // ── Fixtures (trimmed from live m.qidian.com pages) ─────────────────────────
 
 fn search_page_json() -> String {
-    r#"{"pageProps":{"pageData":{"bookInfo":{"records":[
+    r#"{"pageProps":{"pageData":{"bookInfo":{"pageNum":1,"isLast":1,"records":[
         {"bid":1010868264,"bName":"诡秘之主","bAuth":"爱潜水的乌贼",
          "desc":"蒸汽与机械的浪潮中，谁能触及非凡？",
          "imgUrl":"//bookcover.yuewen.com/qdbimg/349573/1010868264/180",
@@ -325,7 +325,9 @@ async fn search_returns_empty_for_no_match() {
     let _mock = server
         .mock("GET", mockito::Matcher::Regex(r"^/soushu/".to_owned()))
         .with_status(200)
-        .with_body(ssr_page(&status_page_json(false)))
+        .with_body(ssr_page(
+            r#"{"pageProps":{"pageData":{"bookInfo":{"records":[],"pageNum":1,"isLast":1}}}}"#,
+        ))
         .create_async()
         .await;
 

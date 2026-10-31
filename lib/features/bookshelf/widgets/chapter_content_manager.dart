@@ -173,6 +173,28 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       chapterId: chapterId,
       forceRefresh: forceRefresh,
     );
+    if (mounted &&
+        chapterId == _activeChapterId &&
+        _pendingJumpParagraphId.isNotEmpty &&
+        paragraphs.isNotEmpty) {
+      final ids = paragraphs.map((p) => p.id.toStringValue()).toList();
+      if (!ids.contains(_pendingJumpParagraphId)) {
+        final resolved =
+            ids
+                .where(
+                  (id) => sameOriginalParagraph(id, _pendingJumpParagraphId),
+                )
+                .firstOrNull ??
+            ids.first;
+        _pendingJumpParagraphId = resolved;
+        _pendingJumpCharOffset = 0;
+        _verticalTarget = ReaderScrollTarget(
+          token: ++_scrollToken,
+          chapterId: chapterId,
+          paragraphId: resolved,
+        );
+      }
+    }
     _scheduleGlyphWarmup(chapterId, paragraphs);
     return paragraphs;
   }

@@ -19,7 +19,7 @@ String fixtureFeedScript({
 // @description  Hermetic fixture feed backed by a local HTTP server
 // @base_url     http://127.0.0.1:$port
 // @access_domain 127.0.0.1
-// @schema_version 4
+// @schema_version 5
 // ==/Feed==
 
 import { TextDecoder } from "langhuan:encoding";
@@ -45,50 +45,38 @@ const DECODER = new TextDecoder("utf-8");
   function search(event) {
     if (event.state == null) return request("/search");
     const count = countItems(event.response?.body, "search");
-    return {
-      type: "complete",
-      items: Array.from({ length: count }, (_, index) => ({
+    return { type: "complete", result: Array.from({ length: count }, (_, index) => ({
         id: String(1001 + index),
         title: `Fixture Book \${index + 1}`,
         author: "Fixture Author",
         description: "Hermetic fixture book.",
-      })),
-    };
+      })) };
   }
 
   function bookInfo(event) {
     if (event.state == null) return request(`/book/\${event.input.bookId}`);
-    return {
-      type: "complete",
-      value: {
+    return { type: "complete", result: {
         id: "1001",
         title: "Fixture Book 1",
         author: "Fixture Author",
         description: "Hermetic fixture book.",
-      },
-    };
+      } };
   }
 
   function chapters(event) {
     if (event.state == null) return request(`/chapters/\${event.input.bookId}`);
     const count = countItems(event.response?.body, "chapter");
-    return {
-      type: "complete",
-      items: Array.from({ length: count }, (_, index) => ({
+    return { type: "complete", result: Array.from({ length: count }, (_, index) => ({
         id: String(index + 1),
         title: `Chapter \${index + 1}`,
-      })),
-    };
+      })) };
   }
 
   function paragraphs(event) {
     if (event.state == null) {
       return request(`/paragraphs/\${event.input.bookId}/\${event.input.chapterId}`);
     }
-    return {
-      type: "complete",
-      items: [{ type: "text", content: "Fixture paragraph." }],
-    };
+    return { type: "complete", result: [{ type: "text", content: "Fixture paragraph." }] };
   }
 
 export default { search, bookInfo, chapters, paragraphs };

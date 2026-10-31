@@ -1,21 +1,21 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.qidian
 // @name         起點中文網
-// @version      3.3.1
+// @version      4.1.0
 // @author       Langhuan
 // @description  起點中文網書源（m 站），支持登入及已購 VIP 章節
 // @base_url     https://m.qidian.com
 // @access_domain m.qidian.com
 // @access_domain *.image.myqcloud.com
-// @schema_version 4
+// @schema_version 5
 // ==/Feed==
 
-import { TextDecoder } from "langhuan:encoding";
+import { TextDecoder, Bytes } from "langhuan:encoding";
 import { HTML } from "langhuan:html";
 
 const PAGE_CONTEXT_MARKER = 'id="vite-plugin-ssr_pageContext"';
 
-// schema 4：response.body 是 Uint8Array，需先解碼成字串。
+// schema 5：response.body 是 Uint8Array，需先解碼成字串。
 const DECODER = new TextDecoder("utf-8");
 
 function bodyText(response) {
@@ -136,16 +136,9 @@ function responseFailure(response, notFoundMessage) {
 function parseSearchPage(body) {
   const context = extractPageContext(body);
   if (!context) return null;
-  const bookInfo = nav(
-    context,
-    "pageProps",
-    "pageData",
-    "bookInfo",
-  );
+  const bookInfo = nav(context, "pageProps", "pageData", "bookInfo");
   const records = bookInfo?.records;
-  if (!Array.isArray(records)) {
-    return { items: [], pageNum: 1, hasNext: false };
-  }
+  if (!Array.isArray(records)) return null;
   const items = records
     .map((record) => ({
       id: formatId(record?.bid),
@@ -157,13 +150,13 @@ function parseSearchPage(body) {
     .filter((book) => book.id && book.title);
   const pageNum = Number(bookInfo?.pageNum);
   const isLast = Number(bookInfo?.isLast);
-  const hasPageMetadata = Number.isInteger(pageNum) && pageNum > 0;
-  return {
-    items,
-    pageNum: hasPageMetadata ? pageNum : 1,
-    // Older/trimmed fixtures have no paging metadata and represent one page.
-    hasNext: hasPageMetadata && isLast === 0,
-  };
+  if (
+    !Number.isInteger(pageNum) ||
+    pageNum < 1 ||
+    (isLast !== 0 && isLast !== 1)
+  )
+    return null;
+  return { items, pageNum, hasNext: isLast === 0 };
 }
 
 function parseBookInfo(response, fallbackId) {
@@ -176,7 +169,7 @@ function parseBookInfo(response, fallbackId) {
   );
   const idMatch = response.url.match(/\/book\/(\d+)/);
   return {
-    id: idMatch?.[1] ?? formatId(info.bookId) ?? fallbackId,
+    id: formatId(info.bookId) || idMatch?.[1] || fallbackId,
     title: cleanText(info.bookName),
     author: cleanText(info.authorName),
     cover_url: absoluteUrl(coverMatch?.[1]),
@@ -206,24 +199,39 @@ function parseChapterItems(response) {
   return items;
 }
 
+// 服務端段落 ID（chapterreview/reviewlist4m 的 paragraphId）按 <p> 計數：
+// 標題之後第 k 個 <p> 爲 k（1-based，已實測詭秘之主第一章 69 個 <p> 與
+// 段評 paragraphId 1..69 一一對應）。同一 <p> 內 <br> 拆出的小段共享所
+// 屬 <p> 的 id，宿主以後代路徑區分；<p> 結構之外的裸內容無法對齊服務
+// 端段號，段落不帶 id。
 function splitParagraphs(content) {
-  const normalized = String(content ?? "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<p(?:\s[^>]*)?>/gi, "\n");
   const items = [];
-  for (const line of normalized.split("\n")) {
+  const chunks = String(content ?? "").split(/<p(?:\s[^>]*)?>/i);
+  pushParagraphSegments(items, chunks[0], null);
+  for (let index = 1; index < chunks.length; index += 1) {
+    pushParagraphSegments(items, chunks[index], String(index));
+  }
+  return items;
+}
+
+// 一個 <p>（id 爲該段服務端序號）或無結構內容（id 爲 null）的行拆分。
+function pushParagraphSegments(items, chunk, id) {
+  const segments = String(chunk ?? "")
+    .replace(/<\/p\s*>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n");
+  for (const line of segments.split("\n")) {
     if (!line.trim()) continue;
     if (/<img\b/i.test(line)) {
-      const match = line.match(/<img[^>]*\bsrc=(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i);
+      const match = line.match(
+        /<img[^>]*\bsrc=(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i,
+      );
       const url = absoluteUrl(match?.[1] ?? match?.[2] ?? match?.[3]);
-      if (url) items.push({ type: "image", url });
+      if (url) items.push({ type: "image", url, id });
       continue;
     }
     const text = cleanText(line);
-    if (text) items.push({ type: "text", content: text });
+    if (text) items.push({ type: "text", content: text, id });
   }
-  return items;
 }
 
 function completeParagraphs(title, content) {
@@ -231,14 +239,16 @@ function completeParagraphs(title, content) {
   const cleanTitle = cleanText(title);
   if (cleanTitle) items.push({ type: "title", text: cleanTitle });
   items.push(...splitParagraphs(content));
-  return { type: "complete", items, next_cursor: null };
+  return { type: "complete", result: items, next_cursor: null };
 }
 
 function responseCookies(headers) {
   const cookies = [];
   for (const pair of Array.isArray(headers) ? headers : []) {
     if (String(pair?.[0] ?? "").toLowerCase() !== "set-cookie") continue;
-    const first = String(pair?.[1] ?? "").split(";", 1)[0].trim();
+    const first = String(pair?.[1] ?? "")
+      .split(";", 1)[0]
+      .trim();
     if (/^[^=;\s]+=[^;]*$/.test(first)) cookies.push(first);
   }
   return cookies.join("; ");
@@ -380,7 +390,7 @@ function search(event) {
   }
   return {
     type: "complete",
-    items: page.items,
+    result: page.items,
     next_cursor: page.hasNext ? { pageNum: page.pageNum + 1 } : null,
   };
 }
@@ -401,7 +411,7 @@ function bookInfo(event) {
   if (failure) return failure;
   const value = parseBookInfo(event.response, event.input.bookId);
   if (!value) return FeedError.contentNotFound("書籍不存在或已下架");
-  return { type: "complete", value };
+  return { type: "complete", result: value };
 }
 
 function chapters(event) {
@@ -420,7 +430,7 @@ function chapters(event) {
   if (failure) return failure;
   const items = parseChapterItems(event.response);
   if (!items) return FeedError.sourceUnavailable("起點目錄頁缺少章節數據");
-  return { type: "complete", items, next_cursor: null };
+  return { type: "complete", result: items, next_cursor: null };
 }
 
 function paragraphs(event) {
@@ -452,7 +462,9 @@ function paragraphs(event) {
         return FeedError.authRequired("VIP 章節需要登錄起點帳號");
       }
       if (chapter.isBuy === 0) {
-        return FeedError.contentNotFound("此 VIP 章節尚未訂閱，請先在起點購買本章");
+        return FeedError.contentNotFound(
+          "此 VIP 章節尚未訂閱，請先在起點購買本章",
+        );
       }
     }
 
@@ -494,7 +506,8 @@ function paragraphs(event) {
     } catch (_) {
       return FeedError.sourceUnavailable("起點章節 API 返回了無效 JSON");
     }
-    const chapter = payload?.data?.chapterInfo ?? payload?.data ?? payload?.chapterInfo;
+    const chapter =
+      payload?.data?.chapterInfo ?? payload?.data ?? payload?.chapterInfo;
     if (!chapter?.content) return FeedError.contentNotFound("章節內容為空");
 
     if (!chapter.fkp && chapter.fEnS !== 1) {
@@ -542,7 +555,7 @@ function paragraphs(event) {
         FOCK_ENV_PROGRAM,
         bodyText(event.response),
         FOCK_INITIALIZE_PROGRAM,
-        atob(event.state.fkp),
+        DECODER.decode(Bytes.fromBase64(event.state.fkp)),
         FOCK_UNLOCK_PROGRAM,
       ],
       input: {
@@ -573,6 +586,139 @@ function paragraphs(event) {
 
   return FeedError.raise("invalid_state", "未知的起點章節解析狀態");
 }
+
+// ── 評論（m 站章評/段評，reviewlist4m）──────────────────────────────────
+//
+// 章評與段評共用 GET /webcommon/chapterreview/reviewlist4m：paragraphId=-1
+// 選章評單元，k 選第 k 個 <p>（與 splitParagraphs 的 1-based 段落 id 對
+// 齊）。每頁 12 條，isEnd===1 即末頁，total 爲該單元的評論總數。該接
+// 口要求 Cookie 與查詢參數攜帶同一 _csrfToken（匿名亦然，否則 1403），
+// 因此先訪問探測頁取 Set-Cookie 的令牌再發列表請求；登錄時
+// login.patchRequest 會疊加帳號 Cookie，動態令牌覆蓋舊值，兩處仍然一
+// 致。m 站沒有回覆列表端點（reviewlist4m 忽略 rootReviewId），故
+// replies 一律爲 null：計數已知也不暴露無法兌現的回覆入口。
+
+function commentsCursorPage(cursor) {
+  const page = Number(cursor?.page);
+  return Number.isInteger(page) && page > 0 ? page : 1;
+}
+
+function toCount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : null;
+}
+
+function commentsList(event, paragraphId) {
+  if (event.state == null) {
+    return {
+      type: "request",
+      request: {
+        url: `${meta.base_url}/soushu/langhuanprobe.html`,
+        method: "GET",
+        headers: requestHeaders(),
+      },
+      next_state: { stage: "probe", paragraphId },
+    };
+  }
+
+  if (event.state.stage === "probe") {
+    const failure = responseFailure(event.response, "評論不可用");
+    if (failure) return failure;
+    const csrfToken =
+      cookieMap(responseCookies(event.response.headers)).get("_csrfToken") ??
+      event.auth?.csrf_token ??
+      cookieMap(event.auth?.cookie_header).get("_csrfToken");
+    if (!csrfToken) {
+      return FeedError.sourceUnavailable(
+        "起點未提供評論所需的 CSRF 令牌，請稍後重試",
+      );
+    }
+    const page = commentsCursorPage(event.cursor);
+    return {
+      type: "request",
+      request: {
+        url: `${meta.base_url}/webcommon/chapterreview/reviewlist4m`,
+        method: "GET",
+        params: {
+          bookId: String(event.input.bookId),
+          chapterId: String(event.input.chapterId),
+          paragraphId: String(event.state.paragraphId),
+          page: String(page),
+          _csrfToken: csrfToken,
+        },
+        headers: {
+          ...requestHeaders(),
+          Accept: "application/json, text/plain, */*",
+          Cookie: `_csrfToken=${csrfToken}`,
+        },
+      },
+      next_state: { stage: "list", page },
+    };
+  }
+
+  if (event.state.stage === "list") {
+    const failure = responseFailure(event.response, "評論不可用");
+    if (failure) return failure;
+    let payload;
+    try {
+      payload = JSON.parse(bodyText(event.response));
+    } catch (_) {
+      return FeedError.sourceUnavailable("起點評論 API 返回了無效 JSON");
+    }
+    if (payload?.code !== 0) {
+      return FeedError.sourceUnavailable(
+        `起點評論 API 返回錯誤 ${payload?.code ?? "未知"}：${payload?.msg || "無錯誤消息"}`,
+      );
+    }
+    const data = payload?.data;
+    if (!Array.isArray(data?.list)) {
+      return FeedError.sourceUnavailable("起點評論 API 響應缺少列表");
+    }
+    const items = [];
+    for (const review of data.list) {
+      const id = formatId(review?.reviewId);
+      if (!id) continue;
+      const text = cleanText(review?.content);
+      items.push({
+        id,
+        author: {
+          name: cleanText(review?.nickName) || "起點書友",
+          avatar_url: absoluteUrl(review?.avatar),
+        },
+        text: text || (Number(review?.hasImage) === 1 ? "[圖片]" : ""),
+        created_at_ms: toCount(review?.createTime),
+        like_count: toCount(review?.likeCount),
+        replies: null,
+        source_url: null,
+      });
+    }
+    return {
+      type: "complete",
+      result: {
+        items,
+        total_count: toCount(data?.total),
+      },
+      next_cursor: data.isEnd === 1 ? null : { page: event.state.page + 1 },
+    };
+  }
+
+  return FeedError.raise("invalid_state", "未知的起點評論解析狀態");
+}
+
+function chapterComments(event) {
+  return commentsList(event, -1);
+}
+
+function paragraphComments(event) {
+  // 段落 id 即 splitParagraphs 賦的 1-based <p> 序號（宿主以字符串傳遞）。
+  const paragraphId = Number(event.input.paragraphId);
+  if (!Number.isInteger(paragraphId) || paragraphId < 1) {
+    return FeedError.contentNotFound("無效的起點段落 ID");
+  }
+  return commentsList(event, paragraphId);
+}
+
+const comments = { chapter: chapterComments, paragraph: paragraphComments };
 
 const login = {
   entry() {
@@ -619,8 +765,12 @@ const login = {
 
   patchRequest(operation, request, auth) {
     request.headers ??= {};
-    const dynamicCookies = request.headers.Cookie ?? request.headers.cookie ?? "";
-    request.headers.Cookie = mergeCookieHeaders(auth.cookie_header, dynamicCookies);
+    const dynamicCookies =
+      request.headers.Cookie ?? request.headers.cookie ?? "";
+    request.headers.Cookie = mergeCookieHeaders(
+      auth.cookie_header,
+      dynamicCookies,
+    );
     delete request.headers.cookie;
 
     // Use the same source-selected UA as the login WebView.
@@ -653,7 +803,7 @@ const login = {
     }
     const context = extractPageContext(bodyText(event.response));
     const user = nav(context, "pageProps", "pageData", "user");
-    return { type: "complete", value: user?.isLogin === true };
+    return { type: "complete", result: user?.isLogin === true };
   },
 };
 
@@ -662,5 +812,6 @@ export default {
   bookInfo,
   chapters,
   paragraphs,
+  comments,
   login,
 };

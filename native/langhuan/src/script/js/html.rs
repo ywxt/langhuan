@@ -307,13 +307,11 @@ fn build_node<'js>(
         "text",
         move |ctx: Ctx<'js>| -> JsResult<String> { node_text(&ctx, &text_document, node_id) },
     )?;
-    node.set("textContent", node_text(ctx, &document, node_id)?)?;
 
     let attr_document = document.clone();
-    let attr = set_function(ctx, &node, "attr", move |ctx: Ctx<'js>, name: String| {
+    set_function(ctx, &node, "attr", move |ctx: Ctx<'js>, name: String| {
         node_attr(&ctx, &attr_document, node_id, &name)
     })?;
-    node.set("getAttribute", attr)?;
 
     let attrs_document = document.clone();
     set_function(
@@ -337,29 +335,13 @@ fn build_node<'js>(
     }
 
     let select_document = document.clone();
-    let select = set_function(
+    set_function(
         ctx,
         &node,
         "select",
         move |ctx: Ctx<'js>, selector: String| {
             let selected = select_ids(&ctx, &select_document, Some(node_id), &selector)?;
             build_selection(&ctx, select_document.clone(), selected)
-        },
-    )?;
-    node.set("querySelectorAll", select)?;
-
-    let query_document = document.clone();
-    set_function(
-        ctx,
-        &node,
-        "querySelector",
-        move |ctx: Ctx<'js>, selector: String| {
-            let selected = select_ids(&ctx, &query_document, Some(node_id), &selector)?;
-            selected
-                .first()
-                .copied()
-                .map(|id| build_node(&ctx, query_document.clone(), id))
-                .transpose()
         },
     )?;
 
@@ -387,8 +369,8 @@ fn build_node<'js>(
 
 fn build_document<'js>(ctx: &Ctx<'js>, document: SharedDocument) -> JsResult<Object<'js>> {
     let object = Object::new(ctx.clone())?;
-    let select_document = document.clone();
-    let select = set_function(
+    let select_document = document;
+    set_function(
         ctx,
         &object,
         "select",
@@ -397,21 +379,7 @@ fn build_document<'js>(ctx: &Ctx<'js>, document: SharedDocument) -> JsResult<Obj
             build_selection(&ctx, select_document.clone(), selected)
         },
     )?;
-    object.set("querySelectorAll", select)?;
 
-    set_function(
-        ctx,
-        &object,
-        "querySelector",
-        move |ctx: Ctx<'js>, selector: String| {
-            let selected = select_ids(&ctx, &document, None, &selector)?;
-            selected
-                .first()
-                .copied()
-                .map(|id| build_node(&ctx, document.clone(), id))
-                .transpose()
-        },
-    )?;
     Ok(object)
 }
 

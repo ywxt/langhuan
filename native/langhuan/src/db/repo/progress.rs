@@ -17,6 +17,26 @@ pub struct ProgressRow {
 }
 
 impl Repo<'_> {
+    pub fn get_listening_position(&self, feed_id: &str, book_id: &str) -> Result<Option<String>> {
+        super::maybe_row(
+            self.conn,
+            "SELECT position_json FROM listening_progress WHERE feed_id = ?1 AND book_id = ?2",
+            &[&feed_id, &book_id],
+            |row| row.get(0),
+        )
+    }
+
+    pub fn set_listening_position(
+        &self,
+        feed_id: &str,
+        book_id: &str,
+        position: &str,
+    ) -> Result<()> {
+        self.conn.prepare_cached("INSERT INTO listening_progress (feed_id, book_id, position_json) VALUES (?1, ?2, ?3) ON CONFLICT(feed_id, book_id) DO UPDATE SET position_json = excluded.position_json")?
+            .execute(tokio_rusqlite::params![feed_id, book_id, position])?;
+        Ok(())
+    }
+
     pub fn get_progress(&self, feed_id: &str, book_id: &str) -> Result<Option<ProgressRow>> {
         super::maybe_row(
             self.conn,

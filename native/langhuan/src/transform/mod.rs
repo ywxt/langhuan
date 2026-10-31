@@ -17,7 +17,7 @@ pub mod text_indent;
 
 use std::collections::HashSet;
 
-use crate::model::{Paragraph, ParagraphId};
+use crate::model::Paragraph;
 
 // ---------------------------------------------------------------------------
 // TransformOutput — append-only output sink
@@ -47,12 +47,14 @@ impl<'a> TransformOutput<'a> {
     /// Emit a paragraph to the output.
     ///
     /// If the paragraph's ID has already been emitted, it is replaced with a
-    /// fresh `ParagraphId::Index` to guarantee uniqueness.
+    /// descendant path, preserving its original source identity.
     #[inline]
     pub fn push(&mut self, mut paragraph: Paragraph) {
         let key = paragraph.id().to_string();
         if !self.seen.insert(key) {
-            paragraph.set_id(ParagraphId::Index(self.next_index));
+            let mut id = paragraph.id().clone();
+            id.path.push(self.next_index as u32);
+            paragraph.set_id(id);
             self.seen.insert(paragraph.id().to_string());
         }
         self.next_index += 1;
@@ -141,7 +143,17 @@ impl TransformChain {
             buf_a.clear();
             let mut out = TransformOutput::new(&mut buf_a);
             for p in buf_b.drain(..) {
+                let parent = p.id().clone();
+                let start = out.buf.len();
                 transform.apply(p, &mut out);
+                let count = out.buf.len() - start;
+                for (index, child) in out.buf[start..].iter_mut().enumerate() {
+                    let mut id = parent.clone();
+                    if count > 1 {
+                        id.path.push(index as u32);
+                    }
+                    child.set_id(id);
+                }
             }
             drop(out);
             std::mem::swap(&mut buf_a, &mut buf_b);
@@ -184,7 +196,7 @@ mod tests {
         chain.push(Box::new(Duplicator));
 
         let input = Paragraph::Text {
-            id: ParagraphId::Index(0),
+            id: ParagraphId::generated(0),
             content: "Hello".to_string(),
         };
         let output = chain.apply(input);
@@ -203,32 +215,59 @@ mod tests {
         let mut out = TransformOutput::new(&mut buf);
 
         out.push(Paragraph::Text {
-            id: ParagraphId::Index(0),
+            id: ParagraphId::generated(0),
             content: "a".into(),
         });
         out.push(Paragraph::Text {
-            id: ParagraphId::Index(0),
+            id: ParagraphId::generated(0),
             content: "b".into(),
         });
         out.push(Paragraph::Text {
-            id: ParagraphId::Id("custom".into()),
+            id: ParagraphId::source("custom".into()),
             content: "c".into(),
         });
         out.push(Paragraph::Text {
-            id: ParagraphId::Id("custom".into()),
+            id: ParagraphId::source("custom".into()),
             content: "d".into(),
         });
         drop(out);
 
         assert_eq!(buf.len(), 4);
         // First of each pair keeps original ID.
-        assert_eq!(*buf[0].id(), ParagraphId::Index(0));
-        assert_eq!(*buf[2].id(), ParagraphId::Id("custom".into()));
+        assert_eq!(*buf[0].id(), ParagraphId::generated(0));
+        assert_eq!(*buf[2].id(), ParagraphId::source("custom".into()));
         // Duplicates get reassigned — just verify uniqueness.
         assert_ne!(buf[1].id(), buf[0].id());
         assert_ne!(buf[3].id(), buf[2].id());
         let ids: std::collections::HashSet<String> =
             buf.iter().map(|p| p.id().to_string()).collect();
         assert_eq!(ids.len(), 4);
+    }
+
+    #[test]
+    fn splitting_twice_keeps_source_and_builds_distinct_paths() {
+        struct Split;
+        impl ParagraphTransform for Split {
+            fn init(&mut self, _: &str) {}
+            fn apply(&mut self, p: Paragraph, out: &mut TransformOutput<'_>) {
+                out.push(p.clone());
+                out.push(p);
+            }
+        }
+        let mut chain = TransformChain::new();
+        chain.push(Box::new(Split));
+        chain.push(Box::new(Split));
+        let result = chain.apply(Paragraph::Text {
+            id: ParagraphId::source("839".into()),
+            content: "text".into(),
+        });
+        assert_eq!(
+            result
+                .iter()
+                .map(|p| p.id().path.clone())
+                .collect::<Vec<_>>(),
+            vec![vec![0, 0], vec![0, 1], vec![1, 0], vec![1, 1]]
+        );
+        assert!(result.iter().all(|p| p.id().source_id() == Some("839")));
     }
 }

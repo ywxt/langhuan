@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use rquickjs::{Ctx, Error as JsError, FromJs, Result as JsResult, Value as JsValue};
 use serde_json::Value;
 
-use super::convert::{JsData, js_to_jsdata, js_to_json, u8_to_bytes};
+use super::convert::{JsData, js_to_jsdata, js_to_json};
 use super::event::OpaqueJsValue;
 use super::fields::{Fields, conversion_detail};
 use crate::error::{Error, ExpectedErrorCode, Result};
@@ -44,8 +44,7 @@ pub enum Step {
         next_state: Option<OpaqueJsValue>,
     },
     Complete {
-        items: Option<Value>,
-        value: Option<Value>,
+        result: Value,
         next_cursor: Option<JsData>,
     },
     Fail {
@@ -68,6 +67,12 @@ impl<'js> FromJs<'js> for Step {
                 let request_object = fields.required_object("request")?;
                 let request = HttpRequest::from_js(ctx, request_object.into_value())?;
                 let cache_key = fields.optional_string("cache_key")?;
+                if cache_key
+                    .as_ref()
+                    .is_some_and(|key| key.is_empty() || key.len() > 128)
+                {
+                    return Err(fields.error("cache_key", "must contain 1 to 128 bytes"));
+                }
                 let next_state = read_next_state(ctx, &fields)?;
                 Ok(Step::Request {
                     request,
@@ -77,15 +82,8 @@ impl<'js> FromJs<'js> for Step {
             }
             "compute" => {
                 let programs = fields.string_array("programs")?;
-                let input = {
-                    let value = fields.value("input")?;
-                    if value.is_undefined() {
-                        JsData::Null
-                    } else {
-                        js_to_jsdata(&value)
-                            .map_err(|error| fields.conversion_error("input", error))?
-                    }
-                };
+                let input = js_to_jsdata(&fields.value("input")?)
+                    .map_err(|error| fields.conversion_error("input", error))?;
                 let next_state = read_next_state(ctx, &fields)?;
                 Ok(Step::Compute {
                     programs,
@@ -105,16 +103,14 @@ impl<'js> FromJs<'js> for Step {
                     next_state,
                 })
             }
-            "complete" => {
-                let items = fields.json_field(ctx, "items")?;
-                let value = fields.json_field(ctx, "value")?;
-                let next_cursor = fields.data_field("next_cursor")?;
-                Ok(Step::Complete {
-                    items,
-                    value,
-                    next_cursor,
-                })
-            }
+            "complete" => Ok(Step::Complete {
+                result: fields.required_json(ctx, "result")?,
+                next_cursor: fields
+                    .optional_json(ctx, "next_cursor")?
+                    .as_ref()
+                    .map(JsData::from_json),
+            }),
+
             "fail" => {
                 let code = fields.required_string("code")?;
                 let message = fields.required_string("message")?;
@@ -143,11 +139,9 @@ pub fn read_patched_request(value: &JsValue<'_>) -> Result<HttpRequest> {
         .map_err(|error| labeled("invalid patched request", error))
 }
 
-/// Read an [`HttpRequest`] from a live object, accepting the same shapes the
-/// old serde deserializer did: headers as a map or an array of pairs, body
-/// as a string or `Uint8Array`.
+/// Request headers are a string map; request bodies are optional Uint8Array.
 impl<'js> FromJs<'js> for HttpRequest {
-    fn from_js(_ctx: &Ctx<'js>, value: JsValue<'js>) -> JsResult<Self> {
+    fn from_js(ctx: &Ctx<'js>, value: JsValue<'js>) -> JsResult<Self> {
         let fields = Fields::new(value, "HttpRequest")?;
         let url = fields.required_string("url")?;
         let method = fields
@@ -155,7 +149,9 @@ impl<'js> FromJs<'js> for HttpRequest {
             .unwrap_or_else(|| "GET".to_owned());
         let params = read_params(&fields)?;
         let headers = read_headers(&fields)?;
-        let body = read_body(&fields)?;
+        let body = fields
+            .optional_bytes(ctx, "body")?
+            .map(|bytes| HttpBody(bytes.into()));
         Ok(HttpRequest {
             url,
             method,
@@ -195,37 +191,10 @@ fn read_headers(fields: &Fields<'_>) -> JsResult<Vec<(String, String)>> {
         return Ok(Vec::new());
     }
     if value.is_array() {
-        let array = value
-            .clone()
-            .into_array()
-            .ok_or_else(|| fields.invalid("reading headers failed"))?;
-        let mut headers = Vec::with_capacity(array.len());
-        for entry in array.iter::<JsValue>() {
-            let entry = entry
-                .map_err(|error| fields.invalid(format!("reading headers failed: {error}")))?;
-            let Some(pair) = entry.clone().into_array() else {
-                return Err(fields.error("headers", "entries must be [name, value] pairs"));
-            };
-            if pair.len() != 2 {
-                return Err(fields.error("headers", "entries must have exactly two elements"));
-            }
-            let name = pair
-                .get::<String>(0)
-                .ok()
-                .ok_or_else(|| fields.error("headers", "entry names must be strings"))?;
-            let value = pair
-                .get::<String>(1)
-                .ok()
-                .ok_or_else(|| fields.error("headers", "entry values must be strings"))?;
-            headers.push((name, value));
-        }
-        return Ok(headers);
+        return Err(fields.error("headers", "must be an object"));
     }
     let Some(map) = value.clone().into_object() else {
-        return Err(fields.error(
-            "headers",
-            "must be a map or an array of [name, value] pairs",
-        ));
+        return Err(fields.error("headers", "must be an object"));
     };
     let mut headers = Vec::with_capacity(map.len());
     for entry in map.props::<String, JsValue>() {
@@ -237,23 +206,6 @@ fn read_headers(fields: &Fields<'_>) -> JsResult<Vec<(String, String)>> {
         headers.push((name, value));
     }
     Ok(headers)
-}
-
-fn read_body(fields: &Fields<'_>) -> JsResult<Option<HttpBody>> {
-    let value = fields.value("body")?;
-    if value.is_undefined() || value.is_null() {
-        return Ok(None);
-    }
-    if value.is_string() {
-        let text = value
-            .get::<String>()
-            .map_err(|_| fields.error("body", "must be a string or Uint8Array"))?;
-        return Ok(Some(HttpBody::from_string(text)));
-    }
-    if let Some(bytes) = u8_to_bytes(&value) {
-        return Ok(Some(HttpBody(bytes)));
-    }
-    Err(fields.error("body", "must be a string or Uint8Array"))
 }
 
 // ---------------------------------------------------------------------------
@@ -284,12 +236,9 @@ pub fn read_auth_result<'js>(ctx: &Ctx<'js>, value: &JsValue<'js>) -> Result<Val
         && let Ok(step_type) = object.get::<_, String>("type")
         && step_type == "fail"
     {
-        let code = object
-            .get::<_, String>("code")
-            .unwrap_or_else(|_| "raise".to_owned());
-        let message = object
-            .get::<_, String>("message")
-            .unwrap_or_else(|_| "authentication failed".to_owned());
+        let Step::Fail { code, message } = read_step(ctx, value)? else {
+            unreachable!()
+        };
         return Err(Error::expected(
             ExpectedErrorCode::from_code(&code),
             message,
@@ -393,6 +342,77 @@ mod tests {
         assert_eq!(
             step_error("({ type: 'compute', programs: [], input: () => {} })"),
             "invalid feed step: `input`: javascript error: functions cannot be copied across realms"
+        );
+    }
+
+    #[test]
+    fn omitted_compute_input_preserves_undefined() {
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let object = sandbox
+            .eval_object("({type:'compute', programs:['export default typeof input']})")
+            .unwrap();
+        object
+            .with_realm(|ctx, object| {
+                let step = read_step(&ctx, &object.into_value()).unwrap();
+                assert!(matches!(
+                    step,
+                    Step::Compute {
+                        input: JsData::Undefined,
+                        ..
+                    }
+                ));
+                Ok(Ok(()))
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn completion_has_one_required_result_and_json_cursor() {
+        assert_eq!(
+            step_error("({type:'complete', items:[]})"),
+            "invalid feed step: missing field `result`"
+        );
+        assert_eq!(
+            step_error("({type:'complete', result:undefined})"),
+            "invalid feed step: missing field `result`"
+        );
+        assert!(
+            step_error("({type:'complete', result:[], next_cursor:new Uint8Array([1])})")
+                .contains("next_cursor")
+        );
+
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let object = sandbox
+            .eval_object("({type:'complete', result:null, next_cursor:{page:2}})")
+            .unwrap();
+        object
+            .with_realm(|ctx, object| {
+                let Step::Complete {
+                    result,
+                    next_cursor,
+                } = read_step(&ctx, &object.into_value()).unwrap()
+                else {
+                    panic!("expected complete step");
+                };
+                assert!(result.is_null());
+                assert_eq!(
+                    next_cursor.unwrap().into_json(),
+                    serde_json::json!({"page":2})
+                );
+                Ok(Ok(()))
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn requests_reject_text_bodies_and_pair_array_headers() {
+        assert_eq!(
+            request_error("({url:'https://example.com', body:'text'})"),
+            "invalid patched request: `body` must be a Uint8Array"
+        );
+        assert_eq!(
+            request_error("({url:'https://example.com', headers:[['X','Y']]})"),
+            "invalid patched request: `headers` must be an object"
         );
     }
 

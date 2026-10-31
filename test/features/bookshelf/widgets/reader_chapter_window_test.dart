@@ -11,11 +11,17 @@ List<ChapterInfoModel> _chapters(int count) => [
 
 List<ParagraphContent> _paragraphs(String chapterId) => [
   ParagraphContent_Text(
-    id: ParagraphId.id('${chapterId}_p1'),
+    id: ParagraphId(
+      original: OriginalParagraphId.source('${chapterId}_p1'),
+      path: [],
+    ),
     content: 'text one of $chapterId',
   ),
   ParagraphContent_Text(
-    id: ParagraphId.id('${chapterId}_p2'),
+    id: ParagraphId(
+      original: OriginalParagraphId.source('${chapterId}_p2'),
+      path: [],
+    ),
     content: 'text two of $chapterId',
   ),
 ];

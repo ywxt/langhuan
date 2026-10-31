@@ -220,7 +220,7 @@ void main() {
         chapterId: 'c1',
         paragraphId: 'p1',
         paragraph: const ParagraphContent_Title(
-          id: ParagraphId.id('t'),
+          id: ParagraphId(original: OriginalParagraphId.source('t'), path: []),
           text: 'Title',
         ),
         globalRect: Rect.zero,
@@ -302,7 +302,10 @@ void main() {
           await gate.future;
           return [
             ParagraphContent_Text(
-              id: const ParagraphId.id('p0'),
+              id: const ParagraphId(
+                original: OriginalParagraphId.source('p0'),
+                path: [],
+              ),
               content: 'refreshed',
             ),
           ];

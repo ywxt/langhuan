@@ -43,6 +43,40 @@ struct JsObjectState {
 unsafe impl Send for JsObjectState {}
 
 impl JsObject {
+    pub(super) fn comment_handlers(&self) -> Result<(bool, bool)> {
+        let mut state = self.lock_state()?;
+        let JsObjectState { inner, sandbox } = &mut *state;
+        sandbox.with_object(inner, |_, object| {
+            let value: JsValue = object.get("comments")?;
+            if value.is_null() || value.is_undefined() {
+                return Ok((false, false));
+            }
+            let comments = value.into_object().ok_or_else(|| {
+                rquickjs::Error::new_from_js_message(
+                    "value",
+                    "comments",
+                    "comments must be an object or null",
+                )
+            })?;
+            let mut present = [false; 2];
+            for (index, name) in ["chapter", "paragraph"].iter().enumerate() {
+                let value: JsValue = comments.get(*name)?;
+                if value.is_null() || value.is_undefined() {
+                    continue;
+                }
+                if !value.is_function() {
+                    return Err(rquickjs::Error::new_from_js_message(
+                        "value",
+                        "comments",
+                        format!("comments.{name} must be a function or null"),
+                    ));
+                }
+                present[index] = true;
+            }
+            Ok((present[0], present[1]))
+        })
+    }
+
     pub(super) fn has_function(&self, path: &[&str]) -> Result<bool> {
         let mut state = self.lock_state()?;
         let JsObjectState { inner, sandbox } = &mut *state;
@@ -841,7 +875,7 @@ mod tests {
                      count: links.length,
                      href: links.first().attr("href"),
                      text: links.first().text().trim(),
-                     query: document.querySelector("article.featured").tagName,
+                     query: document.select("article.featured").first().tagName,
                      parent: links.first().parent.tagName,
                    });"#,
             )
@@ -859,7 +893,7 @@ mod tests {
             .eval_module_json(
                 r##"import { HTML } from "langhuan:html";
                     export default JSON.stringify(
-                        HTML.parse("<div id='x'>one<br>two</div>").querySelector("#x").text()
+                        HTML.parse("<div id='x'>one<br>two</div>").select("#x").first().text()
                     );"##,
             )
             .unwrap();

@@ -7,7 +7,7 @@
 //! capability-free compute realm leaks nothing.
 
 use encoding_rs::Encoding;
-use rquickjs::function::Opt;
+use rquickjs::function::{Opt, Rest};
 use rquickjs::module::{Declarations, Exports, ModuleDef};
 use rquickjs::{Ctx, Exception, Function, Object, Result as JsResult, TypedArray};
 
@@ -72,26 +72,16 @@ fn build_text_decoder<'js>(
         &decoder,
         "decode",
         move |ctx: Ctx<'js>,
-              data: Opt<TypedArray<'js, u8>>,
-              options: Opt<Object<'js>>|
+              data: TypedArray<'js, u8>,
+              extra: Rest<rquickjs::Value<'js>>|
               -> JsResult<String> {
-            let options = options.0;
-            if flag(
-                &ctx,
-                options.as_ref(),
-                "TextDecoder.decode",
-                "stream",
-                false,
-            )? {
+            if !extra.0.is_empty() {
                 return Err(Exception::throw_message(
                     &ctx,
-                    "TextDecoder.decode: streaming decode is not supported",
+                    "TextDecoder.decode accepts exactly one Uint8Array",
                 ));
             }
-            let bytes = match &data.0 {
-                Some(data) => typed_bytes(&ctx, data)?,
-                None => Vec::new(),
-            };
+            let bytes = typed_bytes(&ctx, &data)?;
             // Unlike the WHATWG decoder we do not re-sniff the encoding
             // from a BOM; a leading BOM of the requested encoding is
             // removed unless `ignoreBOM` is set.

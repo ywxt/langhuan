@@ -92,9 +92,7 @@ impl JsData {
             Self::Undefined | Self::Null => Value::Null,
             Self::Bool(flag) => Value::Bool(flag),
             Self::Int(int) => Value::Number(serde_json::Number::from(i64::from(int))),
-            Self::Num(number) => {
-                serde_json::Number::from_f64(number).map_or(Value::Null, Value::Number)
-            }
+            Self::Num(number) => json_number(number),
             Self::Str(text) => Value::String(text),
             Self::Bytes(_) => Value::Null,
             Self::Arr(items) => Value::Array(items.into_iter().map(Self::into_json).collect()),
@@ -288,9 +286,7 @@ fn convert_to_json<'js>(
         bump_json_size(size, 8)?;
         let number = value.as_float().unwrap_or(f64::NAN);
         // JSON renders non-finite numbers as null.
-        return Ok(Some(
-            serde_json::Number::from_f64(number).map_or(Value::Null, Value::Number),
-        ));
+        return Ok(Some(json_number(number)));
     }
     if value.is_string() {
         let text = value
@@ -347,6 +343,17 @@ fn convert_to_json<'js>(
         return Ok(Some(Value::Object(entries.into_iter().collect())));
     }
     Ok(None)
+}
+
+// JavaScript Number has one public numeric type. QuickJS may internally tag
+// JSON.parse(1) as a float, while a literal 1 is an int. Match JSON.stringify
+// semantics for safe integers so typed models do not depend on that tag.
+fn json_number(number: f64) -> Value {
+    if number.is_finite() && number.fract() == 0.0 && number.abs() <= 9_007_199_254_740_991.0 {
+        Value::Number(serde_json::Number::from(number as i64))
+    } else {
+        serde_json::Number::from_f64(number).map_or(Value::Null, Value::Number)
+    }
 }
 
 fn bump_json_size(size: &mut usize, addition: usize) -> Result<()> {

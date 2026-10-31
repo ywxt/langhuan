@@ -20,9 +20,6 @@ class ReaderPosition {
   /// (horizontal mode). Distinguishes a paragraph's start page from its
   /// continuation page so progress can be restored page-precisely.
   final int charOffset;
-
-  // Backward-compatible alias for older call sites.
-  double get offset => paragraphOffset;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

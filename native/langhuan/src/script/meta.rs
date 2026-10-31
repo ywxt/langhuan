@@ -26,12 +26,11 @@ pub fn parse_meta(script: &str) -> Result<(FeedMeta, usize)> {
 
 /// A raw key-value pair from a header line.
 struct HeaderEntry {
-    /// The key without the leading `@`, e.g. `"name"` or `"name:en"`.
+    /// The key without the leading `@`, e.g. `"name"` or `"access_domain"`.
     key: String,
     /// The value after the key, trimmed.
     value: String,
     /// 1-based line number in the original script (kept for diagnostics).
-    #[allow(dead_code)]
     line: usize,
 }
 
@@ -112,6 +111,7 @@ fn script_offset_of_line(s: &str, n: usize) -> usize {
 /// fields and produce the final [`FeedMeta`].
 #[derive(Default)]
 struct FeedMetaBuilder {
+    seen: HashSet<String>,
     id: Option<String>,
     name: Option<String>,
     version: Option<String>,
@@ -123,8 +123,14 @@ struct FeedMetaBuilder {
 }
 
 impl FeedMetaBuilder {
-    /// Set a field from a raw header key (e.g. `"name"` or `"name:en"`).
-    fn set(&mut self, key: &str, value: String) {
+    /// Each scalar field is declared once; only access_domain is repeatable.
+    fn set(&mut self, key: &str, value: String, line: usize) -> Result<()> {
+        if key != "access_domain" && !self.seen.insert(key.to_owned()) {
+            return Err(Error::script_parse(
+                line,
+                format!("duplicate metadata field: @{key}"),
+            ));
+        }
         match key {
             "id" => self.id = Some(value),
             "name" => self.name = Some(value),
@@ -139,12 +145,18 @@ impl FeedMetaBuilder {
                 }
             }
             "schema_version" => {
-                self.schema_version = value.trim().parse::<u32>().ok();
+                self.schema_version = Some(value.trim().parse::<u32>().map_err(|_| {
+                    Error::script_parse(line, "@schema_version must be an integer")
+                })?);
             }
             _ => {
-                // Unknown keys are silently ignored for forward compatibility.
+                return Err(Error::script_parse(
+                    line,
+                    format!("unknown metadata field: @{key}"),
+                ));
             }
         }
+        Ok(())
     }
 
     /// Validate required fields and produce the final [`FeedMeta`].
@@ -219,7 +231,7 @@ fn normalize_access_domain(value: &str) -> Option<String> {
 fn build_meta(entries: &[HeaderEntry]) -> Result<FeedMeta> {
     let mut builder = FeedMetaBuilder::default();
     for entry in entries {
-        builder.set(&entry.key, entry.value.clone());
+        builder.set(&entry.key, entry.value.clone(), entry.line)?;
     }
     builder.build()
 }
@@ -410,10 +422,7 @@ mod tests {
 // ==/Feed==
 "#;
         let err = parse_meta(script).unwrap_err();
-        assert!(matches!(
-            err,
-            Error::Script(ScriptError::InvalidFeed { .. })
-        ));
+        assert!(matches!(err, Error::Script(ScriptError::Parse { .. })));
     }
 
     #[test]

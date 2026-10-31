@@ -68,8 +68,8 @@ pub fn shared_client() -> &'static Client {
 
 /// A body carried by either an HTTP request or an HTTP response.
 ///
-/// Raw bytes in native code. The JavaScript boundary decodes response bytes as
-/// UTF-8 with replacement so reducers always receive a bounded string.
+/// Raw bytes in native code; JavaScript receives Uint8Array and explicitly
+/// decodes text through langhuan:encoding.
 #[derive(Debug, Clone)]
 pub struct HttpBody(pub Bytes);
 
@@ -184,10 +184,8 @@ pub struct HttpRequest {
     pub params: HashMap<String, String>,
     /// Additional HTTP headers.
     ///
-    /// Scripts may provide headers as either a string-keyed object or an array
-    /// of name/value pairs.
-    ///
-    /// Both forms are accepted and normalised to `Vec<(String, String)>`.
+    /// Scripts provide a string-keyed object. Response headers separately
+    /// use pairs to retain repeated Set-Cookie fields.
     #[serde(
         default,
         serialize_with = "serialize_headers",
@@ -223,79 +221,15 @@ where
     map.end()
 }
 
-/// Deserialize HTTP headers from either a map or an array of pairs.
-///
-/// JavaScript sources normally express headers as a string-keyed object:
-///
-/// ```js
-/// const headers = { "Content-Type": "text/html" };
-/// ```
-///
-/// An array of two-element arrays is also accepted:
-///
-/// ```js
-/// const headers = [["Content-Type", "text/html"]];
-/// ```
-///
-/// This custom deserializer accepts both forms.
+/// Request headers have exactly one external shape: a string map.
 fn deserialize_headers<'de, D>(
     deserializer: D,
 ) -> std::result::Result<Vec<(String, String)>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    use serde::de::{self, MapAccess, SeqAccess, Visitor};
-
-    struct HeadersVisitor;
-
-    impl<'de> Visitor<'de> for HeadersVisitor {
-        type Value = Vec<(String, String)>;
-
-        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            f.write_str("a map of header name→value or an array of [name, value] pairs")
-        }
-
-        // Map form: { ["Key"] = "Value", ... }
-        fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
-        where
-            A: MapAccess<'de>,
-        {
-            let mut headers = Vec::new();
-            while let Some((key, value)) = map.next_entry::<String, String>()? {
-                headers.push((key, value));
-            }
-            Ok(headers)
-        }
-
-        // Array-of-pairs form: { {"Key", "Value"}, ... }
-        fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Self::Value, A::Error>
-        where
-            A: SeqAccess<'de>,
-        {
-            let mut headers = Vec::new();
-            while let Some(pair) = seq.next_element::<(String, String)>()? {
-                headers.push(pair);
-            }
-            Ok(headers)
-        }
-
-        // `nil` / absent → empty
-        fn visit_unit<E>(self) -> std::result::Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(Vec::new())
-        }
-
-        fn visit_none<E>(self) -> std::result::Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(Vec::new())
-        }
-    }
-
-    deserializer.deserialize_any(HeadersVisitor)
+    let headers = std::collections::BTreeMap::<String, String>::deserialize(deserializer)?;
+    Ok(headers.into_iter().collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -361,7 +295,10 @@ pub async fn execute(
         ));
     }
 
-    let method = req.method.parse().unwrap_or(reqwest::Method::GET);
+    let method = req
+        .method
+        .parse::<reqwest::Method>()
+        .map_err(|_| crate::error::Error::invalid_feed("invalid HTTP request method"))?;
     tracing::debug!(
         feed_id = %feed_id,
         method = %method,

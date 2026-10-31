@@ -303,7 +303,7 @@ void main() {
         return const DebugRunResult(
           auth: DebugAuthUse.notSupported,
           output: DebugStageOutput.manual(
-            itemsJson: '[{"id":"2"}]',
+            resultJson: '[{"id":"2"}]',
             nextCursorJson: '{"page":3}',
           ),
           trace: [],
@@ -340,7 +340,7 @@ void main() {
     expect(stage.operation, 'search');
     expect(jsonDecode(stage.inputJson), {'keyword': 'book'});
     expect(jsonDecode(stage.cursorJson), {'page': 2});
-    expect(body['output']['items'], [
+    expect(body['output']['result'], [
       {'id': '2'},
     ]);
     expect(body['output']['next_cursor'], {'page': 3});

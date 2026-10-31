@@ -20,7 +20,10 @@ void main() {
     );
     final pages = breaker.computePages([
       ParagraphContent_Text(
-        id: const ParagraphId.id('p1'),
+        id: const ParagraphId(
+          original: OriginalParagraphId.source('p1'),
+          path: [],
+        ),
         content: List.filled(80, 'long paragraph').join(' '),
       ),
     ], chapterId: 'chapter-42');
@@ -33,7 +36,10 @@ void main() {
     // Paragraph p1 spans three pages (offsets 0 / 240 / 480); p2 and p3 are
     // short and share page 3, where only p2 leads.
     PageItem item(String id, int? start) => PageItem(
-      source: ParagraphContent_Text(id: ParagraphId.id(id), content: 'x'),
+      source: ParagraphContent_Text(
+        id: ParagraphId(original: OriginalParagraphId.source(id), path: []),
+        content: 'x',
+      ),
       paragraphIndex: 0,
       paragraphId: id,
       startOffset: start,
@@ -255,7 +261,10 @@ void main() {
                 paragraphSpacing: spacing,
                 items: [
                   ParagraphContent_Text(
-                    id: ParagraphId.id('p$c'),
+                    id: ParagraphId(
+                      original: OriginalParagraphId.source('p$c'),
+                      path: [],
+                    ),
                     content: cleanTextCases[c],
                   ),
                 ],
@@ -282,15 +291,24 @@ void main() {
               for (var i = 0; i < 24; i++)
                 switch (rng.nextInt(6)) {
                   0 => ParagraphContent_Title(
-                    id: ParagraphId.id('t$i'),
+                    id: ParagraphId(
+                      original: OriginalParagraphId.source('t$i'),
+                      path: [],
+                    ),
                     text: run(cjkPool, 1 + rng.nextInt(80)),
                   ),
                   1 => ParagraphContent_Image(
-                    id: ParagraphId.id('g$i'),
+                    id: ParagraphId(
+                      original: OriginalParagraphId.source('g$i'),
+                      path: [],
+                    ),
                     url: 'https://example.invalid/x.png',
                   ),
                   _ => ParagraphContent_Text(
-                    id: ParagraphId.id('p$i'),
+                    id: ParagraphId(
+                      original: OriginalParagraphId.source('p$i'),
+                      path: [],
+                    ),
                     content: cleanTextCases[rng.nextInt(cleanTextCases.length)],
                   ),
                 },
@@ -319,11 +337,17 @@ void main() {
             // direction content without spaces still exercises the
             // direction plumbing through layout and caret queries.
             ParagraphContent_Text(
-              id: const ParagraphId.id('rtl'),
+              id: const ParagraphId(
+                original: OriginalParagraphId.source('rtl'),
+                path: [],
+              ),
               content: run(cjkPool, 400),
             ),
             ParagraphContent_Text(
-              id: const ParagraphId.id('rtl2'),
+              id: const ParagraphId(
+                original: OriginalParagraphId.source('rtl2'),
+                path: [],
+              ),
               content: 'مرحبا${run(cjkPool, 200)}',
             ),
           ],
@@ -340,7 +364,10 @@ void main() {
           paragraphSpacing: 12,
           items: [
             ParagraphContent_Text(
-              id: const ParagraphId.id('p'),
+              id: const ParagraphId(
+                original: OriginalParagraphId.source('p'),
+                path: [],
+              ),
               content: run(cjkPool, 300),
             ),
           ],
@@ -366,7 +393,10 @@ void main() {
       for (var c = 0; c < messyTextCases.length; c++) {
         checkInvariants('messy#$c', [
           ParagraphContent_Text(
-            id: ParagraphId.id('p$c'),
+            id: ParagraphId(
+              original: OriginalParagraphId.source('p$c'),
+              path: [],
+            ),
             content: messyTextCases[c],
           ),
         ]);
@@ -378,15 +408,24 @@ void main() {
         for (var i = 0; i < 24; i++)
           switch (rng.nextInt(6)) {
             0 => ParagraphContent_Title(
-              id: ParagraphId.id('t$i'),
+              id: ParagraphId(
+                original: OriginalParagraphId.source('t$i'),
+                path: [],
+              ),
               text: run(cjkPool, 1 + rng.nextInt(80)),
             ),
             1 => ParagraphContent_Image(
-              id: ParagraphId.id('g$i'),
+              id: ParagraphId(
+                original: OriginalParagraphId.source('g$i'),
+                path: [],
+              ),
               url: 'https://example.invalid/x.png',
             ),
             _ => ParagraphContent_Text(
-              id: ParagraphId.id('p$i'),
+              id: ParagraphId(
+                original: OriginalParagraphId.source('p$i'),
+                path: [],
+              ),
               content: messyTextCases[rng.nextInt(messyTextCases.length)],
             ),
           },

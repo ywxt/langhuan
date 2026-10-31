@@ -227,10 +227,24 @@ const MIGRATIONS: &[Migration] = &[
         ) WITHOUT ROWID;
     "#,
     },
+    Migration {
+        version: 8,
+        sql: r#"
+        -- Paragraph identity is now typed. Cached text can be fetched again;
+        -- keep existing bookmarks and chapter progress; invalid coordinates are absent.
+        DELETE FROM chapters;
+        CREATE TABLE listening_progress (
+            feed_id TEXT NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+            book_id TEXT NOT NULL,
+            position_json TEXT NOT NULL,
+            PRIMARY KEY (feed_id, book_id)
+        ) WITHOUT ROWID;
+        "#,
+    },
 ];
 
 /// The schema version this build understands (the last migration's version).
-pub(crate) const CURRENT_VERSION: i64 = 7;
+pub(crate) const CURRENT_VERSION: i64 = 8;
 
 /// Apply all pending migrations in order.
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
@@ -266,6 +280,44 @@ mod tests {
         assert_eq!(
             MIGRATIONS.last().expect("at least one").version,
             CURRENT_VERSION
+        );
+    }
+
+    #[test]
+    fn typed_id_migration_discards_only_cached_text_and_keeps_chapter_progress() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for migration in MIGRATIONS.iter().filter(|m| m.version <= 7) {
+            conn.execute_batch(migration.sql).unwrap();
+        }
+        conn.execute_batch(
+            r#"
+            PRAGMA user_version = 7;
+            INSERT INTO feeds (id,name,version,content_hash,installed_at_ms,updated_at_ms)
+              VALUES ('f','Feed','1','hash',1,1);
+            INSERT INTO books (feed_id,book_id,title,author) VALUES ('f','b','Book','Author');
+            INSERT INTO chapters VALUES ('f','b','c','[{"type":"text","id":0,"content":"old"}]',1);
+            INSERT INTO reading_progress (feed_id,book_id,chapter_id,paragraph_id,updated_at_ms)
+              VALUES ('f','b','c','0',1);
+        "#,
+        )
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM chapters", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            conn.query_row("SELECT chapter_id FROM reading_progress", [], |r| r
+                .get::<_, String>(0))
+                .unwrap(),
+            "c"
+        );
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM listening_progress", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
         );
     }
 }

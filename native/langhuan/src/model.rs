@@ -82,34 +82,57 @@ impl ChapterInfo {
     }
 }
 
-/// Identifies a paragraph within a chapter.
-///
-/// - `Index(usize)` — a sequential position assigned automatically by the host
-///   when the script does not provide an explicit `id`. Stable across
-///   requests as long as the chapter content doesn't change.
-/// - `Id(String)` — an explicit identifier provided by the book source.
+/// Identity before text transforms. Tags prevent numeric source IDs from
+/// being confused with host-assigned positions.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum ParagraphId {
-    Index(u64),
-    Id(String),
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum OriginalParagraphId {
+    Source(String),
+    Generated(u64),
+}
+
+/// A paragraph retains its original identity through every transform.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ParagraphId {
+    pub original: OriginalParagraphId,
+    pub path: Vec<u32>,
 }
 
 impl ParagraphId {
-    pub fn to_string_lossy(&self) -> String {
-        match self {
-            ParagraphId::Index(i) => i.to_string(),
-            ParagraphId::Id(s) => s.clone(),
+    pub fn generated(index: u64) -> Self {
+        Self {
+            original: OriginalParagraphId::Generated(index),
+            path: Vec::new(),
         }
+    }
+
+    pub fn source(id: String) -> Self {
+        Self {
+            original: OriginalParagraphId::Source(id),
+            path: Vec::new(),
+        }
+    }
+
+    pub fn source_id(&self) -> Option<&str> {
+        match &self.original {
+            OriginalParagraphId::Source(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// Canonical, typed storage/UI key; never infer type from its contents.
+    pub fn to_string_lossy(&self) -> String {
+        serde_json::to_string(self).expect("paragraph IDs are serializable")
+    }
+
+    pub fn from_stored(value: String) -> Option<Self> {
+        serde_json::from_str(&value).ok()
     }
 }
 
 impl std::fmt::Display for ParagraphId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParagraphId::Index(i) => write!(f, "{i}"),
-            ParagraphId::Id(s) => f.write_str(s),
-        }
+        f.write_str(&self.to_string_lossy())
     }
 }
 
@@ -182,8 +205,8 @@ impl RawParagraph {
     /// when the script did not provide one.
     pub(crate) fn into_paragraph(self, index: usize) -> Paragraph {
         let make_id = |opt: Option<String>| match opt {
-            Some(s) => ParagraphId::Id(s),
-            None => ParagraphId::Index(index as u64),
+            Some(s) => ParagraphId::source(s),
+            None => ParagraphId::generated(index as u64),
         };
         match self {
             RawParagraph::Title { id, text } => Paragraph::Title {
@@ -200,5 +223,20 @@ impl RawParagraph {
                 alt,
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    #[test]
+    fn numeric_source_ids_never_become_indices() {
+        let mut source = ParagraphId::source("839".into());
+        source.path = vec![1, 0];
+        let key = source.to_string_lossy();
+        assert_eq!(ParagraphId::from_stored(key), Some(source.clone()));
+        assert_eq!(source.source_id(), Some("839"));
+        assert_ne!(source, ParagraphId::generated(839));
+        assert!(ParagraphId::from_stored("839".into()).is_none());
     }
 }

@@ -57,7 +57,7 @@ impl<'js> IntoJs<'js> for &OpaqueJsValue {
 
 /// The operation descriptor flattened into the reducer event.
 pub struct OperationSpec<'a> {
-    /// Snake-case operation name (`"search"`, `"book_info"`, …).
+    /// Canonical exported handler name (`"search"`, `"bookInfo"`, `"login.status"`, …).
     pub kind: &'a str,
     /// Operation input, materialized once at construction.
     pub input: &'a JsData,

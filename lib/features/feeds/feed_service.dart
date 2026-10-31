@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
+import '../../src/rust/api/comments.dart' as rust_comments;
+import '../../src/rust/api/listening.dart' as rust_listening;
 import '../../src/rust/api/auth.dart' as rust_auth;
 import '../../src/rust/api/bookmark.dart' as rust_bookmark;
 import '../../src/rust/api/bookshelf.dart' as rust_bookshelf;
@@ -16,19 +19,55 @@ import '../bookshelf/bookshelf_operation.dart';
 // ---------------------------------------------------------------------------
 
 extension ParagraphIdStringExt on ParagraphId {
-  String toStringValue() => switch (this) {
-    ParagraphId_Index(field0: final i) => i.toString(),
-    ParagraphId_Id(field0: final s) => s,
+  String? get sourceId => switch (original) {
+    OriginalParagraphId_Source(:final field0) => field0,
+    _ => null,
   };
+
+  String toStringValue() => jsonEncode({
+    'original': switch (original) {
+      OriginalParagraphId_Source(:final field0) => {
+        'kind': 'source',
+        'value': field0,
+      },
+      OriginalParagraphId_Generated(:final field0) => {
+        'kind': 'generated',
+        'value': field0,
+      },
+    },
+    'path': path.map((p) => p.index).toList(),
+  });
 }
 
-ParagraphId paragraphIdFromString(String s) {
-  final i = int.tryParse(s);
-  return i != null ? ParagraphId.index(i) : ParagraphId.id(s);
+ParagraphId? paragraphIdFromString(String value) {
+  try {
+    final map = jsonDecode(value) as Map<String, dynamic>;
+    final raw = map['original'] as Map<String, dynamic>;
+    final original = switch (raw['kind']) {
+      'source' => OriginalParagraphId.source(raw['value'] as String),
+      'generated' => OriginalParagraphId.generated(raw['value'] as int),
+      _ => throw const FormatException('unknown paragraph identity'),
+    };
+    return ParagraphId(
+      original: original,
+      path: (map['path'] as List)
+          .map((i) => ParagraphPathIndex(index: i as int))
+          .toList(),
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+bool sameOriginalParagraph(String left, String right) {
+  if (left == right) return true;
+  final a = paragraphIdFromString(left)?.original;
+  final b = paragraphIdFromString(right)?.original;
+  return a != null && b != null && a == b;
 }
 
 // ---------------------------------------------------------------------------
-// Domain models (mirrors Rust structs, kept for backward compat with UI)
+// UI domain models and bridge mappings
 // ---------------------------------------------------------------------------
 
 @immutable
@@ -309,7 +348,7 @@ class ReadingProgressModel {
         feedId: item.feedId,
         bookId: item.bookId,
         chapterId: item.chapterId,
-        paragraphId: item.paragraphId.toStringValue(),
+        paragraphId: item.paragraphId?.toStringValue() ?? '',
         paragraphCharOffset: item.paragraphCharOffset,
         updatedAtMs: item.updatedAtMs,
       );
@@ -344,7 +383,7 @@ class BookmarkModel {
     feedId: item.feedId,
     bookId: item.bookId,
     chapterId: item.chapterId,
-    paragraphId: item.paragraphId.toStringValue(),
+    paragraphId: item.paragraphId?.toStringValue() ?? '',
     paragraphName: item.paragraphName,
     paragraphPreview: item.paragraphPreview,
     label: item.label,
@@ -501,6 +540,56 @@ class FeedService {
   // -------------------------------------------------------------------------
   // Paragraphs
   // -------------------------------------------------------------------------
+
+  Future<rust_comments.CommentSupport> commentSupport(String feedId) =>
+      rust_comments.commentSupport(feedId: feedId);
+
+  Future<rust_comments.CommentPage> commentsPage({
+    required String feedId,
+    required String bookId,
+    required String chapterId,
+    String? paragraphId,
+    String? parentId,
+    String? cursorJson,
+  }) => rust_comments.getCommentsPage(
+    feedId: feedId,
+    bookId: bookId,
+    chapterId: chapterId,
+    paragraphId: paragraphId,
+    parentId: parentId,
+    cursorJson: cursorJson,
+  );
+
+  Future<rust_comments.CommentRequest> openCommentsPage({
+    required String feedId,
+    required String bookId,
+    required String chapterId,
+    String? paragraphId,
+    String? parentId,
+    String? cursorJson,
+  }) => rust_comments.openCommentsPage(
+    feedId: feedId,
+    bookId: bookId,
+    chapterId: chapterId,
+    paragraphId: paragraphId,
+    parentId: parentId,
+    cursorJson: cursorJson,
+  );
+
+  Future<rust_listening.ListeningPosition?> listeningPosition(
+    String feedId,
+    String bookId,
+  ) => rust_listening.getListeningPosition(feedId: feedId, bookId: bookId);
+
+  Future<void> saveListeningPosition(
+    String feedId,
+    String bookId,
+    rust_listening.ListeningPosition position,
+  ) => rust_listening.saveListeningPosition(
+    feedId: feedId,
+    bookId: bookId,
+    position: position,
+  );
 
   Future<List<ParagraphContent>> paragraphs({
     required String feedId,

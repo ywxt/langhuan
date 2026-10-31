@@ -54,7 +54,7 @@ mod tests {
         let mut out = TransformOutput::new(&mut buf);
         transform.apply(
             Paragraph::Text {
-                id: ParagraphId::Index(1),
+                id: ParagraphId::generated(1),
                 content: "第一段".to_string(),
             },
             &mut out,
@@ -78,7 +78,7 @@ mod tests {
         let mut out = TransformOutput::new(&mut buf);
         transform.apply(
             Paragraph::Title {
-                id: ParagraphId::Index(0),
+                id: ParagraphId::generated(0),
                 text: "章節標題".to_string(),
             },
             &mut out,

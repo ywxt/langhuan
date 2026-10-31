@@ -676,15 +676,15 @@ mod tests {
 // @id  {id}
 // @name Feed {id}
 // @version {version}
-// @schema_version 4
+// @schema_version 5
 // @base_url http://127.0.0.1:1/
 // @access_domain 127.0.0.1
 // ==/Feed==
 export default (() => {{
-    const empty = () => ({{ type: "complete", items: [] }});
+    const empty = () => ({{ type: "complete", result: [] }});
     const bookInfo = () => ({{
       type: "complete",
-      value: {{ id: "0", title: "", author: "" }},
+      result: {{ id: "0", title: "", author: "" }},
     }});
     return {{ search: empty, bookInfo, chapters: empty, paragraphs: empty }};
   }})()

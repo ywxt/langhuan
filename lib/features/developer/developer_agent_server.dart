@@ -1,3 +1,4 @@
+import '../feeds/feed_service.dart' show ParagraphIdStringExt;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -126,7 +127,18 @@ class DeveloperAgentServer {
               'name': 'paragraphs',
               'input': {'bookId': 'string', 'chapterId': 'string'},
             },
-            {'name': 'authStatus', 'input': <String, String>{}},
+            {'name': 'login.status', 'input': <String, String>{}},
+            for (final kind in ['chapter', 'paragraph'])
+              {
+                'name': 'comments.$kind',
+                'mode': 'single_page',
+                'input': {
+                  'bookId': 'string',
+                  'chapterId': 'string',
+                  if (kind == 'paragraph') 'paragraphId': 'string',
+                  'parentId': 'string|null',
+                },
+              },
           ],
           'run_endpoint': DeveloperAgentRoutes.runOperation,
           'script_endpoints': {
@@ -345,7 +357,7 @@ class DeveloperAgentServer {
       );
     }
     final mode = body['mode'];
-    if (mode == 'single_page') {
+    if (mode == 'single_page' || operation.startsWith('comments.')) {
       return DebugStage.manual(
         operation: operation,
         inputJson: jsonEncode(input),
@@ -372,7 +384,7 @@ class DeveloperAgentServer {
         bookId: requiredString('bookId'),
         chapterId: requiredString('chapterId'),
       ),
-      'authStatus' => const DebugStage.authStatus(),
+      'login.status' => const DebugStage.authStatus(),
       _ => throw _AgentRequestError(
         HttpStatus.badRequest,
         'unknown operation: $operation',
@@ -479,17 +491,11 @@ Object? _outputJson(DebugStageOutput? output) => switch (output) {
     'type': 'auth_status',
     'value': status.name,
   },
-  DebugStageOutput_Manual(
-    :final itemsJson,
-    :final valueJson,
-    :final nextCursorJson,
-  ) =>
-    {
-      'type': 'single_page',
-      'items': itemsJson == null ? null : jsonDecode(itemsJson),
-      'value': valueJson == null ? null : jsonDecode(valueJson),
-      'next_cursor': nextCursorJson == null ? null : jsonDecode(nextCursorJson),
-    },
+  DebugStageOutput_Manual(:final resultJson, :final nextCursorJson) => {
+    'type': 'single_page',
+    'result': jsonDecode(resultJson),
+    'next_cursor': nextCursorJson == null ? null : jsonDecode(nextCursorJson),
+  },
 };
 
 Map<String, Object?> _searchItemJson(SearchResultItem item) => {
@@ -528,7 +534,4 @@ Map<String, Object?> _paragraphJson(ParagraphContent paragraph) =>
       },
     };
 
-Object _paragraphId(ParagraphId id) => switch (id) {
-  ParagraphId_Index(:final field0) => field0,
-  ParagraphId_Id(:final field0) => field0,
-};
+Object _paragraphId(ParagraphId id) => jsonDecode(id.toStringValue());

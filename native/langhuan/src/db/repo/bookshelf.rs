@@ -91,6 +91,9 @@ impl Repo<'_> {
         self.conn
             .prepare_cached("DELETE FROM bookmarks WHERE feed_id = ?1 AND book_id = ?2")?
             .execute([feed_id, book_id])?;
+        self.conn
+            .prepare_cached("DELETE FROM listening_progress WHERE feed_id = ?1 AND book_id = ?2")?
+            .execute([feed_id, book_id])?;
         Ok(true)
     }
 
@@ -305,10 +308,10 @@ mod tests {
                 );
                 INSERT INTO reading_progress (
                     feed_id, book_id, chapter_id, paragraph_id, updated_at_ms
-                ) VALUES ('f1', 'b1', 'c2', 'p2', 1);
+                ) VALUES ('f1', 'b1', 'c2', '{"original":{"kind":"source","value":"p2"},"path":[]}', 1);
                 INSERT INTO chapters VALUES (
                     'f1', 'b1', 'c2',
-                    '[{"type":"title","id":"title","text":"Two"},{"type":"text","id":"p1","content":"First"},{"type":"text","id":"p2","content":"Second"}]',
+                    '[{"type":"title","id":{"original":{"kind":"source","value":"title"},"path":[]},"text":"Two"},{"type":"text","id":{"original":{"kind":"source","value":"p1"},"path":[]},"content":"First"},{"type":"text","id":{"original":{"kind":"source","value":"p2"},"path":[]},"content":"Second"}]',
                     1
                 );
                 "#,

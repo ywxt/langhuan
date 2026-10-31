@@ -14,7 +14,10 @@ PageContent _page(String id, String text, {String chapterId = 'c1'}) {
     chapterId: chapterId,
     items: [
       PageItem(
-        source: ParagraphContent_Text(id: ParagraphId.id(id), content: text),
+        source: ParagraphContent_Text(
+          id: ParagraphId(original: OriginalParagraphId.source(id), path: []),
+          content: text,
+        ),
         paragraphIndex: 0,
         paragraphId: id,
       ),
@@ -489,7 +492,10 @@ void main() {
                 items: [
                   PageItem(
                     source: ParagraphContent_Text(
-                      id: const ParagraphId.id('a'),
+                      id: const ParagraphId(
+                        original: OriginalParagraphId.source('a'),
+                        path: [],
+                      ),
                       content: 'first paragraph line',
                     ),
                     paragraphIndex: 0,
@@ -497,7 +503,10 @@ void main() {
                   ),
                   PageItem(
                     source: ParagraphContent_Text(
-                      id: const ParagraphId.id('b'),
+                      id: const ParagraphId(
+                        original: OriginalParagraphId.source('b'),
+                        path: [],
+                      ),
                       content: 'second paragraph line',
                     ),
                     paragraphIndex: 1,
@@ -505,7 +514,10 @@ void main() {
                   ),
                   PageItem(
                     source: ParagraphContent_Text(
-                      id: const ParagraphId.id('c'),
+                      id: const ParagraphId(
+                        original: OriginalParagraphId.source('c'),
+                        path: [],
+                      ),
                       content: 'third paragraph line',
                     ),
                     paragraphIndex: 2,

@@ -540,11 +540,11 @@ mod tests {
     fn paragraphs() -> Vec<Paragraph> {
         vec![
             Paragraph::Title {
-                id: ParagraphId::Index(0),
+                id: ParagraphId::generated(0),
                 text: "ch".to_owned(),
             },
             Paragraph::Text {
-                id: ParagraphId::Index(1),
+                id: ParagraphId::generated(1),
                 content: "hello".to_owned(),
             },
         ]

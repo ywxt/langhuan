@@ -347,35 +347,58 @@ pub struct ChapterItem {
     pub title: String,
 }
 
-/// Identifies a paragraph within a chapter.
-pub enum ParagraphId {
-    /// Sequential index assigned automatically when the source omits an id.
-    Index(i64),
-    /// Explicit identifier provided by the book source.
-    Id(String),
+/// Identity before text transforms.
+pub enum OriginalParagraphId {
+    Source(String),
+    Generated(i64),
+}
+
+pub struct ParagraphPathIndex {
+    pub index: u32,
+}
+
+/// Full typed paragraph identity, including transform descendants.
+pub struct ParagraphId {
+    pub original: OriginalParagraphId,
+    pub path: Vec<ParagraphPathIndex>,
 }
 
 impl ParagraphId {
     pub fn to_string_lossy(&self) -> String {
-        match self {
-            ParagraphId::Index(i) => i.to_string(),
-            ParagraphId::Id(s) => s.clone(),
+        let original = match &self.original {
+            OriginalParagraphId::Source(s) => {
+                langhuan::model::OriginalParagraphId::Source(s.clone())
+            }
+            OriginalParagraphId::Generated(i) => {
+                langhuan::model::OriginalParagraphId::Generated(*i as u64)
+            }
+        };
+        langhuan::model::ParagraphId {
+            original,
+            path: self.path.iter().map(|p| p.index).collect(),
         }
+        .to_string_lossy()
     }
 
-    pub fn from_stored(s: String) -> Self {
-        match s.parse::<i64>() {
-            Ok(i) => ParagraphId::Index(i),
-            Err(_) => ParagraphId::Id(s),
-        }
+    pub fn from_stored(s: String) -> Option<Self> {
+        langhuan::model::ParagraphId::from_stored(s).map(Into::into)
     }
 }
 
 impl From<langhuan::model::ParagraphId> for ParagraphId {
     fn from(id: langhuan::model::ParagraphId) -> Self {
-        match id {
-            langhuan::model::ParagraphId::Index(i) => ParagraphId::Index(i as i64),
-            langhuan::model::ParagraphId::Id(s) => ParagraphId::Id(s),
+        Self {
+            original: match id.original {
+                langhuan::model::OriginalParagraphId::Source(s) => OriginalParagraphId::Source(s),
+                langhuan::model::OriginalParagraphId::Generated(i) => {
+                    OriginalParagraphId::Generated(i as i64)
+                }
+            },
+            path: id
+                .path
+                .into_iter()
+                .map(|index| ParagraphPathIndex { index })
+                .collect(),
         }
     }
 }
@@ -476,7 +499,7 @@ pub struct ReadingProgressItem {
     pub feed_id: String,
     pub book_id: String,
     pub chapter_id: String,
-    pub paragraph_id: ParagraphId,
+    pub paragraph_id: Option<ParagraphId>,
     /// Character offset of the page-leading character within the paragraph
     /// (horizontal mode). 0 means the paragraph's start.
     pub paragraph_char_offset: u32,
@@ -492,7 +515,7 @@ pub struct BookmarkItem {
     pub feed_id: String,
     pub book_id: String,
     pub chapter_id: String,
-    pub paragraph_id: ParagraphId,
+    pub paragraph_id: Option<ParagraphId>,
     pub paragraph_name: String,
     pub paragraph_preview: String,
     pub label: String,

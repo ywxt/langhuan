@@ -60,20 +60,18 @@ where
     Ok(Function::new(ctx.clone(), function)?.with_constructor(true))
 }
 
-/// Wrap `function` and set it on `object` under `name`; the wrapped
-/// function is returned so callers can alias it (`attr`/`getAttribute`).
+/// Wrap a native function and install it under one canonical name.
 pub(super) fn set_function<'js, P, F>(
     ctx: &Ctx<'js>,
     object: &Object<'js>,
     name: &str,
     function: F,
-) -> JsResult<Function<'js>>
+) -> JsResult<()>
 where
     F: IntoJsFunc<'js, P> + 'js,
 {
     let function = Function::new(ctx.clone(), function)?;
-    object.set(name, function.clone())?;
-    Ok(function)
+    object.set(name, function)
 }
 
 /// Declare the native module `name`; `D` fills its exports on first import.

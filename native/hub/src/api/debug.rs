@@ -82,8 +82,7 @@ pub enum DebugStageOutput {
         status: AuthStatus,
     },
     Manual {
-        items_json: Option<String>,
-        value_json: Option<String>,
+        result_json: String,
         next_cursor_json: Option<String>,
     },
 }
@@ -142,7 +141,7 @@ impl From<TraceEntry> for HttpTraceEntry {
 
 /// One JavaScript reducer round returned by the feed handler.
 pub struct DebugStepTraceEntry {
-    /// Feed operation (`search`, `book_info`, …).
+    /// Feed export (`search`, `bookInfo`, `login.status`, …).
     pub operation: String,
     /// Zero-based reducer round within one page/value execution.
     pub round: u32,
@@ -466,12 +465,7 @@ async fn run_stage(
             match feed.debug_operation_page(&operation, input, cursor).await {
                 Ok(page) => (
                     Some(DebugStageOutput::Manual {
-                        items_json: page
-                            .items
-                            .map(|value| serde_json::to_string_pretty(&value).unwrap()),
-                        value_json: page
-                            .value
-                            .map(|value| serde_json::to_string_pretty(&value).unwrap()),
+                        result_json: serde_json::to_string_pretty(&page.result).unwrap(),
                         next_cursor_json: page
                             .next_cursor
                             .map(|value| serde_json::to_string_pretty(&value).unwrap()),
@@ -547,7 +541,7 @@ mod tests {
 // @version      3.0.0
 // @base_url     {base_url}
 // @access_domain 127.0.0.1
-// @schema_version 4
+// @schema_version 5
 // ==/Feed==
 import {{ TextDecoder }} from "langhuan:encoding";
 export default (() => {{
@@ -560,23 +554,23 @@ export default (() => {{
   function search(event) {{
     if (event.state == null) return request("/search");
     const ids = JSON.parse(DECODER.decode(event.response.body)).ids;
-    return {{ type: "complete", items: ids.map((id) => ({{
+    return {{ type: "complete", result: ids.map((id) => ({{
       id, title: "Book " + id, author: "Author",
     }})) }};
   }}
   function bookInfo(event) {{
     if (event.state == null) return request("/book/" + event.input.bookId);
-    return {{ type: "complete", value: JSON.parse(DECODER.decode(event.response.body)) }};
+    return {{ type: "complete", result: JSON.parse(DECODER.decode(event.response.body)) }};
   }}
   function chapters(event) {{
     return event.state == null
       ? request("/chapters")
-      : {{ type: "complete", items: [] }};
+      : {{ type: "complete", result: [] }};
   }}
   function paragraphs(event) {{
     return event.state == null
       ? request("/content")
-      : {{ type: "complete", items: [] }};
+      : {{ type: "complete", result: [] }};
   }}
   return {{ search, bookInfo, chapters, paragraphs }};
 }})()
@@ -592,19 +586,15 @@ export default (() => {{
 // @version      1.0.0
 // @base_url     https://example.com
 // @access_domain example.com
-// @schema_version 4
+// @schema_version 5
 // ==/Feed==
 function search(event) {
   const page = event.cursor?.page ?? 1;
-  return {
-    type: "complete",
-    items: [{ id: String(page), title: "Page " + page, author: "Author" }],
-    next_cursor: page < 2 ? { page: page + 1 } : null,
-  };
+  return { type: "complete", result: [{ id: String(page), title: "Page " + page, author: "Author" }], next_cursor: page < 2 ? { page: page + 1 } : null };
 }
-function bookInfo() { return { type: "complete", value: {} }; }
-function chapters() { return { type: "complete", items: [] }; }
-function paragraphs() { return { type: "complete", items: [] }; }
+function bookInfo() { return { type: "complete", result: {} }; }
+function chapters() { return { type: "complete", result: [] }; }
+function paragraphs() { return { type: "complete", result: [] }; }
 export default { search, bookInfo, chapters, paragraphs };
 "#
     }
@@ -677,7 +667,7 @@ export default { search, bookInfo, chapters, paragraphs };
         .await;
         assert!(first_error.is_none());
         let Some(DebugStageOutput::Manual {
-            items_json: Some(items),
+            result_json: items,
             next_cursor_json: Some(next_cursor),
             ..
         }) = first_output
@@ -704,7 +694,7 @@ export default { search, bookInfo, chapters, paragraphs };
         .await;
         assert!(second_error.is_none());
         let Some(DebugStageOutput::Manual {
-            items_json: Some(items),
+            result_json: items,
             next_cursor_json: None,
             ..
         }) = second_output

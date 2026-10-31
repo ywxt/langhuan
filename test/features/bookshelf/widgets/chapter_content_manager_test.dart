@@ -22,12 +22,24 @@ void main() {
 
   final data = <String, List<ParagraphContent>>{
     'c1': [
-      ParagraphContent_Title(id: ParagraphId.id('t1'), text: 'Chapter One'),
-      ParagraphContent_Text(id: ParagraphId.id('p1'), content: 'Body one.'),
+      ParagraphContent_Title(
+        id: ParagraphId(original: OriginalParagraphId.source('t1'), path: []),
+        text: 'Chapter One',
+      ),
+      ParagraphContent_Text(
+        id: ParagraphId(original: OriginalParagraphId.source('p1'), path: []),
+        content: 'Body one.',
+      ),
     ],
     'c2': [
-      ParagraphContent_Title(id: ParagraphId.id('t2'), text: 'Chapter Two'),
-      ParagraphContent_Text(id: ParagraphId.id('p2'), content: 'Body two.'),
+      ParagraphContent_Title(
+        id: ParagraphId(original: OriginalParagraphId.source('t2'), path: []),
+        text: 'Chapter Two',
+      ),
+      ParagraphContent_Text(
+        id: ParagraphId(original: OriginalParagraphId.source('p2'), path: []),
+        content: 'Body two.',
+      ),
     ],
   };
 

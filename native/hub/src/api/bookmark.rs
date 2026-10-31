@@ -7,7 +7,7 @@ pub async fn add_bookmark(
     feed_id: String,
     book_id: String,
     chapter_id: String,
-    paragraph_id: ParagraphId,
+    paragraph_id: Option<ParagraphId>,
     paragraph_name: String,
     paragraph_preview: String,
     label: String,
@@ -19,7 +19,9 @@ pub async fn add_bookmark(
             feed_id,
             book_id,
             chapter_id,
-            paragraph_id: paragraph_id.to_string_lossy(),
+            paragraph_id: paragraph_id
+                .map(|id| id.to_string_lossy())
+                .unwrap_or_default(),
             paragraph_name,
             paragraph_preview,
             label,

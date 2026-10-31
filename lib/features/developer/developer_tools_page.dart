@@ -425,7 +425,10 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
       'bookInfo': '{\n  "bookId": ""\n}',
       'chapters': '{\n  "bookId": ""\n}',
       'paragraphs': '{\n  "bookId": "",\n  "chapterId": ""\n}',
-      'authStatus': '{}',
+      'login.status': '{}',
+      'comments.chapter': '{"bookId":"","chapterId":"","parentId":null}',
+      'comments.paragraph':
+          '{"bookId":"","chapterId":"","paragraphId":"","parentId":null}',
     };
     setState(() {
       _manualOperation = operation;
@@ -1140,6 +1143,14 @@ class _InputArea extends StatelessWidget {
                 isDense: true,
               ),
               items: const [
+                DropdownMenuItem(
+                  value: 'comments.chapter',
+                  child: Text('comments.chapter'),
+                ),
+                DropdownMenuItem(
+                  value: 'comments.paragraph',
+                  child: Text('comments.paragraph'),
+                ),
                 DropdownMenuItem(value: 'search', child: Text('search')),
                 DropdownMenuItem(value: 'bookInfo', child: Text('bookInfo')),
                 DropdownMenuItem(value: 'chapters', child: Text('chapters')),
@@ -1148,8 +1159,8 @@ class _InputArea extends StatelessWidget {
                   child: Text('paragraphs'),
                 ),
                 DropdownMenuItem(
-                  value: 'authStatus',
-                  child: Text('authStatus'),
+                  value: 'login.status',
+                  child: Text('login.status'),
                 ),
               ],
               onChanged: (value) {
@@ -1527,14 +1538,9 @@ class _OutputView extends StatelessWidget {
           DebugStageOutput_AuthStatus(:final status) => _AuthStatusOutput(
             status: status,
           ),
-          DebugStageOutput_Manual(
-            :final itemsJson,
-            :final valueJson,
-            :final nextCursorJson,
-          ) =>
+          DebugStageOutput_Manual(:final resultJson, :final nextCursorJson) =>
             _ManualOutput(
-              itemsJson: itemsJson,
-              valueJson: valueJson,
+              resultJson: resultJson,
               nextCursorJson: nextCursorJson,
               onUseCursor: onUseManualCursor,
             ),
@@ -1546,14 +1552,12 @@ class _OutputView extends StatelessWidget {
 
 class _ManualOutput extends StatelessWidget {
   const _ManualOutput({
-    required this.itemsJson,
-    required this.valueJson,
+    required this.resultJson,
     required this.nextCursorJson,
     required this.onUseCursor,
   });
 
-  final String? itemsJson;
-  final String? valueJson;
+  final String resultJson;
   final String? nextCursorJson;
   final ValueChanged<String> onUseCursor;
 
@@ -1563,10 +1567,7 @@ class _ManualOutput extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (itemsJson != null)
-          _JsonResultBlock(label: 'items', value: itemsJson!),
-        if (valueJson != null)
-          _JsonResultBlock(label: 'value', value: valueJson!),
+        _JsonResultBlock(label: 'result', value: resultJson),
         if (nextCursorJson != null) ...[
           _JsonResultBlock(label: 'next_cursor', value: nextCursorJson!),
           Align(

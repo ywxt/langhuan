@@ -1,14 +1,15 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.fanqie_app
 // @name         番茄小說（APP 直連）
-// @version      1.0.0
+// @version      2.1.0
 // @author       Langhuan
-// @description  番茄小說 APP 網關書源（reading.snssdk.com）：匿名設備註冊後經 x-argus/x-ladon 簽名直連閱讀 API，VIP 章節全文解密，無需帳號。需要宿主提供存儲後端（langhuan:storage）
+// @description  番茄小說 APP 網關書源（reading.snssdk.com）：匿名設備註冊後經 x-argus/x-ladon 簽名直連閱讀 API，VIP 章節全文解密，無需帳號；支持正文段落評論。需要宿主提供存儲後端（langhuan:storage）
 // @base_url     https://reading.snssdk.com
 // @access_domain reading.snssdk.com
 // @access_domain i.snssdk.com
 // @access_domain fanqienovel.com
-// @schema_version 4
+// @access_domain api5-normal-sinfonlineb.fqnovel.com
+// @schema_version 5
 // ==/Feed==
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -60,6 +61,11 @@
 //           compress_status===1 時解密後還要 gunzip。content==='Invalid'
 //           或 key_version 與本地不符表示密鑰註冊失效，重註冊後重試。
 //
+// 段評      POST api5-normal-sinfonlineb.fqnovel.com/novel/commentapi/
+//           comment/list/{chapterId}/v1 與 reply/list/{commentId}/v1。
+//           body 為 JSON 且參與簽名（X-SS-STUB），配方見下方「段評與回
+//           覆」註釋塊；不需要內容密鑰，僅需已註冊的設備。
+//
 // 請求簽名  x-argus / x-ladon / x-khronos / x-ss-req-ticket（X-SS-STUB
 //           僅帶體請求）。argus：protobuf 字段表（見 buildArgusProtobuf）
 //           → Simon128/256-ECB（密鑰 = SM3(signKey‖LOW_RAND‖HIGH_RAND‖
@@ -107,7 +113,11 @@ const SHARED_KEY = new Uint8Array([
 ]);
 
 const READING_BASE = "https://reading.snssdk.com/reading";
-const REGISTER_URL = "https://i.snssdk.com/service/2/device_register/?tt_data=a";
+// 評論中台（commentapi）與閱讀網關是不同的 host： fqapp/mtongle 的驗證
+// 配方都指向 api5-normal-sinfonlineb。
+const COMMENT_BASE = "https://api5-normal-sinfonlineb.fqnovel.com";
+const REGISTER_URL =
+  "https://i.snssdk.com/service/2/device_register/?tt_data=a";
 const APP_USER_AGENT = "com.dragon.read";
 const OKHTTP_UA = "okhttp/4.10.0";
 // 目錄回退走番茄網頁站的免簽名 API，用瀏覽器 UA（上游經頁面 fetch 訪問）。
@@ -117,8 +127,12 @@ const WEB_USER_AGENT =
 
 const LOW_RAND = new Uint8Array([0xf2, 0x81]);
 const HIGH_RAND = new Uint8Array([0x61, 0x6f]); // 'a', 'o'
-const XOR_PREFIX = new Uint8Array([0xf2, 0xf7, 0xfc, 0xff, 0xf2, 0xf7, 0xfc, 0xff]);
-const ARGUS_HEADER = new Uint8Array([0xa6, 0x6e, 0xad, 0x9f, 0x77, 0x01, 0xd0, 0x0c, 0x18]);
+const XOR_PREFIX = new Uint8Array([
+  0xf2, 0xf7, 0xfc, 0xff, 0xf2, 0xf7, 0xfc, 0xff,
+]);
+const ARGUS_HEADER = new Uint8Array([
+  0xa6, 0x6e, 0xad, 0x9f, 0x77, 0x01, 0xd0, 0x0c, 0x18,
+]);
 
 const TT_FIXED_STRING = Bytes.fromBase64(
   "TdTC5rgxYgkOUrPHpnM7pByyRiuCmrWKGWs521cXdST0m69/COjWjSanLjfBqVovHwWlGJKu8pSXMrYqOKrdWA==",
@@ -134,15 +148,41 @@ const ANDROID_VERSIONS = [
   { version: "14", api: 34 },
 ];
 const DEVICE_MODELS = [
-  "RMX1931", "MI8", "Honor10", "P30", "V1921A",
-  "Redmi Note 7", "Redmi K20 Pro", "MI 9", "Mi 10 Pro",
-  "SM-G9750", "Pixel 6", "HD1910", "M2011K2C",
-  "LIO-AN00", "VOG-TL00", "PCLM10", "GM1900",
-  "Pixel 7 Pro", "Pixel 6a", "SM-N9760", "POCO F1",
+  "RMX1931",
+  "MI8",
+  "Honor10",
+  "P30",
+  "V1921A",
+  "Redmi Note 7",
+  "Redmi K20 Pro",
+  "MI 9",
+  "Mi 10 Pro",
+  "SM-G9750",
+  "Pixel 6",
+  "HD1910",
+  "M2011K2C",
+  "LIO-AN00",
+  "VOG-TL00",
+  "PCLM10",
+  "GM1900",
+  "Pixel 7 Pro",
+  "Pixel 6a",
+  "SM-N9760",
+  "POCO F1",
 ];
 const DEVICE_BRANDS = [
-  "realme", "Xiaomi", "Huawei", "OPPO", "vivo",
-  "samsung", "OnePlus", "google", "Redmi", "HONOR", "motorola", "POCO",
+  "realme",
+  "Xiaomi",
+  "Huawei",
+  "OPPO",
+  "vivo",
+  "samsung",
+  "OnePlus",
+  "google",
+  "Redmi",
+  "HONOR",
+  "motorola",
+  "POCO",
 ];
 const HEX_LOW = "0123456789abcdef";
 
@@ -165,7 +205,9 @@ function concat(...parts) {
 }
 
 function md5Hex(input) {
-  return Bytes.toHex(Crypto.md5(typeof input === "string" ? utf8(input) : input));
+  return Bytes.toHex(
+    Crypto.md5(typeof input === "string" ? utf8(input) : input),
+  );
 }
 
 function randomUint32() {
@@ -189,7 +231,8 @@ function randomHex(k) {
 }
 
 function randomString(length) {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const bytes = Crypto.randomBytes(length);
   let out = "";
   for (let i = 0; i < length; i++) out += chars.charAt(bytes[i] % chars.length);
@@ -259,7 +302,9 @@ function buildArgusProtobuf(query, xssStub, timestamp) {
   const deviceId = params.get("device_id") ?? "";
   const versionName = params.get("version_name") ?? "";
 
-  const bodyHash = sm3Prefix6(xssStub === "" ? new Uint8Array(16) : decodeStub(xssStub));
+  const bodyHash = sm3Prefix6(
+    xssStub === "" ? new Uint8Array(16) : decodeStub(xssStub),
+  );
   const queryHash = sm3Prefix6(query === "" ? new Uint8Array(16) : utf8(query));
   const rand = randomUint32() % 0x7fffffff;
 
@@ -361,8 +406,10 @@ function generateRequestBody() {
   const romVersion =
     "coloros__" +
     randomHex(4).toUpperCase() +
-    "." + String(randomInt(1_000_000)).padStart(6, "0") +
-    "." + String(randomInt(100_000_000)).padStart(8, "0") +
+    "." +
+    String(randomInt(1_000_000)).padStart(6, "0") +
+    "." +
+    String(randomInt(100_000_000)).padStart(8, "0") +
     " release-keys";
 
   return {
@@ -505,7 +552,10 @@ function currentKeyinfo() {
 }
 
 function saveKeyinfo(keyinfo) {
-  storage.set("keyinfo", { key: Bytes.toBase64(keyinfo.key), keyver: keyinfo.keyver });
+  storage.set("keyinfo", {
+    key: Bytes.toBase64(keyinfo.key),
+    keyver: keyinfo.keyver,
+  });
 }
 
 function dropKeyinfo() {
@@ -532,7 +582,11 @@ function registerStep(launch) {
   return {
     type: "request",
     request,
-    next_state: { pipeline: "register", deviceType: body.header.device_model, launch },
+    next_state: {
+      pipeline: "register",
+      deviceType: body.header.device_model,
+      launch,
+    },
   };
 }
 
@@ -568,7 +622,7 @@ function activateStep(device, launch) {
   headers["Content-Type"] = "application/json; charset=utf-8";
   return {
     type: "request",
-    request: { url, method: "POST", headers, body },
+    request: { url, method: "POST", headers, body: utf8(body) },
     next_state: { pipeline: "activate", device, launch },
   };
 }
@@ -584,7 +638,9 @@ function registerKeyStep(device, launch) {
     iv,
     data: deviceIdBytesLE(device.device_id, 16),
   });
-  const body = JSON.stringify({ content: Bytes.toBase64(concat(iv, encrypted)) });
+  const body = JSON.stringify({
+    content: Bytes.toBase64(concat(iv, encrypted)),
+  });
   const gzipped = Compression.gzip(utf8(body));
   const headers = signHeaders(url, gzipped);
   headers["User-Agent"] = APP_USER_AGENT;
@@ -611,7 +667,9 @@ function refreshKeyStep(launch) {
     iv,
     data: deviceIdBytesLE(device.device_id, 8),
   });
-  const body = JSON.stringify({ content: Bytes.toBase64(concat(iv, encrypted)) });
+  const body = JSON.stringify({
+    content: Bytes.toBase64(concat(iv, encrypted)),
+  });
   const gzipped = Compression.gzip(utf8(body));
   const headers = signHeaders(url, gzipped);
   headers["User-Agent"] = APP_USER_AGENT;
@@ -763,7 +821,9 @@ function searchBooks(json) {
   const resultCells = cells.filter((cell) => Number(cell?.show_type) === 110);
   const pool = resultCells.length
     ? resultCells
-    : cells.filter((cell) => Array.isArray(cell?.book_data) && cell.book_data.length);
+    : cells.filter(
+        (cell) => Array.isArray(cell?.book_data) && cell.book_data.length,
+      );
 
   const items = [];
   const seen = new Set();
@@ -797,7 +857,8 @@ function bookInfoFromDetail(data, bookId) {
 
 function chapterItems(json) {
   const items = json?.data?.item_data_list;
-  if (json?.code !== 0 || !Array.isArray(items) || items.length === 0) return null;
+  if (json?.code !== 0 || !Array.isArray(items) || items.length === 0)
+    return null;
   const chapters = [];
   for (const item of items) {
     const id = String(item.item_id ?? "");
@@ -831,9 +892,16 @@ function paragraphsFromHtml(htmlText) {
   const items = [];
   const title = document.select("h1, h2").first()?.text().trim();
   if (title) items.push({ type: "title", text: title });
+  // 服務端段評的 para_index 從正文第一個 <p> 起算（0-based，標題不佔
+  // 索引，空段照常遞增——與 commentapi 實況對齊），因此計數跟隨 <p> 的
+  // 遍歷而非實際輸出。
+  let paraIndex = 0;
   for (const paragraph of document.select("p")) {
     const content = paragraph.text().trim();
-    if (content) items.push({ type: "text", content });
+    if (content) {
+      items.push({ type: "text", content, id: String(paraIndex) });
+    }
+    paraIndex += 1;
   }
   return items;
 }
@@ -857,12 +925,14 @@ function decryptChapter(encrypted, compressStatus) {
 
 function searchStart(event) {
   const keyword = String(event.input.keyword ?? "").trim();
-  if (!keyword) return { type: "complete", items: [] };
+  if (!keyword) return { type: "complete", result: [] };
   const passback = event.cursor == null ? 0 : Number(event.cursor);
   const direct = bookIdFromKeyword(keyword);
   return ensureDeviceStep(() =>
     direct
-      ? appGetStep("/bookapi/detail/v", [["book_id", direct]], { search: { direct } })
+      ? appGetStep("/bookapi/detail/v", [["book_id", direct]], {
+          search: { direct },
+        })
       : appGetStep(
           "/bookapi/search/tab/v",
           [
@@ -880,7 +950,9 @@ function bookInfoStart(event) {
   const bookId = bookIdFromKeyword(String(event.input.bookId ?? ""));
   if (!bookId) return FeedError.contentNotFound("無效的書籍 ID");
   return ensureDeviceStep(() =>
-    appGetStep("/bookapi/detail/v", [["book_id", bookId]], { bookInfo: { bookId } }),
+    appGetStep("/bookapi/detail/v", [["book_id", bookId]], {
+      bookInfo: { bookId },
+    }),
   );
 }
 
@@ -888,11 +960,9 @@ function chaptersStart(event) {
   const bookId = bookIdFromKeyword(String(event.input.bookId ?? ""));
   if (!bookId) return FeedError.contentNotFound("無效的書籍 ID");
   return ensureDeviceStep(() =>
-    appGetStep(
-      "/bookapi/directory/all_items/v",
-      [["book_id", bookId]],
-      { chapters: { bookId, webFallback: false } },
-    ),
+    appGetStep("/bookapi/directory/all_items/v", [["book_id", bookId]], {
+      chapters: { bookId, webFallback: false },
+    }),
   );
 }
 
@@ -931,13 +1001,16 @@ function search(event) {
     return FeedError.raise("search_failed", "番茄搜索回應不是有效的 JSON");
   }
   if (json.code !== undefined && json.code !== 0) {
-    return FeedError.raise("search_failed", json.message || `搜索失敗（code=${json.code}）`);
+    return FeedError.raise(
+      "search_failed",
+      json.message || `搜索失敗（code=${json.code}）`,
+    );
   }
 
   if (state.direct) {
     const book = bookInfoFromDetail(json.data, state.direct);
     if (book.type === "fail") return book;
-    return { type: "complete", items: [book] };
+    return { type: "complete", result: [book] };
   }
 
   const { tab, items } = searchBooks(json);
@@ -946,8 +1019,8 @@ function search(event) {
   // 回填服務端游標；未給時按已取回數量前推，至少不會原地打轉。
   const next = Number(tab?.passback) || passback + Math.max(items.length, 1);
   return hasMore
-    ? { type: "complete", items, next_cursor: next }
-    : { type: "complete", items };
+    ? { type: "complete", result: items, next_cursor: next }
+    : { type: "complete", result: items };
 }
 
 function bookInfo(event) {
@@ -964,7 +1037,7 @@ function bookInfo(event) {
   const json = bodyJson(response);
   const book = bookInfoFromDetail(json?.data, event.state.bookInfo.bookId);
   if (book.type === "fail") return book;
-  return { type: "complete", value: book };
+  return { type: "complete", result: book };
 }
 
 function chapters(event) {
@@ -981,7 +1054,7 @@ function chapters(event) {
   markDeviceHealthy();
   const json = bodyJson(response);
   const items = chapterItems(json);
-  if (items) return { type: "complete", items };
+  if (items) return { type: "complete", result: items };
 
   // APP 目錄端點數據不全時回落到番茄網頁站的免簽名目錄 API。
   if (!state.webFallback) {
@@ -1006,7 +1079,8 @@ function chapters(event) {
   for (const volume of chaptersByVolume) {
     if (!Array.isArray(volume)) continue;
     for (const chapter of volume) {
-      if (chapter?.itemId) titleById.set(String(chapter.itemId), String(chapter.title ?? ""));
+      if (chapter?.itemId)
+        titleById.set(String(chapter.itemId), String(chapter.title ?? ""));
     }
   }
   for (const itemId of allItems) {
@@ -1014,7 +1088,7 @@ function chapters(event) {
     items2.push({ id, title: titleById.get(id) ?? "" });
   }
   return items2.length
-    ? { type: "complete", items: items2 }
+    ? { type: "complete", result: items2 }
     : FeedError.contentNotFound("無法取得書籍目錄");
 }
 
@@ -1041,7 +1115,8 @@ function paragraphs(event) {
   const keyinfo = currentKeyinfo();
   const expired =
     data.content === "Invalid" ||
-    (data.key_version !== undefined && Number(data.key_version) !== keyinfo?.keyver);
+    (data.key_version !== undefined &&
+      Number(data.key_version) !== keyinfo?.keyver);
   if (expired && state.attempt < 2) {
     // 密鑰註冊失效：'Invalid' 時 keyver 可能仍與本地一致，必須強制重註冊
     // 而不是走緩存。
@@ -1053,12 +1128,20 @@ function paragraphs(event) {
           ["item_id", state.chapterId],
           ["req_type", "1"],
         ],
-        { paragraphs: { bookId: state.bookId, chapterId: state.chapterId, attempt: state.attempt + 1 } },
+        {
+          paragraphs: {
+            bookId: state.bookId,
+            chapterId: state.chapterId,
+            attempt: state.attempt + 1,
+          },
+        },
       ),
     );
   }
   if (!data.content || data.content === "Invalid") {
-    return FeedError.contentNotFound("章節正文不可用（密鑰重註冊後仍為 Invalid）");
+    return FeedError.contentNotFound(
+      "章節正文不可用（密鑰重註冊後仍為 Invalid）",
+    );
   }
 
   const plain = decryptChapter(data.content, data.compress_status);
@@ -1066,7 +1149,272 @@ function paragraphs(event) {
   if (!items.length) {
     return FeedError.contentNotFound("章節正文解密後為空");
   }
-  return { type: "complete", items };
+  return { type: "complete", result: items };
+}
+
+// ── 段評與回覆（commentapi 中台，配方移植自 fqapp / mtongle 驗證實現）──
+//
+// POST {COMMENT_BASE}/novel/commentapi/comment/list/{chapterId}/v1
+//      段評列表：comment_source=2、comment_type=1、group_type=15、
+//      server_channel=38（38 是實測可用值，官方 presenter 的 43 恒返回
+//      空，39 只對部分書有效）、group_id=章節 ID、business_param 內
+//      book_id/item_version/para_index 缺一報 103001（item_version 可
+//      硬編碼 "1"）。para_index 從正文第一個 <p> 起算（0-based，標題
+//      不佔索引，空段照常遞增），與 paragraphsFromHtml 賦的段落 id 對
+//      齊。
+// POST {COMMENT_BASE}/novel/commentapi/reply/list/{commentId}/v1
+//      回覆列表：comment_source=502，group_id 仍是章節 ID。
+// 兩者 body 均爲 JSON，簽名復用 signHeaders(url, body)（X-SS-STUB 爲
+// body 的 md5）。段評響應的條目在 data.data_list[i].comment（內容在
+// .common、計數在 .stat 內部），回覆響應在 data.reply_list[i]（外層
+// 鍵爲大寫 Common，reply_id 爲主鍵）；分頁統一在 data.common_list_info
+// （cursor 是純數字字符串 offset，has_more 決定是否有下一頁）。
+
+const COMMENT_COUNT = 20;
+const REPLY_COUNT = 10;
+
+// 評論請求的設備參數袋（fqapp 的 reading724Params，7.2.4.32 版本）。
+// 型號字段是官方客戶端的硬編碼值，與註冊設備不同型號亦可用：簽名輸入
+// 只有查詢串與請求體字節，不含這些字段。
+function commentQuery() {
+  const device = currentDevice();
+  return encodeQuery([
+    ["iid", device.install_id],
+    ["device_id", device.device_id],
+    ["ac", "wifi"],
+    ["channel", "xiaomi_1967_64"],
+    ["aid", AID],
+    ["app_name", "novelapp"],
+    ["version_code", "72432"],
+    ["version_name", "7.2.4.32"],
+    ["device_platform", "android"],
+    ["os", "android"],
+    ["ssmix", "a"],
+    ["device_type", "25053RT47C"],
+    ["device_brand", "Redmi"],
+    ["language", "zh"],
+    ["os_api", "36"],
+    ["os_version", "16"],
+    ["manifest_version_code", "72432"],
+    ["resolution", "1280*2620"],
+    ["dpi", "520"],
+    ["update_version_code", "72432"],
+    ["host_abi", "arm64-v8a"],
+    ["dragon_device_type", "phone"],
+    ["pv_player", "72432"],
+    ["compliance_status", "0"],
+    ["need_personal_recommend", "1"],
+    ["player_so_load", "1"],
+    ["is_android_pad_screen", "0"],
+    ["rom_version", "miui_V816_OS3.0.9.0.WOLCNXM"],
+  ]);
+}
+
+function commentPostStep(path, body, businessState) {
+  const url = `${COMMENT_BASE}${path}?${commentQuery()}`;
+  const bodyBytes = utf8(JSON.stringify(body));
+  const headers = signHeaders(url, bodyBytes);
+  headers["User-Agent"] = APP_USER_AGENT;
+  headers["Content-Type"] = "application/json; charset=utf-8";
+  return {
+    type: "request",
+    request: { url, method: "POST", headers, body: bodyBytes },
+    next_state: businessState,
+  };
+}
+
+function commentListStart(state) {
+  const body = {
+    business_param: {
+      book_id: state.bookId,
+      comment_sort_debug: false,
+      end_offset_time: 0,
+      fold_type: 1,
+      item_count: 0,
+      item_version: "1",
+      max_item_count: 0,
+      need_danmaku_occlusion_face_data: false,
+      para_index: state.paraIndex,
+      playlet_item_duration: 0,
+      read_item_count: 0,
+      req_type: 0,
+      start_offset_time: 0,
+      // need_count 只在首页（cursor 为空）为 true，与官方一致。
+      need_count: !state.cursor,
+    },
+    comment_source: 2,
+    comment_type: 1,
+    count: COMMENT_COUNT,
+    group_id: state.chapterId,
+    group_type: 15,
+    server_channel: 38,
+    sort: 1,
+  };
+  if (state.cursor) body.cursor = state.cursor;
+  return commentPostStep(
+    `/novel/commentapi/comment/list/${state.chapterId}/v1`,
+    body,
+    { comments: state },
+  );
+}
+
+function replyListStart(state) {
+  const body = {
+    aid: Number(AID),
+    business_param: {
+      book_id: state.bookId,
+      client_ab_params: '{"comment_dislike_filter":"0"}',
+      need_count: false,
+    },
+    comment_id: state.parentId,
+    comment_source: 502,
+    comment_type: 1,
+    compliance_status: 0,
+    count: REPLY_COUNT,
+    cursor: state.cursor || "",
+    group_id: state.chapterId,
+    group_type: 15,
+  };
+  return commentPostStep(
+    `/novel/commentapi/reply/list/${state.parentId}/v1`,
+    body,
+    { comments: state },
+  );
+}
+
+function commentsStart(event) {
+  const bookId = bookIdFromKeyword(String(event.input.bookId ?? ""));
+  const chapterId = bookIdFromKeyword(String(event.input.chapterId ?? ""));
+  if (!bookId || !chapterId) {
+    return FeedError.contentNotFound("無效的書籍或章節 ID");
+  }
+  const paragraphId = String(event.input.paragraphId ?? "");
+  const paraIndex = Number(paragraphId);
+  if (!/^\d+$/.test(paragraphId) || !Number.isInteger(paraIndex)) {
+    return FeedError.contentNotFound("無效的段落 ID");
+  }
+  const parentId = String(event.input.parentId ?? "");
+  const state = {
+    bookId,
+    chapterId,
+    paraIndex,
+    parentId,
+    cursor: event.cursor == null ? "" : String(event.cursor),
+  };
+  return ensureDeviceStep(() =>
+    parentId ? replyListStart(state) : commentListStart(state),
+  );
+}
+
+// 評論項的公共解析：common 承載內容與作者，stat 承載計數。
+function toCount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : null;
+}
+
+function timestampMs(value) {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  const milliseconds = seconds > 100_000_000_000 ? seconds : seconds * 1000;
+  return milliseconds <= 8_640_000_000_000_000 ? milliseconds : null;
+}
+
+function commentText(content) {
+  const text = String(content?.text ?? "").trim();
+  if (text) return text;
+  // 純圖片評論：content.image_data_list.image_data 存在即代表有圖。
+  const images = content?.image_data_list?.image_data;
+  return Array.isArray(images) && images.length ? "[圖片]" : "";
+}
+
+function commentAuthor(common) {
+  const base = common?.user_info?.base_info ?? {};
+  return {
+    name: String(base.user_name ?? "").trim() || "番茄書友",
+    avatar_url: String(base.user_avatar ?? "").trim() || null,
+  };
+}
+
+function commentIdText(value) {
+  if (value == null) return "";
+  return typeof value === "number" ? value.toFixed(0) : String(value).trim();
+}
+
+function parseCommentItems(json) {
+  const data = json?.data;
+  if (data == null) return null;
+  const items = [];
+  // 段評條目在 data_list[i].comment；回覆條目在 reply_list[i]（外層鍵
+  // 爲大寫 Common，主鍵是 reply_id）。兩種形態都歸一爲 Comment。
+  const entries = Array.isArray(data?.data_list)
+    ? data.data_list.map((entry) => ({
+        holder: entry?.comment,
+        stat: entry?.comment?.stat ?? entry?.stat,
+        id: entry?.comment?.comment_id,
+      }))
+    : Array.isArray(data?.reply_list)
+      ? data.reply_list.map((entry) => ({
+          holder: entry?.Common ?? entry?.common,
+          stat: entry?.stat,
+          id: entry?.reply_id,
+        }))
+      : [];
+  for (const entry of entries) {
+    const id = commentIdText(entry.id);
+    if (!id) continue;
+    const text = commentText(entry.holder?.content);
+    if (!text) continue;
+    const replyCount = toCount(entry.stat?.reply_count);
+    items.push({
+      id,
+      author: commentAuthor(entry.holder),
+      text,
+      created_at_ms: timestampMs(entry.holder?.create_timestamp),
+      like_count: toCount(entry.stat?.digg_count),
+      // 回覆的回覆不再展開：段評條目帶回覆計數，回覆條目不帶。
+      replies: replyCount == null ? null : { total_count: replyCount },
+      source_url: null,
+    });
+  }
+  const info = data.common_list_info ?? data.comment_list_info ?? {};
+  const cursor = String(info?.cursor ?? "");
+  const hasMore = info?.has_more === true && cursor !== "";
+  return {
+    items,
+    total_count: toCount(info?.total),
+    next_cursor: hasMore ? cursor : null,
+  };
+}
+
+function comments(event) {
+  if (event.state == null) return commentsStart(event);
+
+  const pipelined = pipelineResponse(event);
+  if (pipelined) return pipelined;
+
+  const response = event.response;
+  if (emptyResponse(response)) {
+    return recoverDeviceStep(() => commentsStart(event));
+  }
+  markDeviceHealthy();
+  const json = bodyJson(response);
+  if (json == null) {
+    return FeedError.sourceUnavailable("番茄評論回應不是有效的 JSON");
+  }
+  if (json.code !== undefined && json.code !== 0 && json.code !== 200) {
+    return FeedError.sourceUnavailable(
+      `番茄評論 API 返回錯誤（code=${json.code}，${json.message || "無錯誤消息"}）`,
+    );
+  }
+  const page = parseCommentItems(json);
+  if (page == null) {
+    return FeedError.sourceUnavailable("番茄評論回應缺少數據");
+  }
+  return {
+    type: "complete",
+    result: { items: page.items, total_count: page.total_count },
+    next_cursor: page.next_cursor,
+  };
 }
 
 // 密鑰未就緒（或緩存不可用）時的公共入口：先重註冊密鑰再發正文請求。
@@ -1075,4 +1423,13 @@ function ensureKeyinfoStep(launch) {
   return refreshKeyStep(launch);
 }
 
-export default { search, bookInfo, chapters, paragraphs };
+// 章評（group_id 對應的章評單元配方）官方客戶端未在 m 站/網頁暴露，
+// 社區逆向也未驗證可用組合，故不導出 comments.chapter；宿主對缺失的
+// 導出自動隱藏章評入口。段評與其回覆已完整支持。
+export default {
+  search,
+  bookInfo,
+  chapters,
+  paragraphs,
+  comments: { paragraph: comments },
+};

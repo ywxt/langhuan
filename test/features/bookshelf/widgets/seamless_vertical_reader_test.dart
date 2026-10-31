@@ -17,7 +17,10 @@ List<ChapterInfoModel> _chapters(int count) => [
 List<ParagraphContent> _tallParagraphs(String chapterId) => [
   for (var i = 0; i < 40; i++)
     ParagraphContent_Text(
-      id: ParagraphId.id('${chapterId}_p$i'),
+      id: ParagraphId(
+        original: OriginalParagraphId.source('${chapterId}_p$i'),
+        path: [],
+      ),
       content: '$chapterId paragraph $i',
     ),
 ];
@@ -224,7 +227,10 @@ void main() {
 
     expect(positions, isNotEmpty);
     expect(positions.last.$1, 'c2');
-    expect(positions.last.$2, startsWith('c2_p'));
+    expect(
+      paragraphIdFromString(positions.last.$2)?.sourceId,
+      startsWith('c2_p'),
+    );
   });
 
   testWidgets('restores to a target paragraph', (tester) async {
@@ -392,15 +398,24 @@ void main() {
       bool forceRefresh = false,
     }) async => [
       ParagraphContent_Title(
-        id: ParagraphId.id('${chapterId}_title'),
+        id: ParagraphId(
+          original: OriginalParagraphId.source('${chapterId}_title'),
+          path: [],
+        ),
         text: '$chapterId title',
       ),
       ParagraphContent_Text(
-        id: ParagraphId.id('${chapterId}_body_0'),
+        id: ParagraphId(
+          original: OriginalParagraphId.source('${chapterId}_body_0'),
+          path: [],
+        ),
         content: '$chapterId body 0',
       ),
       ParagraphContent_Text(
-        id: ParagraphId.id('${chapterId}_body_1'),
+        id: ParagraphId(
+          original: OriginalParagraphId.source('${chapterId}_body_1'),
+          path: [],
+        ),
         content: '$chapterId body 1',
       ),
     ];
@@ -427,6 +442,6 @@ void main() {
     expect(titleTop, lessThan(firstBodyTop));
     expect(firstBodyTop, lessThan(lastBodyTop));
     expect(positions.last.$1, 'c0');
-    expect(positions.last.$2, 'c0_title');
+    expect(paragraphIdFromString(positions.last.$2)?.sourceId, 'c0_title');
   });
 }

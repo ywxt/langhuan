@@ -693,7 +693,7 @@ mod tests {
 // @description  Fixture feed backed by a mockito server
 // @base_url     __BASE_URL__
 // @access_domain 127.0.0.1
-// @schema_version 4
+// @schema_version 5
 // ==/Feed==
 import { TextDecoder } from "langhuan:encoding";
 export default (() => {
@@ -709,7 +709,7 @@ export default (() => {
     if (!Number.isInteger(count)) throw new Error("fixture: invalid search count");
     return {
       type: "complete",
-      items: Array.from({ length: count }, (_, index) => ({
+      result: Array.from({ length: count }, (_, index) => ({
         id: String(1001 + index),
         title: "Fixture Book " + (index + 1),
         author: "Fixture Author",
@@ -719,20 +719,20 @@ export default (() => {
   }
   function bookInfo(event) {
     if (event.state == null) return request("/book/" + event.input.bookId);
-    return { type: "complete", value: {
+    return { type: "complete", result: {
       id: "1001", title: "Fixture Book 1", author: "Fixture Author",
       description: "Hermetic fixture book.",
     }};
   }
   function chapters(event) {
     if (event.state == null) return request("/chapters/" + event.input.bookId);
-    return { type: "complete", items: [] };
+    return { type: "complete", result: [] };
   }
   function paragraphs(event) {
     if (event.state == null) {
       return request("/paragraphs/" + event.input.bookId + "/" + event.input.chapterId);
     }
-    return { type: "complete", items: [
+    return { type: "complete", result: [
       { type: "text", content: "Fixture paragraph." },
     ] };
   }
@@ -758,7 +758,7 @@ export default (() => {
             description: None,
             base_url: base_url.to_owned(),
             access_domains,
-            schema_version: 4,
+            schema_version: 5,
         }
     }
 

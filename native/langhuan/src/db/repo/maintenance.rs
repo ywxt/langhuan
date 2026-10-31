@@ -228,7 +228,7 @@ mod tests {
     fn seed_book(conn: &Repo<'_>, book_id: &str, bytes_each: usize, n: usize, at_ms: i64) {
         conn.ensure_book("f1", book_id, at_ms).expect("ensure book");
         let paragraphs = vec![crate::model::Paragraph::Text {
-            id: crate::model::ParagraphId::Index(0),
+            id: crate::model::ParagraphId::generated(0),
             content: "x".repeat(bytes_each),
         }];
         for i in 0..n {

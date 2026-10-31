@@ -251,6 +251,9 @@ async fn app_flow_registers_device_signs_and_reads_chapter() {
     let feed = engine.load_script(&script).await.expect("load failed");
 
     let items: Vec<_> = feed.paragraphs(BOOK_ID, CHAPTER_ID).collect().await;
+    for item in &items {
+        item.as_ref().expect("paragraph request failed");
+    }
 
     assert_all!(register, activate, registerkey, full);
 
@@ -360,6 +363,9 @@ async fn app_flow_recovers_from_empty_response_by_reregistering() {
     let feed = engine.load_script(&script).await.expect("load failed");
 
     let items: Vec<_> = feed.paragraphs(BOOK_ID, CHAPTER_ID).collect().await;
+    for item in &items {
+        item.as_ref().expect("paragraph request failed");
+    }
 
     assert_all!(register, activate, registerkey, full, full_retry);
     assert_eq!(
@@ -435,6 +441,9 @@ async fn app_flow_rekeys_when_content_is_invalid() {
     let feed = engine.load_script(&script).await.expect("load failed");
 
     let items: Vec<_> = feed.paragraphs(BOOK_ID, CHAPTER_ID).collect().await;
+    for item in &items {
+        item.as_ref().expect("paragraph request failed");
+    }
 
     assert_all!(
         register,

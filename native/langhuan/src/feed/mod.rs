@@ -1,4 +1,5 @@
 pub mod auth_flow;
+pub mod comments;
 pub mod meta;
 pub mod storage;
 pub mod traits;
