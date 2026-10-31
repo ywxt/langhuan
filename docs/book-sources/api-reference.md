@@ -439,7 +439,6 @@ type Comment = {
   created_at_ms?: number | null;
   like_count?: number | null;
   replies?: CommentReplies | null;
-  source_url?: string | null;
 };
 ```
 
@@ -451,7 +450,6 @@ type Comment = {
 | `created_at_ms` | No | Unix milliseconds as an integer from 0 through 8,640,000,000,000,000, or `null`. Omitted means unknown. |
 | `like_count` | No | Unsigned 32-bit count (0–4,294,967,295) or `null`. Omitted means unknown. Display only; no like action. |
 | `replies` | No | [`CommentReplies`](#comment-replies) enables reading this comment's existing replies. Absent or `null` hides that action. Opening it passes this comment's `id` as `parentId`. |
-| `source_url` | No | Original comment URL or `null`, at most 8,192 UTF-8 bytes. The current UI does not automatically open it. |
 
 The same model represents top-level comments and replies. It carries no posting,
 liking, or other mutation operation.
@@ -546,7 +544,6 @@ return {
       created_at_ms: null,
       like_count: 12,
       replies: { total_count: 3 },
-      source_url: null,
     }],
     total_count: null,
   },

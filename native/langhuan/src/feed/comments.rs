@@ -21,7 +21,6 @@ pub struct Comment {
     pub created_at_ms: Option<i64>,
     pub like_count: Option<u32>,
     pub replies: Option<CommentReplies>,
-    pub source_url: Option<String>,
 }
 
 #[derive(Debug)]

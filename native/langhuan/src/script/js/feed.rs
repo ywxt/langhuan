@@ -337,7 +337,6 @@ impl JsFeed {
                     || c.author.name.len() > 1024
                     || c.created_at_ms
                         .is_some_and(|t| !(0..=8_640_000_000_000_000).contains(&t))
-                    || c.source_url.as_ref().is_some_and(|v| v.len() > 8192)
                     || c.author.avatar_url.as_ref().is_some_and(|v| v.len() > 8192)
             })
         {

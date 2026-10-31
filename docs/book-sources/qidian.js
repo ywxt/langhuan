@@ -1,7 +1,7 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.qidian
 // @name         起點中文網
-// @version      4.2.0
+// @version      4.2.1
 // @author       Langhuan
 // @description  起點中文網書源（m 站），支持登入及已購 VIP 章節，登錄後可讀章評與段評，章節段落附帶評論數角標
 // @base_url     https://m.qidian.com
@@ -788,7 +788,6 @@ function parseReviewList(event) {
       created_at_ms: timestampMs(review?.createTime),
       like_count: toCount(review?.likeCount),
       replies: null,
-      source_url: null,
     });
   }
   return {

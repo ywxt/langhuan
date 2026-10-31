@@ -28,7 +28,6 @@ pub struct CommentItem {
     pub created_at_ms: Option<i64>,
     pub like_count: Option<u32>,
     pub replies: Option<CommentReplies>,
-    pub source_url: Option<String>,
 }
 pub struct CommentPage {
     pub items: Vec<CommentItem>,
@@ -175,7 +174,6 @@ pub async fn get_comments_page(
                     .map(|r| CommentReplies {
                         total_count: r.total_count,
                     }),
-                source_url: c.source_url,
             })
             .collect(),
         next_cursor_json: page.next_cursor.map(|v| v.to_string()),
