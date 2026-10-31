@@ -64,15 +64,49 @@ class CommentsPanel extends StatefulWidget {
 class _CommentsPanelState extends State<CommentsPanel> {
   final List<_PanelFrame> _frames = [];
 
+  /// Whether the root thread's first load has been kicked off. It waits for
+  /// the sheet/dialog entrance animation to finish so the request (and its
+  /// result) never competes with the animation for frames.
+  bool _initialLoadStarted = false;
+  Animation<double>? _routeAnimation;
+
   @override
   void initState() {
     super.initState();
     _frames.add(_PanelFrame(widget.controller));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialLoadStarted) return;
+    final animation = ModalRoute.of(context)?.animation;
+    if (animation == null || animation.isCompleted) {
+      _startInitialLoad();
+      return;
+    }
+    _routeAnimation = animation;
+    animation.addStatusListener(_onRouteAnimationStatus);
+  }
+
+  void _onRouteAnimationStatus(AnimationStatus status) {
+    // Dismissed means the route was popped mid-animation; the panel is going
+    // away, so nothing is left to start.
+    if (status != AnimationStatus.completed) return;
+    _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
+    _routeAnimation = null;
+    _startInitialLoad();
+  }
+
+  void _startInitialLoad() {
+    _initialLoadStarted = true;
     unawaited(_frames.first.controller.loadMore());
   }
 
   @override
   void dispose() {
+    _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
+    _routeAnimation = null;
     for (final frame in _frames) {
       if (!identical(frame.controller, widget.controller)) {
         frame.controller.dispose();
@@ -197,7 +231,11 @@ class _CommentsPanelState extends State<CommentsPanel> {
       if (controller.error != null) {
         return Center(child: _buildError(context, controller));
       }
-      if (controller.loading) return const _CommentsSkeleton();
+      // The awaiting-start case only occurs on the root frame while the
+      // entrance animation is still running; reply frames open long after.
+      if (controller.loading || !_initialLoadStarted) {
+        return const _CommentsSkeleton();
+      }
       return const _EmptyComments();
     }
 
