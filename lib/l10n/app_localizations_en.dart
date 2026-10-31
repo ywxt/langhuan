@@ -1194,5 +1194,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get listeningNext => 'Next paragraph';
 
   @override
-  String get listeningFromHere => 'Listen from this position';
+  String get listeningSearchVoices => 'Search voices or languages';
+
+  @override
+  String get listeningNoVoicesMatch => 'No matching voices';
+
+  @override
+  String get listeningLoadingVoices => 'Loading system voices…';
+
+  @override
+  String get listeningReloadVoices => 'Reload voices';
 }

@@ -1027,5 +1027,8 @@
   "listeningCompleted": "Finished listening",
   "listeningPrevious": "Previous paragraph",
   "listeningNext": "Next paragraph",
-  "listeningFromHere": "Listen from this position"
+  "listeningSearchVoices": "Search voices or languages",
+  "listeningNoVoicesMatch": "No matching voices",
+  "listeningLoadingVoices": "Loading system voices…",
+  "listeningReloadVoices": "Reload voices"
 }

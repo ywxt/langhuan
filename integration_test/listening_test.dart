@@ -166,11 +166,16 @@ return { type: "complete", result: JSON.parse(DECODER.decode(event.response.body
       isNull,
     );
     await tester.tap(find.text('Start listening'));
+    // Starting playback dismisses the panel; the reader takes over.
+    await tester.pumpAndSettle();
+    expect(find.text('Pause'), findsNothing);
     await _until(tester, () => speech.spoken.length == 1);
     expect(speech.spoken.single, 'Chapter one.');
     speech.finish();
     await _until(tester, () => speech.spoken.length == 2);
     expect(speech.spoken.last.trim(), 'First paragraph.'); // image skipped
+    await tester.tap(find.text('Open listening'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Pause'));
     await _until(tester, () => controller.status == ListeningStatus.paused);
     final paused = await service.getReadingProgress(
@@ -197,11 +202,14 @@ return { type: "complete", result: JSON.parse(DECODER.decode(event.response.body
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('Resume'));
+    await tester.pumpAndSettle();
     await _until(tester, () => speech.spoken.length == 3);
     expect(speech.spoken.last.trim(), 'First paragraph.');
     speech.finish();
     await _until(tester, () => speech.spoken.length == 4);
     expect(speech.spoken.last.trim(), 'Second paragraph.');
+    await tester.tap(find.text('Open listening'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Stop listening'));
     await _until(tester, () => controller.status == ListeningStatus.idle);
     await controller.stop();

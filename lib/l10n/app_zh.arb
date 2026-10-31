@@ -379,5 +379,8 @@
   "listeningCompleted": "已播放完畢",
   "listeningPrevious": "上一段",
   "listeningNext": "下一段",
-  "listeningFromHere": "從當前位置開始聽書"
+  "listeningSearchVoices": "搜索聲音或語言",
+  "listeningNoVoicesMatch": "沒有匹配的聲音",
+  "listeningLoadingVoices": "正在加載系統聲音…",
+  "listeningReloadVoices": "重新加載聲音"
 }

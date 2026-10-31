@@ -2234,11 +2234,29 @@ abstract class AppLocalizations {
   /// **'Next paragraph'**
   String get listeningNext;
 
-  /// No description provided for @listeningFromHere.
+  /// No description provided for @listeningSearchVoices.
   ///
   /// In en, this message translates to:
-  /// **'Listen from this position'**
-  String get listeningFromHere;
+  /// **'Search voices or languages'**
+  String get listeningSearchVoices;
+
+  /// No description provided for @listeningNoVoicesMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching voices'**
+  String get listeningNoVoicesMatch;
+
+  /// No description provided for @listeningLoadingVoices.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading system voices…'**
+  String get listeningLoadingVoices;
+
+  /// No description provided for @listeningReloadVoices.
+  ///
+  /// In en, this message translates to:
+  /// **'Reload voices'**
+  String get listeningReloadVoices;
 }
 
 class _AppLocalizationsDelegate

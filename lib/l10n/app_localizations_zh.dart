@@ -1162,5 +1162,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get listeningNext => '下一段';
 
   @override
-  String get listeningFromHere => '從當前位置開始聽書';
+  String get listeningSearchVoices => '搜索聲音或語言';
+
+  @override
+  String get listeningNoVoicesMatch => '沒有匹配的聲音';
+
+  @override
+  String get listeningLoadingVoices => '正在加載系統聲音…';
+
+  @override
+  String get listeningReloadVoices => '重新加載聲音';
 }
