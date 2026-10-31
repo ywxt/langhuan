@@ -203,11 +203,20 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   }
 
   Widget _observeReadingGestures(Widget child) => Listener(
-    onPointerSignal: (_) => _pauseForManualReading(),
-    onPointerPanZoomStart: (_) => _pauseForManualReading(),
+    onPointerSignal: (_) {
+      _pauseForManualReading();
+      _screenController.hideControls();
+    },
+    onPointerPanZoomStart: (_) {
+      _pauseForManualReading();
+      _screenController.hideControls();
+    },
     child: NotificationListener<ScrollStartNotification>(
       onNotification: (notification) {
-        if (notification.dragDetails != null) _pauseForManualReading();
+        if (notification.dragDetails != null) {
+          _pauseForManualReading();
+          _screenController.hideControls();
+        }
         return false;
       },
       child: child,
@@ -429,6 +438,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                           onToggleControls: _toggleControls,
                           onPageTurnStart: () {
                             _clearSelection();
+                            _screenController.hideControls();
                             if (_listening.ownsBook(
                               widget.feedId,
                               widget.bookId,
