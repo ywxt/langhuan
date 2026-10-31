@@ -1027,6 +1027,17 @@ fn csrf_matchers(paragraph_id: &str, page: &str) -> mockito::Matcher {
     ])
 }
 
+/// Chapters without an author's note: the -10 unit answers with an empty
+/// list (total 0), which the merged stream chains to the chapter unit.
+fn reviewlist_empty_body(total: i64, is_end: i64) -> String {
+    serde_json::json!({
+        "code": 0,
+        "data": { "total": total, "isEnd": is_end, "list": [] },
+        "msg": "",
+    })
+    .to_string()
+}
+
 #[tokio::test]
 async fn comments_require_login() {
     let server = mockito::Server::new_async().await;
@@ -1057,6 +1068,26 @@ async fn chapter_comments_pair_csrf_and_follow_pages() {
     // _csrfToken and the query parameter (live-tested: 1403 otherwise), so
     // the mocks only match when both carry the captured token — and the
     // account cookies survive login.patchRequest's merge.
+    //
+    // The merged chapter stream probes the author's-note unit (-10) first;
+    // a chapter without a note answers with an empty page that chains to
+    // the chapter unit (-1) inside the same panel page.
+    let note_probe = server
+        .mock("GET", "/webcommon/chapterreview/reviewlist4m")
+        .match_query(csrf_matchers("-10", "1"))
+        .match_header(
+            "Cookie",
+            mockito::Matcher::Regex(r"_csrfToken=token-abc".to_owned()),
+        )
+        .match_header(
+            "Cookie",
+            mockito::Matcher::Regex(r"ywkey=secret-key".to_owned()),
+        )
+        .with_status(200)
+        .with_body(reviewlist_empty_body(0, 1))
+        .expect(1)
+        .create_async()
+        .await;
     let first = server
         .mock("GET", "/webcommon/chapterreview/reviewlist4m")
         .match_query(csrf_matchers("-1", "1"))
@@ -1110,15 +1141,81 @@ async fn chapter_comments_pair_csrf_and_follow_pages() {
     assert!(page.items[1].author.avatar_url.is_none());
 
     let next = page.next_cursor.expect("isEnd=0 must yield a next cursor");
-    assert_eq!(next, serde_json::json!({ "page": 2 }));
+    assert_eq!(next, serde_json::json!({ "chapter": 2, "noteTotal": 0 }));
     let last = feed
         .comments_page(&comments_query(None), next)
         .await
         .expect("second chapter comments page");
     assert!(last.next_cursor.is_none(), "isEnd=1 must end paging");
 
+    note_probe.assert_async().await;
     first.assert_async().await;
     second.assert_async().await;
+}
+
+/// Chapters with an author's note list its reviews first, then the chapter
+/// reviews; the note total rides along in the cursor so panel totals stay
+/// merged across the switch.
+#[tokio::test]
+async fn chapter_comments_list_note_reviews_before_chapter_reviews() {
+    let mut server = mockito::Server::new_async().await;
+
+    let note_page = server
+        .mock("GET", "/webcommon/chapterreview/reviewlist4m")
+        .match_query(csrf_matchers("-10", "1"))
+        .with_status(200)
+        .with_body(reviewlist_body(14, 1))
+        .expect(1)
+        .create_async()
+        .await;
+    let chapter_first = server
+        .mock("GET", "/webcommon/chapterreview/reviewlist4m")
+        .match_query(csrf_matchers("-1", "1"))
+        .with_status(200)
+        .with_body(reviewlist_body(100, 0))
+        .expect(1)
+        .create_async()
+        .await;
+    let chapter_second = server
+        .mock("GET", "/webcommon/chapterreview/reviewlist4m")
+        .match_query(csrf_matchers("-1", "2"))
+        .with_status(200)
+        .with_body(reviewlist_body(100, 1))
+        .expect(1)
+        .create_async()
+        .await;
+
+    let feed = authed_feed(&server).await;
+    let note = feed
+        .comments_page(&comments_query(None), serde_json::Value::Null)
+        .await
+        .expect("note reviews page");
+    assert_eq!(note.total_count, Some(14));
+    assert_eq!(note.items.len(), 2);
+    let next = note
+        .next_cursor
+        .expect("end of the note unit must switch to the chapter unit");
+    assert_eq!(next, serde_json::json!({ "chapter": 1, "noteTotal": 14 }));
+
+    let chapter = feed
+        .comments_page(&comments_query(None), next)
+        .await
+        .expect("chapter reviews page");
+    assert_eq!(chapter.total_count, Some(114), "totals merge across units");
+    let next = chapter
+        .next_cursor
+        .expect("isEnd=0 must yield a next cursor");
+    assert_eq!(next, serde_json::json!({ "chapter": 2, "noteTotal": 14 }));
+
+    let last = feed
+        .comments_page(&comments_query(None), next)
+        .await
+        .expect("second chapter reviews page");
+    assert!(last.next_cursor.is_none(), "isEnd=1 must end paging");
+
+    note_page.assert_async().await;
+    chapter_first.assert_async().await;
+    chapter_second.assert_async().await;
 }
 
 #[tokio::test]

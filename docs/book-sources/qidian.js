@@ -598,6 +598,14 @@ function paragraphs(event) {
 // 登錄後用 login.parse 捕獲的令牌在兩處配對（login.patchRequest 會把
 // 帳號 Cookie 疊加進來，腳本設的同名令牌覆蓋舊值，最終仍然一致）。
 //
+// 章評合並流（commentsMerged，章評按鈕與標題段評入口共用）：作者感言
+// 評論（paragraphId=-10）在前、章評（-1）在後。兩單元 reviewId 完全不
+// 相交；無感言章節請求 -10 返回 code 0/total 0 空頁，可安全探測。
+// cursor 爲 opaque JSON：{note:n} 感言階段、{chapter:m,noteTotal:T} 章評
+// 階段（攜帶感言總數，使章評頁 total_count 保持合並值）。單元內不交
+// 錯：每個面板頁恰好來自一個單元；感言空頁在當前面板頁內直接鏈章評
+// 第 1 頁（不出現空評論頁）。
+//
 // 回覆不可用：reviewlist4m 每條評論僅內嵌 2 條回覆預覽（replyList）加
 // 總數（rootReviewReplyCount），官方 m 站 UI 顯示「剩餘 N 條」並引導
 // 去 APP，沒有按評論拉取回覆列表的端點（rootReviewId 參數被忽略），
@@ -621,84 +629,179 @@ function timestampMs(value) {
   return milliseconds <= 8_640_000_000_000_000 ? milliseconds : null;
 }
 
-function commentsList(event, paragraphId) {
+function commentsAuth(event) {
   if (!event.auth?.cookie_header) {
-    return FeedError.authRequired("起點章節評論需要登錄起點帳號");
+    return {
+      error: FeedError.authRequired("起點章節評論需要登錄起點帳號"),
+    };
   }
   const csrfToken =
     event.auth.csrf_token ??
     cookieMap(event.auth.cookie_header).get("_csrfToken");
   if (!csrfToken) {
-    return FeedError.authRequired("登錄資料缺少起點 CSRF 令牌，請重新登錄");
+    return {
+      error: FeedError.authRequired("登錄資料缺少起點 CSRF 令牌，請重新登錄"),
+    };
   }
+  return { csrfToken };
+}
 
+function reviewListStep(event, paragraphId, page, state) {
+  const auth = commentsAuth(event);
+  if (auth.error) return auth.error;
+  return {
+    type: "request",
+    request: {
+      url: `${meta.base_url}/webcommon/chapterreview/reviewlist4m`,
+      method: "GET",
+      params: {
+        bookId: String(event.input.bookId),
+        chapterId: String(event.input.chapterId),
+        paragraphId: String(paragraphId),
+        page: String(page),
+        _csrfToken: auth.csrfToken,
+      },
+      headers: {
+        ...requestHeaders(),
+        Accept: "application/json, text/plain, */*",
+        Cookie: `_csrfToken=${auth.csrfToken}`,
+      },
+    },
+    next_state: state,
+  };
+}
+
+function parseReviewList(event) {
+  const failure = responseFailure(event.response, "評論不可用");
+  if (failure) return { failure };
+  let payload;
+  try {
+    payload = JSON.parse(bodyText(event.response));
+  } catch (_) {
+    return {
+      failure: FeedError.sourceUnavailable("起點評論 API 返回了無效 JSON"),
+    };
+  }
+  if (payload?.code !== 0) {
+    return {
+      failure: FeedError.sourceUnavailable(
+        `起點評論 API 返回錯誤 ${payload?.code ?? "未知"}：${payload?.msg || "無錯誤消息"}`,
+      ),
+    };
+  }
+  const data = payload?.data;
+  if (!Array.isArray(data?.list)) {
+    return {
+      failure: FeedError.sourceUnavailable("起點評論 API 響應缺少列表"),
+    };
+  }
+  const items = [];
+  for (const review of data.list) {
+    const id = formatId(review?.reviewId);
+    if (!id) continue;
+    const text = cleanText(review?.content);
+    items.push({
+      id,
+      author: {
+        name: cleanText(review?.nickName) || "起點書友",
+        avatar_url: absoluteUrl(review?.avatar),
+      },
+      text: text || (Number(review?.hasImage) === 1 ? "[圖片]" : ""),
+      created_at_ms: timestampMs(review?.createTime),
+      like_count: toCount(review?.likeCount),
+      replies: null,
+      source_url: null,
+    });
+  }
+  return {
+    items,
+    total: toCount(data?.total),
+    isEnd: data.isEnd === 1,
+  };
+}
+
+// 單單元流：真段落 k 的段評，cursor {page:n}。
+function commentsList(event, paragraphId) {
   if (event.state == null) {
     const page = commentsCursorPage(event.cursor);
-    return {
-      type: "request",
-      request: {
-        url: `${meta.base_url}/webcommon/chapterreview/reviewlist4m`,
-        method: "GET",
-        params: {
-          bookId: String(event.input.bookId),
-          chapterId: String(event.input.chapterId),
-          paragraphId: String(paragraphId),
-          page: String(page),
-          _csrfToken: csrfToken,
-        },
-        headers: {
-          ...requestHeaders(),
-          Accept: "application/json, text/plain, */*",
-          Cookie: `_csrfToken=${csrfToken}`,
-        },
-      },
-      next_state: { stage: "list", page },
-    };
+    return reviewListStep(event, paragraphId, page, {
+      stage: "list",
+      page,
+    });
   }
 
   if (event.state.stage === "list") {
-    const failure = responseFailure(event.response, "評論不可用");
-    if (failure) return failure;
-    let payload;
-    try {
-      payload = JSON.parse(bodyText(event.response));
-    } catch (_) {
-      return FeedError.sourceUnavailable("起點評論 API 返回了無效 JSON");
-    }
-    if (payload?.code !== 0) {
-      return FeedError.sourceUnavailable(
-        `起點評論 API 返回錯誤 ${payload?.code ?? "未知"}：${payload?.msg || "無錯誤消息"}`,
-      );
-    }
-    const data = payload?.data;
-    if (!Array.isArray(data?.list)) {
-      return FeedError.sourceUnavailable("起點評論 API 響應缺少列表");
-    }
-    const items = [];
-    for (const review of data.list) {
-      const id = formatId(review?.reviewId);
-      if (!id) continue;
-      const text = cleanText(review?.content);
-      items.push({
-        id,
-        author: {
-          name: cleanText(review?.nickName) || "起點書友",
-          avatar_url: absoluteUrl(review?.avatar),
-        },
-        text: text || (Number(review?.hasImage) === 1 ? "[圖片]" : ""),
-        created_at_ms: timestampMs(review?.createTime),
-        like_count: toCount(review?.likeCount),
-        replies: null,
-        source_url: null,
+    const parsed = parseReviewList(event);
+    if (parsed.failure) return parsed.failure;
+    return {
+      type: "complete",
+      result: { items: parsed.items, total_count: parsed.total },
+      next_cursor: parsed.isEnd ? null : { page: event.state.page + 1 },
+    };
+  }
+
+  return FeedError.raise("invalid_state", "未知的起點評論解析狀態");
+}
+
+// 章評合並流（感言在前、章評在後），cursor 語義見區塊註釋。
+function commentsMerged(event) {
+  if (event.state == null) {
+    const cursor = event.cursor;
+    const chapterPage = Number(cursor?.chapter);
+    if (Number.isInteger(chapterPage) && chapterPage > 0) {
+      return reviewListStep(event, -1, chapterPage, {
+        stage: "list",
+        unit: "chapter",
+        page: chapterPage,
+        noteTotal: toCount(cursor?.noteTotal) ?? 0,
       });
     }
+    const notePage = commentsCursorPage(
+      cursor?.note == null ? null : { page: cursor.note },
+    );
+    return reviewListStep(event, -10, notePage, {
+      stage: "list",
+      unit: "note",
+      page: notePage,
+      noteTotal: 0,
+    });
+  }
+
+  if (event.state.stage === "list") {
+    const parsed = parseReviewList(event);
+    if (parsed.failure) return parsed.failure;
+
+    if (event.state.unit === "note") {
+      if (parsed.items.length > 0) {
+        return {
+          type: "complete",
+          result: { items: parsed.items, total_count: parsed.total },
+          next_cursor: parsed.isEnd
+            ? { chapter: 1, noteTotal: parsed.total ?? event.state.noteTotal }
+            : { note: event.state.page + 1 },
+        };
+      }
+      // 感言空頁（多數章節無作者感言）：在當前面板頁內直接鏈章評第 1 頁。
+      return reviewListStep(event, -1, 1, {
+        stage: "list",
+        unit: "chapter",
+        page: 1,
+        noteTotal: parsed.total ?? event.state.noteTotal ?? 0,
+      });
+    }
+
     return {
       type: "complete",
       result: {
-        items,
-        total_count: toCount(data?.total),
+        items: parsed.items,
+        total_count: (event.state.noteTotal ?? 0) + (parsed.total ?? 0),
       },
-      next_cursor: data.isEnd === 1 ? null : { page: event.state.page + 1 },
+      next_cursor: parsed.isEnd
+        ? null
+        : {
+            chapter: event.state.page + 1,
+            noteTotal: event.state.noteTotal,
+          },
     };
   }
 
@@ -706,7 +809,7 @@ function commentsList(event, paragraphId) {
 }
 
 function chapterComments(event) {
-  return commentsList(event, -1);
+  return commentsMerged(event);
 }
 
 function paragraphComments(event) {
