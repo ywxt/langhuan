@@ -411,7 +411,7 @@ type CommentAuthor = {
 | Field | Required | Behaviour |
 | --- | :---: | --- |
 | `name` | Yes | Display name, at most 1,024 UTF-8 bytes. |
-| `avatar_url` | No | Avatar URL or `null`, at most 8,192 UTF-8 bytes. The current UI does not download or display avatars. |
+| `avatar_url` | No | Avatar URL or `null`, at most 8,192 UTF-8 bytes. The UI shows it as a circular avatar; a default icon is displayed when it is absent or fails to load. |
 
 ### Comment replies
 

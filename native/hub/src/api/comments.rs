@@ -7,14 +7,28 @@ pub struct CommentSupport {
     pub chapter: bool,
     pub paragraph: bool,
 }
+/// Mirrors the script contract's `CommentAuthor` (api-reference.md).
+pub struct CommentAuthor {
+    pub name: String,
+    pub avatar_url: Option<String>,
+}
+
+/// Mirrors the script contract's `CommentReplies`: the object's presence
+/// enables the replies action even when the count is unknown.
+pub struct CommentReplies {
+    pub total_count: Option<u32>,
+}
+
+/// Mirrors the script contract's `Comment` model one-to-one so the UI
+/// displays exactly the data sources return.
 pub struct CommentItem {
     pub id: String,
-    pub author_name: String,
+    pub author: CommentAuthor,
     pub text: String,
     pub created_at_ms: Option<i64>,
     pub like_count: Option<u32>,
-    pub has_replies: bool,
-    pub reply_count: Option<u32>,
+    pub replies: Option<CommentReplies>,
+    pub source_url: Option<String>,
 }
 pub struct CommentPage {
     pub items: Vec<CommentItem>,
@@ -142,17 +156,26 @@ pub async fn get_comments_page(
         )
         .await?;
     Ok(CommentPage {
+        // Lossless move from the contract-shaped feed model: every field
+        // maps one-to-one, nothing is dropped or re-encoded.
         items: page
             .items
             .into_iter()
             .map(|c| CommentItem {
                 id: c.id,
-                author_name: c.author.name,
+                author: CommentAuthor {
+                    name: c.author.name,
+                    avatar_url: c.author.avatar_url,
+                },
                 text: c.text,
                 created_at_ms: c.created_at_ms,
                 like_count: c.like_count,
-                has_replies: c.replies.is_some(),
-                reply_count: c.replies.and_then(|r| r.total_count),
+                replies: c
+                    .replies
+                    .map(|r| CommentReplies {
+                        total_count: r.total_count,
+                    }),
+                source_url: c.source_url,
             })
             .collect(),
         next_cursor_json: page.next_cursor.map(|v| v.to_string()),

@@ -1138,6 +1138,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commentsReplies => 'Replies';
 
   @override
+  String get commentsExpand => 'Expand';
+
+  @override
+  String get commentsCollapse => 'Collapse';
+
+  @override
+  String get commentsAllReplies => 'All replies';
+
+  @override
   String get commentsEmpty => 'No comments yet';
 
   @override

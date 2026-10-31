@@ -41,8 +41,12 @@ class _Service extends FakeFeedService {
   }
 }
 
-CommentItem _item(String id) =>
-    CommentItem(id: id, authorName: 'Author', text: id, hasReplies: true);
+CommentItem _item(String id) => CommentItem(
+  id: id,
+  author: const CommentAuthor(name: 'Author'),
+  text: id,
+  replies: const CommentReplies(totalCount: 2),
+);
 CommentsController _controller(_Service service, {String? parent}) =>
     CommentsController(
       service,

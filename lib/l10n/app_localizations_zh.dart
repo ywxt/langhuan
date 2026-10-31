@@ -1107,6 +1107,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commentsReplies => '回覆';
 
   @override
+  String get commentsExpand => '展開';
+
+  @override
+  String get commentsCollapse => '收起';
+
+  @override
+  String get commentsAllReplies => '全部回覆';
+
+  @override
   String get commentsEmpty => '暫無評論';
 
   @override

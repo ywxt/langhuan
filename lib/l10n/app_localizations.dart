@@ -2126,6 +2126,24 @@ abstract class AppLocalizations {
   /// **'Replies'**
   String get commentsReplies;
 
+  /// No description provided for @commentsExpand.
+  ///
+  /// In en, this message translates to:
+  /// **'Expand'**
+  String get commentsExpand;
+
+  /// No description provided for @commentsCollapse.
+  ///
+  /// In en, this message translates to:
+  /// **'Collapse'**
+  String get commentsCollapse;
+
+  /// No description provided for @commentsAllReplies.
+  ///
+  /// In en, this message translates to:
+  /// **'All replies'**
+  String get commentsAllReplies;
+
   /// No description provided for @commentsEmpty.
   ///
   /// In en, this message translates to:
