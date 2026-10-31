@@ -493,7 +493,16 @@ fn comment_list_body(has_more: bool, cursor: &str) -> String {
                         "user_info": {
                             "base_info": {
                                 "user_name": "书虫小王",
-                                "user_avatar": "https://p3-novel.byteimg.com/x.jpg"
+                                // Live shape: time-limited signed http URL whose
+                                // bytes are HEIC.
+                                "user_avatar": concat!(
+                                    "http://p3-reading-sign.fqnovelpic.com/",
+                                    "tos-cn-i-1yzifmftcy/",
+                                    "5fae70655355455f87ca2434c560f093",
+                                    "~tplv-s85hriknmn-jpeg-v1:144:0.heic",
+                                    "?lk3s=9b9bd2b1&x-expires=1796058595",
+                                    "&x-signature=YCIECC%2B93KalBwpxnzek%2FibE8cA%3D"
+                                )
                             },
                             "user_tag": { "is_author": false }
                         }
@@ -524,6 +533,38 @@ fn reply_list_body() -> String {
                     }
                 },
                 "stat": { "digg_count": 3 }
+            }, {
+                "reply_id": "7600000000000000002",
+                "Common": {
+                    "content": { "text": "确实" },
+                    "create_timestamp": 1756002000,
+                    "user_info": {
+                        "base_info": {
+                            "user_name": "路人甲",
+                            // Unsigned CDN shape: same object, HEIC extension.
+                            "user_avatar": concat!(
+                                "https://p3-novel.byteimg.com/img/novel-static/",
+                                "3abe6a50e39b4bf1ba7c29f33074e1a8",
+                                "~tplv-1yzifmftcy-expand:200:0:0.heic"
+                            )
+                        }
+                    }
+                },
+                "stat": { "digg_count": 1 }
+            }, {
+                "reply_id": "7600000000000000003",
+                "Common": {
+                    "content": { "text": "催更！" },
+                    "create_timestamp": 1756003000,
+                    "user_info": {
+                        "base_info": {
+                            "user_name": "老粉",
+                            // Already decodable: passes through untouched.
+                            "user_avatar": "https://p3-novel.byteimg.com/x.jpg"
+                        }
+                    }
+                },
+                "stat": { "digg_count": 2 }
             }],
             "common_list_info": { "total": 3, "has_more": false, "cursor": "" }
         }
@@ -659,7 +700,12 @@ async fn app_flow_paragraph_comments_and_replies() {
     assert_eq!(comment.author.name, "书虫小王");
     assert_eq!(
         comment.author.avatar_url.as_deref(),
-        Some("https://p3-novel.byteimg.com/x.jpg")
+        Some(concat!(
+            "https://p3-novel.byteimg.com/tos-cn-i-1yzifmftcy/",
+            "5fae70655355455f87ca2434c560f093",
+            "~tplv-1yzifmftcy-expand:200:0:0.webp"
+        )),
+        "signed HEIC avatar URLs are rewritten to the unsigned WebP CDN form"
     );
     assert_eq!(comment.text, "这段写得太好了！");
     assert_eq!(comment.created_at_ms, Some(1_756_000_000_000));
@@ -685,7 +731,7 @@ async fn app_flow_paragraph_comments_and_replies() {
         .await
         .expect("reply page");
     assert_eq!(replies.total_count, Some(3));
-    assert_eq!(replies.items.len(), 1);
+    assert_eq!(replies.items.len(), 3);
     assert_eq!(replies.items[0].id, "7600000000000000001");
     assert_eq!(replies.items[0].author.name, "夜读人");
     assert!(replies.items[0].author.avatar_url.is_none());
@@ -694,6 +740,22 @@ async fn app_flow_paragraph_comments_and_replies() {
     assert!(
         replies.items[0].replies.is_none(),
         "replies of replies are not expandable"
+    );
+    assert_eq!(replies.items[1].id, "7600000000000000002");
+    assert_eq!(
+        replies.items[1].author.avatar_url.as_deref(),
+        Some(concat!(
+            "https://p3-novel.byteimg.com/img/novel-static/",
+            "3abe6a50e39b4bf1ba7c29f33074e1a8",
+            "~tplv-1yzifmftcy-expand:200:0:0.webp"
+        )),
+        "CDN .heic avatars swap to the WebP form of the same object"
+    );
+    assert_eq!(replies.items[2].id, "7600000000000000003");
+    assert_eq!(
+        replies.items[2].author.avatar_url.as_deref(),
+        Some("https://p3-novel.byteimg.com/x.jpg"),
+        "already-decodable avatar URLs pass through untouched"
     );
     assert!(replies.next_cursor.is_none());
 

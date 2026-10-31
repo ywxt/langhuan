@@ -1,7 +1,7 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.fanqie_app
 // @name         番茄小說（APP 直連）
-// @version      2.2.1
+// @version      2.2.2
 // @author       Langhuan
 // @description  番茄小說 APP 網關書源（reading.snssdk.com）：匿名設備註冊後經 x-argus/x-ladon 簽名直連閱讀 API，VIP 章節全文解密，無需帳號；支持正文段落評論，章節段落附帶評論數角標。需要宿主提供存儲後端（langhuan:storage）
 // @base_url     https://reading.snssdk.com
@@ -1373,11 +1373,39 @@ function commentText(content) {
   return Array.isArray(images) && images.length ? "[圖片]" : "";
 }
 
+// ── 頭像 URL 改寫 ────────────────────────────────────────────────────────────
+// commentapi 下發的頭像字節是 HEIC——官方 App 用系統解碼器渲染，本應用的
+// UI 在 Android/Linux 上不解碼 HEIC；其主要形態還是 http 時效籤名 URL
+// （明文流量被 Android 拒絕，x-expires 過期後整體失效）。同一對象在
+// byteimg 公共 CDN 上以 ~tplv-{service}-expand:200:0:0.webp 形態無籤名
+// 供應（https、全平臺可解碼、不過期），統一改寫成該形態。對象不支持該
+// 模板時 CDN 返回 404，UI 落回默認頭像。
+const AVATAR_SIGNED_RE =
+  /^https?:\/\/p\d+-reading-sign\.fqnovelpic\.com\/(tos-cn-i-[a-z0-9-]+)\/([a-z0-9]+)~tplv-/i;
+const AVATAR_CDN_RE = /^https?:\/\/p\d+-novel\.byteimg\.com\//i;
+
+function avatarUrl(raw) {
+  const url = String(raw ?? "").trim();
+  if (!url) return null;
+  const signed = AVATAR_SIGNED_RE.exec(url);
+  if (signed) {
+    // tos-cn-i-{service}/{object} 的籤名形態 → {service} 的 expand 模板。
+    const [, bucket, objectId] = signed;
+    const service = bucket.replace(/^tos-cn-i-/, "");
+    return `https://p3-novel.byteimg.com/${bucket}/${objectId}~tplv-${service}-expand:200:0:0.webp`;
+  }
+  if (AVATAR_CDN_RE.test(url)) {
+    // 無籤名形態：同一對象、同一模板，僅把擴展名換成 WebP 並升級 https。
+    return url.replace(/^http:\/\//i, "https://").replace(/\.heic(\?|$)/i, ".webp$1");
+  }
+  return url;
+}
+
 function commentAuthor(common) {
   const base = common?.user_info?.base_info ?? {};
   return {
     name: String(base.user_name ?? "").trim() || "番茄書友",
-    avatar_url: String(base.user_avatar ?? "").trim() || null,
+    avatar_url: avatarUrl(base.user_avatar),
   };
 }
 
