@@ -71,6 +71,7 @@ void main() {
     );
     final searchResults = await FeedService.instance
         .search(feedId: _feedId, keyword: 'fixture')
+        .expand((batch) => batch)
         .toList();
     expect(searchResults, hasLength(1));
 

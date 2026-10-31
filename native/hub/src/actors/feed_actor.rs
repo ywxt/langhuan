@@ -15,7 +15,7 @@ use langhuan::transform::TransformChain;
 use messages::prelude::{Actor, Address, Context, Handler};
 use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio_stream::StreamExt;
 
 use crate::api::types::{
@@ -37,6 +37,7 @@ use super::registry_actor::{GetFeed, ListFeeds, RegistryActor};
 pub struct PullStream<T: Send + 'static> {
     rx: mpsc::Receiver<Result<T, BridgeError>>,
     _task: JoinHandle<()>,
+    pending_error: Option<BridgeError>,
 }
 
 /// A finite feed query running outside the actor mailbox.
@@ -70,11 +71,34 @@ impl<T: Send + 'static> FeedQueryTask<T> {
 impl<T: Send + 'static> PullStream<T> {
     /// Pull the next item.  Returns `Ok(None)` when the stream is exhausted.
     pub async fn next(&mut self) -> Result<Option<T>, BridgeError> {
+        if let Some(error) = self.pending_error.take() {
+            return Err(error);
+        }
         match self.rx.recv().await {
             Some(Ok(item)) => Ok(Some(item)),
             Some(Err(e)) => Err(e),
             None => Ok(None),
         }
+    }
+
+    /// Return a bounded batch. Preserve any items received before a terminal
+    /// error, delivering that error on the following pull instead of dropping
+    /// a partially filled batch.
+    pub async fn next_batch(&mut self, limit: usize) -> Result<Option<Vec<T>>, BridgeError> {
+        assert!(limit > 0);
+        let mut items = Vec::with_capacity(limit);
+        while items.len() < limit {
+            match self.next().await {
+                Ok(Some(item)) => items.push(item),
+                Ok(None) => break,
+                Err(error) if items.is_empty() => return Err(error),
+                Err(error) => {
+                    self.pending_error = Some(error);
+                    break;
+                }
+            }
+        }
+        Ok((!items.is_empty()).then_some(items))
     }
 
     /// Cancel the stream: abort the producer task and close the channel.
@@ -83,6 +107,14 @@ impl<T: Send + 'static> PullStream<T> {
     pub fn cancel(&mut self) {
         self._task.abort();
         self.rx.close();
+        while self.rx.try_recv().is_ok() {}
+        self.pending_error = None;
+    }
+}
+
+impl<T: Send + 'static> Drop for PullStream<T> {
+    fn drop(&mut self) {
+        self._task.abort();
     }
 }
 
@@ -102,7 +134,11 @@ where
 {
     let (tx, rx) = mpsc::channel(1);
     let task = tokio::spawn(make_producer(tx));
-    PullStream { rx, _task: task }
+    PullStream {
+        rx,
+        _task: task,
+        pending_error: None,
+    }
 }
 
 /// Helper: iterate a feed stream, map each item, and send through the channel.
@@ -315,21 +351,19 @@ impl Handler<OpenAggregatedSearchStream> for FeedActor {
         let permits = self.search_permits.clone();
         let keyword = msg.keyword;
         Ok(spawn_pull_stream(move |tx| async move {
-            let mut tasks = Vec::with_capacity(feeds.len());
+            let mut tasks = JoinSet::new();
             for meta in feeds {
                 let tx = tx.clone();
                 let registry = registry.clone();
                 let permits = permits.clone();
                 let keyword = keyword.clone();
-                tasks.push(tokio::spawn(async move {
-                    search_one_feed(registry, tx, permits, meta, keyword).await
-                }));
+                tasks.spawn(
+                    async move { search_one_feed(registry, tx, permits, meta, keyword).await },
+                );
             }
             // The merged channel closes once every per-feed sender drops.
             drop(tx);
-            for task in tasks {
-                let _ = task.await;
-            }
+            while tasks.join_next().await.is_some() {}
         }))
     }
 }
@@ -540,6 +574,96 @@ impl Handler<GetParagraphs> for FeedActor {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+mod pull_batch_tests {
+    use super::spawn_pull_stream;
+    use crate::api::types::BridgeError;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tokio::sync::Notify;
+
+    #[tokio::test]
+    async fn batches_preserve_order_and_return_the_final_partial_batch() {
+        let mut stream = spawn_pull_stream(|tx| async move {
+            for value in 0..45 {
+                if tx.send(Ok(value)).await.is_err() {
+                    return;
+                }
+            }
+        });
+        for expected in [0..20, 20..40, 40..45] {
+            assert_eq!(
+                stream.next_batch(20).await.expect("batch"),
+                Some(expected.collect::<Vec<_>>())
+            );
+        }
+        assert!(stream.next_batch(20).await.expect("end").is_none());
+    }
+
+    #[tokio::test]
+    async fn an_error_after_results_is_deferred_without_losing_the_results() {
+        let mut stream = spawn_pull_stream(|tx| async move {
+            let _ = tx.send(Ok(1)).await;
+            let _ = tx.send(Ok(2)).await;
+            let _ = tx
+                .send(Err(BridgeError::from("failed page".to_owned())))
+                .await;
+        });
+        assert_eq!(
+            stream.next_batch(20).await.expect("partial batch"),
+            Some(vec![1, 2])
+        );
+        assert!(
+            stream
+                .next_batch(20)
+                .await
+                .expect_err("deferred error")
+                .message
+                .contains("failed page")
+        );
+        assert!(stream.next_batch(20).await.expect("end").is_none());
+    }
+
+    #[tokio::test]
+    async fn cancellation_discards_buffered_items_and_stops_the_producer() {
+        let ready = Arc::new(Notify::new());
+        let signal = ready.clone();
+        let mut stream = spawn_pull_stream(|tx| async move {
+            let _ = tx.send(Ok(1)).await;
+            signal.notify_one();
+            std::future::pending::<()>().await;
+        });
+        ready.notified().await;
+        stream.cancel();
+        tokio::task::yield_now().await;
+        assert!(stream._task.is_finished());
+        assert!(stream.next_batch(20).await.expect("cancelled").is_none());
+    }
+
+    #[tokio::test]
+    async fn dropping_the_stream_aborts_its_producer() {
+        struct Aborted(Arc<AtomicBool>);
+        impl Drop for Aborted {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+        let aborted = Arc::new(AtomicBool::new(false));
+        let guard = Aborted(aborted.clone());
+        let ready = Arc::new(Notify::new());
+        let signal = ready.clone();
+        let stream = spawn_pull_stream::<u8, _, _>(|_tx| async move {
+            let _guard = guard;
+            signal.notify_one();
+            std::future::pending::<()>().await;
+        });
+        ready.notified().await;
+        drop(stream);
+        tokio::task::yield_now().await;
+        assert!(aborted.load(Ordering::SeqCst));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::collections::HashSet;
     use std::error::Error;
@@ -699,8 +823,8 @@ export default (() => {
         mut stream: PullStream<AggregatedSearchEvent>,
     ) -> Result<Vec<AggregatedSearchEvent>, BridgeError> {
         let mut events = Vec::new();
-        while let Some(event) = stream.next().await? {
-            events.push(event);
+        while let Some(batch) = stream.next_batch(20).await? {
+            events.extend(batch);
         }
         Ok(events)
     }

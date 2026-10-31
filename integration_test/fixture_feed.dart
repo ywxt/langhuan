@@ -14,16 +14,16 @@ String fixtureFeedScript({
 // ==Feed==
 // @id           $id
 // @name         $name
-// @version      3.0.0
+// @version      4.0.0
 // @author       integration-test
 // @description  Hermetic fixture feed backed by a local HTTP server
 // @base_url     http://127.0.0.1:$port
 // @access_domain 127.0.0.1
-// @schema_version 3
+// @schema_version 4
 // ==/Feed==
 
-(() => {
-  "use strict";
+import { TextDecoder } from "langhuan:encoding";
+const DECODER = new TextDecoder("utf-8");
 
   function request(path, next_state = { requested: true }) {
     return {
@@ -34,7 +34,7 @@ String fixtureFeedScript({
   }
 
   function countItems(body, kind) {
-    const raw = String(body ?? "").trim();
+    const raw = DECODER.decode(body).trim();
     const count = raw === "" ? Number.NaN : Number(raw);
     if (!Number.isInteger(count) || count < 0) {
       throw new Error(`fixture: invalid \${kind} count: \${body}`);
@@ -44,7 +44,7 @@ String fixtureFeedScript({
 
   function search(event) {
     if (event.state == null) return request("/search");
-    const count = countItems(event.response?.body ?? "", "search");
+    const count = countItems(event.response?.body, "search");
     return {
       type: "complete",
       items: Array.from({ length: count }, (_, index) => ({
@@ -71,7 +71,7 @@ String fixtureFeedScript({
 
   function chapters(event) {
     if (event.state == null) return request(`/chapters/\${event.input.bookId}`);
-    const count = countItems(event.response?.body ?? "", "chapter");
+    const count = countItems(event.response?.body, "chapter");
     return {
       type: "complete",
       items: Array.from({ length: count }, (_, index) => ({
@@ -91,8 +91,7 @@ String fixtureFeedScript({
     };
   }
 
-  return { search, bookInfo, chapters, paragraphs };
-})()
+export default { search, bookInfo, chapters, paragraphs };
 ''';
 
 Future<void> installFixtureFeed({

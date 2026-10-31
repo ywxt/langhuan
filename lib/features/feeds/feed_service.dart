@@ -410,7 +410,7 @@ class FeedService {
   static final FeedService instance = FeedService._();
 
   /// The open/pull/cancel dance shared by every streaming API: FRB exposes
-  /// each stream as an opaque wrapper with `next()`/`cancel()`, which this
+  /// each stream as an opaque wrapper with a pull method and `cancel()`, which this
   /// helper turns into a Dart stream that always cancels the Rust side.
   static Stream<T> _pull<S, T>(
     Future<S> Function() open,
@@ -433,26 +433,35 @@ class FeedService {
   // Search
   // -------------------------------------------------------------------------
 
-  Stream<SearchResultModel> search({
+  /// Pull up to 20 results per bridge call, preserving pagination and cancellation.
+  Stream<List<SearchResultModel>> search({
     required String feedId,
     required String keyword,
   }) {
     return _pull(
       () => rust_stream.openSearchStream(feedId: feedId, keyword: keyword),
-      (stream) => stream.next(),
+      (stream) => stream.nextBatch(),
       (stream) => stream.cancel(),
-    ).map(SearchResultModel.fromRust);
+    ).map(
+      (items) => items.map(SearchResultModel.fromRust).toList(growable: false),
+    );
   }
 
   /// Search every installed feed concurrently. Each event carries its
-  /// source; a failing source yields an event with [error] set instead of
-  /// ending the stream.
-  Stream<AggregatedSearchEventModel> searchAll({required String keyword}) {
+  /// source; a failing source yields an event with its error set instead of
+  /// ending the stream. Each bridge pull returns a List of up to 20 events.
+  Stream<List<AggregatedSearchEventModel>> searchAll({
+    required String keyword,
+  }) {
     return _pull(
       () => rust_stream.openAggregatedSearchStream(keyword: keyword),
-      (stream) => stream.next(),
+      (stream) => stream.nextBatch(),
       (stream) => stream.cancel(),
-    ).map(AggregatedSearchEventModel.fromRust);
+    ).map(
+      (events) => events
+          .map(AggregatedSearchEventModel.fromRust)
+          .toList(growable: false),
+    );
   }
 
   // -------------------------------------------------------------------------

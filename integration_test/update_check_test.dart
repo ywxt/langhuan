@@ -80,6 +80,7 @@ void main() {
     // ── Search and shelve the fixture book ────────────────────────────────
     final results = await FeedService.instance
         .search(feedId: _feedId, keyword: 'fixture')
+        .expand((batch) => batch)
         .toList();
     expect(results, hasLength(1));
     expect(results.first.id, _bookId);

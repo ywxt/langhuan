@@ -13,12 +13,15 @@ pub use super::types::{
 // Pull-based stream types (opaque to Dart via FRB)
 // ---------------------------------------------------------------------------
 
+const SEARCH_BATCH_SIZE: usize = 20;
+
 /// A pull-based stream of search results.
 pub struct FeedSearchStream(PullStream<SearchResultItem>);
 
 impl FeedSearchStream {
-    pub async fn next(&mut self) -> Result<Option<SearchResultItem>, BridgeError> {
-        self.0.next().await
+    /// Pull up to 20 results in one bridge call; `None` indicates exhaustion.
+    pub async fn next_batch(&mut self) -> Result<Option<Vec<SearchResultItem>>, BridgeError> {
+        self.0.next_batch(SEARCH_BATCH_SIZE).await
     }
 
     pub fn cancel(&mut self) {
@@ -30,8 +33,9 @@ impl FeedSearchStream {
 pub struct AggregatedSearchStream(PullStream<AggregatedSearchEvent>);
 
 impl AggregatedSearchStream {
-    pub async fn next(&mut self) -> Result<Option<AggregatedSearchEvent>, BridgeError> {
-        self.0.next().await
+    /// Pull up to 20 attributed events in one bridge call.
+    pub async fn next_batch(&mut self) -> Result<Option<Vec<AggregatedSearchEvent>>, BridgeError> {
+        self.0.next_batch(SEARCH_BATCH_SIZE).await
     }
 
     pub fn cancel(&mut self) {

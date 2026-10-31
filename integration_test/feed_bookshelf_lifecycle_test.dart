@@ -69,12 +69,14 @@ void main() {
     // Explicit single-source actions remain available while paused.
     var results = await service
         .search(feedId: _feedId, keyword: 'fixture')
+        .expand((batch) => batch)
         .toList();
     expect(results, hasLength(1));
 
     await service.setFeedEnabled(feedId: _feedId, enabled: true);
     results = await service
         .search(feedId: _feedId, keyword: 'fixture')
+        .expand((batch) => batch)
         .toList();
     final book = results.single;
 

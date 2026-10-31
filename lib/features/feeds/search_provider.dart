@@ -108,11 +108,14 @@ class SearchNotifier extends Notifier<SearchState> {
           .read(feedServiceProvider)
           .search(feedId: feedId, keyword: keyword)
           .map(
-            (item) => AggregatedSearchEventModel(
-              feedId: feedId,
-              feedName: feedName,
-              item: item,
-            ),
+            (items) => [
+              for (final item in items)
+                AggregatedSearchEventModel(
+                  feedId: feedId,
+                  feedName: feedName,
+                  item: item,
+                ),
+            ],
           ),
     );
   }
@@ -156,7 +159,7 @@ class SearchNotifier extends Notifier<SearchState> {
 
   Future<void> _run({
     required String keyword,
-    required Stream<AggregatedSearchEventModel> stream,
+    required Stream<List<AggregatedSearchEventModel>> stream,
   }) async {
     _runToken++;
     final runToken = _runToken;
@@ -164,18 +167,20 @@ class SearchNotifier extends Notifier<SearchState> {
 
     state = SearchState(keyword: keyword, isLoading: true);
 
-    _iterator = StreamIterator(stream);
+    // Buffer bridge batches locally; UI pagination never crosses the bridge
+    // once per item, and does not discard an oversized/partially used batch.
+    _iterator = StreamIterator(stream.expand((batch) => batch));
     await _loadPage(runToken: runToken);
   }
 
   /// Pull up to [_pageSize] events and route them into per-feed groups.
   /// Feed errors land in their group instead of failing the whole run.
   Future<void> _loadPage({required int runToken}) async {
+    final groups = <String, SearchFeedGroup>{};
+    for (final group in state.groups) {
+      groups[group.feedId] = group.copyWith(items: List.of(group.items));
+    }
     try {
-      final groups = <String, SearchFeedGroup>{};
-      for (final group in state.groups) {
-        groups[group.feedId] = group.copyWith(items: List.of(group.items));
-      }
       final seenIds = <String, Set<String>>{
         for (final group in groups.values)
           group.feedId: group.items.map((item) => item.id).toSet(),
@@ -224,6 +229,7 @@ class SearchNotifier extends Notifier<SearchState> {
     } catch (err) {
       if (runToken == _runToken) {
         state = state.copyWith(
+          groups: List.unmodifiable(groups.values),
           isLoading: false,
           isLoadingMore: false,
           hasMore: false,

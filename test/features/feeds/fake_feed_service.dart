@@ -29,9 +29,9 @@ class FakeFeedService implements FeedService {
     this.bookInfoHandler,
   });
 
-  final Stream<SearchResultModel> Function(String feedId, String keyword)?
+  final Stream<List<SearchResultModel>> Function(String feedId, String keyword)?
   searchHandler;
-  final Stream<AggregatedSearchEventModel> Function(String keyword)?
+  final Stream<List<AggregatedSearchEventModel>> Function(String keyword)?
   searchAllHandler;
   final Stream<BookshelfUpdateModel> Function()? bookshelfUpdatesHandler;
   final Future<List<BookshelfItemModel>> Function()? listBookshelfHandler;
@@ -41,7 +41,7 @@ class FakeFeedService implements FeedService {
   final Future<void> Function(String feedId)? removeFeedHandler;
 
   @override
-  Stream<SearchResultModel> search({
+  Stream<List<SearchResultModel>> search({
     required String feedId,
     required String keyword,
   }) {
@@ -53,7 +53,9 @@ class FakeFeedService implements FeedService {
   }
 
   @override
-  Stream<AggregatedSearchEventModel> searchAll({required String keyword}) {
+  Stream<List<AggregatedSearchEventModel>> searchAll({
+    required String keyword,
+  }) {
     final handler = searchAllHandler;
     if (handler == null) {
       throw UnimplementedError('searchAll not configured for this test');

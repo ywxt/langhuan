@@ -24,6 +24,11 @@ AggregatedSearchEventModel _error(String feedId, String name, String message) {
   );
 }
 
+Stream<List<T>> _batches<T>(List<T> items) => Stream.fromIterable([
+  for (var offset = 0; offset < items.length; offset += 20)
+    items.skip(offset).take(20).toList(),
+]);
+
 void main() {
   ProviderContainer container(FakeFeedService service) {
     final c = ProviderContainer(
@@ -42,9 +47,7 @@ void main() {
         for (var i = 0; i < 20; i++) _item('feed-b', 'Source B', 'b$i'),
       ];
       final c = container(
-        FakeFeedService(
-          searchAllHandler: (keyword) => Stream.fromIterable(events),
-        ),
+        FakeFeedService(searchAllHandler: (keyword) => _batches(events)),
       );
       final notifier = c.read(searchProvider.notifier);
 
@@ -80,7 +83,7 @@ void main() {
     test('a failed feed lands in its group without failing the run', () async {
       final c = container(
         FakeFeedService(
-          searchAllHandler: (keyword) => Stream.fromIterable([
+          searchAllHandler: (keyword) => _batches([
             _item('feed-a', 'Source A', 'a1'),
             _error('feed-b', 'Source B', 'source unavailable'),
             _item('feed-a', 'Source A', 'a2'),
@@ -103,7 +106,9 @@ void main() {
       final c = container(
         FakeFeedService(
           searchAllHandler: (keyword) =>
-              Stream<AggregatedSearchEventModel>.error(StateError('boom')),
+              Stream<List<AggregatedSearchEventModel>>.error(
+                StateError('boom'),
+              ),
         ),
       );
       await c.read(searchProvider.notifier).searchAll(keyword: 'kw');
@@ -117,7 +122,7 @@ void main() {
     test('single-source search wraps its results in one group', () async {
       final c = container(
         FakeFeedService(
-          searchHandler: (feedId, keyword) => Stream.fromIterable([
+          searchHandler: (feedId, keyword) => _batches([
             const SearchResultModel(id: '1', title: 'One', author: 'A'),
             const SearchResultModel(id: '2', title: 'Two', author: 'B'),
           ]),
@@ -134,6 +139,23 @@ void main() {
       expect(state.groups.single.items.map((item) => item.id), ['1', '2']);
     });
 
+    test('results preceding a terminal batch error are retained', () async {
+      Stream<List<AggregatedSearchEventModel>> source() async* {
+        yield [
+          _item('feed-a', 'Source A', 'a1'),
+          _item('feed-a', 'Source A', 'a2'),
+        ];
+        throw StateError('next page failed');
+      }
+
+      final c = container(FakeFeedService(searchAllHandler: (_) => source()));
+      await c.read(searchProvider.notifier).searchAll(keyword: 'kw');
+      final state = c.read(searchProvider);
+      expect(state.groups.single.items.map((item) => item.id), ['a1', 'a2']);
+      expect(state.hasError, isTrue);
+      expect(state.hasMore, isFalse);
+    });
+
     test('the Dart boundary ignores an overlapping search result id', () async {
       final events = <AggregatedSearchEventModel>[
         for (var i = 0; i < 20; i++) _item('feed-a', 'Source A', 'a$i'),
@@ -141,9 +163,7 @@ void main() {
         _item('feed-a', 'Source A', 'a20'),
       ];
       final c = container(
-        FakeFeedService(
-          searchAllHandler: (keyword) => Stream.fromIterable(events),
-        ),
+        FakeFeedService(searchAllHandler: (keyword) => _batches(events)),
       );
       final notifier = c.read(searchProvider.notifier);
 
@@ -188,8 +208,8 @@ void main() {
       'a new run supersedes the pending one and cancels its stream',
       () async {
         var firstCancelled = false;
-        final first = StreamController<AggregatedSearchEventModel>();
-        final second = StreamController<AggregatedSearchEventModel>();
+        final first = StreamController<List<AggregatedSearchEventModel>>();
+        final second = StreamController<List<AggregatedSearchEventModel>>();
         first.onCancel = () => firstCancelled = true;
 
         var calls = 0;
@@ -211,7 +231,7 @@ void main() {
         final pending2 = notifier.searchAll(keyword: 'b');
         await Future<void>.delayed(Duration.zero);
 
-        second.add(_item('feed-x', 'X', 'x1'));
+        second.add([_item('feed-x', 'X', 'x1')]);
         // The StreamIterator keeps its subscription after the stream ends, so
         // awaiting close() would never complete.
         unawaited(second.close());
@@ -230,9 +250,7 @@ void main() {
         for (var i = 0; i < 20; i++) _item('feed-a', 'Source A', 'a$i'),
       ];
       final c = container(
-        FakeFeedService(
-          searchAllHandler: (keyword) => Stream.fromIterable(events),
-        ),
+        FakeFeedService(searchAllHandler: (keyword) => _batches(events)),
       );
       final notifier = c.read(searchProvider.notifier);
 

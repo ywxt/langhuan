@@ -43,6 +43,7 @@ void main() {
     // [feedBFails] flips it to a 500 with an empty body, which makes the
     // script's search parser error.
     var feedBFails = false;
+    var feedACount = 2;
     final serverA = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final serverB = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() async {
@@ -50,7 +51,7 @@ void main() {
       await serverB.close(force: true);
     });
     serverA.listen((request) async {
-      request.response.write('2');
+      request.response.write('$feedACount');
       await request.response.close();
     });
     serverB.listen((request) async {
@@ -93,6 +94,7 @@ void main() {
     feedBFails = true;
     final events = await FeedService.instance
         .searchAll(keyword: 'fixture')
+        .expand((batch) => batch)
         .toList();
 
     final aItems = events
@@ -118,6 +120,7 @@ void main() {
     feedBFails = false;
     final recovered = await FeedService.instance
         .searchAll(keyword: 'fixture')
+        .expand((batch) => batch)
         .toList();
     expect(
       recovered.where((event) => event.error != null),
@@ -140,8 +143,25 @@ void main() {
     // ── Single-source search still works alongside the aggregate ──────────
     final single = await FeedService.instance
         .search(feedId: _feedAId, keyword: 'fixture')
+        .expand((batch) => batch)
         .toList();
     expect(single, hasLength(2));
     expect(single.first.id, '1001');
+
+    // Exercise the real FRB List boundary with a full and a partial batch.
+    feedACount = 25;
+    final singleBatches = await FeedService.instance
+        .search(feedId: _feedAId, keyword: 'fixture')
+        .toList();
+    expect(singleBatches.map((batch) => batch.length), [20, 5]);
+    expect(singleBatches.first.first.id, '1001');
+    expect(singleBatches.last.last.id, '1025');
+    final mergedBatches = await FeedService.instance
+        .searchAll(keyword: 'fixture')
+        .toList();
+    expect(mergedBatches.map((batch) => batch.length), [20, 6]);
+    final merged = mergedBatches.expand((batch) => batch).toList();
+    expect(merged.where((event) => event.feedId == _feedAId), hasLength(25));
+    expect(merged.where((event) => event.feedId == _feedBId), hasLength(1));
   });
 }

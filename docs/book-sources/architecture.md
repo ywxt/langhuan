@@ -84,8 +84,17 @@ the requested work.
 
 ## Pagination and result delivery
 
-`search` can emit a page with `next_cursor`. The host calls it again only when
-the UI asks for more results. This makes search incremental and cancellable.
+`search` can emit a page with `next_cursor`. Results remain incremental and
+cancellable. Single-source and aggregated searches cross the Rust/Flutter
+bridge in batches of at most 20 items/events (`nextBatch()`), and the Dart
+service exposes `Stream<List<...>>`. Flutter buffers each received batch for
+UI pagination instead of crossing the bridge once per book.
+
+A bridge batch is independent from a source page: it may split a large source
+page or combine smaller pages. The source's `items` and `next_cursor` contract
+is unchanged, and producers retain bounded-channel backpressure. A terminal
+error after some results does not discard them: the partial batch is returned
+first and the next pull reports the error.
 
 `chapters` and `paragraphs` use the same cursor contract inside the source
 runtime, but the app needs their complete finite results before restoring a
