@@ -25,8 +25,11 @@ class PageItem {
   final int? endOffset;
 
   String get visibleText {
-    if (source is! ParagraphContent_Text) return '';
-    final full = (source as ParagraphContent_Text).content;
+    final full = switch (source) {
+      ParagraphContent_Text(:final content) => content,
+      ParagraphContent_Title(:final text) => text,
+      _ => '',
+    };
     final s = startOffset ?? 0;
     final e = endOffset ?? full.length;
     return full.substring(s, e);
@@ -52,7 +55,10 @@ class PageContent {
   int get firstCharOffset {
     final item = items.isEmpty ? null : items.first;
     if (item == null) return 0;
-    if (item.source is ParagraphContent_Text) return item.startOffset ?? 0;
+    if (item.source is ParagraphContent_Text ||
+        item.source is ParagraphContent_Title) {
+      return item.startOffset ?? 0;
+    }
     return 0;
   }
 }
@@ -112,20 +118,57 @@ class PageBreaker {
       final spacing = cur.isEmpty ? 0.0 : paragraphSpacing;
 
       if (item is ParagraphContent_Title) {
-        final th = _measureTitle(item.text, w);
-        if (remaining - spacing < th && cur.isNotEmpty) {
-          pages.add(PageContent(chapterId: chapterId, items: cur));
-          cur = [];
-          remaining = h;
+        final painter = TextPainter(
+          text: TextSpan(text: item.text, style: titleStyle),
+          textDirection: textDirection,
+          textAlign: TextAlign.center,
+        )..layout(maxWidth: w);
+        final height = painter.height;
+        painter.dispose();
+        // Keep ordinary headings together. Only headings taller than an entire
+        // page need the same continuation logic as body paragraphs.
+        if (height <= h) {
+          if (remaining - spacing < height && cur.isNotEmpty) {
+            pages.add(PageContent(chapterId: chapterId, items: cur));
+            cur = [];
+            remaining = h;
+          }
+          remaining -= (cur.isEmpty ? 0 : paragraphSpacing) + height;
+          cur.add(
+            PageItem(
+              source: item,
+              paragraphIndex: i,
+              paragraphId: item.id.toStringValue(),
+            ),
+          );
+          continue;
         }
-        final sp = cur.isEmpty ? 0.0 : paragraphSpacing;
-        remaining -= sp + th;
-        cur.add(
-          PageItem(
-            source: item,
-            paragraphIndex: i,
-            paragraphId: item.id.toStringValue(),
-          ),
+      }
+
+      if (item is ParagraphContent_Title || item is ParagraphContent_Text) {
+        _layoutText(
+          chapterId: chapterId,
+          text: switch (item) {
+            ParagraphContent_Title(:final text) => text,
+            ParagraphContent_Text(:final content) => content,
+            _ => throw StateError('Expected text or title'),
+          },
+          style: item is ParagraphContent_Title ? titleStyle : textStyle,
+          textAlign: item is ParagraphContent_Title
+              ? TextAlign.center
+              : TextAlign.start,
+          paragraphIndex: i,
+          paragraphId: item.id.toStringValue(),
+          source: item,
+          width: w,
+          pageHeight: h,
+          remaining: remaining,
+          currentItems: cur,
+          pages: pages,
+          onUpdate: (newItems, newRemaining) {
+            cur = newItems;
+            remaining = newRemaining;
+          },
         );
       } else if (item is ParagraphContent_Image) {
         if (remaining - spacing < imageHeight && cur.isNotEmpty) {
@@ -141,23 +184,6 @@ class PageBreaker {
             paragraphIndex: i,
             paragraphId: item.id.toStringValue(),
           ),
-        );
-      } else if (item is ParagraphContent_Text) {
-        _layoutText(
-          chapterId: chapterId,
-          text: item.content,
-          paragraphIndex: i,
-          paragraphId: item.id.toStringValue(),
-          source: item,
-          width: w,
-          pageHeight: h,
-          remaining: remaining,
-          currentItems: cur,
-          pages: pages,
-          onUpdate: (newItems, newRemaining) {
-            cur = newItems;
-            remaining = newRemaining;
-          },
         );
       }
     }
@@ -183,23 +209,14 @@ class PageBreaker {
         : pages;
   }
 
-  double _measureTitle(String text, double maxWidth) {
-    final tp = TextPainter(
-      text: TextSpan(text: text, style: titleStyle),
-      textDirection: textDirection,
-      maxLines: null,
-    )..layout(maxWidth: maxWidth);
-    final result = tp.height;
-    tp.dispose();
-    return result;
-  }
-
   void _layoutText({
     required String chapterId,
     required String text,
     required int paragraphIndex,
     required String paragraphId,
-    required ParagraphContent_Text source,
+    required ParagraphContent source,
+    required TextStyle style,
+    required TextAlign textAlign,
     required double width,
     required double pageHeight,
     required double remaining,
@@ -219,7 +236,8 @@ class PageBreaker {
     // shifted every later line boundary and under-filled the remaining
     // pages; keeping the grid fills pages to their true capacity.
     final tp = TextPainter(
-      text: TextSpan(text: text, style: textStyle),
+      text: TextSpan(text: text, style: style),
+      textAlign: textAlign,
       textDirection: textDirection,
       maxLines: null,
     )..layout(maxWidth: width);

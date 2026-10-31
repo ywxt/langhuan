@@ -95,7 +95,7 @@ class PageContentView extends StatelessWidget {
   ) {
     if (source is ParagraphContent_Title) {
       return Text(
-        source.text,
+        item.isPartial ? item.visibleText : source.text,
         style: theme.textTheme.headlineSmall?.copyWith(
           fontSize: (theme.textTheme.headlineSmall?.fontSize ?? 24) * fontScale,
           fontFamily: fontFamily,

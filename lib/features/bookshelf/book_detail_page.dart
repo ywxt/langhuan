@@ -8,6 +8,7 @@ import '../../l10n/app_localizations.dart';
 import '../../rust_init.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/snackbars.dart';
+import '../../shared/widgets/chapter_scrollbar.dart';
 import '../../shared/widgets/confirm_dialog.dart';
 import '../../shared/widgets/cover_placeholder.dart';
 import '../../shared/widgets/empty_state.dart';
@@ -269,212 +270,206 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.bookDetailTitle)),
-      body: Scrollbar(
+      body: ChapterScrollbar(
         controller: _scrollController,
-        thumbVisibility: false,
-        trackVisibility: false,
-        interactive: true,
-        child: ScrollConfiguration(
-          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-          child: CustomScrollView(
-            controller: _scrollController,
-            slivers: [
+        child: CustomScrollView(
+          controller: _scrollController,
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                LanghuanTheme.spaceLg,
+                LanghuanTheme.spaceMd,
+                LanghuanTheme.spaceLg,
+                LanghuanTheme.spaceMd,
+              ),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(child: _buildHeroCover(book.coverUrl)),
+                    const SizedBox(height: LanghuanTheme.spaceLg),
+                    Center(
+                      child: BookTextHero(
+                        tag: bookTitleHeroTag(widget.feedId, widget.bookId),
+                        child: Text(
+                          book.title,
+                          style: theme.textTheme.headlineMedium,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: LanghuanTheme.spaceXs),
+                    Center(
+                      child: BookTextHero(
+                        tag: bookAuthorHeroTag(widget.feedId, widget.bookId),
+                        child: Text(
+                          book.author,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: LanghuanTheme.spaceMd),
+                    Text(
+                      (book.description == null || book.description!.isEmpty)
+                          ? l10n.bookDetailNoDescription
+                          : book.description!,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: LanghuanTheme.spaceLg),
+                    SizedBox(
+                      width: double.infinity,
+                      child:
+                          bookshelfState.contains(
+                            feedId: widget.feedId,
+                            sourceBookId: widget.bookId,
+                          )
+                          ? OutlinedButton(
+                              onPressed:
+                                  !bookshelfReady ||
+                                      bookshelfState.activeItemId ==
+                                          '${widget.feedId}:${widget.bookId}'
+                                  ? null
+                                  : () => _removeFromBookshelf(context),
+                              child: Text(l10n.bookDetailRemoveBookshelf),
+                            )
+                          : FilledButton.tonal(
+                              onPressed:
+                                  !bookshelfReady ||
+                                      bookshelfState.activeItemId ==
+                                          '${widget.feedId}:${widget.bookId}'
+                                  ? null
+                                  : () => _addToBookshelf(context),
+                              child: Text(l10n.bookDetailAddBookshelf),
+                            ),
+                    ),
+                    const SizedBox(height: LanghuanTheme.spaceMd),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: currentChaptersState.items.isEmpty
+                            ? null
+                            : () => _openReader(context, ''),
+                        child: Text(
+                          currentProgress != null
+                              ? l10n.bookDetailContinueReading
+                              : l10n.bookDetailStartReading,
+                        ),
+                      ),
+                    ),
+                    if (currentProgress != null &&
+                        currentChaptersState.items.any(
+                          (c) => c.id == currentProgress.chapterId,
+                        ))
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          top: LanghuanTheme.spaceXs,
+                        ),
+                        child: Text(
+                          l10n.bookDetailLastReadChapter(
+                            currentChaptersState.items
+                                .firstWhere(
+                                  (c) => c.id == currentProgress.chapterId,
+                                )
+                                .title,
+                          ),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    const SizedBox(height: LanghuanTheme.spaceXl),
+                    Text(
+                      l10n.bookDetailChapters(
+                        currentChaptersState.items.length,
+                      ),
+                      style: theme.textTheme.titleLarge,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (currentChaptersState.isLoading &&
+                currentChaptersState.items.isEmpty)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: LanghuanTheme.spaceLg,
+                  ),
+                  child: LinearProgressIndicator(minHeight: 2),
+                ),
+              )
+            else if (currentChaptersState.hasError &&
+                currentChaptersState.items.isEmpty)
+              chaptersErrorSliver()
+            else
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(
                   LanghuanTheme.spaceLg,
                   LanghuanTheme.spaceMd,
                   LanghuanTheme.spaceLg,
-                  LanghuanTheme.spaceMd,
+                  LanghuanTheme.spaceLg,
                 ),
-                sliver: SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Center(child: _buildHeroCover(book.coverUrl)),
-                      const SizedBox(height: LanghuanTheme.spaceLg),
-                      Center(
-                        child: BookTextHero(
-                          tag: bookTitleHeroTag(widget.feedId, widget.bookId),
-                          child: Text(
-                            book.title,
-                            style: theme.textTheme.headlineMedium,
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
+                sliver: SliverList.builder(
+                  itemCount: currentChaptersState.items.length,
+                  itemBuilder: (context, index) {
+                    final chapter = currentChaptersState.items[index];
+                    final isLastRead =
+                        currentProgress != null &&
+                        currentProgress.chapterId == chapter.id;
+                    return Padding(
+                      padding: const EdgeInsets.only(
+                        bottom: LanghuanTheme.spaceSm,
                       ),
-                      const SizedBox(height: LanghuanTheme.spaceXs),
-                      Center(
-                        child: BookTextHero(
-                          tag: bookAuthorHeroTag(widget.feedId, widget.bookId),
-                          child: Text(
-                            book.author,
+                      child: Material(
+                        color: isLastRead
+                            ? theme.colorScheme.primaryContainer
+                            : theme.colorScheme.surfaceContainer,
+                        borderRadius: LanghuanTheme.borderRadiusMd,
+                        child: ListTile(
+                          onTap: () => _openReader(context, chapter.id),
+                          dense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: LanghuanTheme.spaceMd,
+                            vertical: LanghuanTheme.spaceXs,
+                          ),
+                          title: Text(
+                            chapter.title,
                             style: theme.textTheme.bodyLarge?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                              color: isLastRead
+                                  ? theme.colorScheme.onPrimaryContainer
+                                  : null,
                             ),
-                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                      ),
-                      const SizedBox(height: LanghuanTheme.spaceMd),
-                      Text(
-                        (book.description == null || book.description!.isEmpty)
-                            ? l10n.bookDetailNoDescription
-                            : book.description!,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: LanghuanTheme.spaceLg),
-                      SizedBox(
-                        width: double.infinity,
-                        child:
-                            bookshelfState.contains(
-                              feedId: widget.feedId,
-                              sourceBookId: widget.bookId,
-                            )
-                            ? OutlinedButton(
-                                onPressed:
-                                    !bookshelfReady ||
-                                        bookshelfState.activeItemId ==
-                                            '${widget.feedId}:${widget.bookId}'
-                                    ? null
-                                    : () => _removeFromBookshelf(context),
-                                child: Text(l10n.bookDetailRemoveBookshelf),
-                              )
-                            : FilledButton.tonal(
-                                onPressed:
-                                    !bookshelfReady ||
-                                        bookshelfState.activeItemId ==
-                                            '${widget.feedId}:${widget.bookId}'
-                                    ? null
-                                    : () => _addToBookshelf(context),
-                                child: Text(l10n.bookDetailAddBookshelf),
-                              ),
-                      ),
-                      const SizedBox(height: LanghuanTheme.spaceMd),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: currentChaptersState.items.isEmpty
-                              ? null
-                              : () => _openReader(context, ''),
-                          child: Text(
-                            currentProgress != null
-                                ? l10n.bookDetailContinueReading
-                                : l10n.bookDetailStartReading,
-                          ),
-                        ),
-                      ),
-                      if (currentProgress != null &&
-                          currentChaptersState.items.any(
-                            (c) => c.id == currentProgress.chapterId,
-                          ))
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            top: LanghuanTheme.spaceXs,
-                          ),
-                          child: Text(
-                            l10n.bookDetailLastReadChapter(
-                              currentChaptersState.items
-                                  .firstWhere(
-                                    (c) => c.id == currentProgress.chapterId,
-                                  )
-                                  .title,
+                          leading: Text(
+                            '${index + 1}',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: isLastRead
+                                  ? theme.colorScheme.onPrimaryContainer
+                                  : theme.colorScheme.onSurfaceVariant,
                             ),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            textAlign: TextAlign.center,
                           ),
+                          trailing: isLastRead
+                              ? Icon(
+                                  Icons.bookmark,
+                                  size: 18,
+                                  color: theme.colorScheme.onPrimaryContainer,
+                                )
+                              : null,
                         ),
-                      const SizedBox(height: LanghuanTheme.spaceXl),
-                      Text(
-                        l10n.bookDetailChapters(
-                          currentChaptersState.items.length,
-                        ),
-                        style: theme.textTheme.titleLarge,
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ),
-              if (currentChaptersState.isLoading &&
-                  currentChaptersState.items.isEmpty)
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: LanghuanTheme.spaceLg,
-                    ),
-                    child: LinearProgressIndicator(minHeight: 2),
-                  ),
-                )
-              else if (currentChaptersState.hasError &&
-                  currentChaptersState.items.isEmpty)
-                chaptersErrorSliver()
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(
-                    LanghuanTheme.spaceLg,
-                    LanghuanTheme.spaceMd,
-                    LanghuanTheme.spaceLg,
-                    LanghuanTheme.spaceLg,
-                  ),
-                  sliver: SliverList.builder(
-                    itemCount: currentChaptersState.items.length,
-                    itemBuilder: (context, index) {
-                      final chapter = currentChaptersState.items[index];
-                      final isLastRead =
-                          currentProgress != null &&
-                          currentProgress.chapterId == chapter.id;
-                      return Padding(
-                        padding: const EdgeInsets.only(
-                          bottom: LanghuanTheme.spaceSm,
-                        ),
-                        child: Material(
-                          color: isLastRead
-                              ? theme.colorScheme.primaryContainer
-                              : theme.colorScheme.surfaceContainer,
-                          borderRadius: LanghuanTheme.borderRadiusMd,
-                          child: ListTile(
-                            onTap: () => _openReader(context, chapter.id),
-                            dense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: LanghuanTheme.spaceMd,
-                              vertical: LanghuanTheme.spaceXs,
-                            ),
-                            title: Text(
-                              chapter.title,
-                              style: theme.textTheme.bodyLarge?.copyWith(
-                                color: isLastRead
-                                    ? theme.colorScheme.onPrimaryContainer
-                                    : null,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            leading: Text(
-                              '${index + 1}',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: isLastRead
-                                    ? theme.colorScheme.onPrimaryContainer
-                                    : theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            trailing: isLastRead
-                                ? Icon(
-                                    Icons.bookmark,
-                                    size: 18,
-                                    color: theme.colorScheme.onPrimaryContainer,
-                                  )
-                                : null,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-            ],
-          ),
+          ],
         ),
       ),
     );

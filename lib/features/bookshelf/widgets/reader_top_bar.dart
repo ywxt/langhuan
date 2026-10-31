@@ -39,10 +39,14 @@ class ReaderTopBar extends StatelessWidget {
         children: [
           IconButton(icon: const Icon(Icons.arrow_back), onPressed: onBack),
           Expanded(
-            child: Text(
-              chapterTitle,
-              style: titleTextStyle,
-              overflow: TextOverflow.ellipsis,
+            child: Tooltip(
+              message: chapterTitle,
+              child: Text(
+                chapterTitle,
+                style: titleTextStyle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ),
           IconButton(

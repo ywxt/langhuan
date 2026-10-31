@@ -389,7 +389,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     final baseStyle = brightness == Brightness.dark
         ? SystemUiOverlayStyle.light
         : SystemUiOverlayStyle.dark;
-    final overlayStyle = baseStyle.copyWith(statusBarColor: Colors.transparent);
+    final overlayStyle = baseStyle.copyWith(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+      systemNavigationBarContrastEnforced: false,
+    );
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,

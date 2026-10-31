@@ -158,6 +158,44 @@ void main() {
         textDirection: textDirection,
       ).computePages(items, chapterId: 'ch');
 
+      final oversizedTitle =
+          pageSize.width > 0 &&
+          pageSize.height > 4 &&
+          items.any((item) {
+            if (item is! ParagraphContent_Title) return false;
+            final painter = TextPainter(
+              text: TextSpan(
+                text: item.text,
+                style: const TextStyle(fontSize: 24),
+              ),
+              textDirection: textDirection,
+            )..layout(maxWidth: pageSize.width);
+            final oversized = painter.height > pageSize.height - 4;
+            painter.dispose();
+            return oversized;
+          });
+      if (oversizedTitle) {
+        // The baseline clipped headings taller than a page. The new behaviour
+        // intentionally changes page boundaries; verify complete text coverage.
+        for (var index = 0; index < items.length; index++) {
+          final original = switch (items[index]) {
+            ParagraphContent_Text(:final content) => content,
+            ParagraphContent_Title(:final text) => text,
+            _ => null,
+          };
+          if (original == null) continue;
+          expect(
+            actual
+                .expand((p) => p.items)
+                .where((item) => item.paragraphIndex == index)
+                .map((item) => item.visibleText)
+                .join(),
+            original,
+          );
+        }
+        return;
+      }
+
       final expected = _ReferencePageBreaker(
         pageSize: pageSize,
         textStyle: textStyle,

@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/utils/snackbars.dart';
+import '../../../shared/widgets/chapter_scrollbar.dart';
 import '../../feeds/feed_service.dart';
 import '../bookmark_provider.dart';
 import '../reader_settings_provider.dart';
@@ -436,7 +437,7 @@ Future<void> showReaderTocSheet({
   final activeId = reading.activeChapterId;
   final activeIdx = chapters.indexWhere((c) => c.id == activeId);
   final scrollController = ScrollController(
-    initialScrollOffset: activeIdx > 0 ? activeIdx * 56.0 : 0,
+    initialScrollOffset: activeIdx > 0 ? activeIdx * 72.0 : 0,
   );
 
   await showModalBottomSheet<void>(
@@ -459,41 +460,35 @@ Future<void> showReaderTocSheet({
                 return _SheetMessage(message: l10n.readerSearchNoMatch(query));
               }
 
-              return Scrollbar(
+              return ChapterScrollbar(
                 controller: scrollController,
-                thumbVisibility: false,
-                trackVisibility: false,
-                interactive: true,
-                child: ScrollConfiguration(
-                  behavior: ScrollConfiguration.of(
-                    context,
-                  ).copyWith(scrollbars: false),
-                  child: ListView.builder(
-                    controller: scrollController,
-                    itemCount: filtered.length,
-                    itemExtent: 56.0,
-                    itemBuilder: (context, index) {
-                      final (chapterNo, chapter) = filtered[index];
-                      final isActive = chapter.id == currentActiveId;
-                      return ListTile(
-                        leading: Text('$chapterNo'),
-                        title: Text(
-                          chapter.title,
-                          style: isActive
-                              ? TextStyle(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  fontWeight: FontWeight.bold,
-                                )
-                              : null,
-                        ),
-                        selected: isActive,
-                        onTap: () {
-                          Navigator.of(context).pop();
-                          onJumpToChapter(chapter.id);
-                        },
-                      );
-                    },
-                  ),
+                child: ListView.builder(
+                  controller: scrollController,
+                  itemCount: filtered.length,
+                  itemExtent: 72.0,
+                  itemBuilder: (context, index) {
+                    final (chapterNo, chapter) = filtered[index];
+                    final isActive = chapter.id == currentActiveId;
+                    return ListTile(
+                      leading: Text('$chapterNo'),
+                      title: Text(
+                        chapter.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: isActive
+                            ? TextStyle(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                              )
+                            : null,
+                      ),
+                      selected: isActive,
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        onJumpToChapter(chapter.id);
+                      },
+                    );
+                  },
                 ),
               );
             },

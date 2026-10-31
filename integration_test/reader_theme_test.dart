@@ -12,10 +12,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:langhuan/app.dart';
+import 'package:langhuan/features/bookshelf/reader_page.dart';
 import 'package:langhuan/features/bookshelf/reader_settings_provider.dart';
 import 'package:langhuan/features/bookshelf/widgets/reader_bottom_bar.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
@@ -173,6 +175,37 @@ void main() {
       restored.read(readerSettingsProvider).customTheme.background,
       const Color(0xFF161A20),
     );
+
+    // Close settings so the active reader region supplies both system bars.
+    Navigator.of(tester.element(find.byType(ReaderPage))).pop();
+    await tester.pumpAndSettle();
+    for (final mode in ReaderPageMode.values) {
+      container.read(readerSettingsProvider.notifier).setPageMode(mode);
+      await tester.pumpAndSettle();
+      final region = tester.widget<AnnotatedRegion<SystemUiOverlayStyle>>(
+        find
+            .descendant(
+              of: find.byType(ReaderPage),
+              matching: find.byType(AnnotatedRegion<SystemUiOverlayStyle>),
+            )
+            .first,
+      );
+      expect(region.value.systemNavigationBarColor, Colors.transparent);
+      expect(region.value.systemNavigationBarDividerColor, Colors.transparent);
+      expect(region.value.systemNavigationBarContrastEnforced, isFalse);
+      expect(region.value.systemNavigationBarIconBrightness, Brightness.light);
+      final scaffold = find
+          .descendant(
+            of: find.byType(ReaderPage),
+            matching: find.byType(Scaffold),
+          )
+          .first;
+      expect(
+        Theme.of(tester.element(scaffold)).scaffoldBackgroundColor,
+        const Color(0xFF161A20),
+      );
+      expect(tester.takeException(), isNull);
+    }
   });
 }
 
