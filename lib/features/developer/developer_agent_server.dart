@@ -17,6 +17,15 @@ typedef DebugStageRunner =
 typedef InstalledScriptLoader =
     Future<String> Function({required String feedId});
 
+/// Flat, versioned routes for the local debug HTTP API.
+abstract final class DeveloperAgentRoutes {
+  static const health = '/v1/health';
+  static const operations = '/v1/operations';
+  static const runOperation = '/v1/run';
+  static const loadScript = '/v1/load';
+  static const reloadScript = '/v1/reload';
+}
+
 /// Loopback-only HTTP facade for local AI agents and editor integrations.
 ///
 /// It exposes the same sandboxed runner as the UI. The server exists only
@@ -77,7 +86,8 @@ class DeveloperAgentServer {
   Future<void> _handle(HttpRequest request) async {
     try {
       _setResponseDefaults(request.response);
-      if (request.method == 'GET' && request.uri.path == '/v1/health') {
+      if (request.method == 'GET' &&
+          request.uri.path == DeveloperAgentRoutes.health) {
         return _json(request.response, HttpStatus.ok, {
           'ok': true,
           'service': 'langhuan-feed-debug',
@@ -91,11 +101,12 @@ class DeveloperAgentServer {
         });
       }
 
-      if (request.method == 'GET' && request.uri.path == '/v1/operations') {
+      if (request.method == 'GET' &&
+          request.uri.path == DeveloperAgentRoutes.operations) {
         return _json(request.response, HttpStatus.ok, {
           'modes': {
             'pipeline': 'default; follows next_cursor until complete',
-            'singlePage':
+            'single_page':
                 'runs one reducer operation with explicit input and cursor',
           },
           'operations': [
@@ -117,16 +128,17 @@ class DeveloperAgentServer {
             },
             {'name': 'authStatus', 'input': <String, String>{}},
           ],
+          'run_endpoint': DeveloperAgentRoutes.runOperation,
           'script_endpoints': {
-            'load': '/v1/script/load',
-            'reload': '/v1/script/reload',
+            'load': DeveloperAgentRoutes.loadScript,
+            'reload': DeveloperAgentRoutes.reloadScript,
           },
         });
       }
 
       if (request.method == 'POST' &&
-          (request.uri.path == '/v1/script/load' ||
-              request.uri.path == '/v1/script/reload')) {
+          (request.uri.path == DeveloperAgentRoutes.loadScript ||
+              request.uri.path == DeveloperAgentRoutes.reloadScript)) {
         if (_busy || _workspaceBusy()) {
           return _json(request.response, HttpStatus.conflict, {
             'error': 'the debug workspace is busy',
@@ -141,7 +153,7 @@ class DeveloperAgentServer {
         _busy = true;
         try {
           final body = await _readJsonObject(request, allowEmpty: true);
-          final source = request.uri.path.endsWith('/reload')
+          final source = request.uri.path == DeveloperAgentRoutes.reloadScript
               ? _loadedSource
               : _parseScriptSource(body);
           if (source == null) {
@@ -183,7 +195,8 @@ class DeveloperAgentServer {
         }
       }
 
-      if (request.method == 'POST' && request.uri.path == '/v1/run') {
+      if (request.method == 'POST' &&
+          request.uri.path == DeveloperAgentRoutes.runOperation) {
         if (_busy || _workspaceBusy()) {
           return _json(request.response, HttpStatus.conflict, {
             'error': 'another debug run is active',
@@ -332,7 +345,7 @@ class DeveloperAgentServer {
       );
     }
     final mode = body['mode'];
-    if (mode == 'singlePage') {
+    if (mode == 'single_page') {
       return DebugStage.manual(
         operation: operation,
         inputJson: jsonEncode(input),
@@ -449,7 +462,7 @@ Object? _outputJson(DebugStageOutput? output) => switch (output) {
     'items': [for (final item in items) _searchItemJson(item)],
   },
   DebugStageOutput_BookInfo(:final info) => {
-    'type': 'bookInfo',
+    'type': 'book_info',
     'value': _bookInfoJson(info),
   },
   DebugStageOutput_Chapters(:final items) => {
@@ -463,7 +476,7 @@ Object? _outputJson(DebugStageOutput? output) => switch (output) {
     'items': [for (final item in items) _paragraphJson(item)],
   },
   DebugStageOutput_AuthStatus(:final status) => {
-    'type': 'authStatus',
+    'type': 'auth_status',
     'value': status.name,
   },
   DebugStageOutput_Manual(
@@ -472,7 +485,7 @@ Object? _outputJson(DebugStageOutput? output) => switch (output) {
     :final nextCursorJson,
   ) =>
     {
-      'type': 'singlePage',
+      'type': 'single_page',
       'items': itemsJson == null ? null : jsonDecode(itemsJson),
       'value': valueJson == null ? null : jsonDecode(valueJson),
       'next_cursor': nextCursorJson == null ? null : jsonDecode(nextCursorJson),

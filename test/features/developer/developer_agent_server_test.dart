@@ -8,6 +8,45 @@ import 'package:langhuan/features/developer/developer_agent_server.dart';
 import 'package:langhuan/src/rust/api/debug.dart';
 
 void main() {
+  test('catalogue advertises consistent routes and HTTP mode names', () async {
+    final server = DeveloperAgentServer(currentScript: () => 'source');
+    addTearDown(server.stop);
+    await server.start();
+    final client = HttpClient();
+    addTearDown(() => client.close(force: true));
+    final request = await client.getUrl(
+      server.baseUri!.resolve('/v1/operations'),
+    );
+    request.headers.set(
+      HttpHeaders.authorizationHeader,
+      'Bearer ${server.token}',
+    );
+    final response = await request.close();
+    final body =
+        jsonDecode(await utf8.decoder.bind(response).join())
+            as Map<String, dynamic>;
+    expect(response.statusCode, HttpStatus.ok);
+    expect(body['run_endpoint'], '/v1/run');
+    expect(body['script_endpoints'], {
+      'load': '/v1/load',
+      'reload': '/v1/reload',
+    });
+    expect(
+      (body['modes'] as Map).keys,
+      unorderedEquals(['pipeline', 'single_page']),
+    );
+    final oldRoute = await client.postUrl(
+      server.baseUri!.resolve('/v1/operations/run'),
+    );
+    oldRoute.headers.set(
+      HttpHeaders.authorizationHeader,
+      'Bearer ${server.token}',
+    );
+    final oldResponse = await oldRoute.close();
+    expect(oldResponse.statusCode, HttpStatus.notFound);
+    await oldResponse.drain<void>();
+  });
+
   Future<(int, Map<String, dynamic>)> post(
     DeveloperAgentServer server,
     String path, [
@@ -52,7 +91,7 @@ void main() {
       );
       addTearDown(server.stop);
       await server.start();
-      final load = post(server, '/v1/script/load', {'script': 'new'});
+      final load = post(server, '/v1/load', {'script': 'new'});
       await started.future;
       expect(
         (await post(server, '/v1/run', {
@@ -62,7 +101,7 @@ void main() {
         HttpStatus.conflict,
       );
       expect(
-        (await post(server, '/v1/script/load', {'script': 'other'})).$1,
+        (await post(server, '/v1/load', {'script': 'other'})).$1,
         HttpStatus.conflict,
       );
       expect(editor, 'old');
@@ -103,20 +142,17 @@ void main() {
       addTearDown(server.stop);
       await server.start();
       expect(
-        (await post(server, '/v1/script/load', {'path': file.path}, false)).$1,
+        (await post(server, '/v1/load', {'path': file.path}, false)).$1,
         HttpStatus.unauthorized,
       );
       expect(editor, 'old source');
-      expect(
-        (await post(server, '/v1/script/reload')).$1,
-        HttpStatus.badRequest,
-      );
-      final loaded = await post(server, '/v1/script/load', {'path': file.path});
+      expect((await post(server, '/v1/reload')).$1, HttpStatus.badRequest);
+      final loaded = await post(server, '/v1/load', {'path': file.path});
       expect(loaded.$1, HttpStatus.ok);
       expect(loaded.$2['source'], 'path');
       expect(editor, 'version one');
       await file.writeAsString('version two');
-      expect((await post(server, '/v1/script/reload')).$1, HttpStatus.ok);
+      expect((await post(server, '/v1/reload')).$1, HttpStatus.ok);
       expect(editor, 'version two');
       expect(
         (await post(server, '/v1/run', {
@@ -127,14 +163,11 @@ void main() {
       );
       expect(executed, 'version two');
       await file.writeAsBytes([0xff]);
-      expect(
-        (await post(server, '/v1/script/reload')).$1,
-        HttpStatus.badRequest,
-      );
+      expect((await post(server, '/v1/reload')).$1, HttpStatus.badRequest);
       expect(editor, 'version two');
       await file.writeAsString('x' * (2 * 1024 * 1024 + 1));
       expect(
-        (await post(server, '/v1/script/reload')).$1,
+        (await post(server, '/v1/reload')).$1,
         HttpStatus.requestEntityTooLarge,
       );
       expect(editor, 'version two');
@@ -165,27 +198,27 @@ void main() {
         {'path': 'relative.js'},
       ]) {
         expect(
-          (await post(server, '/v1/script/load', body)).$1,
+          (await post(server, '/v1/load', body)).$1,
           HttpStatus.badRequest,
         );
         expect(editor, 'unchanged');
       }
       busy = true;
       expect(
-        (await post(server, '/v1/script/load', {'script': 'new'})).$1,
+        (await post(server, '/v1/load', {'script': 'new'})).$1,
         HttpStatus.conflict,
       );
       busy = false;
       expect(
-        (await post(server, '/v1/script/load', {'feed_id': 'source'})).$1,
+        (await post(server, '/v1/load', {'feed_id': 'source'})).$1,
         HttpStatus.ok,
       );
       expect(editor, installed);
       installed = 'installed version two';
-      expect((await post(server, '/v1/script/reload')).$1, HttpStatus.ok);
+      expect((await post(server, '/v1/reload')).$1, HttpStatus.ok);
       expect(editor, installed);
       expect(
-        (await post(server, '/v1/script/load', {'script': 'inline source'})).$1,
+        (await post(server, '/v1/load', {'script': 'inline source'})).$1,
         HttpStatus.ok,
       );
       expect(editor, 'inline source');
@@ -261,7 +294,7 @@ void main() {
     },
   );
 
-  test('singlePage mode forwards raw input and cursor', () async {
+  test('single_page mode forwards raw input and cursor', () async {
     DebugStage? receivedStage;
     final server = DeveloperAgentServer(
       currentScript: () => 'export default {}',
@@ -292,7 +325,7 @@ void main() {
       ..set(HttpHeaders.authorizationHeader, 'Bearer ${server.token}');
     request.write(
       jsonEncode({
-        'mode': 'singlePage',
+        'mode': 'single_page',
         'operation': 'search',
         'input': {'keyword': 'book'},
         'cursor': {'page': 2},
@@ -311,5 +344,6 @@ void main() {
       {'id': '2'},
     ]);
     expect(body['output']['next_cursor'], {'page': 3});
+    expect(body['output']['type'], 'single_page');
   });
 }

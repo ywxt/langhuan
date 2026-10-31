@@ -129,7 +129,7 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
     final uri = _agentServer.baseUri!;
     final token = _agentServer.token!;
     final command =
-        "curl -s '${uri.resolve('/v1/run')}' "
+        "curl -s '${uri.resolve(DeveloperAgentRoutes.runOperation)}' "
         "-H 'Authorization: Bearer $token' "
         "-H 'Content-Type: application/json' "
         "--data '{\"operation\":\"search\",\"input\":{\"keyword\":\"test\"}}'";

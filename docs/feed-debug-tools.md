@@ -110,15 +110,24 @@ editors, and command-line tools. It binds only to `127.0.0.1` on a random port,
 requires the displayed random Bearer token, accepts one run at a time, and
 stops when the developer page closes. Request bodies are limited to 2 MiB.
 
+Routes are flat beneath `/v1`: `/run`, `/load`, `/reload`, `/health`,
+and `/operations`.
+HTTP control fields, mode names, and output type tags use `snake_case`, such as
+`feed_id`, `single_page`, and `book_info`. The `operation` name and keys inside
+`input` follow the feed/debugger protocol unchanged (`bookInfo`, `bookId`,
+`chapterId`, `authStatus`); single-page debugging passes raw input and cursors
+through without renaming script-defined fields. The operation catalogue also
+advertises `run_endpoint` and `script_endpoints`.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/v1/health` | Server identity and API version |
 | `GET` | `/v1/operations` | Supported exports and input fields |
 | `POST` | `/v1/run` | Execute one export and return output, steps, and HTTP trace |
-| `POST` | `/v1/script/load` | Replace and persist the developer editor's script |
-| `POST` | `/v1/script/reload` | Read the last successfully loaded source again |
+| `POST` | `/v1/load` | Replace and persist the developer editor's script |
+| `POST` | `/v1/reload` | Read the last successfully loaded source again |
 
-`POST /v1/script/load` accepts exactly one non-empty string field:
+`POST /v1/load` accepts exactly one non-empty string field:
 
 - `script`: inline JavaScript, copied into the editor unchanged.
 - `path`: an absolute path to a UTF-8 file on the machine running Langhuan.
@@ -129,10 +138,10 @@ For example, load a local file:
 
 ```sh
 curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"path":"/absolute/path/qidian.js"}' "$BASE/v1/script/load"
+  -d '{"path":"/absolute/path/qidian.js"}' "$BASE/v1/load"
 ```
 
-After saving changes to that file, `POST /v1/script/reload` with an empty body
+After saving changes to that file, `POST /v1/reload` with an empty body
 or `{}` reads it again. For `feed_id`, reload reads the installed script again;
 for `script`, it restores the original inline source. Reload requires a previous
 successful load in this developer-page session. Failed loads preserve the
@@ -163,13 +172,13 @@ and an empty object for `authStatus`. Responses contain typed output,
 structured failures, reducer steps, and masked HTTP data.
 
 By default the API uses `"mode": "pipeline"` and follows all cursors, matching
-the UI's typed stages. Set `"mode": "singlePage"` and optionally provide
+the UI's typed stages. Set `"mode": "single_page"` and optionally provide
 `"cursor"` to execute only one page:
 
 ```json
 {
   "operation": "search",
-  "mode": "singlePage",
+  "mode": "single_page",
   "input": { "keyword": "example" },
   "cursor": { "page": 2 }
 }
