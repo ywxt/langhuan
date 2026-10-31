@@ -1344,17 +1344,22 @@ function parseCommentItems(json) {
   const data = json?.data;
   if (data == null) return null;
   const items = [];
-  // 段評條目在 data_list[i].comment；回覆條目在 reply_list[i]（外層鍵
-  // 爲大寫 Common，主鍵是 reply_id）。兩種形態都歸一爲 Comment。
+  // 段評條目在 data_list[i].comment（內容再嵌一層 common，計數在
+  // comment.stat 內部）；回覆條目在 reply_list[i]，common 直接在外層
+  // （官方序列化的鍵是大寫 Common，兩種都收）。歸一成 {common, stat, id}
+  // 再解析。
   const entries = Array.isArray(data?.data_list)
-    ? data.data_list.map((entry) => ({
-        holder: entry?.comment,
-        stat: entry?.comment?.stat ?? entry?.stat,
-        id: entry?.comment?.comment_id,
-      }))
+    ? data.data_list.map((entry) => {
+        const comment = entry?.comment;
+        return {
+          common: comment?.common,
+          stat: comment?.stat ?? entry?.stat,
+          id: comment?.comment_id,
+        };
+      })
     : Array.isArray(data?.reply_list)
       ? data.reply_list.map((entry) => ({
-          holder: entry?.Common ?? entry?.common,
+          common: entry?.Common ?? entry?.common,
           stat: entry?.stat,
           id: entry?.reply_id,
         }))
@@ -1362,14 +1367,14 @@ function parseCommentItems(json) {
   for (const entry of entries) {
     const id = commentIdText(entry.id);
     if (!id) continue;
-    const text = commentText(entry.holder?.content);
+    const text = commentText(entry.common?.content);
     if (!text) continue;
     const replyCount = toCount(entry.stat?.reply_count);
     items.push({
       id,
-      author: commentAuthor(entry.holder),
+      author: commentAuthor(entry.common),
       text,
-      created_at_ms: timestampMs(entry.holder?.create_timestamp),
+      created_at_ms: timestampMs(entry.common?.create_timestamp),
       like_count: toCount(entry.stat?.digg_count),
       // 回覆的回覆不再展開：段評條目帶回覆計數，回覆條目不帶。
       replies: replyCount == null ? null : { total_count: replyCount },

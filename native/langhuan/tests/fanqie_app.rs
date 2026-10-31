@@ -91,6 +91,7 @@ fn load_script_for_server(server: &ServerGuard) -> String {
             "https://i.snssdk.com/service/2/device_register/?tt_data=a",
             &format!("{base}/service/2/device_register/?tt_data=a"),
         )
+        .replace("https://api5-normal-sinfonlineb.fqnovel.com", base.as_str())
         .replace(
             "https://fanqienovel.com/api/reader/directory/detail",
             &format!("{base}/api/reader/directory/detail"),
@@ -105,6 +106,7 @@ fn load_script_for_server(server: &ServerGuard) -> String {
         )
         .replace("// @access_domain i.snssdk.com", "")
         .replace("// @access_domain fanqienovel.com", "")
+        .replace("// @access_domain api5-normal-sinfonlineb.fqnovel.com", "")
 }
 
 fn aes_cbc_encrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Vec<u8> {
@@ -285,6 +287,20 @@ async fn app_flow_registers_device_signs_and_reads_chapter() {
         "decrypted paragraphs"
     );
 
+    // Paragraph ids must match the commentapi para_index: 0-based over the
+    // body's <p> elements, with the title taking no index. Paragraph
+    // comments hang off these ids, so the alignment is load-bearing.
+    let paragraph_items: Vec<_> = items
+        .iter()
+        .map(|item| item.as_ref().expect("paragraph item"))
+        .collect();
+    assert!(
+        paragraph_items[0].id().source_id().is_none(),
+        "title carries no source id"
+    );
+    assert_eq!(paragraph_items[1].id().source_id(), Some("0"));
+    assert_eq!(paragraph_items[2].id().source_id(), Some("1"));
+
     // The registered device and content key are persisted for later
     // operations. `device_type` is a random model from the registration
     // body; assert its presence rather than its value.
@@ -460,6 +476,228 @@ async fn app_flow_rekeys_when_content_is_invalid() {
         .unwrap();
     let keyinfo = keyinfo.expect("keyinfo persisted");
     assert_eq!(keyinfo["keyver"].as_f64(), Some((KEYVER + 1) as f64));
+}
+
+// ── Paragraph comments (commentapi, verified fqapp recipe) ─────────────────
+
+fn comment_list_body(has_more: bool, cursor: &str) -> String {
+    json!({
+        "code": 0,
+        "data": {
+            "data_list": [{
+                "comment": {
+                    "comment_id": "7580233808075719486",
+                    "common": {
+                        "content": { "text": "这段写得太好了！" },
+                        "create_timestamp": 1756000000,
+                        "user_info": {
+                            "base_info": {
+                                "user_name": "书虫小王",
+                                "user_avatar": "https://p3-novel.byteimg.com/x.jpg"
+                            },
+                            "user_tag": { "is_author": false }
+                        }
+                    },
+                    "stat": { "digg_count": 12, "reply_count": 3, "read_duration": 300 }
+                }
+            }],
+            "common_list_info": { "total": 57, "has_more": has_more, "cursor": cursor }
+        }
+    })
+    .to_string()
+}
+
+fn reply_list_body() -> String {
+    // The reply service nests entries under `reply_list` with a capital-C
+    // `Common` and `reply_id` as the primary key (fqapp's live-verified
+    // shape); no nested reply_count — replies of replies are not a thing.
+    json!({
+        "code": 0,
+        "data": {
+            "reply_list": [{
+                "reply_id": "7600000000000000001",
+                "Common": {
+                    "content": { "text": "同感！" },
+                    "create_timestamp": 1756001000,
+                    "user_info": {
+                        "base_info": { "user_name": "夜读人", "user_avatar": "" }
+                    }
+                },
+                "stat": { "digg_count": 3 }
+            }],
+            "common_list_info": { "total": 3, "has_more": false, "cursor": "" }
+        }
+    })
+    .to_string()
+}
+
+#[tokio::test]
+async fn app_flow_paragraph_comments_and_replies() {
+    use langhuan::feed::comments::CommentsQuery;
+
+    let mut server = mockito::Server::new_async().await;
+
+    // The full device bootstrap in call order: register, activate, and the
+    // registerkey step that always follows activation.
+    let register = server
+        .mock("POST", "/service/2/device_register/?tt_data=a")
+        .with_status(200)
+        .with_body(device_register_json())
+        .expect(1)
+        .create_async()
+        .await;
+    let activate = server
+        .mock("POST", "/reading/user/privilege/add/v")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_body(json!({ "code": 0 }).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let registerkey = server
+        .mock("POST", "/reading/crypt/registerkey")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_body(registerkey_body(&CONTENT_KEY, KEYVER))
+        .expect(1)
+        .create_async()
+        .await;
+
+    let list_path = format!("/novel/commentapi/comment/list/{CHAPTER_ID}/v1");
+    // First page: the body must carry the verified recipe — server_channel
+    // 38 (not the official 43, which returns empty), para_index aligned with
+    // the 0-based paragraph ids, and no cursor yet.
+    let first = server
+        .mock("POST", list_path.as_str())
+        .match_query(mockito::Matcher::Any)
+        .match_header("x-argus", mockito::Matcher::Regex(".+".into()))
+        .match_header(
+            "x-ss-stub",
+            mockito::Matcher::Regex(r"^[0-9a-f]{32}$".into()),
+        )
+        .match_header("content-type", "application/json; charset=utf-8")
+        .match_body(mockito::Matcher::PartialJson(json!({
+            "business_param": {
+                "book_id": BOOK_ID,
+                "item_version": "1",
+                "para_index": 0,
+                "fold_type": 1,
+                "need_count": true,
+            },
+            "comment_source": 2,
+            "comment_type": 1,
+            "count": 20,
+            "group_id": CHAPTER_ID,
+            "group_type": 15,
+            "server_channel": 38,
+            "sort": 1,
+        })))
+        .with_status(200)
+        .with_body(comment_list_body(true, "20"))
+        .expect(1)
+        .create_async()
+        .await;
+    // Second page: cursor travels as a plain numeric string.
+    let second = server
+        .mock("POST", list_path.as_str())
+        .match_query(mockito::Matcher::Any)
+        .match_body(mockito::Matcher::PartialJson(json!({
+            "cursor": "20",
+            "business_param": { "need_count": false },
+        })))
+        .with_status(200)
+        .with_body(comment_list_body(false, ""))
+        .expect(1)
+        .create_async()
+        .await;
+    let reply_path = "/novel/commentapi/reply/list/7580233808075719486/v1";
+    let reply = server
+        .mock("POST", reply_path)
+        .match_query(mockito::Matcher::Any)
+        .match_body(mockito::Matcher::PartialJson(json!({
+            "aid": 1967,
+            "business_param": { "book_id": BOOK_ID, "need_count": false },
+            "comment_id": "7580233808075719486",
+            "comment_source": 502,
+            "comment_type": 1,
+            "compliance_status": 0,
+            "count": 10,
+            "cursor": "",
+            "group_id": CHAPTER_ID,
+            "group_type": 15,
+        })))
+        .with_status(200)
+        .with_body(reply_list_body())
+        .expect(1)
+        .create_async()
+        .await;
+
+    let script = load_script_for_server(&server);
+    let engine = ScriptEngine::new()
+        .with_storage(Arc::new(MemoryStorage::default()) as SharedStorageHandler);
+    let feed = engine.load_script(&script).await.expect("load failed");
+
+    // Chapter comments are not exported (no verified recipe); paragraph
+    // comments are.
+    assert_eq!(feed.comment_support(), (false, true));
+
+    let mut query = CommentsQuery {
+        book_id: BOOK_ID.to_owned(),
+        chapter_id: CHAPTER_ID.to_owned(),
+        paragraph_id: Some("0".to_owned()),
+        parent_id: None,
+    };
+
+    let page = feed
+        .comments_page(&query, Value::Null)
+        .await
+        .expect("first paragraph comments page");
+    assert_eq!(page.total_count, Some(57));
+    assert_eq!(page.items.len(), 1);
+    let comment = &page.items[0];
+    assert_eq!(comment.id, "7580233808075719486");
+    assert_eq!(comment.author.name, "书虫小王");
+    assert_eq!(
+        comment.author.avatar_url.as_deref(),
+        Some("https://p3-novel.byteimg.com/x.jpg")
+    );
+    assert_eq!(comment.text, "这段写得太好了！");
+    assert_eq!(comment.created_at_ms, Some(1_756_000_000_000));
+    assert_eq!(comment.like_count, Some(12));
+    assert_eq!(
+        comment.replies.as_ref().map(|r| r.total_count),
+        Some(Some(3)),
+        "paragraph comments expose their reply count"
+    );
+    assert_eq!(page.next_cursor, Some(json!("20")));
+
+    let last = feed
+        .comments_page(&query, json!("20"))
+        .await
+        .expect("second paragraph comments page");
+    assert_eq!(last.total_count, Some(57));
+    assert!(last.next_cursor.is_none(), "has_more=false must end paging");
+
+    // Opening the reply list passes the comment id as parentId.
+    query.parent_id = Some("7580233808075719486".to_owned());
+    let replies = feed
+        .comments_page(&query, Value::Null)
+        .await
+        .expect("reply page");
+    assert_eq!(replies.total_count, Some(3));
+    assert_eq!(replies.items.len(), 1);
+    assert_eq!(replies.items[0].id, "7600000000000000001");
+    assert_eq!(replies.items[0].author.name, "夜读人");
+    assert!(replies.items[0].author.avatar_url.is_none());
+    assert_eq!(replies.items[0].text, "同感！");
+    assert_eq!(replies.items[0].like_count, Some(3));
+    assert!(
+        replies.items[0].replies.is_none(),
+        "replies of replies are not expandable"
+    );
+    assert!(replies.next_cursor.is_none());
+
+    assert_all!(register, activate, registerkey, first, second, reply);
 }
 
 // ── Live gateway smoke ──────────────────────────────────────────────────────

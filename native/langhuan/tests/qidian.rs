@@ -951,6 +951,247 @@ async fn auth_cookie_is_sent_with_content_requests() {
     assert!(!results.is_empty());
 }
 
+// ── Comments (login-gated chapter/paragraph review lists) ───────────────────
+
+/// A feed with login auth installed, including the `_csrfToken` that the
+/// comment API requires in both the Cookie header and the query string.
+async fn authed_feed(server: &ServerGuard) -> langhuan::script::js::JsFeed {
+    let feed = load_feed(server).await;
+    let support = feed.supports_auth().expect("qidian feed supports auth");
+    let page = AuthPageContext {
+        current_url: "https://m.qidian.com/".to_owned(),
+        response: HttpBody::from("<html>home</html>"),
+        response_headers: vec![],
+        cookies: vec![
+            cookie("ywkey", "secret-key", ".qidian.com"),
+            cookie("ywguid", "12345", ".qidian.com"),
+            cookie("_csrfToken", "token-abc", ".qidian.com"),
+        ],
+    };
+    let auth = feed.parse_auth(&support, &page).expect("parse_auth failed");
+    feed.set_auth_info(&support, Some(auth))
+        .expect("set_auth_info failed");
+    feed
+}
+
+fn comments_query(paragraph_id: Option<&str>) -> langhuan::feed::comments::CommentsQuery {
+    langhuan::feed::comments::CommentsQuery {
+        book_id: "1010868264".to_owned(),
+        chapter_id: "402733549".to_owned(),
+        paragraph_id: paragraph_id.map(str::to_owned),
+        parent_id: None,
+    }
+}
+
+/// Mirrors the live reviewlist4m entry shape (trimmed): `createTime` is a
+/// millisecond string, `likeCount` a number, `rootReviewReplyCount` carries
+/// the reply total the script must not expose (no reply endpoint on m-site).
+fn reviewlist_body(total: i64, is_end: i64) -> String {
+    serde_json::json!({
+        "code": 0,
+        "data": {
+            "total": total,
+            "isEnd": is_end,
+            "list": [
+                {
+                    "reviewId": "1333176793826066432",
+                    "nickName": "刘丹快点更新喵",
+                    "avatar": "https://qidian.qpic.cn/qd_face/349573/11492620/100",
+                    "content": "鸡越人，你敢冒天下之大不韪！",
+                    "createTime": "1793280293000",
+                    "likeCount": 886,
+                    "rootReviewReplyCount": 65,
+                },
+                {
+                    "reviewId": "1333578380025397248",
+                    "nickName": "书友2",
+                    "avatar": "",
+                    "content": "好看",
+                    "createTime": "",
+                    "likeCount": 0,
+                },
+            ],
+        },
+        "msg": "",
+    })
+    .to_string()
+}
+
+fn csrf_matchers(paragraph_id: &str, page: &str) -> mockito::Matcher {
+    mockito::Matcher::AllOf(vec![
+        mockito::Matcher::UrlEncoded("bookId".into(), "1010868264".into()),
+        mockito::Matcher::UrlEncoded("chapterId".into(), "402733549".into()),
+        mockito::Matcher::UrlEncoded("paragraphId".into(), paragraph_id.into()),
+        mockito::Matcher::UrlEncoded("page".into(), page.into()),
+        mockito::Matcher::UrlEncoded("_csrfToken".into(), "token-abc".into()),
+    ])
+}
+
+#[tokio::test]
+async fn comments_require_login() {
+    let server = mockito::Server::new_async().await;
+    let feed = load_feed(&server).await;
+    assert_eq!(feed.comment_support(), (true, true));
+
+    let err = feed
+        .comments_page(&comments_query(None), serde_json::Value::Null)
+        .await
+        .expect_err("comments without login must fail");
+    assert!(
+        matches!(
+            err,
+            Error::Script(ScriptError::Expected {
+                code: ExpectedErrorCode::AuthRequired,
+                ..
+            })
+        ),
+        "expected auth_required, got: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn chapter_comments_pair_csrf_and_follow_pages() {
+    let mut server = mockito::Server::new_async().await;
+
+    // The comment API rejects mismatches between the Cookie header's
+    // _csrfToken and the query parameter (live-tested: 1403 otherwise), so
+    // the mocks only match when both carry the captured token — and the
+    // account cookies survive login.patchRequest's merge.
+    let first = server
+        .mock("GET", "/webcommon/chapterreview/reviewlist4m")
+        .match_query(csrf_matchers("-1", "1"))
+        .match_header(
+            "Cookie",
+            mockito::Matcher::Regex(r"_csrfToken=token-abc".to_owned()),
+        )
+        .match_header(
+            "Cookie",
+            mockito::Matcher::Regex(r"ywkey=secret-key".to_owned()),
+        )
+        .with_status(200)
+        .with_body(reviewlist_body(100, 0))
+        .expect(1)
+        .create_async()
+        .await;
+    let second = server
+        .mock("GET", "/webcommon/chapterreview/reviewlist4m")
+        .match_query(csrf_matchers("-1", "2"))
+        .match_header(
+            "Cookie",
+            mockito::Matcher::Regex(r"_csrfToken=token-abc".to_owned()),
+        )
+        .with_status(200)
+        .with_body(reviewlist_body(100, 1))
+        .expect(1)
+        .create_async()
+        .await;
+
+    let feed = authed_feed(&server).await;
+    let page = feed
+        .comments_page(&comments_query(None), serde_json::Value::Null)
+        .await
+        .expect("first chapter comments page");
+    assert_eq!(page.total_count, Some(100));
+    assert_eq!(page.items.len(), 2);
+    assert_eq!(page.items[0].id, "1333176793826066432");
+    assert_eq!(page.items[0].author.name, "刘丹快点更新喵");
+    assert_eq!(
+        page.items[0].author.avatar_url.as_deref(),
+        Some("https://qidian.qpic.cn/qd_face/349573/11492620/100")
+    );
+    assert_eq!(page.items[0].text, "鸡越人，你敢冒天下之大不韪！");
+    assert_eq!(page.items[0].created_at_ms, Some(1_793_280_293_000));
+    assert_eq!(page.items[0].like_count, Some(886));
+    assert!(
+        page.items[0].replies.is_none(),
+        "m-site has no reply endpoint; replies must stay hidden"
+    );
+    assert_eq!(page.items[1].created_at_ms, None);
+    assert!(page.items[1].author.avatar_url.is_none());
+
+    let next = page.next_cursor.expect("isEnd=0 must yield a next cursor");
+    assert_eq!(next, serde_json::json!({ "page": 2 }));
+    let last = feed
+        .comments_page(&comments_query(None), next)
+        .await
+        .expect("second chapter comments page");
+    assert!(last.next_cursor.is_none(), "isEnd=1 must end paging");
+
+    first.assert_async().await;
+    second.assert_async().await;
+}
+
+#[tokio::test]
+async fn paragraph_comments_receive_source_paragraph_id() {
+    let mut server = mockito::Server::new_async().await;
+    let _mock = server
+        .mock("GET", "/webcommon/chapterreview/reviewlist4m")
+        .match_query(csrf_matchers("3", "1"))
+        .match_header(
+            "Cookie",
+            mockito::Matcher::Regex(r"_csrfToken=token-abc".to_owned()),
+        )
+        .with_status(200)
+        .with_body(reviewlist_body(5138, 1))
+        .create_async()
+        .await;
+
+    let feed = authed_feed(&server).await;
+    let page = feed
+        .comments_page(&comments_query(Some("3")), serde_json::Value::Null)
+        .await
+        .expect("paragraph comments page");
+    assert_eq!(page.total_count, Some(5138));
+    assert!(page.next_cursor.is_none());
+    assert_eq!(page.items.len(), 2);
+}
+
+/// Paragraphs emitted for a free chapter must carry the 1-based source ids
+/// the comment API's paragraphId selects (title has no id; every `<p>` in
+/// order counts, `<br>`-split lines share their `<p>`'s id).
+#[tokio::test]
+async fn paragraphs_carry_source_ids_for_comment_alignment() {
+    let mut server = mockito::Server::new_async().await;
+    let _mock = server
+        .mock("GET", "/chapter/1010868264/402733549/")
+        .with_status(200)
+        .with_body(ssr_page(&chapter_page_json(
+            0,
+            0,
+            false,
+            free_chapter_content(),
+        )))
+        .create_async()
+        .await;
+
+    let feed = load_feed(&server).await;
+    let paragraphs: Vec<_> = feed
+        .paragraphs("1010868264", "402733549")
+        .collect::<Vec<_>>()
+        .await;
+    let paragraphs: Vec<_> = paragraphs
+        .into_iter()
+        .map(|p| p.expect("paragraph"))
+        .collect();
+    assert!(paragraphs.len() >= 2);
+
+    assert!(
+        matches!(&paragraphs[0], langhuan::model::Paragraph::Title { .. }),
+        "first paragraph is the title"
+    );
+    assert!(
+        paragraphs[0].id().source_id().is_none(),
+        "the title has no server-side paragraph id"
+    );
+    for (index, paragraph) in paragraphs.iter().enumerate().skip(1) {
+        assert_eq!(
+            paragraph.id().source_id().map(str::to_owned),
+            Some(index.to_string()),
+            "paragraph {index} must carry its 1-based source id"
+        );
+    }
+}
+
 // ── Live-site smoke test ────────────────────────────────────────────────────
 
 /// Real-site smoke test against https://m.qidian.com.

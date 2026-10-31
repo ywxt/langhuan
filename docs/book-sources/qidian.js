@@ -614,6 +614,13 @@ function toCount(value) {
   return Number.isFinite(number) && number >= 0 ? Math.floor(number) : null;
 }
 
+// createTime 是毫秒字符串；空串會被 Number() 讀成 0，必須按時間語義排除。
+function timestampMs(value) {
+  const milliseconds = Number(value);
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return null;
+  return milliseconds <= 8_640_000_000_000_000 ? milliseconds : null;
+}
+
 function commentsList(event, paragraphId) {
   if (!event.auth?.cookie_header) {
     return FeedError.authRequired("起點章節評論需要登錄起點帳號");
@@ -679,7 +686,7 @@ function commentsList(event, paragraphId) {
           avatar_url: absoluteUrl(review?.avatar),
         },
         text: text || (Number(review?.hasImage) === 1 ? "[圖片]" : ""),
-        created_at_ms: toCount(review?.createTime),
+        created_at_ms: timestampMs(review?.createTime),
         like_count: toCount(review?.likeCount),
         replies: null,
         source_url: null,
