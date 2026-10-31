@@ -542,10 +542,12 @@ mod tests {
             Paragraph::Title {
                 id: ParagraphId::generated(0),
                 text: "ch".to_owned(),
+                comment_count: Some(42),
             },
             Paragraph::Text {
                 id: ParagraphId::generated(1),
                 content: "hello".to_owned(),
+                comment_count: Some(0),
             },
         ]
     }
@@ -779,6 +781,8 @@ mod tests {
             .expect("get")
             .expect("some");
         assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].comment_count(), Some(42));
+        assert_eq!(loaded[1].comment_count(), Some(0));
 
         conn.delete_paragraphs("f1", "b1", "c1").expect("delete");
         assert!(

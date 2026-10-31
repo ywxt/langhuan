@@ -407,15 +407,19 @@ pub enum ParagraphContent {
     Title {
         id: ParagraphId,
         text: String,
+        /// Paragraph-comment total reported by the source; `None` = unknown.
+        comment_count: Option<u32>,
     },
     Text {
         id: ParagraphId,
         content: String,
+        comment_count: Option<u32>,
     },
     Image {
         id: ParagraphId,
         url: String,
         alt: Option<String>,
+        comment_count: Option<u32>,
     },
 }
 

@@ -215,18 +215,34 @@ async fn drive_stream<S, SrcItem, T, F>(
 
 fn paragraph_content(paragraph: Paragraph) -> ParagraphContent {
     match paragraph {
-        Paragraph::Title { id, text } => ParagraphContent::Title {
+        Paragraph::Title {
+            id,
+            text,
+            comment_count,
+        } => ParagraphContent::Title {
             id: ParagraphId::from(id),
             text,
+            comment_count,
         },
-        Paragraph::Text { id, content } => ParagraphContent::Text {
+        Paragraph::Text {
+            id,
+            content,
+            comment_count,
+        } => ParagraphContent::Text {
             id: ParagraphId::from(id),
             content,
+            comment_count,
         },
-        Paragraph::Image { id, url, alt } => ParagraphContent::Image {
+        Paragraph::Image {
+            id,
+            url,
+            alt,
+            comment_count,
+        } => ParagraphContent::Image {
             id: ParagraphId::from(id),
             url,
             alt,
+            comment_count,
         },
     }
 }

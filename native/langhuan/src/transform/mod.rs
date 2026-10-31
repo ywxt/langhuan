@@ -198,6 +198,7 @@ mod tests {
         let input = Paragraph::Text {
             id: ParagraphId::generated(0),
             content: "Hello".to_string(),
+            comment_count: None,
         };
         let output = chain.apply(input);
 
@@ -217,18 +218,22 @@ mod tests {
         out.push(Paragraph::Text {
             id: ParagraphId::generated(0),
             content: "a".into(),
+            comment_count: None,
         });
         out.push(Paragraph::Text {
             id: ParagraphId::generated(0),
             content: "b".into(),
+            comment_count: None,
         });
         out.push(Paragraph::Text {
             id: ParagraphId::source("custom".into()),
             content: "c".into(),
+            comment_count: None,
         });
         out.push(Paragraph::Text {
             id: ParagraphId::source("custom".into()),
             content: "d".into(),
+            comment_count: None,
         });
         drop(out);
 
@@ -260,6 +265,7 @@ mod tests {
         let result = chain.apply(Paragraph::Text {
             id: ParagraphId::source("839".into()),
             content: "text".into(),
+            comment_count: None,
         });
         assert_eq!(
             result

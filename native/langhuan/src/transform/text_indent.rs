@@ -28,11 +28,19 @@ impl ParagraphTransform for TextIndentTransform {
 
     fn apply(&mut self, paragraph: Paragraph, out: &mut TransformOutput<'_>) {
         match paragraph {
-            Paragraph::Text { id, mut content } => {
+            Paragraph::Text {
+                id,
+                mut content,
+                comment_count,
+            } => {
                 if !content.starts_with(FIRST_LINE_INDENT) {
                     content.insert_str(0, FIRST_LINE_INDENT);
                 }
-                out.push(Paragraph::Text { id, content });
+                out.push(Paragraph::Text {
+                    id,
+                    content,
+                    comment_count,
+                });
             }
             other => out.push(other),
         }
@@ -56,14 +64,20 @@ mod tests {
             Paragraph::Text {
                 id: ParagraphId::generated(1),
                 content: "第一段".to_string(),
+                comment_count: Some(7),
             },
             &mut out,
         );
 
         assert_eq!(buf.len(), 1);
         match &buf[0] {
-            Paragraph::Text { content, .. } => {
+            Paragraph::Text {
+                content,
+                comment_count,
+                ..
+            } => {
                 assert_eq!(content, "\u{3000}\u{3000}第一段");
+                assert_eq!(*comment_count, Some(7));
             }
             _ => panic!("expected text paragraph"),
         }
@@ -80,11 +94,13 @@ mod tests {
             Paragraph::Title {
                 id: ParagraphId::generated(0),
                 text: "章節標題".to_string(),
+                comment_count: Some(42),
             },
             &mut out,
         );
 
         assert_eq!(buf.len(), 1);
-        assert!(matches!(buf[0], Paragraph::Title { .. }));
+        assert!(matches!(&buf[0], Paragraph::Title { .. }));
+        assert_eq!(buf[0].comment_count(), Some(42));
     }
 }

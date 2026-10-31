@@ -366,9 +366,9 @@ type Chapter = { id: string; title: string };
 
 ```ts
 type Paragraph =
-  | { type: "title"; id?: string; text: string }
-  | { type: "text"; id?: string; content: string }
-  | { type: "image"; id?: string; url: string; alt?: string | null };
+  | { type: "title"; id?: string; text: string; comment_count?: number | null }
+  | { type: "text"; id?: string; content: string; comment_count?: number | null }
+  | { type: "image"; id?: string; url: string; alt?: string | null; comment_count?: number | null };
 ```
 
 Book and chapter IDs are required and stable. Repeated search-book IDs are
@@ -379,9 +379,15 @@ when omitted.
 
 | Variant | Fields and behaviour |
 | --- | --- |
-| `title` | `text` is the chapter/section heading. Optional `id` supplies the original source identity instead of a generated identity. |
-| `text` | `content` is one plain-text paragraph. Do not include HTML tags. Optional `id` supplies the original source identity instead of a generated identity. |
-| `image` | `url` identifies the image; optional `alt` is accessible fallback text and defaults to `null`. Optional `id` supplies the original source identity instead of a generated identity. |
+| `title` | `text` is the chapter/section heading. Optional `id` supplies the original source identity instead of a generated identity. Optional `comment_count` is the paragraph-comment total for this unit (the chapter as a whole for a title). |
+| `text` | `content` is one plain-text paragraph. Do not include HTML tags. Optional `id` supplies the original source identity instead of a generated identity. Optional `comment_count` is the paragraph-comment total for this paragraph. |
+| `image` | `url` identifies the image; optional `alt` is accessible fallback text and defaults to `null`. Optional `id` supplies the original source identity instead of a generated identity. Optional `comment_count` is the paragraph-comment total for this image. |
+
+`comment_count` is an unsigned integer (0–4,294,967,295). Omitted or `null`
+means unknown or unsupported; a number means known, where `0` is supported
+with no comments. It is only meaningful together with `id` — the host ignores
+it on generated-identity paragraphs because a comment count is useless
+without an addressable comment thread.
 
 Host-assigned indices continue across paginated paragraph pages. Explicit IDs
 are strings and should only be used when the site exposes a stable identity.

@@ -112,13 +112,23 @@ impl ParagraphTransform for OpenCcTransform {
         }
 
         out.push(match paragraph {
-            Paragraph::Title { id, text } => Paragraph::Title {
+            Paragraph::Title {
+                id,
+                text,
+                comment_count,
+            } => Paragraph::Title {
                 id,
                 text: self.convert(&text),
+                comment_count,
             },
-            Paragraph::Text { id, content } => Paragraph::Text {
+            Paragraph::Text {
+                id,
+                content,
+                comment_count,
+            } => Paragraph::Text {
                 id,
                 content: self.convert(&content),
+                comment_count,
             },
             img @ Paragraph::Image { .. } => img,
         });
@@ -142,5 +152,33 @@ mod tests {
     fn converts_simplified_chinese_to_hong_kong_variants() {
         let transform = OpenCcTransform::new(ConversionMode::S2hk);
         assert_eq!(transform.convert("为了核实这说法"), "為了核實這説法");
+    }
+
+    #[test]
+    fn apply_converts_text_but_keeps_comment_count() {
+        use crate::model::{Paragraph, ParagraphId};
+        use crate::transform::{ParagraphTransform, TransformOutput};
+
+        let mut transform = OpenCcTransform::new(ConversionMode::S2t);
+        transform.init("chapter-1");
+
+        let mut buf = Vec::new();
+        let mut out = TransformOutput::new(&mut buf);
+        transform.apply(
+            Paragraph::Text {
+                id: ParagraphId::source("5".into()),
+                content: "鼠标坏了".to_string(),
+                comment_count: Some(3),
+            },
+            &mut out,
+        );
+        drop(out);
+
+        assert_eq!(buf.len(), 1);
+        assert_eq!(buf[0].comment_count(), Some(3));
+        match &buf[0] {
+            Paragraph::Text { content, .. } => assert_eq!(content, "鼠標壞了"),
+            _ => panic!("expected text paragraph"),
+        }
     }
 }
