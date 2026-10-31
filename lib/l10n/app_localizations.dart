@@ -2107,6 +2107,138 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'History ({count})'**
   String debugHistoryTitle(int count);
+
+  /// No description provided for @readerChapterComments.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter comments'**
+  String get readerChapterComments;
+
+  /// No description provided for @readerParagraphComments.
+  ///
+  /// In en, this message translates to:
+  /// **'Paragraph comments'**
+  String get readerParagraphComments;
+
+  /// No description provided for @commentsReplies.
+  ///
+  /// In en, this message translates to:
+  /// **'Replies'**
+  String get commentsReplies;
+
+  /// No description provided for @commentsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No comments yet'**
+  String get commentsEmpty;
+
+  /// No description provided for @commentsMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Load more'**
+  String get commentsMore;
+
+  /// No description provided for @commentsEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'No more comments'**
+  String get commentsEnd;
+
+  /// No description provided for @commentsRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh comments'**
+  String get commentsRefresh;
+
+  /// No description provided for @listeningTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'System text-to-speech'**
+  String get listeningTitle;
+
+  /// No description provided for @listeningStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start listening'**
+  String get listeningStart;
+
+  /// No description provided for @listeningPause.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause'**
+  String get listeningPause;
+
+  /// No description provided for @listeningResume.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume'**
+  String get listeningResume;
+
+  /// No description provided for @listeningStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop listening'**
+  String get listeningStop;
+
+  /// No description provided for @listeningVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Engine voice'**
+  String get listeningVoice;
+
+  /// No description provided for @listeningRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Speech rate'**
+  String get listeningRate;
+
+  /// No description provided for @listeningSleep.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep timer'**
+  String get listeningSleep;
+
+  /// No description provided for @listeningNoTimer.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get listeningNoTimer;
+
+  /// No description provided for @listeningLocalHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Uses the device’s TTS engine, including its online voices. On Linux, install eSpeak NG.'**
+  String get listeningLocalHint;
+
+  /// No description provided for @listeningError.
+  ///
+  /// In en, this message translates to:
+  /// **'System speech is unavailable or failed. Check the TTS engine and voice, then retry.'**
+  String get listeningError;
+
+  /// No description provided for @listeningCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Finished listening'**
+  String get listeningCompleted;
+
+  /// No description provided for @listeningPrevious.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous paragraph'**
+  String get listeningPrevious;
+
+  /// No description provided for @listeningNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Next paragraph'**
+  String get listeningNext;
+
+  /// No description provided for @listeningFromHere.
+  ///
+  /// In en, this message translates to:
+  /// **'Listen from this position'**
+  String get listeningFromHere;
 }
 
 class _AppLocalizationsDelegate

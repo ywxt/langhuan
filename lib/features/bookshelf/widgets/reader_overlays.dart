@@ -13,12 +13,14 @@ class ReaderSelectionOverlay extends StatelessWidget {
     required this.theme,
     required this.l10n,
     required this.onAddBookmark,
+    this.onComments,
   });
 
   final ParagraphSelection selection;
   final ThemeData theme;
   final AppLocalizations l10n;
   final VoidCallback onAddBookmark;
+  final VoidCallback? onComments;
 
   @override
   Widget build(BuildContext context) {
@@ -59,6 +61,12 @@ class ReaderSelectionOverlay extends StatelessWidget {
                       l10n.readerAddBookmark,
                       style: const TextStyle(fontSize: 13),
                     ),
+                    if (onComments != null)
+                      IconButton(
+                        tooltip: l10n.readerParagraphComments,
+                        icon: const Icon(Icons.comment_outlined, size: 18),
+                        onPressed: onComments,
+                      ),
                   ],
                 ),
               ),
@@ -82,6 +90,7 @@ class ReaderTopOverlay extends StatelessWidget {
     required this.onBack,
     required this.onOpenBookmarks,
     required this.onRefresh,
+    this.additionalActions = const [],
   });
 
   final bool showControls;
@@ -93,6 +102,7 @@ class ReaderTopOverlay extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onOpenBookmarks;
   final VoidCallback onRefresh;
+  final List<Widget> additionalActions;
 
   @override
   Widget build(BuildContext context) {
@@ -119,6 +129,7 @@ class ReaderTopOverlay extends StatelessWidget {
               onBack: onBack,
               onOpenBookmarks: onOpenBookmarks,
               onRefresh: onRefresh,
+              additionalActions: additionalActions,
             ),
           ),
         ),

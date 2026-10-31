@@ -11,6 +11,11 @@ import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/loading.dart';
 import '../../src/rust/api/types.dart';
 import '../feeds/feed_providers.dart';
+import '../feeds/feed_service.dart';
+import 'comments/comments_controller.dart';
+import 'comments/comments_panel.dart';
+import 'listening/listening_controller.dart';
+import 'listening/listening_panel.dart';
 import 'reader_screen_controller.dart';
 import 'reader_settings_provider.dart';
 import 'reading_progress_provider.dart';
@@ -44,11 +49,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   late final ReaderController _readerController;
   late final ReaderScreenController _screenController;
   ReaderFrameMonitor? _frameMonitor;
+  bool _chapterComments = false, _paragraphComments = false;
+  late final ListeningController _listening;
+  String _followingParagraph = '';
 
   @override
   void initState() {
     super.initState();
     _readerController = ReaderController();
+    _listening = ref.read(listeningControllerProvider);
+    _listening.addListener(_onListeningChanged);
     _screenController = ReaderScreenController(
       ref: ref,
       readerController: _readerController,
@@ -58,7 +68,23 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       initialParagraphId: widget.paragraphId,
     );
     _screenController.addListener(_onScreenControllerChanged);
-    _readerController.onPositionChanged = _screenController.onPositionChanged;
+    _readerController.onPositionChanged = (position) {
+      if (!_listening.ownsBook(widget.feedId, widget.bookId)) {
+        _screenController.onPositionChanged(position);
+      } else {
+        // Keep the visible position current without competing with TTS's
+        // atomic listening/reading progress writes.
+        ref
+            .read(readingProgressProvider.notifier)
+            .setActivePosition(
+              chapterId: position.chapterId,
+              paragraphId: position.paragraphId,
+              paragraphOffset: position.paragraphOffset,
+              paragraphCharOffset: position.charOffset,
+            );
+      }
+    };
+    _loadCommentSupport();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _screenController.initialize();
@@ -93,6 +119,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
   @override
   void dispose() {
+    _listening.removeListener(_onListeningChanged);
     _frameMonitor?.stop();
     AppLog.info(
       'reader.lifecycle',
@@ -121,6 +148,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     ParagraphContent paragraph,
     Rect globalRect,
   ) {
+    _pauseForManualReading();
     _screenController.setSelection(
       chapterId: chapterId,
       paragraphId: paragraphId,
@@ -133,9 +161,99 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     _screenController.clearSelection();
   }
 
+  Future<void> _loadCommentSupport() async {
+    try {
+      final support = await ref
+          .read(feedServiceProvider)
+          .commentSupport(widget.feedId);
+      if (mounted) {
+        setState(() {
+          _chapterComments = support.chapter;
+          _paragraphComments = support.paragraph;
+        });
+      }
+    } catch (_) {
+      /* Invalid and disabled sources expose no comment actions. */
+    }
+  }
+
+  void _onListeningChanged() {
+    if (!mounted) return;
+    if (_listening.ownsBook(widget.feedId, widget.bookId) &&
+        _listening.paragraphId.isNotEmpty) {
+      _screenController.suspendProgressSaving();
+      final key = '${_listening.chapterId}:${_listening.paragraphId}';
+      if (_followingParagraph != key) {
+        _followingParagraph = key;
+        _readerController.jumpTo(
+          chapterId: _listening.chapterId,
+          paragraphId: _listening.paragraphId,
+        );
+      }
+    } else {
+      _followingParagraph = '';
+    }
+    setState(() {});
+  }
+
+  void _pauseForManualReading() {
+    if (_listening.ownsBook(widget.feedId, widget.bookId)) _listening.pause();
+  }
+
+  Widget _observeReadingGestures(Widget child) => Listener(
+    onPointerSignal: (_) => _pauseForManualReading(),
+    onPointerPanZoomStart: (_) => _pauseForManualReading(),
+    child: NotificationListener<ScrollStartNotification>(
+      onNotification: (notification) {
+        if (notification.dragDetails != null) _pauseForManualReading();
+        return false;
+      },
+      child: child,
+    ),
+  );
+
+  Future<void> _openComments(String chapterId, {String? paragraphId}) {
+    _clearSelection();
+    return showCommentsPanel(
+      context,
+      CommentsController(
+        ref.read(feedServiceProvider),
+        feedId: widget.feedId,
+        bookId: widget.bookId,
+        chapterId: chapterId,
+        paragraphId: paragraphId,
+      ),
+    );
+  }
+
+  Future<void> _openListening() => showListeningPanel(
+    context,
+    _listening,
+    onStart: () {
+      final progress = ref.read(readingProgressProvider);
+      _listening.start(
+        feedId: widget.feedId,
+        bookId: widget.bookId,
+        chapterId: progress.activeChapterId,
+        paragraphId: progress.activeParagraphId,
+      );
+    },
+    onStartHere: () {
+      final progress = ref.read(readingProgressProvider);
+      _listening.start(
+        feedId: widget.feedId,
+        bookId: widget.bookId,
+        chapterId: progress.activeChapterId,
+        paragraphId: progress.activeParagraphId,
+        restore: false,
+      );
+    },
+  );
+
   // ── Sheet and navigation actions (formerly ReaderPageActions) ────────────
 
   void _jumpToChapter(String chapterId, {String paragraphId = ''}) {
+    if (_listening.ownsBook(widget.feedId, widget.bookId)) _listening.pause();
     _screenController.jumpToChapter(chapterId, paragraphId: paragraphId);
   }
 
@@ -250,9 +368,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       );
     }
 
-    final effectiveChapterId = activeChapterId.isEmpty
-        ? _screenController.chapters.first.id
+    final visibleChapterId = _listening.ownsBook(widget.feedId, widget.bookId)
+        ? _listening.chapterId
         : activeChapterId;
+    final effectiveChapterId = visibleChapterId.isEmpty
+        ? _screenController.chapters.first.id
+        : visibleChapterId;
 
     final currentIdx = _screenController.chapters
         .indexWhere((c) => c.id == effectiveChapterId)
@@ -277,97 +398,144 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
         child: Scaffold(
           extendBody: true,
           extendBodyBehindAppBar: true,
-          body: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: _toggleControls,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: ReaderInputRegion(
-                    child: RepaintBoundary(
-                      child: ChapterContentManager(
-                        feedService: ref.read(feedServiceProvider),
-                        feedId: widget.feedId,
-                        bookId: widget.bookId,
-                        chapters: _screenController.chapters,
-                        controller: _readerController,
-                        pageMode: settings.pageMode,
-                        onToggleControls: _toggleControls,
-                        onPageTurnStart: _clearSelection,
-                        onRefreshBook: _screenController.refreshChapters,
-                        fontScale: settings.fontScale,
-                        fontFamily: settings.fontFamily,
-                        prewarmCustomFont:
-                            settings.customFontFilePath != null &&
-                            settings.fontFamily != null,
-                        letterSpacing: settings.letterSpacing,
-                        paragraphSpacing: settings.paragraphSpacing,
-                        lineHeight: settings.lineHeight,
-                        chineseConversion: settings.chineseConversion,
-                        contentPadding: EdgeInsets.fromLTRB(
-                          LanghuanTheme.spaceLg,
-                          topPadding + LanghuanTheme.spaceMd,
-                          LanghuanTheme.spaceLg,
-                          LanghuanTheme.spaceLg,
+          body: _observeReadingGestures(
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _toggleControls,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ReaderInputRegion(
+                      child: RepaintBoundary(
+                        child: ChapterContentManager(
+                          feedService: ref.read(feedServiceProvider),
+                          feedId: widget.feedId,
+                          bookId: widget.bookId,
+                          chapters: _screenController.chapters,
+                          controller: _readerController,
+                          pageMode: settings.pageMode,
+                          onToggleControls: _toggleControls,
+                          onPageTurnStart: () {
+                            _clearSelection();
+                            if (_listening.ownsBook(
+                              widget.feedId,
+                              widget.bookId,
+                            )) {
+                              _listening.pause();
+                            }
+                          },
+                          onRefreshBook: _screenController.refreshChapters,
+                          fontScale: settings.fontScale,
+                          fontFamily: settings.fontFamily,
+                          prewarmCustomFont:
+                              settings.customFontFilePath != null &&
+                              settings.fontFamily != null,
+                          letterSpacing: settings.letterSpacing,
+                          paragraphSpacing: settings.paragraphSpacing,
+                          lineHeight: settings.lineHeight,
+                          chineseConversion: settings.chineseConversion,
+                          contentPadding: EdgeInsets.fromLTRB(
+                            LanghuanTheme.spaceLg,
+                            topPadding + LanghuanTheme.spaceMd,
+                            LanghuanTheme.spaceLg,
+                            LanghuanTheme.spaceLg,
+                          ),
+                          onParagraphLongPress: _onParagraphLongPress,
+                          selectedChapterId:
+                              _screenController.selection?.chapterId ??
+                              (_listening.ownsBook(widget.feedId, widget.bookId)
+                                  ? _listening.chapterId
+                                  : null),
+                          selectedParagraphId:
+                              _screenController.selection?.paragraphId ??
+                              (_listening.ownsBook(widget.feedId, widget.bookId)
+                                  ? _listening.paragraphId
+                                  : null),
                         ),
-                        onParagraphLongPress: _onParagraphLongPress,
-                        selectedChapterId:
-                            _screenController.selection?.chapterId,
-                        selectedParagraphId:
-                            _screenController.selection?.paragraphId,
                       ),
                     ),
                   ),
-                ),
-                ReaderTopOverlay(
-                  showControls: _screenController.showControls,
-                  theme: readerTheme,
-                  topPadding: topPadding,
-                  chapterTitle: chapterTitle,
-                  l10n: l10n,
-                  isRefreshing: _screenController.isRefreshingChapter,
-                  onBack: () => Navigator.of(context).pop(),
-                  onOpenBookmarks: _openBookmarkSheet,
-                  onRefresh: () {
-                    _screenController.refreshCurrentChapter(effectiveChapterId);
-                  },
-                ),
-                ReaderBottomOverlay(
-                  showControls: _screenController.showControls,
-                  chapters: _screenController.chapters,
-                  currentIndex: currentIdx,
-                  isSwitchingChapter: _screenController.isRefreshingChapter,
-                  onPrevious: () {
-                    if (currentIdx > 0) {
-                      _jumpToChapter(
-                        _screenController.chapters[currentIdx - 1].id,
-                      );
-                    }
-                  },
-                  onNext: () {
-                    if (currentIdx < _screenController.chapters.length - 1) {
-                      _jumpToChapter(
-                        _screenController.chapters[currentIdx + 1].id,
-                      );
-                    }
-                  },
-                  onOpenToc: _openTocSheet,
-                  onOpenInterface: _openInterfaceSheet,
-                  onOpenSettings: _openSettingsSheet,
-                ),
-                if (_screenController.selection != null)
-                  ReaderSelectionOverlay(
-                    selection: _screenController.selection!,
+                  ReaderTopOverlay(
+                    showControls: _screenController.showControls,
                     theme: readerTheme,
+                    topPadding: topPadding,
+                    chapterTitle: chapterTitle,
                     l10n: l10n,
-                    onAddBookmark: () {
-                      final sel = _screenController.selection;
-                      if (sel == null) return;
-                      _addBookmark(sel);
-                      _clearSelection();
+                    isRefreshing: _screenController.isRefreshingChapter,
+                    onBack: () => Navigator.of(context).pop(),
+                    onOpenBookmarks: _openBookmarkSheet,
+                    onRefresh: () {
+                      if (_listening.ownsBook(widget.feedId, widget.bookId)) {
+                        _listening.pause();
+                      }
+                      _screenController.refreshCurrentChapter(
+                        effectiveChapterId,
+                      );
                     },
+                    additionalActions: [
+                      if (_chapterComments)
+                        IconButton(
+                          tooltip: l10n.readerChapterComments,
+                          icon: const Icon(Icons.forum_outlined),
+                          onPressed: () => _openComments(effectiveChapterId),
+                        ),
+                      IconButton(
+                        tooltip: l10n.listeningTitle,
+                        icon: const Icon(Icons.headphones),
+                        onPressed: _openListening,
+                      ),
+                    ],
                   ),
-              ],
+                  ReaderBottomOverlay(
+                    showControls: _screenController.showControls,
+                    chapters: _screenController.chapters,
+                    currentIndex: currentIdx,
+                    isSwitchingChapter: _screenController.isRefreshingChapter,
+                    onPrevious: () {
+                      if (currentIdx > 0) {
+                        _jumpToChapter(
+                          _screenController.chapters[currentIdx - 1].id,
+                        );
+                      }
+                    },
+                    onNext: () {
+                      if (currentIdx < _screenController.chapters.length - 1) {
+                        _jumpToChapter(
+                          _screenController.chapters[currentIdx + 1].id,
+                        );
+                      }
+                    },
+                    onOpenToc: _openTocSheet,
+                    onOpenInterface: _openInterfaceSheet,
+                    onOpenSettings: _openSettingsSheet,
+                  ),
+                  if (_screenController.selection != null)
+                    ReaderSelectionOverlay(
+                      selection: _screenController.selection!,
+                      theme: readerTheme,
+                      l10n: l10n,
+                      onAddBookmark: () {
+                        final sel = _screenController.selection;
+                        if (sel == null) return;
+                        _addBookmark(sel);
+                        _clearSelection();
+                      },
+                      onComments:
+                          _paragraphComments &&
+                              paragraphIdFromString(
+                                    _screenController.selection!.paragraphId,
+                                  )?.sourceId !=
+                                  null
+                          ? () => _openComments(
+                              _screenController.selection!.chapterId,
+                              paragraphId: paragraphIdFromString(
+                                _screenController.selection!.paragraphId,
+                              )?.sourceId,
+                            )
+                          : null,
+                    ),
+                ],
+              ),
             ),
           ),
         ),

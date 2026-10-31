@@ -204,6 +204,14 @@ class ReaderScreenController extends ChangeNotifier {
     _progressSaveTimer = Timer(_saveDebounce, _flushPendingProgress);
   }
 
+  /// Listening owns persistent progress while it is active. Drop pending
+  /// scroll saves as well as ignoring new position reports in ReaderPage.
+  void suspendProgressSaving() {
+    _progressSaveTimer?.cancel();
+    _pendingProgress = null;
+    _lastSavedProgress = null;
+  }
+
   void toggleControls() {
     if (_selection != null) {
       _selection = null;

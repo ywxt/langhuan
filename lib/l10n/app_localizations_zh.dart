@@ -1096,4 +1096,71 @@ class AppLocalizationsZh extends AppLocalizations {
   String debugHistoryTitle(int count) {
     return '歷史（$count）';
   }
+
+  @override
+  String get readerChapterComments => '章節評論';
+
+  @override
+  String get readerParagraphComments => '段落評論';
+
+  @override
+  String get commentsReplies => '回覆';
+
+  @override
+  String get commentsEmpty => '暫無評論';
+
+  @override
+  String get commentsMore => '加載更多';
+
+  @override
+  String get commentsEnd => '沒有更多評論';
+
+  @override
+  String get commentsRefresh => '刷新評論';
+
+  @override
+  String get listeningTitle => '系統語音聽書';
+
+  @override
+  String get listeningStart => '開始聽書';
+
+  @override
+  String get listeningPause => '暫停';
+
+  @override
+  String get listeningResume => '繼續播放';
+
+  @override
+  String get listeningStop => '停止聽書';
+
+  @override
+  String get listeningVoice => '引擎聲音';
+
+  @override
+  String get listeningRate => '語速';
+
+  @override
+  String get listeningSleep => '定時停止';
+
+  @override
+  String get listeningNoTimer => '關閉';
+
+  @override
+  String get listeningLocalHint =>
+      '使用本機 TTS 引擎，支持引擎提供的聯網聲音；Linux 需要安裝 eSpeak NG。';
+
+  @override
+  String get listeningError => '系統語音不可用或播放失敗，請檢查 TTS 引擎和聲音後重試。';
+
+  @override
+  String get listeningCompleted => '已播放完畢';
+
+  @override
+  String get listeningPrevious => '上一段';
+
+  @override
+  String get listeningNext => '下一段';
+
+  @override
+  String get listeningFromHere => '從當前位置開始聽書';
 }

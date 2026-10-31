@@ -1005,5 +1005,27 @@
   "@debugHistoryTitle": {
     "description": "Run history section title",
     "placeholders": { "count": { "type": "int" } }
-  }
+  },
+  "readerChapterComments": "Chapter comments",
+  "readerParagraphComments": "Paragraph comments",
+  "commentsReplies": "Replies",
+  "commentsEmpty": "No comments yet",
+  "commentsMore": "Load more",
+  "commentsEnd": "No more comments",
+  "commentsRefresh": "Refresh comments",
+  "listeningTitle": "System text-to-speech",
+  "listeningStart": "Start listening",
+  "listeningPause": "Pause",
+  "listeningResume": "Resume",
+  "listeningStop": "Stop listening",
+  "listeningVoice": "Engine voice",
+  "listeningRate": "Speech rate",
+  "listeningSleep": "Sleep timer",
+  "listeningNoTimer": "Off",
+  "listeningLocalHint": "Uses the device’s TTS engine, including its online voices. On Linux, install eSpeak NG.",
+  "listeningError": "System speech is unavailable or failed. Check the TTS engine and voice, then retry.",
+  "listeningCompleted": "Finished listening",
+  "listeningPrevious": "Previous paragraph",
+  "listeningNext": "Next paragraph",
+  "listeningFromHere": "Listen from this position"
 }

@@ -1127,4 +1127,72 @@ class AppLocalizationsEn extends AppLocalizations {
   String debugHistoryTitle(int count) {
     return 'History ($count)';
   }
+
+  @override
+  String get readerChapterComments => 'Chapter comments';
+
+  @override
+  String get readerParagraphComments => 'Paragraph comments';
+
+  @override
+  String get commentsReplies => 'Replies';
+
+  @override
+  String get commentsEmpty => 'No comments yet';
+
+  @override
+  String get commentsMore => 'Load more';
+
+  @override
+  String get commentsEnd => 'No more comments';
+
+  @override
+  String get commentsRefresh => 'Refresh comments';
+
+  @override
+  String get listeningTitle => 'System text-to-speech';
+
+  @override
+  String get listeningStart => 'Start listening';
+
+  @override
+  String get listeningPause => 'Pause';
+
+  @override
+  String get listeningResume => 'Resume';
+
+  @override
+  String get listeningStop => 'Stop listening';
+
+  @override
+  String get listeningVoice => 'Engine voice';
+
+  @override
+  String get listeningRate => 'Speech rate';
+
+  @override
+  String get listeningSleep => 'Sleep timer';
+
+  @override
+  String get listeningNoTimer => 'Off';
+
+  @override
+  String get listeningLocalHint =>
+      'Uses the device’s TTS engine, including its online voices. On Linux, install eSpeak NG.';
+
+  @override
+  String get listeningError =>
+      'System speech is unavailable or failed. Check the TTS engine and voice, then retry.';
+
+  @override
+  String get listeningCompleted => 'Finished listening';
+
+  @override
+  String get listeningPrevious => 'Previous paragraph';
+
+  @override
+  String get listeningNext => 'Next paragraph';
+
+  @override
+  String get listeningFromHere => 'Listen from this position';
 }

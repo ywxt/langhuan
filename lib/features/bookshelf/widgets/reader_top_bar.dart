@@ -15,6 +15,7 @@ class ReaderTopBar extends StatelessWidget {
     required this.onBack,
     required this.onOpenBookmarks,
     required this.onRefresh,
+    this.additionalActions = const [],
   });
 
   final double topPadding;
@@ -27,6 +28,7 @@ class ReaderTopBar extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onOpenBookmarks;
   final VoidCallback? onRefresh;
+  final List<Widget> additionalActions;
 
   @override
   Widget build(BuildContext context) {
@@ -48,6 +50,7 @@ class ReaderTopBar extends StatelessWidget {
             tooltip: bookmarksTooltip,
             onPressed: onOpenBookmarks,
           ),
+          ...additionalActions,
           IconButton(
             icon: isRefreshing
                 ? const LanghuanSpinner(size: 18)

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../features/bookshelf/listening/listening_controller.dart';
+import '../../features/bookshelf/listening/listening_panel.dart';
 import '../cache_stats_provider.dart';
 
 class MainScaffold extends ConsumerStatefulWidget {
@@ -36,29 +38,37 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
 
     return Scaffold(
       body: widget.navigationShell,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: widget.navigationShell.currentIndex,
-        onDestinationSelected: (index) {
-          widget.navigationShell.goBranch(
-            index,
-            initialLocation: index == widget.navigationShell.currentIndex,
-          );
-        },
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.auto_stories_outlined),
-            selectedIcon: const Icon(Icons.auto_stories),
-            label: l10n.navBookshelf,
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListeningMiniPlayer(
+            controller: ref.watch(listeningControllerProvider),
           ),
-          NavigationDestination(
-            icon: const Icon(Icons.extension_outlined),
-            selectedIcon: const Icon(Icons.extension),
-            label: l10n.navFeeds,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.settings_outlined),
-            selectedIcon: const Icon(Icons.settings),
-            label: l10n.navSettings,
+          NavigationBar(
+            selectedIndex: widget.navigationShell.currentIndex,
+            onDestinationSelected: (index) {
+              widget.navigationShell.goBranch(
+                index,
+                initialLocation: index == widget.navigationShell.currentIndex,
+              );
+            },
+            destinations: [
+              NavigationDestination(
+                icon: const Icon(Icons.auto_stories_outlined),
+                selectedIcon: const Icon(Icons.auto_stories),
+                label: l10n.navBookshelf,
+              ),
+              NavigationDestination(
+                icon: const Icon(Icons.extension_outlined),
+                selectedIcon: const Icon(Icons.extension),
+                label: l10n.navFeeds,
+              ),
+              NavigationDestination(
+                icon: const Icon(Icons.settings_outlined),
+                selectedIcon: const Icon(Icons.settings),
+                label: l10n.navSettings,
+              ),
+            ],
           ),
         ],
       ),
