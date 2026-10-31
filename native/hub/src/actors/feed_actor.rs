@@ -4,7 +4,11 @@
 //! incrementally. Finite chapter and paragraph queries are collected in a
 //! background task and returned as one value.
 
-use std::{future::Future, sync::Arc, time::Instant};
+use std::{
+    future::Future,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use async_trait::async_trait;
 use langhuan::cache::CachedFeed;
@@ -35,8 +39,14 @@ use super::registry_actor::{GetFeed, ListFeeds, RegistryActor};
 /// The producer iterates the underlying feed stream and sends mapped items
 /// through the channel.  On the first error the producer terminates.
 pub struct PullStream<T: Send + 'static> {
-    rx: mpsc::Receiver<Result<T, BridgeError>>,
+    state: tokio::sync::Mutex<PullState<T>>,
     _task: JoinHandle<()>,
+    cancelled: std::sync::atomic::AtomicBool,
+    cancellation: tokio::sync::Notify,
+}
+
+struct PullState<T> {
+    rx: mpsc::Receiver<Result<T, BridgeError>>,
     pending_error: Option<BridgeError>,
 }
 
@@ -69,46 +79,77 @@ impl<T: Send + 'static> FeedQueryTask<T> {
 }
 
 impl<T: Send + 'static> PullStream<T> {
-    /// Pull the next item.  Returns `Ok(None)` when the stream is exhausted.
-    pub async fn next(&mut self) -> Result<Option<T>, BridgeError> {
-        if let Some(error) = self.pending_error.take() {
+    /// Only readers take the state lock. Cancellation stays independent of
+    /// both this lock and the bridge's shared opaque-object access.
+    async fn read_next(&self, state: &mut PullState<T>) -> Result<Option<T>, BridgeError> {
+        use std::sync::atomic::Ordering;
+        let cancelled = self.cancellation.notified();
+        tokio::pin!(cancelled);
+        cancelled.as_mut().enable();
+        if self.cancelled.load(Ordering::Acquire) {
+            return Ok(None);
+        }
+        if let Some(error) = state.pending_error.take() {
             return Err(error);
         }
-        match self.rx.recv().await {
-            Some(Ok(item)) => Ok(Some(item)),
-            Some(Err(e)) => Err(e),
-            None => Ok(None),
+        tokio::select! {
+            _ = &mut cancelled => Ok(None),
+            value = state.rx.recv() => match value {
+                Some(Ok(item)) => Ok(Some(item)), Some(Err(e)) => Err(e), None => Ok(None),
+            }
         }
+    }
+
+    pub async fn next(&self) -> Result<Option<T>, BridgeError> {
+        self.read_next(&mut *self.state.lock().await).await
     }
 
     /// Return a bounded batch. Preserve any items received before a terminal
     /// error, delivering that error on the following pull instead of dropping
     /// a partially filled batch.
-    pub async fn next_batch(&mut self, limit: usize) -> Result<Option<Vec<T>>, BridgeError> {
+    pub async fn next_batch(&self, limit: usize) -> Result<Option<Vec<T>>, BridgeError> {
         assert!(limit > 0);
+        let mut state = self.state.lock().await;
         let mut items = Vec::with_capacity(limit);
+        let mut deadline = None;
         while items.len() < limit {
-            match self.next().await {
-                Ok(Some(item)) => items.push(item),
+            // Wait for the first event, then bound coalescing latency. A slow
+            // source must not hold results already available from other feeds.
+            let next = if let Some(deadline) = deadline {
+                match tokio::time::timeout_at(deadline, self.read_next(&mut state)).await {
+                    Ok(next) => next,
+                    Err(_) => break,
+                }
+            } else {
+                self.read_next(&mut state).await
+            };
+            match next {
+                Ok(Some(item)) => {
+                    items.push(item);
+                    deadline.get_or_insert_with(|| {
+                        tokio::time::Instant::now() + Duration::from_millis(40)
+                    });
+                }
                 Ok(None) => break,
                 Err(error) if items.is_empty() => return Err(error),
                 Err(error) => {
-                    self.pending_error = Some(error);
+                    state.pending_error = Some(error);
                     break;
                 }
             }
         }
+        if self.cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            return Ok(None);
+        }
         Ok((!items.is_empty()).then_some(items))
     }
 
-    /// Cancel the stream: abort the producer task and close the channel.
-    ///
-    /// After calling this, subsequent `next()` calls will return `Ok(None)`.
-    pub fn cancel(&mut self) {
+    /// Wake pending readers and abort the producer without waiting for a pull.
+    pub fn cancel(&self) {
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::Release);
         self._task.abort();
-        self.rx.close();
-        while self.rx.try_recv().is_ok() {}
-        self.pending_error = None;
+        self.cancellation.notify_waiters();
     }
 }
 
@@ -135,9 +176,13 @@ where
     let (tx, rx) = mpsc::channel(1);
     let task = tokio::spawn(make_producer(tx));
     PullStream {
-        rx,
+        state: tokio::sync::Mutex::new(PullState {
+            rx,
+            pending_error: None,
+        }),
         _task: task,
-        pending_error: None,
+        cancelled: std::sync::atomic::AtomicBool::new(false),
+        cancellation: tokio::sync::Notify::new(),
     }
 }
 
@@ -380,7 +425,7 @@ async fn search_one_feed(
     // Bound how many feeds are searched at once. Waiting feeds hold their
     // producer task and start as soon as an in-flight search finishes; the
     // semaphore is never closed, so the acquire cannot fail.
-    let _permit = permits
+    let permit = permits
         .acquire()
         .await
         .expect("search permit semaphore is never closed");
@@ -397,14 +442,23 @@ async fn search_one_feed(
     {
         Ok(feed) => feed,
         Err(e) => {
+            drop(permit);
             emit_feed_error(&tx, &meta, e).await;
             return;
         }
     };
+    drop(permit);
 
     let stream = feed.search(&keyword);
     tokio::pin!(stream);
-    while let Some(result) = stream.next().await {
+    loop {
+        // Tokio's fair semaphore queues each advance separately. Never hold
+        // a slot while waiting for Flutter to consume a result, or throughout
+        // every page of one source: either can starve queued sources.
+        let permit = permits.acquire().await.expect("search semaphore is open");
+        let result = stream.next().await;
+        drop(permit);
+        let Some(result) = result else { break };
         let event = match result {
             Ok(item) => AggregatedSearchEvent::Item {
                 feed_id: meta.id.clone(),
@@ -582,8 +636,51 @@ mod pull_batch_tests {
     use tokio::sync::Notify;
 
     #[tokio::test]
+    async fn cancellation_wakes_a_batch_waiting_for_its_first_result() {
+        let stream = Arc::new(spawn_pull_stream::<u8, _, _>(|_tx| async {
+            std::future::pending::<()>().await;
+        }));
+        let reader = stream.clone();
+        let pending = tokio::spawn(async move { reader.next_batch(20).await });
+        tokio::task::yield_now().await;
+        stream.cancel();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), pending)
+                .await
+                .expect("cancel must interrupt an active pull")
+                .unwrap()
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn available_results_do_not_wait_for_a_slow_source() {
+        let resume = Arc::new(Notify::new());
+        let signal = resume.clone();
+        let stream = spawn_pull_stream(|tx| async move {
+            tx.send(Ok(1)).await.unwrap();
+            signal.notified().await;
+            tx.send(Ok(2)).await.unwrap();
+        });
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), stream.next_batch(20))
+                .await
+                .expect("partial batch must not wait for the producer")
+                .expect("batch"),
+            Some(vec![1])
+        );
+        resume.notify_one();
+        assert_eq!(
+            stream.next_batch(20).await.expect("resumed batch"),
+            Some(vec![2])
+        );
+        assert!(stream.next_batch(20).await.expect("end").is_none());
+    }
+
+    #[tokio::test]
     async fn batches_preserve_order_and_return_the_final_partial_batch() {
-        let mut stream = spawn_pull_stream(|tx| async move {
+        let stream = spawn_pull_stream(|tx| async move {
             for value in 0..45 {
                 if tx.send(Ok(value)).await.is_err() {
                     return;
@@ -601,7 +698,7 @@ mod pull_batch_tests {
 
     #[tokio::test]
     async fn an_error_after_results_is_deferred_without_losing_the_results() {
-        let mut stream = spawn_pull_stream(|tx| async move {
+        let stream = spawn_pull_stream(|tx| async move {
             let _ = tx.send(Ok(1)).await;
             let _ = tx.send(Ok(2)).await;
             let _ = tx
@@ -627,7 +724,7 @@ mod pull_batch_tests {
     async fn cancellation_discards_buffered_items_and_stops_the_producer() {
         let ready = Arc::new(Notify::new());
         let signal = ready.clone();
-        let mut stream = spawn_pull_stream(|tx| async move {
+        let stream = spawn_pull_stream(|tx| async move {
             let _ = tx.send(Ok(1)).await;
             signal.notify_one();
             std::future::pending::<()>().await;
@@ -707,22 +804,19 @@ export default (() => {
     if (event.state == null) return request("/search");
     const count = Number(event.response ? DECODER.decode(event.response.body) : "");
     if (!Number.isInteger(count)) throw new Error("fixture: invalid search count");
-    return {
-      type: "complete",
-      result: Array.from({ length: count }, (_, index) => ({
+    return { type: "complete", result: Array.from({ length: count }, (_, index) => ({
         id: String(1001 + index),
         title: "Fixture Book " + (index + 1),
         author: "Fixture Author",
         description: "Hermetic fixture book.",
-      })),
-    };
+      })) };
   }
   function bookInfo(event) {
     if (event.state == null) return request("/book/" + event.input.bookId);
     return { type: "complete", result: {
       id: "1001", title: "Fixture Book 1", author: "Fixture Author",
       description: "Hermetic fixture book.",
-    }};
+    } };
   }
   function chapters(event) {
     if (event.state == null) return request("/chapters/" + event.input.bookId);
@@ -820,7 +914,7 @@ export default (() => {
     }
 
     async fn collect(
-        mut stream: PullStream<AggregatedSearchEvent>,
+        stream: PullStream<AggregatedSearchEvent>,
     ) -> Result<Vec<AggregatedSearchEvent>, BridgeError> {
         let mut events = Vec::new();
         while let Some(batch) = stream.next_batch(20).await? {
@@ -1006,6 +1100,38 @@ export default (() => {
     }
 
     #[tokio::test]
+    async fn backpressure_does_not_reserve_all_search_slots() -> TestResult {
+        let db = Db::open_in_memory().await?;
+        let mut first = mockito::Server::new_async().await;
+        let mut second = mockito::Server::new_async().await;
+        let first_mock = first.mock("GET", "/search").with_body("100").create();
+        let second_mock = second.mock("GET", "/search").with_body("100").create();
+        for (id, url) in [("first", first.url()), ("second", second.url())] {
+            seed_feed(&db, id, id, &url, fixture_script(id, id, &url)).await?;
+        }
+        let mut actor = spawn_feed_actor_with_permits(db, Arc::new(Semaphore::new(1))).await?;
+        let stream = actor
+            .send(OpenAggregatedSearchStream {
+                keyword: "kw".into(),
+            })
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.message)?;
+
+        // Do not consume either feed's 100 results. Both first requests must
+        // nevertheless start with a single search slot available.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !first_mock.matched() || !second_mock.matched() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| "a source held the search slot while blocked on delivery")?;
+        stream.cancel();
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn aggregated_search_waits_for_search_permits() -> TestResult {
         let db = Db::open_in_memory().await?;
 
@@ -1034,7 +1160,7 @@ export default (() => {
             .map_err(|e| format!("acquire: {e}"))?;
 
         let mut feed_addr = spawn_feed_actor_with_permits(db, permits).await?;
-        let mut stream = feed_addr
+        let stream = feed_addr
             .send(OpenAggregatedSearchStream {
                 keyword: "kw".to_owned(),
             })
@@ -1082,7 +1208,7 @@ export default (() => {
         .await?;
 
         let mut feed_addr = spawn_feed_actor(db).await?;
-        let mut stream = feed_addr
+        let stream = feed_addr
             .send(OpenSearchStream {
                 feed_id: "feed-bad".to_owned(),
                 keyword: "kw".to_owned(),

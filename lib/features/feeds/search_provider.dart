@@ -10,6 +10,7 @@ import 'feed_service.dart';
 // ---------------------------------------------------------------------------
 
 const _pageSize = 20;
+const _resultWindow = Duration(milliseconds: 40);
 
 /// Results from one source. An aggregated search holds one group per feed
 /// that produced results or an error; a single-source search holds exactly
@@ -83,6 +84,7 @@ class SearchState {
 class SearchNotifier extends Notifier<SearchState> {
   int _runToken = 0;
   StreamIterator<AggregatedSearchEventModel>? _iterator;
+  Future<bool>? _pendingMoveNext;
 
   /// The single feed of the last search, or null when it was an
   /// all-feeds search. Kept for [retry].
@@ -91,7 +93,10 @@ class SearchNotifier extends Notifier<SearchState> {
 
   @override
   SearchState build() {
-    ref.onDispose(_disposeIterator);
+    ref.onDispose(() {
+      _runToken++;
+      _disposeIterator();
+    });
     return const SearchState();
   }
 
@@ -175,7 +180,10 @@ class SearchNotifier extends Notifier<SearchState> {
 
   /// Pull up to [_pageSize] events and route them into per-feed groups.
   /// Feed errors land in their group instead of failing the whole run.
-  Future<void> _loadPage({required int runToken}) async {
+  Future<void> _loadPage({
+    required int runToken,
+    int budget = _pageSize,
+  }) async {
     final groups = <String, SearchFeedGroup>{};
     for (final group in state.groups) {
       groups[group.feedId] = group.copyWith(items: List.of(group.items));
@@ -186,16 +194,33 @@ class SearchNotifier extends Notifier<SearchState> {
           group.feedId: group.items.map((item) => item.id).toSet(),
       };
       var exhausted = false;
+      var consumed = 0;
+      final window = Stopwatch();
+      final iterator = _iterator!;
 
-      for (var i = 0; i < _pageSize; i++) {
-        final hasNext = await _iterator!.moveNext();
+      for (var i = 0; i < budget; i++) {
+        final remaining = _resultWindow - window.elapsed;
+        if (window.isRunning && remaining <= Duration.zero) break;
+        // StreamIterator.moveNext cannot be cancelled by a timeout. Retain
+        // that exact future so the next load resumes it without skipping an
+        // event or issuing a second concurrent moveNext.
+        final pending = _pendingMoveNext ??= iterator.moveNext();
+        final hasNext = window.isRunning
+            ? await pending
+                  .then<bool?>((value) => value)
+                  .timeout(remaining, onTimeout: () => null)
+            : await pending;
         if (runToken != _runToken) return;
+        if (hasNext == null) break;
+        _pendingMoveNext = null;
         if (!hasNext) {
           exhausted = true;
           break;
         }
+        if (!window.isRunning) window.start();
+        consumed++;
 
-        final event = _iterator!.current;
+        final event = iterator.current;
         final existing = groups[event.feedId];
         if (event.error != null) {
           groups[event.feedId] = SearchFeedGroup(
@@ -220,12 +245,20 @@ class SearchNotifier extends Notifier<SearchState> {
         }
       }
 
+      if (runToken != _runToken) return;
+      final continuePage = !exhausted && consumed < budget;
       state = state.copyWith(
         groups: List.unmodifiable(groups.values),
         isLoading: false,
-        isLoadingMore: false,
+        isLoadingMore: continuePage,
         hasMore: !exhausted,
       );
+      // Keep filling this same UI page after publishing a partial result.
+      // Otherwise a short list might not be scrollable, leaving slow-source
+      // results inaccessible until a gesture artificially triggers loadMore.
+      if (continuePage) {
+        unawaited(_loadPage(runToken: runToken, budget: budget - consumed));
+      }
     } catch (err) {
       if (runToken == _runToken) {
         state = state.copyWith(
@@ -240,6 +273,7 @@ class SearchNotifier extends Notifier<SearchState> {
   }
 
   void _disposeIterator() {
+    _pendingMoveNext = null;
     _iterator?.cancel();
     _iterator = null;
   }

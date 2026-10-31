@@ -20,11 +20,11 @@ pub struct FeedSearchStream(PullStream<SearchResultItem>);
 
 impl FeedSearchStream {
     /// Pull up to 20 results in one bridge call; `None` indicates exhaustion.
-    pub async fn next_batch(&mut self) -> Result<Option<Vec<SearchResultItem>>, BridgeError> {
+    pub async fn next_batch(&self) -> Result<Option<Vec<SearchResultItem>>, BridgeError> {
         self.0.next_batch(SEARCH_BATCH_SIZE).await
     }
 
-    pub fn cancel(&mut self) {
+    pub fn cancel(&self) {
         self.0.cancel();
     }
 }
@@ -34,11 +34,11 @@ pub struct AggregatedSearchStream(PullStream<AggregatedSearchEvent>);
 
 impl AggregatedSearchStream {
     /// Pull up to 20 attributed events in one bridge call.
-    pub async fn next_batch(&mut self) -> Result<Option<Vec<AggregatedSearchEvent>>, BridgeError> {
+    pub async fn next_batch(&self) -> Result<Option<Vec<AggregatedSearchEvent>>, BridgeError> {
         self.0.next_batch(SEARCH_BATCH_SIZE).await
     }
 
-    pub fn cancel(&mut self) {
+    pub fn cancel(&self) {
         self.0.cancel();
     }
 }

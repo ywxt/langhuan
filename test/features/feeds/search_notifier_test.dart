@@ -41,6 +41,77 @@ void main() {
   }
 
   group('SearchNotifier', () {
+    test(
+      'replacing a partially displayed search cancels its background fill',
+      () async {
+        final old = StreamController<List<AggregatedSearchEventModel>>();
+        var cancelled = false;
+        old.onCancel = () => cancelled = true;
+        final c = container(
+          FakeFeedService(
+            searchAllHandler: (keyword) => keyword == 'old'
+                ? old.stream
+                : _batches([_item('new', 'New', '2')]),
+          ),
+        );
+        final notifier = c.read(searchProvider.notifier);
+        final initial = notifier.searchAll(keyword: 'old');
+        old.add([_item('old', 'Old', '1')]);
+        await initial;
+        expect(c.read(searchProvider).isLoadingMore, isTrue);
+        await notifier.searchAll(keyword: 'new');
+        await Future<void>.delayed(Duration.zero);
+        expect(cancelled, isTrue);
+        expect(c.read(searchProvider).keyword, 'new');
+        expect(c.read(searchProvider).groups.single.feedId, 'new');
+        expect(c.read(searchProvider).isLoadingMore, isFalse);
+        unawaited(old.close());
+      },
+    );
+
+    test(
+      'shows a partial batch and resumes the pending pull without loss',
+      () async {
+        final source = StreamController<List<AggregatedSearchEventModel>>();
+        final c = container(
+          FakeFeedService(searchAllHandler: (_) => source.stream),
+        );
+        final notifier = c.read(searchProvider.notifier);
+        final initial = notifier.searchAll(keyword: 'kw');
+        source.add([_item('fast', 'Fast', '1')]);
+        await initial.timeout(const Duration(seconds: 1));
+        expect(c.read(searchProvider).groups.single.items.single.id, '1');
+        expect(c.read(searchProvider).isLoading, isFalse);
+        expect(c.read(searchProvider).hasMore, isTrue);
+
+        // Resolve the pull which was still pending at the display deadline.
+        source.add([_item('slow', 'Slow', '2')]);
+        unawaited(source.close());
+        // No scroll/loadMore is needed when the first results don't fill a page.
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        expect(c.read(searchProvider).groups.map((g) => g.feedId), [
+          'fast',
+          'slow',
+        ]);
+        expect(c.read(searchProvider).hasMore, isFalse);
+      },
+    );
+
+    test(
+      'a source TimeoutException is an error, not a display deadline',
+      () async {
+        Stream<List<AggregatedSearchEventModel>> source() async* {
+          yield [_item('a', 'A', '1')];
+          throw TimeoutException('source timed out');
+        }
+
+        final c = container(FakeFeedService(searchAllHandler: (_) => source()));
+        await c.read(searchProvider.notifier).searchAll(keyword: 'kw');
+        expect(c.read(searchProvider).error, isA<TimeoutException>());
+        expect(c.read(searchProvider).groups.single.items, hasLength(1));
+      },
+    );
+
     test('paginates aggregated events and groups them by feed', () async {
       final events = <AggregatedSearchEventModel>[
         for (var i = 0; i < 25; i++) _item('feed-a', 'Source A', 'a$i'),

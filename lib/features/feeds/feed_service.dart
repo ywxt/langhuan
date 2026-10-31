@@ -1,3 +1,4 @@
+import 'pull_stream.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
@@ -448,26 +449,6 @@ class FeedService {
 
   static final FeedService instance = FeedService._();
 
-  /// The open/pull/cancel dance shared by every streaming API: FRB exposes
-  /// each stream as an opaque wrapper with a pull method and `cancel()`, which this
-  /// helper turns into a Dart stream that always cancels the Rust side.
-  static Stream<T> _pull<S, T>(
-    Future<S> Function() open,
-    Future<T?> Function(S stream) next,
-    void Function(S stream) cancel,
-  ) async* {
-    final stream = await open();
-    try {
-      while (true) {
-        final item = await next(stream);
-        if (item == null) break;
-        yield item;
-      }
-    } finally {
-      cancel(stream);
-    }
-  }
-
   // -------------------------------------------------------------------------
   // Search
   // -------------------------------------------------------------------------
@@ -477,7 +458,7 @@ class FeedService {
     required String feedId,
     required String keyword,
   }) {
-    return _pull(
+    return pullStream(
       () => rust_stream.openSearchStream(feedId: feedId, keyword: keyword),
       (stream) => stream.nextBatch(),
       (stream) => stream.cancel(),
@@ -492,7 +473,7 @@ class FeedService {
   Stream<List<AggregatedSearchEventModel>> searchAll({
     required String keyword,
   }) {
-    return _pull(
+    return pullStream(
       () => rust_stream.openAggregatedSearchStream(keyword: keyword),
       (stream) => stream.nextBatch(),
       (stream) => stream.cancel(),
@@ -662,7 +643,7 @@ class FeedService {
   /// Check every shelved book for new chapters; emits one item per book as
   /// each check completes.
   Stream<BookshelfUpdateModel> bookshelfUpdates() {
-    return _pull(
+    return pullStream(
       rust_bookshelf.openBookshelfUpdatesStream,
       (stream) => stream.next(),
       (stream) => stream.cancel(),

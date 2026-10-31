@@ -16,6 +16,7 @@
 // (On NixOS the Android target additionally needs the read-only-SDK plugin
 // mirror from nix/flutter.nix; see nix/flutter-native-plugin-loader-nix.gradle.kts.)
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -44,6 +45,7 @@ void main() {
     // script's search parser error.
     var feedBFails = false;
     var feedACount = 2;
+    Completer<void>? releaseFeedB;
     final serverA = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final serverB = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() async {
@@ -55,6 +57,7 @@ void main() {
       await request.response.close();
     });
     serverB.listen((request) async {
+      await releaseFeedB?.future;
       if (feedBFails) {
         request.response.statusCode = HttpStatus.internalServerError;
       } else {
@@ -153,15 +156,62 @@ void main() {
     final singleBatches = await FeedService.instance
         .search(feedId: _feedAId, keyword: 'fixture')
         .toList();
-    expect(singleBatches.map((batch) => batch.length), [20, 5]);
+    expect(
+      singleBatches.every((batch) => batch.isNotEmpty && batch.length <= 20),
+      isTrue,
+    );
+    expect(singleBatches.expand((batch) => batch), hasLength(25));
     expect(singleBatches.first.first.id, '1001');
     expect(singleBatches.last.last.id, '1025');
     final mergedBatches = await FeedService.instance
         .searchAll(keyword: 'fixture')
         .toList();
-    expect(mergedBatches.map((batch) => batch.length), [20, 6]);
+    expect(
+      mergedBatches.every((batch) => batch.isNotEmpty && batch.length <= 20),
+      isTrue,
+    );
     final merged = mergedBatches.expand((batch) => batch).toList();
     expect(merged.where((event) => event.feedId == _feedAId), hasLength(25));
     expect(merged.where((event) => event.feedId == _feedBId), hasLength(1));
+
+    // A slow source must not hide available results at the real List bridge.
+    feedACount = 2;
+    final gate = releaseFeedB = Completer<void>();
+    final iterator = StreamIterator(
+      FeedService.instance.searchAll(keyword: 'slow'),
+    );
+    try {
+      expect(
+        await iterator.moveNext().timeout(const Duration(seconds: 3)),
+        isTrue,
+      );
+      expect(
+        iterator.current.map((event) => event.feedId),
+        everyElement(_feedAId),
+      );
+      expect(iterator.current, hasLength(2));
+      gate.complete();
+      final rest = <AggregatedSearchEventModel>[];
+      while (await iterator.moveNext()) {
+        rest.addAll(iterator.current);
+      }
+      expect(rest.where((event) => event.feedId == _feedBId), hasLength(1));
+    } finally {
+      if (!gate.isCompleted) gate.complete();
+      await iterator.cancel();
+    }
+
+    // Cancellation must cross FRB while a shared native pull awaits HTTP.
+    final pendingGate = releaseFeedB = Completer<void>();
+    final subscription = FeedService.instance
+        .search(feedId: _feedBId, keyword: 'cancel')
+        .listen((_) => fail('the gated source must not emit results'));
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await subscription.cancel().timeout(const Duration(seconds: 2));
+    } finally {
+      pendingGate.complete();
+      await subscription.cancel();
+    }
   });
 }
