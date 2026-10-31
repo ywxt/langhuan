@@ -1,6 +1,6 @@
 # Book-source developer tools
 
-Langhuan includes an isolated stage runner for developing schema-4 sources on
+Langhuan includes an isolated stage runner for developing schema-5 sources on
 the same device that runs the app. It executes editor contents directly; a
 work-in-progress source does not need to be installed first.
 
@@ -40,10 +40,11 @@ normal response or bookshelf caches.
 The five typed stages are the default and preserve the normal app behaviour:
 streaming operations automatically follow `next_cursor` until completion.
 Choose **Advanced single page** when debugging pagination itself. It accepts
-one of `search`, `bookInfo`, `chapters`, `paragraphs`, or `authStatus`, passes
+one of `search`, `bookInfo`, `chapters`, `paragraphs`, `login.status`,
+`comments.chapter`, or `comments.paragraph`, passes
 the JSON object directly as `event.input`, and passes the cursor JSON as
 `event.cursor`. `null` means the first page. The runner executes exactly one
-page and displays raw `items`, `value`, and `next_cursor`; **Use next cursor**
+page and displays raw `result` and `next_cursor`; **Use next cursor**
 copies the returned cursor into the next run.
 
 This does not invent pagination for a source. The selected reducer must read
@@ -113,9 +114,9 @@ stops when the developer page closes. Request bodies are limited to 2 MiB.
 Routes are flat beneath `/v1`: `/run`, `/load`, `/reload`, `/health`,
 and `/operations`.
 HTTP control fields, mode names, and output type tags use `snake_case`, such as
-`feed_id`, `single_page`, and `book_info`. The `operation` name and keys inside
+`feed_id`, `single_page`, and `bookInfo`. The `operation` name and keys inside
 `input` follow the feed/debugger protocol unchanged (`bookInfo`, `bookId`,
-`chapterId`, `authStatus`); single-page debugging passes raw input and cursors
+`chapterId`, `login.status`); single-page debugging passes raw input and cursors
 through without renaming script-defined fields. The operation catalogue also
 advertises `run_endpoint` and `script_endpoints`.
 
@@ -168,11 +169,14 @@ Subsequent `/v1/run` calls without `script` or `feed_id` use the updated editor.
 
 The other operation inputs are `{ "bookId": "..." }` for `bookInfo` and
 `chapters`, `{ "bookId": "...", "chapterId": "..." }` for `paragraphs`,
-and an empty object for `authStatus`. Responses contain typed output,
+and an empty object for `login.status`. Responses contain typed output,
 structured failures, reducer steps, and masked HTTP data.
 
 By default the API uses `"mode": "pipeline"` and follows all cursors, matching
-the UI's typed stages. Set `"mode": "single_page"` and optionally provide
+the UI's typed stages. Comment operations always execute one source page,
+including when no mode is supplied. They accept `bookId`, `chapterId`, an
+optional `parentId` for existing replies, and `paragraphId` for paragraph
+comments. They never publish or modify comments. Set `"mode": "single_page"` and optionally provide
 `"cursor"` to execute only one page:
 
 ```json

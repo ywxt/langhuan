@@ -1,6 +1,6 @@
 # Error handling for JavaScript book sources
 
-Schema-4 sources distinguish expected website states from source defects and
+Schema-5 sources distinguish expected website states from source defects and
 native failures.
 
 ## Expected failures

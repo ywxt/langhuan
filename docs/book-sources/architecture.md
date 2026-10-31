@@ -25,7 +25,7 @@ An ordinary HTML source typically needs two reducer rounds:
 search(event without response)
   -> request /search?q=...
 search(event.response)
-  -> complete(items)
+  -> complete(result)
 ```
 
 A protected chapter may need more rounds:
@@ -51,11 +51,11 @@ The app starts one of these operations:
 
 | Handler | Input | Completion |
 | --- | --- | --- |
-| `search` | `{ keyword }` | `items` of books and optional `next_cursor` |
-| `bookInfo` | `{ bookId }` | one book in `value` |
-| `chapters` | `{ bookId }` | chapter `items` and optional `next_cursor` |
-| `paragraphs` | `{ bookId, chapterId }` | paragraph `items` and optional `next_cursor` |
-| `login.status` | empty object | boolean `value` |
+| `search` | `{ keyword }` | book array in `result` and optional `next_cursor` |
+| `bookInfo` | `{ bookId }` | one book in `result` |
+| `chapters` | `{ bookId }` | chapter array in `result` and optional `next_cursor` |
+| `paragraphs` | `{ bookId, chapterId }` | paragraph array in `result` and optional `next_cursor` |
+| `login.status` | empty object | boolean `result` |
 
 Each call receives an event. On the first round, `state`, `response`,
 `compute`, and `webview` are absent. A non-terminal step is executed by the
@@ -71,10 +71,7 @@ function chapters(event) {
     };
   }
 
-  return {
-    type: "complete",
-    items: parseDirectory(event.response.body),
-  };
+  return { type: "complete", result: parseDirectory(event.response.body) };
 }
 ```
 
@@ -90,8 +87,18 @@ bridge in batches of at most 20 items/events (`nextBatch()`), and the Dart
 service exposes `Stream<List<...>>`. Flutter buffers each received batch for
 UI pagination instead of crossing the bridge once per book.
 
+Once the first event arrives, both native batching and UI accumulation wait
+at most a 40 ms coalescing window instead of waiting indefinitely for 20
+events. Each aggregated source releases its shared concurrency permit after
+each stream advance, before waiting on result delivery. A multi-page source
+therefore cannot reserve a search slot for its entire lifetime. This does not
+promise equal result counts or cross-source relevance ordering.
+
+See [search, comments, and listening design](../search-comments-listening.md)
+for scheduling, source-comment interfaces, typed paragraph identity, and local TTS.
+
 A bridge batch is independent from a source page: it may split a large source
-page or combine smaller pages. The source's `items` and `next_cursor` contract
+page or combine smaller pages. The source's `result` and top-level `next_cursor` contract
 is unchanged, and producers retain bounded-channel backpressure. A terminal
 error after some results does not discard them: the partial batch is returned
 first and the next pull reports the error.
@@ -146,8 +153,7 @@ Use the narrowest state channel that matches the required lifetime:
 | Across result pages | `next_cursor` | Search offset, page token, directory page |
 
 `next_state` stays a live value in the persistent feed realm, so it may carry
-`Uint8Array`, `Date`, `undefined` properties, and closures. Final `items` and
-`value` cross into Rust and must be JSON-compatible.
+`Uint8Array`, `Date`, `undefined` properties, and closures. Final `result` crosses into Rust and must be JSON-compatible.
 
 Different feeds never share a realm or storage namespace. Calls on one feed's
 retained object are serialized so module state cannot be mutated concurrently.

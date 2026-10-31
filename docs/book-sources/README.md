@@ -14,7 +14,7 @@ third-party scripts unrestricted system access.
 | Document | Use it for |
 | --- | --- |
 | [Architecture](architecture.md) | Understand reducers, request execution, pagination, state, caching, and authentication. |
-| [Writing a source](writing-a-source.md) | Build a complete schema-4 source from metadata to readable paragraphs. |
+| [Writing a source](writing-a-source.md) | Build a complete schema-5 source from metadata to readable paragraphs. |
 | [Sandbox](sandbox.md) | Understand what scripts can do, what they cannot do, and every resource limit. |
 | [API Reference](api-reference.md) | Look up metadata, events, steps, result shapes, login hooks, globals, and `langhuan:*` modules. |
 | [Error handling](../error-handling.md) | Choose expected failures and understand host error categories. |
@@ -46,7 +46,7 @@ JavaScript reducer ── returns data ──► Rust policy + HTTP
     ▲                                      │
     └──────── event.response ──────────────┘
     │
-    └── complete(items/value) ──► cache ──► reader UI
+    └── complete(result) ──► cache ──► reader UI
 ```
 
 The source never receives `fetch`, sockets, or a native HTTP object.
@@ -66,15 +66,17 @@ The source never receives `fetch`, sockets, or a native HTTP object.
 For a new source, copy the structure—not site-specific tokens, cached script
 URLs, device identifiers, or authentication data.
 
-## Compatibility
+## Current contract
 
-The current contract is schema 4:
+The current contract is schema 5:
 
 - source files use `.js`;
 - they are ES modules;
 - they `export default` the Feed object;
 - HTTP response bodies are `Uint8Array` values;
-- `globalThis.feed` and legacy schema-3 registration are not supported.
+- `globalThis.feed` and schemas below 5 are rejected; old completion shapes are not adapted.
+
+For application-level features, see [Search, comments, and listening](../search-comments-listening.md).
 
 Continue with [Architecture](architecture.md), then follow
 [Writing a source](writing-a-source.md).

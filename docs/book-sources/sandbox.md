@@ -110,7 +110,7 @@ The operation can remain parked while the user interacts.
 | Compute programs per step | 1–8 |
 | Total compute source | 4 MiB |
 | Compute input or result bridge value | 16 MiB |
-| Completed `items`/`value` bridge value | 16 MiB |
+| Completed `result` bridge value | 16 MiB |
 | HTML parser input | 4 MiB |
 | Decompressed output | 32 MiB |
 | Protobuf message | 32 MiB |
@@ -140,22 +140,17 @@ and supports:
 Functions and host objects cannot cross realms. Cyclic or oversized values are
 rejected.
 
-Final `complete.items` and `complete.value` enter the Rust data model and must
+Final `complete.result` values enter the Rust data model and must
 be JSON-compatible. Decode bytes to text or encode them as base64/hex before
 completion.
 
-## Ambient compatibility helpers
+## Explicit host surface
 
-QuickJS is not a browser. The feed realm provides only small, inert helpers
-needed by common site code:
-
-- `atob` and `btoa`;
-- `window` and `self` aliases for `globalThis`;
-- `navigator.userAgent` set to `Langhuan QuickJS`;
-- no-op `console` methods;
-- `performance.now()` backed by the current time;
-- timer shims that do not schedule asynchronous work;
-- frozen `meta` and frozen `FeedError` objects.
+QuickJS is not a browser. The feed realm adds frozen `meta` and `FeedError`
+objects only. Encoding uses explicit `langhuan:encoding` imports. Browser
+aliases, fake timers, inert console methods and base64 globals are absent.
+Third-party compute programs can explicitly construct their own environment
+inside the isolated realm; that does not grant network or system access.
 
 Top-level `await` is unsupported. Reducers and login hooks must finish
 synchronously.

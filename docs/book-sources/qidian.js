@@ -3,7 +3,7 @@
 // @name         起點中文網
 // @version      4.1.0
 // @author       Langhuan
-// @description  起點中文網書源（m 站），支持登入及已購 VIP 章節
+// @description  起點中文網書源（m 站），支持登入及已購 VIP 章節，登錄後可讀章評與段評
 // @base_url     https://m.qidian.com
 // @access_domain m.qidian.com
 // @access_domain *.image.myqcloud.com
@@ -587,16 +587,22 @@ function paragraphs(event) {
   return FeedError.raise("invalid_state", "未知的起點章節解析狀態");
 }
 
-// ── 評論（m 站章評/段評，reviewlist4m）──────────────────────────────────
+// ── 評論（m 站章評/段評，reviewlist4m，登錄限定）─────────────────────────
 //
 // 章評與段評共用 GET /webcommon/chapterreview/reviewlist4m：paragraphId=-1
 // 選章評單元，k 選第 k 個 <p>（與 splitParagraphs 的 1-based 段落 id 對
-// 齊）。每頁 12 條，isEnd===1 即末頁，total 爲該單元的評論總數。該接
-// 口要求 Cookie 與查詢參數攜帶同一 _csrfToken（匿名亦然，否則 1403），
-// 因此先訪問探測頁取 Set-Cookie 的令牌再發列表請求；登錄時
-// login.patchRequest 會疊加帳號 Cookie，動態令牌覆蓋舊值，兩處仍然一
-// 致。m 站沒有回覆列表端點（reviewlist4m 忽略 rootReviewId），故
-// replies 一律爲 null：計數已知也不暴露無法兌現的回覆入口。
+// 齊）。每頁 12 條，isEnd===1 即末頁，total 爲該單元的評論總數。
+//
+// 該接口要求 Cookie 與查詢參數攜帶同一 _csrfToken（實測兩者缺一或錯開
+// 均 1403，匿名亦然），因此只在登錄後提供評論：未登錄直接要求登錄，
+// 登錄後用 login.parse 捕獲的令牌在兩處配對（login.patchRequest 會把
+// 帳號 Cookie 疊加進來，腳本設的同名令牌覆蓋舊值，最終仍然一致）。
+//
+// 回覆不可用：reviewlist4m 每條評論僅內嵌 2 條回覆預覽（replyList）加
+// 總數（rootReviewReplyCount），官方 m 站 UI 顯示「剩餘 N 條」並引導
+// 去 APP，沒有按評論拉取回覆列表的端點（rootReviewId 參數被忽略），
+// 舊版 getchapterendcomments 也只有 2 條熱評且無法翻頁。故 replies 一
+// 律爲 null：計數已知也不暴露無法兌現的回覆入口。
 
 function commentsCursorPage(cursor) {
   const page = Number(cursor?.page);
@@ -609,30 +615,17 @@ function toCount(value) {
 }
 
 function commentsList(event, paragraphId) {
-  if (event.state == null) {
-    return {
-      type: "request",
-      request: {
-        url: `${meta.base_url}/soushu/langhuanprobe.html`,
-        method: "GET",
-        headers: requestHeaders(),
-      },
-      next_state: { stage: "probe", paragraphId },
-    };
+  if (!event.auth?.cookie_header) {
+    return FeedError.authRequired("起點章節評論需要登錄起點帳號");
+  }
+  const csrfToken =
+    event.auth.csrf_token ??
+    cookieMap(event.auth.cookie_header).get("_csrfToken");
+  if (!csrfToken) {
+    return FeedError.authRequired("登錄資料缺少起點 CSRF 令牌，請重新登錄");
   }
 
-  if (event.state.stage === "probe") {
-    const failure = responseFailure(event.response, "評論不可用");
-    if (failure) return failure;
-    const csrfToken =
-      cookieMap(responseCookies(event.response.headers)).get("_csrfToken") ??
-      event.auth?.csrf_token ??
-      cookieMap(event.auth?.cookie_header).get("_csrfToken");
-    if (!csrfToken) {
-      return FeedError.sourceUnavailable(
-        "起點未提供評論所需的 CSRF 令牌，請稍後重試",
-      );
-    }
+  if (event.state == null) {
     const page = commentsCursorPage(event.cursor);
     return {
       type: "request",
@@ -642,7 +635,7 @@ function commentsList(event, paragraphId) {
         params: {
           bookId: String(event.input.bookId),
           chapterId: String(event.input.chapterId),
-          paragraphId: String(event.state.paragraphId),
+          paragraphId: String(paragraphId),
           page: String(page),
           _csrfToken: csrfToken,
         },

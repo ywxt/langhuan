@@ -1,12 +1,16 @@
-# Langhuan (琅嬛) — UI Design Specification
+# UI design guide
+
+This guide describes the visual rules used by the application. Layout diagrams
+are schematic; implementation tokens are defined in
+[`LanghuanTheme`](../lib/shared/theme/app_theme.dart).
 
 > Inspired by [Wise Design System](https://wise.design/) — clean, flat, borderless, generous white space.
 
-## 1. Design Principles
+## 1. Design principles
 
 | Principle      | Description                                                                             |
 | -------------- | --------------------------------------------------------------------------------------- |
-| **Clean**      | Generous white space, minimal visual noise. White is the dominant colour.               |
+| **Clean**      | Generous white space, minimal visual noise. Use the effective light, dark, or reader theme surface.               |
 | **Flat**       | No drop shadows on cards. Differentiate with subtle background tints.                   |
 | **Borderless** | Avoid visible borders. Use background colour contrast to separate areas.                |
 | **Rounded**    | Large corner radii (10–32px mobile) for a bold, friendly feel.                          |
@@ -14,13 +18,13 @@
 
 ---
 
-## 2. Design Tokens
+## 2. Design tokens
 
-### 2.1 Colour Palette
+### 2.1 Colour palette
 
 Adapted from Wise's green-centric palette, tuned for a book-reading context.
 
-#### Core Colours
+#### Core colours
 
 | Token                 | Light                            | Dark                   | Usage                               |
 | --------------------- | -------------------------------- | ---------------------- | ----------------------------------- |
@@ -31,7 +35,7 @@ Adapted from Wise's green-centric palette, tuned for a book-reading context.
 | `background.neutral`  | `#F2F4EF` (8% Forest Green tint) | `#1E211B`              | Cards, chips, search bars           |
 | `background.overlay`  | `#16330014` (8% opacity)         | `#9FE87014`            | Shimmers, loading overlays          |
 
-#### Content Colours
+#### Content colours
 
 | Token               | Light     | Dark      | Usage                   |
 | ------------------- | --------- | --------- | ----------------------- |
@@ -40,7 +44,7 @@ Adapted from Wise's green-centric palette, tuned for a book-reading context.
 | `content.tertiary`  | `#6A6C6A` | `#7D7F7C` | Placeholders, hints     |
 | `content.link`      | `#163300` | `#9FE870` | Links, tappable text    |
 
-#### Interactive Colours
+#### Interactive colours
 
 | Token                   | Light     | Dark      | Usage                            |
 | ----------------------- | --------- | --------- | -------------------------------- |
@@ -49,7 +53,7 @@ Adapted from Wise's green-centric palette, tuned for a book-reading context.
 | `interactive.secondary` | `#868685` | `#6A6C6A` | Input borders, secondary icons   |
 | `interactive.control`   | `#163300` | `#E8EAE5` | Text/icons on accent surfaces    |
 
-#### Sentiment Colours
+#### Sentiment colours
 
 | Token                | Light     | Dark      | Usage                       |
 | -------------------- | --------- | --------- | --------------------------- |
@@ -72,7 +76,7 @@ Font: **System default** (San Francisco on iOS, Roboto on Android — matches In
 | Body Bold          | 14sp | SemiBold (w600) | 22px        | +1.25%         | Buttons, links, emphasis      |
 | Label              | 12sp | Medium (w500)   | 16px        | 0.5%           | Chips, badges, captions       |
 
-#### Reader Typography (separate context)
+#### Reader typography (separate context)
 
 | Style                 | Size | Weight   | Line Height  | Usage                |
 | --------------------- | ---- | -------- | ------------ | -------------------- |
@@ -80,7 +84,7 @@ Font: **System default** (San Francisco on iOS, Roboto on Android — matches In
 | Reading Body          | 18sp | Regular  | 32px (1.78×) | Main reading content |
 | Reading Image Caption | 14sp | Regular  | 20px         | Image alt text       |
 
-### 2.3 Spacing Scale
+### 2.3 Spacing scale
 
 Based on 8px grid (Wise uses 8/16/24/32).
 
@@ -94,7 +98,7 @@ Based on 8px grid (Wise uses 8/16/24/32).
 | `space.xl`     | 32px  | Large section separators                          |
 | `space.2xl`    | 48px  | Empty state vertical spacing                      |
 
-### 2.4 Radius Scale
+### 2.4 Radius scale
 
 Wise mobile scale adapted:
 
@@ -107,9 +111,9 @@ Wise mobile scale adapted:
 
 ---
 
-## 3. Component Specifications
+## 3. Component specifications
 
-### 3.1 Bottom Navigation Bar
+### 3.1 Bottom navigation bar
 
 - **Style**: Flat, no top border, no elevation
 - **Background**: `background.screen` (blends with page)
@@ -118,9 +122,9 @@ Wise mobile scale adapted:
 - **Active**: `interactive.primary` colour, icon filled
 - **Inactive**: `content.tertiary` colour, icon outlined
 - **Indicator**: Pill-shaped background behind active icon using `background.neutral`
-- **Tabs**: Bookshelf · Feeds · Settings (renamed from Profile)
+- **Tabs**: Bookshelf · Feeds · Settings
 
-### 3.2 Search Bar
+### 3.2 Search bar
 
 - **Style**: Borderless, filled background
 - **Background**: `background.neutral`
@@ -133,19 +137,19 @@ Wise mobile scale adapted:
 
 ### 3.3 Buttons
 
-#### Primary Button
+#### Primary button
 - **Background**: `interactive.accent` (Bright Green)
 - **Text**: `interactive.control` (Forest Green), SemiBold
 - **Shape**: Pill / Stadium (fully rounded ends)
 - **Height**: 48px (large), 40px (medium), 32px (small)
 - **Full width** on mobile for primary actions
 
-#### Secondary Button
+#### Secondary button
 - **Background**: `background.neutral`
 - **Text**: `content.primary`, SemiBold
 - **Shape**: Pill / Stadium (fully rounded ends)
 
-#### Tertiary / Text Button
+#### Tertiary / text button
 - **Background**: transparent
 - **Text**: `content.link`, SemiBold
 - **Shape**: Pill / Stadium (fully rounded ends)
@@ -158,7 +162,7 @@ Wise mobile scale adapted:
 - **Elevation**: 0 (no shadow)
 - **Border**: none
 
-### 3.5 List Items
+### 3.5 List items
 
 - **Style**: No dividers between items. Use vertical spacing (8px gap).
 - **Background**: transparent (on screen background)
@@ -167,7 +171,7 @@ Wise mobile scale adapted:
 - **Content**: Title (Body Bold) + Subtitle (Body Default, `content.secondary`)
 - **Trailing**: Chevron icon or action icon
 
-### 3.6 Chips / Tags
+### 3.6 Chips / tags
 
 - **Background**: `background.neutral`
 - **Selected background**: `interactive.primary`
@@ -176,7 +180,7 @@ Wise mobile scale adapted:
 - **Height**: 32px
 - **Padding**: 12px horizontal
 
-### 3.7 Bottom Sheets
+### 3.7 Bottom sheets
 
 - **Background**: `background.elevated`
 - **Radius**: `radius.lg` (24px) top corners
@@ -200,9 +204,9 @@ Wise mobile scale adapted:
 
 ---
 
-## 4. Screen Designs
+## 4. Screen designs
 
-### 4.1 Bookshelf (Home Tab)
+### 4.1 Bookshelf (home tab)
 
 **Purpose**: User's saved/bookmarked books library.
 
@@ -240,7 +244,7 @@ Wise mobile scale adapted:
 - Book title below cover: Body Bold, 1 line max
 - Author below title: Body Default, `content.secondary`, 1 line max
 
-### 4.2 Search Page
+### 4.2 Search page
 
 **Purpose**: Search books across feed sources.
 
@@ -276,7 +280,7 @@ Wise mobile scale adapted:
 - Book cover: 48×64px, radius.sm, left side of card
 - No dividers — use card spacing
 
-### 4.3 Feeds Page
+### 4.3 Feeds page
 
 **Purpose**: Manage book source scripts.
 
@@ -314,7 +318,7 @@ Wise mobile scale adapted:
 - Swipe to delete: Red background slides in from right
 - FAB: `interactive.accent` bg, `interactive.control` icon, **circular** shape
 
-### 4.4 Add Feed Flow
+### 4.4 Add feed flow
 
 **Layer 1 — Source Picker (Bottom Sheet)**:
 - Borderless list of tappable options (no card background):
@@ -330,7 +334,7 @@ Wise mobile scale adapted:
 - Preview card: Shows feed metadata in structured layout
 - Install button: Primary (Bright Green), full width
 
-### 4.5 Settings Page (renamed from Profile)
+### 4.5 Settings page
 
 **Purpose**: App settings and preferences.
 
@@ -360,7 +364,7 @@ Wise mobile scale adapted:
 - Setting rows: No dividers, use 1px `background.overlay` separator inside card
 - Navigation rows: Chevron trailing icon
 
-### 4.6 Book Detail Page (Future)
+### 4.6 Book detail page
 
 ```
 ┌─────────────────────────────┐
@@ -387,7 +391,7 @@ Wise mobile scale adapted:
 └─────────────────────────────┘
 ```
 
-### 4.7 Reader Page (Future)
+### 4.7 Reader page
 
 ```
 ┌─────────────────────────────┐
@@ -410,7 +414,33 @@ Wise mobile scale adapted:
 
 ---
 
-## 5. Interaction & Motion
+#### Reader surfaces and long titles
+
+The reading surface extends behind transparent system bars. Navigation-bar
+contrast enforcement is disabled on the reader so Android does not add a
+separate shaded strip. Status and navigation icons follow reader-theme
+brightness. A reader-specific theme takes precedence over the application theme.
+
+Toolbar chapter titles occupy one line with ellipsis; a tooltip exposes the full
+title. Both chapter directories allow two lines. Chapter headings inside the
+content wrap naturally. Horizontal pagination keeps an ordinary heading together
+and splits a heading taller than a page without dropping its text or changing
+its paragraph identity.
+
+Both chapter directories use `ChapterScrollbar`. The thumb is 12 logical pixels
+wide and at least 64 pixels long, with Flutter's minimum 48-pixel touch hit area.
+It appears on scrolling, remains available for 1.4 seconds after scrolling ends,
+and then fades. Thumb dragging moves through the full directory; it is not an
+extra navigation button.
+
+The reader exposes chapter comments, paragraph comments where source IDs exist,
+and the system TTS playback panel. Use the same theme surfaces and text contrast
+for these panels. Listening highlights the active paragraph; manual reading
+interactions pause playback. See
+[Search, comments, and listening](search-comments-listening.md) for lifecycle and
+progress rules.
+
+## 5. Interaction & motion
 
 ### 5.1 Transitions
 
@@ -421,20 +451,20 @@ Wise mobile scale adapted:
 | Fade switch  | 200ms    | `easeInOut`      | Content state changes |
 | Chip select  | 150ms    | `easeOut`        | Chip colour change    |
 
-### 5.2 Loading States
+### 5.2 Loading states
 
 - **Skeleton shimmer**: Use `background.overlay` animated over `background.neutral`
 - **Progress bar**: Thin (2px) `interactive.accent` linear progress
 - **Spinner**: 24px, `interactive.primary` colour, 2px stroke
 
-### 5.3 Empty States
+### 5.3 Empty states
 
 - Icon: 48–56px, `content.tertiary` at 40% opacity, **no background container** (bare icon)
 - Title: Title Body style
 - Subtitle: Body Large, `content.secondary`
 - Optional action button below
 
-### 5.4 Error States
+### 5.4 Error states
 
 - Icon: 48px, `sentiment.negative` at 60% opacity, **no background container** (bare icon)
 - Title: Body Bold, `sentiment.negative`
@@ -443,9 +473,9 @@ Wise mobile scale adapted:
 
 ---
 
-## 6. Flutter Implementation Notes
+## 6. Flutter implementation notes
 
-### 6.1 ThemeData Mapping
+### 6.1 Themedata mapping
 
 ```dart
 // Seed colour approach — use Forest Green as seed
@@ -461,7 +491,7 @@ Override specific slots:
 - `colorScheme.surface` → White
 - `colorScheme.surfaceContainerHighest` → Neutral bg
 
-### 6.2 Component Theme Overrides
+### 6.2 Component theme overrides
 
 ```dart
 // SearchBar
@@ -498,7 +528,7 @@ FilledButtonThemeData(
 )
 ```
 
-### 6.3 Key Widgets
+### 6.3 Key widgets
 
 | Component    | Flutter Widget                                                   |
 | ------------ | ---------------------------------------------------------------- |
@@ -512,7 +542,7 @@ FilledButtonThemeData(
 
 ---
 
-## 7. Dark Mode
+## 7. Dark mode
 
 All colours have dark mode variants defined in Section 2.1. Key principles:
 - Background inverts to near-black with green tint (`#121511`)

@@ -30,7 +30,7 @@ Every source starts with a header:
 // @base_url     https://books.example.org
 // @access_domain books.example.org
 // @access_domain *.cdn.example.org
-// @schema_version 4
+// @schema_version 5
 // ==/Feed==
 ```
 
@@ -96,7 +96,7 @@ function search(event) {
       description: text(card.select(".summary").first()) || null,
     });
   }
-  return { type: "complete", items };
+  return { type: "complete", result: items };
 }
 ```
 
@@ -104,7 +104,7 @@ For paginated search, read `event.cursor` when constructing the request and
 return `next_cursor` with the completed page:
 
 ```js
-return { type: "complete", items, next_cursor: nextPageToken ?? null };
+return { type: "complete", result: items, next_cursor: nextPageToken ?? null };
 ```
 
 Do not keep the current page in module state. The cursor belongs to the search
@@ -112,7 +112,7 @@ operation, and a new search must start without stale pagination data.
 
 ## 5. Implement book information
 
-`bookInfo` completes with one `value` rather than `items`:
+`bookInfo` returns a book object in `result`; paged operations return arrays in `result`:
 
 ```js
 function bookInfo(event) {
@@ -125,16 +125,13 @@ function bookInfo(event) {
   }
 
   const document = HTML.parse(bodyText(event.response));
-  return {
-    type: "complete",
-    value: {
+  return { type: "complete", result: {
       id: event.input.bookId,
       title: text(document.select("h1").first()),
       author: text(document.select(".author").first()) || "Unknown",
       cover_url: document.select(".cover img").first()?.attr("src") ?? null,
       description: text(document.select(".description").first()) || null,
-    },
-  };
+    } };
 }
 ```
 
@@ -158,7 +155,7 @@ function chapters(event) {
     const id = link.attr("href")?.match(/\/chapter\/(\d+)/)?.[1];
     if (id) items.push({ id, title: text(link) });
   }
-  return { type: "complete", items };
+  return { type: "complete", result: items };
 }
 ```
 
@@ -190,7 +187,7 @@ function paragraphs(event) {
     const content = text(node);
     if (content) items.push({ type: "text", content });
   }
-  return { type: "complete", items };
+  return { type: "complete", result: items };
 }
 ```
 
@@ -218,10 +215,10 @@ import { HTML } from "langhuan:html";
 const decoder = new TextDecoder("utf-8");
 const decode = (response) => decoder.decode(response?.body);
 
-function search(event) { /* request, parse, complete items */ }
-function bookInfo(event) { /* request, parse, complete value */ }
-function chapters(event) { /* request, parse, complete items */ }
-function paragraphs(event) { /* request, parse, complete items */ }
+function search(event) { /* request, parse, complete result array */ }
+function bookInfo(event) { /* request, parse, complete result object */ }
+function chapters(event) { /* request, parse, complete result array */ }
+function paragraphs(event) { /* request, parse, complete result array */ }
 
 export default { search, bookInfo, chapters, paragraphs };
 ```
@@ -283,7 +280,7 @@ function paragraphs(event) {
     };
   }
   if (event.state.stage === "api") {
-    return { type: "complete", items: parseApi(event.response.body) };
+    return { type: "complete", result: parseApi(event.response.body) };
   }
   return FeedError.raise("invalid_state", "Unknown paragraph stage");
 }
