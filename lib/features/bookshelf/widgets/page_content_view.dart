@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart';
+import 'comment_badge.dart';
 import 'page_breaker.dart';
 
 /// Renders a single computed [PageContent] — a list of [PageItem]s that
@@ -18,6 +19,8 @@ class PageContentView extends StatelessWidget {
     this.lineHeight = 1.8,
     this.selectedParagraphId,
     this.onParagraphLongPress,
+    this.commentBadgeIds = const {},
+    this.onParagraphComments,
   });
 
   final PageContent page;
@@ -33,6 +36,15 @@ class PageContentView extends StatelessWidget {
     Rect globalRect,
   )?
   onParagraphLongPress;
+
+  /// Identity strings of paragraphs that carry a comment badge (last
+  /// fragment per source paragraph — see the content manager). Empty when
+  /// comment badges are disabled.
+  final Set<String> commentBadgeIds;
+
+  /// Opens a paragraph's comments. Only invoked for items that show a badge.
+  final void Function(String chapterId, ParagraphContent paragraph)?
+  onParagraphComments;
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +68,27 @@ class PageContentView extends StatelessWidget {
   Widget _buildItem(BuildContext context, ThemeData theme, PageItem item) {
     final source = item.source;
     final isSelected = selectedParagraphId == item.paragraphId;
-    Widget child = _buildContent(context, theme, item, source);
+
+    // The badge follows the final fragment of the source paragraph.
+    final count = source.commentCount;
+    final badgeCount =
+        item.endOffset == null &&
+            count != null &&
+            count > 0 &&
+            commentBadgeIds.contains(item.paragraphId)
+        ? count
+        : null;
+    final badgeTap = badgeCount != null && onParagraphComments != null
+        ? () => onParagraphComments!(page.chapterId, source)
+        : null;
+    Widget child = _buildContent(
+      context,
+      theme,
+      item,
+      source,
+      badgeCount,
+      badgeTap,
+    );
 
     if (isSelected) {
       child = DecoratedBox(
@@ -74,12 +106,18 @@ class PageContentView extends StatelessWidget {
       // overlay at the page top instead of next to the pressed paragraph.
       return Builder(
         builder: (itemContext) => GestureDetector(
-          onLongPress: () {
-            final box = itemContext.findRenderObject() as RenderBox?;
-            if (box == null || !box.hasSize) return;
-            final topLeft = box.localToGlobal(Offset.zero);
-            onParagraphLongPress!(item.paragraphId, source, topLeft & box.size);
-          },
+          onLongPress: onParagraphLongPress == null
+              ? null
+              : () {
+                  final box = itemContext.findRenderObject() as RenderBox?;
+                  if (box == null || !box.hasSize) return;
+                  final topLeft = box.localToGlobal(Offset.zero);
+                  onParagraphLongPress!(
+                    item.paragraphId,
+                    source,
+                    topLeft & box.size,
+                  );
+                },
           child: child,
         ),
       );
@@ -92,29 +130,36 @@ class PageContentView extends StatelessWidget {
     ThemeData theme,
     PageItem item,
     ParagraphContent source,
+    int? badgeCount,
+    VoidCallback? badgeTap,
   ) {
     if (source is ParagraphContent_Title) {
-      return Text(
-        item.isPartial ? item.visibleText : source.text,
+      return BadgedText(
+        text: item.isPartial ? item.visibleText : source.text,
         style: theme.textTheme.headlineSmall?.copyWith(
           fontSize: (theme.textTheme.headlineSmall?.fontSize ?? 24) * fontScale,
           fontFamily: fontFamily,
-          letterSpacing: letterSpacing,
+          letterSpacing: item.letterSpacing ?? letterSpacing,
         ),
         textAlign: TextAlign.center,
+        commentCount: badgeCount,
+        badgeGap: item.badgeGap,
+        onCommentTap: badgeTap,
       );
     }
 
     if (source is ParagraphContent_Text) {
-      final text = item.isPartial ? item.visibleText : source.content;
-      return Text(
-        text,
+      return BadgedText(
+        text: item.isPartial ? item.visibleText : source.content,
         style: theme.textTheme.bodyLarge?.copyWith(
           fontSize: (theme.textTheme.bodyLarge?.fontSize ?? 16) * fontScale,
           fontFamily: fontFamily,
-          letterSpacing: letterSpacing,
+          letterSpacing: item.letterSpacing ?? letterSpacing,
           height: lineHeight,
         ),
+        commentCount: badgeCount,
+        badgeGap: item.badgeGap,
+        onCommentTap: badgeTap,
       );
     }
 
@@ -154,6 +199,14 @@ class PageContentView extends StatelessWidget {
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
                 textAlign: TextAlign.center,
+              ),
+            ),
+          if (badgeCount != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(top: LanghuanTheme.spaceSm),
+                child: CommentBadge(count: badgeCount, onTap: badgeTap),
               ),
             ),
         ],

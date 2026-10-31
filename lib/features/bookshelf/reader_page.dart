@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -213,7 +215,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   );
 
   Future<void> _openComments(String chapterId, {String? paragraphId}) {
-    _clearSelection();
+    // Clearing the paragraph selection rebuilds the reader; deferring that
+    // by one frame keeps the tap frame free for the panel's entrance
+    // animation instead of hitching it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _clearSelection();
+    });
     return showCommentsPanel(
       context,
       CommentsController(
@@ -224,6 +231,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
         paragraphId: paragraphId,
       ),
     );
+  }
+
+  /// Badge tap on a commented paragraph (or the chapter title, whose source
+  /// id addresses the chapter-comment unit). Only source-identity
+  /// paragraphs carry badges, so a missing source id is unreachable in
+  /// practice; guard anyway.
+  void _openParagraphComments(String chapterId, ParagraphContent paragraph) {
+    final sourceId = paragraph.id.sourceId;
+    if (sourceId == null) return;
+    unawaited(_openComments(chapterId, paragraphId: sourceId));
   }
 
   Future<void> _openListening() => showListeningPanel(
@@ -446,6 +463,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                               (_listening.ownsBook(widget.feedId, widget.bookId)
                                   ? _listening.paragraphId
                                   : null),
+                          showComments: settings.showComments,
+                          onParagraphComments: _openParagraphComments,
                         ),
                       ),
                     ),
@@ -468,6 +487,20 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                       );
                     },
                     additionalActions: [
+                      if (_chapterComments || _paragraphComments)
+                        IconButton(
+                          tooltip: settings.showComments
+                              ? l10n.readerHideComments
+                              : l10n.readerShowComments,
+                          icon: Icon(
+                            settings.showComments
+                                ? Icons.chat_bubble
+                                : Icons.chat_bubble_outline,
+                          ),
+                          onPressed: () => ref
+                              .read(readerSettingsProvider.notifier)
+                              .setShowComments(!settings.showComments),
+                        ),
                       if (_chapterComments)
                         IconButton(
                           tooltip: l10n.readerChapterComments,

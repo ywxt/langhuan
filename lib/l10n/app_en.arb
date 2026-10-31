@@ -1033,5 +1033,9 @@
   "listeningSearchVoices": "Search voices or languages",
   "listeningNoVoicesMatch": "No matching voices",
   "listeningLoadingVoices": "Loading system voices…",
-  "listeningReloadVoices": "Reload voices"
+  "listeningReloadVoices": "Reload voices",
+  "readerShowComments": "Show paragraph comments",
+  "readerHideComments": "Hide paragraph comments",
+  "readerCommentCountCompact": "{count}K",
+  "@readerCommentCountCompact": { "placeholders": { "count": { "type": "String" } } }
 }

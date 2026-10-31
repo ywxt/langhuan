@@ -1181,4 +1181,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get listeningReloadVoices => '重新加載聲音';
+
+  @override
+  String get readerShowComments => '顯示段落評論';
+
+  @override
+  String get readerHideComments => '隱藏段落評論';
+
+  @override
+  String readerCommentCountCompact(String count) {
+    return '$count萬';
+  }
 }

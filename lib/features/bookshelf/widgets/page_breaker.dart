@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../src/rust/api/types.dart';
 import '../../feeds/feed_service.dart' show ParagraphIdStringExt;
+import 'comment_badge.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data models
@@ -16,6 +17,8 @@ class PageItem {
     required this.paragraphId,
     this.startOffset,
     this.endOffset,
+    this.letterSpacing,
+    this.badgeGap,
   });
 
   final ParagraphContent source;
@@ -23,6 +26,8 @@ class PageItem {
   final String paragraphId;
   final int? startOffset;
   final int? endOffset;
+  final double? letterSpacing;
+  final double? badgeGap;
 
   String get visibleText {
     final full = switch (source) {
@@ -75,6 +80,8 @@ class PageBreaker {
     required this.paragraphSpacing,
     required this.imageHeight,
     required this.textDirection,
+    this.textScaler = TextScaler.noScaling,
+    this.locale,
   });
 
   final Size pageSize;
@@ -83,10 +90,13 @@ class PageBreaker {
   final double paragraphSpacing;
   final double imageHeight;
   final ui.TextDirection textDirection;
+  final TextScaler textScaler;
+  final Locale? locale;
 
   List<PageContent> computePages(
     List<ParagraphContent> items, {
     String chapterId = '',
+    Map<String, Size> commentBadgeSizes = const {},
   }) {
     if (items.isEmpty) return const [];
 
@@ -115,16 +125,38 @@ class PageBreaker {
 
     for (int i = 0; i < items.length; i++) {
       final item = items[i];
+      var badgeSize = commentBadgeSizes[item.id.toStringValue()];
+      var style = item is ParagraphContent_Title ? titleStyle : textStyle;
+      CommentParagraphLayout? badgeLayout;
+      if (badgeSize != null &&
+          (item is ParagraphContent_Text || item is ParagraphContent_Title)) {
+        badgeLayout = CommentParagraphLayout.resolve(
+          text: item is ParagraphContent_Text
+              ? item.content
+              : (item as ParagraphContent_Title).text,
+          style: style,
+          badgeSize: badgeSize,
+          width: w,
+          textScaler: textScaler,
+          direction: textDirection,
+          locale: locale,
+          align: item is ParagraphContent_Title
+              ? TextAlign.center
+              : TextAlign.start,
+        );
+        style = badgeLayout.style;
+        badgeSize = badgeLayout.badgeSize(badgeSize);
+      }
       final spacing = cur.isEmpty ? 0.0 : paragraphSpacing;
 
       if (item is ParagraphContent_Title) {
-        final painter = TextPainter(
-          text: TextSpan(text: item.text, style: titleStyle),
-          textDirection: textDirection,
-          textAlign: TextAlign.center,
-        )..layout(maxWidth: w);
-        final height = painter.height;
-        painter.dispose();
+        final height = _measureText(
+          item.text,
+          style,
+          TextAlign.center,
+          w,
+          badgeSize,
+        );
         // Keep ordinary headings together. Only headings taller than an entire
         // page need the same continuation logic as body paragraphs.
         if (height <= h) {
@@ -139,6 +171,8 @@ class PageBreaker {
               source: item,
               paragraphIndex: i,
               paragraphId: item.id.toStringValue(),
+              letterSpacing: badgeLayout?.style.letterSpacing,
+              badgeGap: badgeLayout?.gap,
             ),
           );
           continue;
@@ -153,10 +187,12 @@ class PageBreaker {
             ParagraphContent_Text(:final content) => content,
             _ => throw StateError('Expected text or title'),
           },
-          style: item is ParagraphContent_Title ? titleStyle : textStyle,
+          style: style,
+          badgeGap: badgeLayout?.gap,
           textAlign: item is ParagraphContent_Title
               ? TextAlign.center
               : TextAlign.start,
+          badgeSize: badgeSize,
           paragraphIndex: i,
           paragraphId: item.id.toStringValue(),
           source: item,
@@ -209,6 +245,57 @@ class PageBreaker {
         : pages;
   }
 
+  double _measureText(
+    String text,
+    TextStyle style,
+    TextAlign align,
+    double width,
+    Size? badgeSize,
+  ) {
+    final painter = _textPainter(text, style, align, width, badgeSize);
+    final height = painter.height;
+    painter.dispose();
+    return height;
+  }
+
+  TextPainter _textPainter(
+    String text,
+    TextStyle style,
+    TextAlign align,
+    double width,
+    Size? badgeSize,
+  ) {
+    final painter = TextPainter(
+      text: badgeSize == null
+          ? TextSpan(text: text, style: style)
+          : BadgedText.inlineSpan(text, style, const SizedBox.shrink()),
+      textDirection: textDirection,
+      textAlign: align,
+      textScaler: textScaler,
+      locale: locale,
+    );
+    if (badgeSize != null) {
+      final fontSize = style.fontSize ?? 14;
+      final scale = fontSize == 0 ? 0.0 : textScaler.scale(fontSize) / fontSize;
+      painter.setPlaceholderDimensions([
+        PlaceholderDimensions(
+          size:
+              BadgedText.tailSize(
+                text,
+                style,
+                badgeSize,
+                textDirection,
+                locale,
+              ) *
+              scale,
+          alignment: PlaceholderAlignment.middle,
+        ),
+      ]);
+    }
+    painter.layout(maxWidth: width);
+    return painter;
+  }
+
   void _layoutText({
     required String chapterId,
     required String text,
@@ -217,6 +304,8 @@ class PageBreaker {
     required ParagraphContent source,
     required TextStyle style,
     required TextAlign textAlign,
+    Size? badgeSize,
+    double? badgeGap,
     required double width,
     required double pageHeight,
     required double remaining,
@@ -235,12 +324,7 @@ class PageBreaker {
     // paragraph, so a split landing before a line's hung trailing spaces
     // shifted every later line boundary and under-filled the remaining
     // pages; keeping the grid fills pages to their true capacity.
-    final tp = TextPainter(
-      text: TextSpan(text: text, style: style),
-      textAlign: textAlign,
-      textDirection: textDirection,
-      maxLines: null,
-    )..layout(maxWidth: width);
+    final tp = _textPainter(text, style, textAlign, width, badgeSize);
 
     final lineMetrics = tp.computeLineMetrics();
     // Suffix sums of line heights: "does the rest of the paragraph fit?"
@@ -268,6 +352,8 @@ class PageBreaker {
             paragraphIndex: paragraphIndex,
             paragraphId: paragraphId,
             startOffset: charStart == 0 ? null : charStart,
+            letterSpacing: badgeGap == null ? null : style.letterSpacing,
+            badgeGap: badgeGap,
           ),
         );
         pages.add(PageContent(chapterId: chapterId, items: currentItems));
@@ -282,15 +368,33 @@ class PageBreaker {
       final space = remainingSpace - sp;
 
       // Everything left fits on the current page.
-      if (space >= suffixHeights[lineIdx]) {
+      // Only remeasure a suffix near the page boundary. Long badged
+      // paragraphs still shape once instead of reshaping every suffix.
+      final needsExactTail =
+          badgeSize != null &&
+          suffixHeights[lineIdx] <= space + lineMetrics[lineIdx].height;
+      final restHeight = !needsExactTail
+          ? suffixHeights[lineIdx]
+          : charStart == 0
+          ? tp.height
+          : _measureText(
+              text.substring(charStart),
+              style,
+              textAlign,
+              width,
+              badgeSize,
+            );
+      if (space >= restHeight) {
         tp.dispose();
-        remainingSpace -= sp + suffixHeights[lineIdx];
+        remainingSpace -= sp + restHeight;
         currentItems.add(
           PageItem(
             source: source,
             paragraphIndex: paragraphIndex,
             paragraphId: paragraphId,
             startOffset: charStart == 0 ? null : charStart,
+            letterSpacing: badgeGap == null ? null : style.letterSpacing,
+            badgeGap: badgeGap,
           ),
         );
         onUpdate(currentItems, remainingSpace);
@@ -323,10 +427,67 @@ class PageBreaker {
         fitLines = 1;
       }
 
-      final lastLine = lineMetrics[lineIdx + fitLines - 1];
-      final bottom = lastLine.baseline + lastLine.descent;
-      final position = tp.getPositionForOffset(Offset(width, bottom - 1));
-      var splitChar = position.offset;
+      int splitFor(int lines) {
+        final lastLine = lineMetrics[lineIdx + lines - 1];
+        final bottom = lastLine.baseline + lastLine.descent;
+        return tp
+            .getPositionForOffset(Offset(width, bottom - 1))
+            .offset
+            .clamp(charStart + 1, text.length);
+      }
+
+      if (badgeSize != null) {
+        // Reserve the final rich-text line: its tail text and badge must
+        // move to the next page together, never as an orphan badge.
+        final prefixLines = lineMetrics.length - lineIdx - 1;
+        if (prefixLines == 0 && currentItems.isNotEmpty) {
+          pages.add(PageContent(chapterId: chapterId, items: currentItems));
+          currentItems = [];
+          remainingSpace = pageHeight;
+          continue;
+        }
+        if (prefixLines == 0) {
+          // A single line taller than the entire viewport cannot be split.
+          currentItems.add(
+            PageItem(
+              source: source,
+              paragraphIndex: paragraphIndex,
+              paragraphId: paragraphId,
+              startOffset: charStart == 0 ? null : charStart,
+              letterSpacing: badgeGap == null ? null : style.letterSpacing,
+              badgeGap: badgeGap,
+            ),
+          );
+          remainingSpace -= sp + restHeight;
+          break;
+        }
+        fitLines = fitLines.clamp(1, prefixLines);
+        var low = 1, high = fitLines, best = 0;
+        while (low <= high) {
+          final middle = (low + high) ~/ 2;
+          final height = _measureText(
+            text.substring(charStart, splitFor(middle)),
+            style,
+            textAlign,
+            width,
+            null,
+          );
+          if (height <= space) {
+            best = middle;
+            low = middle + 1;
+          } else {
+            high = middle - 1;
+          }
+        }
+        if (best == 0 && currentItems.isNotEmpty) {
+          pages.add(PageContent(chapterId: chapterId, items: currentItems));
+          currentItems = [];
+          remainingSpace = pageHeight;
+          continue;
+        }
+        fitLines = best == 0 ? 1 : best;
+      }
+      var splitChar = splitFor(fitLines);
       if (splitChar <= charStart) splitChar = charStart + 1;
       if (splitChar > text.length) splitChar = text.length;
 
@@ -337,6 +498,8 @@ class PageBreaker {
           paragraphId: paragraphId,
           startOffset: charStart == 0 ? null : charStart,
           endOffset: splitChar,
+          letterSpacing: badgeGap == null ? null : style.letterSpacing,
+          badgeGap: badgeGap,
         ),
       );
 

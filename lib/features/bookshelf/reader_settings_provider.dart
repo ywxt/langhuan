@@ -83,6 +83,7 @@ class ReaderSettingsState {
     this.customTheme = const ReaderCustomTheme(),
     this.chineseConversion = ChineseConversionMode.none,
     this.pageMode = ReaderPageMode.horizontal,
+    this.showComments = true,
   });
 
   final double fontScale;
@@ -97,6 +98,11 @@ class ReaderSettingsState {
   final ChineseConversionMode chineseConversion;
   final ReaderPageMode pageMode;
 
+  /// Whether the reader shows paragraph-comment badges and the tap-to-open
+  /// behaviour on commented paragraphs. Only applies to feeds with comment
+  /// support; explicit entries (toolbar button, long-press menu) stay.
+  final bool showComments;
+
   ReaderSettingsState copyWith({
     double? fontScale,
     String? Function()? fontFamily,
@@ -109,6 +115,7 @@ class ReaderSettingsState {
     ReaderCustomTheme? customTheme,
     ChineseConversionMode? chineseConversion,
     ReaderPageMode? pageMode,
+    bool? showComments,
   }) {
     return ReaderSettingsState(
       fontScale: fontScale ?? this.fontScale,
@@ -126,6 +133,7 @@ class ReaderSettingsState {
       customTheme: customTheme ?? this.customTheme,
       chineseConversion: chineseConversion ?? this.chineseConversion,
       pageMode: pageMode ?? this.pageMode,
+      showComments: showComments ?? this.showComments,
     );
   }
 }
@@ -144,6 +152,7 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
   static const _kCustomThemeAccent = 'reader.customTheme.accent';
   static const _kChineseConversion = 'reader.chineseConversion';
   static const _kPageMode = 'reader.pageMode';
+  static const _kShowComments = 'reader.showComments';
 
   /// Font families registered this session, by source file path. The
   /// engine cannot unload a `FontLoader` registration, so re-picking or
@@ -291,6 +300,11 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
     _persistState();
   }
 
+  void setShowComments(bool value) {
+    state = state.copyWith(showComments: value);
+    _persistState();
+  }
+
   Future<void> _restoreFromStorage() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -314,6 +328,7 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
     final themeIndex = prefs.getInt(_kThemeMode);
     final conversionIndex = prefs.getInt(_kChineseConversion);
     final pageModeIndex = prefs.getInt(_kPageMode);
+    final storedShowComments = prefs.getBool(_kShowComments);
 
     final restoredThemeMode =
         themeIndex != null &&
@@ -370,6 +385,7 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
       customTheme: customTheme,
       chineseConversion: restoredConversion,
       pageMode: restoredPageMode,
+      showComments: storedShowComments ?? state.showComments,
       fontFamily: () => hasFileFont ? null : storedFontFamily,
       customFontFilePath: () => storedFilePath,
       customFontDisplayName: () => storedDisplayName,
@@ -434,6 +450,7 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
     );
     await prefs.setInt(_kChineseConversion, state.chineseConversion.index);
     await prefs.setInt(_kPageMode, state.pageMode.index);
+    await prefs.setBool(_kShowComments, state.showComments);
   }
 }
 

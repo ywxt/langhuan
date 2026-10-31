@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart';
+import 'comment_badge.dart';
 
 /// Renders a single [ParagraphContent] item (title, text, or image).
 class ParagraphView extends StatelessWidget {
@@ -16,6 +17,8 @@ class ParagraphView extends StatelessWidget {
     this.lineHeight = 1.8,
     this.selected = false,
     this.onLongPress,
+    this.commentCount,
+    this.onCommentTap,
   });
 
   final ParagraphContent paragraph;
@@ -27,28 +30,42 @@ class ParagraphView extends StatelessWidget {
   final bool selected;
   final void Function(Rect globalRect)? onLongPress;
 
+  /// Source-reported paragraph-comment total. A positive value shows the
+  /// badge; the whole paragraph block becomes tappable via [onCommentTap].
+  final int? commentCount;
+
+  /// Opens this paragraph's comments. Only set when a badge shows; wired
+  /// to the badge itself so paragraph taps keep the reader-wide
+  /// tap-to-toggle-controls behaviour.
+  final VoidCallback? onCommentTap;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final showBadge = commentCount != null && commentCount! > 0;
 
     final child = switch (paragraph) {
-      ParagraphContent_Title(:final text) => Text(
-        text,
+      ParagraphContent_Title(:final text) => BadgedText(
+        text: text,
         style: theme.textTheme.headlineSmall?.copyWith(
           fontSize: (theme.textTheme.headlineSmall?.fontSize ?? 24) * fontScale,
           fontFamily: fontFamily,
           letterSpacing: letterSpacing,
         ),
         textAlign: TextAlign.center,
+        commentCount: commentCount,
+        onCommentTap: onCommentTap,
       ),
-      ParagraphContent_Text(:final content) => Text(
-        content,
+      ParagraphContent_Text(:final content) => BadgedText(
+        text: content,
         style: theme.textTheme.bodyLarge?.copyWith(
           fontSize: (theme.textTheme.bodyLarge?.fontSize ?? 16) * fontScale,
           fontFamily: fontFamily,
           letterSpacing: letterSpacing,
           height: lineHeight,
         ),
+        commentCount: commentCount,
+        onCommentTap: onCommentTap,
       ),
       ParagraphContent_Image(:final url, :final alt) => Builder(
         builder: (context) {
@@ -91,6 +108,17 @@ class ParagraphView extends StatelessWidget {
                     textAlign: TextAlign.center,
                   ),
                 ),
+              if (showBadge)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: LanghuanTheme.spaceSm),
+                    child: CommentBadge(
+                      count: commentCount!,
+                      onTap: onCommentTap,
+                    ),
+                  ),
+                ),
             ],
           );
         },
@@ -111,15 +139,20 @@ class ParagraphView extends StatelessWidget {
 
     if (onLongPress != null) {
       return GestureDetector(
-        onLongPress: () {
-          final box = context.findRenderObject() as RenderBox?;
-          if (box == null || !box.hasSize) return;
-          final topLeft = box.localToGlobal(Offset.zero);
-          onLongPress!(topLeft & box.size);
-        },
+        onLongPress: () => _reportLongPress(context, onLongPress!),
         child: result,
       );
     }
     return result;
+  }
+
+  void _reportLongPress(
+    BuildContext context,
+    void Function(Rect globalRect) report,
+  ) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final topLeft = box.localToGlobal(Offset.zero);
+    report(topLeft & box.size);
   }
 }

@@ -2275,6 +2275,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reload voices'**
   String get listeningReloadVoices;
+
+  /// No description provided for @readerShowComments.
+  ///
+  /// In en, this message translates to:
+  /// **'Show paragraph comments'**
+  String get readerShowComments;
+
+  /// No description provided for @readerHideComments.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide paragraph comments'**
+  String get readerHideComments;
+
+  /// No description provided for @readerCommentCountCompact.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}K'**
+  String readerCommentCountCompact(String count);
 }
 
 class _AppLocalizationsDelegate

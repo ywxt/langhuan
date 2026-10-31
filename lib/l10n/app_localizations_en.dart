@@ -1213,4 +1213,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get listeningReloadVoices => 'Reload voices';
+
+  @override
+  String get readerShowComments => 'Show paragraph comments';
+
+  @override
+  String get readerHideComments => 'Hide paragraph comments';
+
+  @override
+  String readerCommentCountCompact(String count) {
+    return '${count}K';
+  }
 }

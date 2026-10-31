@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:langhuan/features/bookshelf/reader_settings_provider.dart'
     show ReaderPageMode;
 import 'package:langhuan/features/bookshelf/widgets/chapter_content_manager.dart';
+import 'package:langhuan/features/bookshelf/widgets/comment_badge.dart';
 import 'package:langhuan/features/bookshelf/widgets/reader_controller.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/src/rust/api/types.dart';
@@ -69,6 +70,7 @@ void main() {
     ChineseConversionMode conversion = ChineseConversionMode.none,
     List<ReaderPosition>? positions,
     Future<void> Function()? onRefreshBook,
+    void Function(String, ParagraphContent)? onParagraphComments,
   }) async {
     final controller = ReaderController();
     controller.onPositionChanged = positions?.add;
@@ -93,6 +95,7 @@ void main() {
             pageMode: pageMode,
             onToggleControls: () {},
             onRefreshBook: onRefreshBook,
+            onParagraphComments: onParagraphComments,
             fontScale: 1.0,
             lineHeight: 1.5,
             contentPadding: const EdgeInsets.all(16),
@@ -103,6 +106,39 @@ void main() {
     );
     await tester.pumpAndSettle(const Duration(milliseconds: 50));
     return controller;
+  }
+
+  for (final mode in ReaderPageMode.values) {
+    testWidgets('only the last transformed child gets a badge in $mode', (
+      tester,
+    ) async {
+      await pumpManager(
+        tester,
+        pageMode: mode,
+        service: FakeFeedService(
+          paragraphsHandler:
+              (feedId, bookId, chapterId, {forceRefresh = false}) async => [
+                for (var i = 0; i < 2; i++)
+                  ParagraphContent.text(
+                    id: ParagraphId(
+                      original: OriginalParagraphId.source(chapterId),
+                      path: [ParagraphPathIndex(index: i)],
+                    ),
+                    content: '$chapterId child $i',
+                    commentCount: 12,
+                  ),
+              ],
+        ),
+        onParagraphComments: (_, _) {},
+      );
+      final texts = tester
+          .widgetList<BadgedText>(find.byType(BadgedText))
+          .toList();
+      expect(texts.where((t) => t.commentCount != null), isNotEmpty);
+      for (final text in texts) {
+        expect(text.commentCount, text.text.endsWith('child 1') ? 12 : null);
+      }
+    });
   }
 
   testWidgets('loads the anchor chapter through the injected service', (

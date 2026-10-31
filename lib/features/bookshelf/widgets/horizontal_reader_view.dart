@@ -78,6 +78,8 @@ class HorizontalReaderView extends StatefulWidget {
     this.onParagraphLongPress,
     this.selectedChapterId,
     this.selectedParagraphId,
+    this.commentBadgeIdsOf,
+    this.onParagraphComments,
   });
 
   final ReaderSlot? currentSlot;
@@ -108,6 +110,15 @@ class HorizontalReaderView extends StatefulWidget {
 
   final String? selectedChapterId;
   final String? selectedParagraphId;
+
+  /// Per-chapter comment-badge paragraph identity sets (from the content
+  /// manager). Null disables badges.
+  final Set<String> Function(String chapterId)? commentBadgeIdsOf;
+
+  /// Opens a paragraph's comments (badge tap). Only invoked for items that
+  /// show a badge.
+  final void Function(String chapterId, ParagraphContent paragraph)?
+  onParagraphComments;
 
   @override
   State<HorizontalReaderView> createState() => _HorizontalReaderViewState();
@@ -541,6 +552,9 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
                         rect,
                       )
                 : null,
+            commentBadgeIds:
+                widget.commentBadgeIdsOf?.call(page.chapterId) ?? const {},
+            onParagraphComments: widget.onParagraphComments,
           ),
         );
       case ReaderSlotLoading(:final chapterTitle):

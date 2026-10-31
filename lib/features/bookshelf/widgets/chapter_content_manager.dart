@@ -9,6 +9,7 @@ import '../../feeds/feed_service.dart';
 import '../reader_settings_provider.dart' show ReaderPageMode;
 import 'horizontal_reader_view.dart';
 import 'page_breaker.dart';
+import 'comment_badge.dart';
 import 'reader_chapter_window.dart';
 import 'reader_controller.dart';
 import 'reader_glyph_warmup.dart';
@@ -49,6 +50,8 @@ class ChapterContentManager extends StatefulWidget {
     this.onParagraphLongPress,
     this.selectedChapterId,
     this.selectedParagraphId,
+    this.showComments = true,
+    this.onParagraphComments,
   });
 
   /// Chapter paragraph source. Injected so tests can supply a fake and the
@@ -80,6 +83,15 @@ class ChapterContentManager extends StatefulWidget {
   final String? selectedChapterId;
   final String? selectedParagraphId;
 
+  /// Whether commented paragraphs show their comment badge and intercept
+  /// taps to open the comments. The reader-level switch; only meaningful
+  /// for feeds whose script reports paragraph comment counts.
+  final bool showComments;
+
+  /// Opens a paragraph's comments (badge tap). Null disables badges.
+  final void Function(String chapterId, ParagraphContent paragraph)?
+  onParagraphComments;
+
   @override
   State<ChapterContentManager> createState() => _ChapterContentManagerState();
 }
@@ -109,8 +121,18 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   final ReaderGlyphWarmup _glyphWarmup = ReaderGlyphWarmup();
 
   PageBreaker? _breaker;
+  TextTheme? _layoutTextTheme;
+  TextScaler? _layoutTextScaler;
+  Locale? _layoutLocale;
+  TextDirection? _layoutDirection;
   Size _lastPageSize = Size.zero;
   final Map<String, List<PageContent>> _pagesByChapter = {};
+
+  /// Per-chapter comment-badge paragraph identity sets. Depends only on
+  /// paragraph identity and counts — typography changes keep it; chapter
+  /// reloads and conversion changes invalidate it (mirrors
+  /// [_pagesByChapter], minus the typography case).
+  final Map<String, Set<String>> _badgeIdsByChapter = {};
 
   // Canonical horizontal position.
   String _activeChapterId = '';
@@ -272,6 +294,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
 
   void _onChapterReloadCommand(String chapterId) {
     _pagesByChapter.remove(chapterId);
+    _badgeIdsByChapter.remove(chapterId);
     unawaited(_window!.reload(chapterId));
   }
 
@@ -321,9 +344,31 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       size.width - widget.contentPadding.horizontal,
       size.height - widget.contentPadding.vertical,
     );
-    if (_breaker != null && _lastPageSize == pageSize) return;
+    final textTheme = Theme.of(context).textTheme;
+    final scaler = MediaQuery.textScalerOf(context);
+    final locale = Localizations.localeOf(context);
+    final direction = Directionality.of(context);
+    if (_breaker != null &&
+        _lastPageSize == pageSize &&
+        _layoutTextTheme == textTheme &&
+        _layoutTextScaler == scaler &&
+        _layoutLocale == locale &&
+        _layoutDirection == direction) {
+      return;
+    }
+    final reflow = _breaker != null;
+    if (reflow) {
+      _pagesByChapter.clear();
+      _pendingJumpParagraphId = _lastReportedParagraphId;
+      _pendingJumpCharOffset = _lastReportedCharOffset;
+    }
     _lastPageSize = pageSize;
+    _layoutTextTheme = textTheme;
+    _layoutTextScaler = scaler;
+    _layoutLocale = locale;
+    _layoutDirection = direction;
     _breaker = _createBreaker(context);
+    if (reflow) _resolveHorizontalPendingJump();
   }
 
   PageBreaker _createBreaker(BuildContext context) {
@@ -352,6 +397,8 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       paragraphSpacing: widget.paragraphSpacing,
       imageHeight: pageSize.width * 9 / 16,
       textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      locale: Localizations.localeOf(context),
     );
   }
 
@@ -362,9 +409,47 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     if (breaker == null) return const [];
     final paragraphs = _window!.paragraphsOf(chapterId);
     if (paragraphs == null || paragraphs.isEmpty) return const [];
-    final pages = breaker.computePages(paragraphs, chapterId: chapterId);
+    final badges = _badgeLookup?.call(chapterId) ?? const <String>{};
+    final sizesByCount = <int, Size>{};
+    final pages = breaker.computePages(
+      paragraphs,
+      chapterId: chapterId,
+      commentBadgeSizes: {
+        for (final paragraph in paragraphs)
+          if (badges.contains(paragraph.id.toStringValue()))
+            paragraph.id.toStringValue(): sizesByCount.putIfAbsent(
+              paragraph.commentCount!,
+              () => CommentBadge.inlineSize(context, paragraph.commentCount!),
+            ),
+      },
+    );
     _pagesByChapter[chapterId] = pages;
     return pages;
+  }
+
+  /// Identity strings of the final transformed children carrying a source
+  /// paragraph comment badge. Earlier children and page fragments stay clean.
+  Set<String> _badgeIdsOf(String chapterId) {
+    final cached = _badgeIdsByChapter[chapterId];
+    if (cached != null) return cached;
+    // A chapter still loading reports no paragraphs; caching that empty
+    // set would hide first-load badges until a reload dropped the entry
+    // (the reload command invalidates this map by hand).
+    final paragraphs = _window?.paragraphsOf(chapterId);
+    if (paragraphs == null || paragraphs.isEmpty) return const {};
+    final seenSourceIds = <String>{};
+    final badgeIds = <String>{};
+    for (final paragraph in paragraphs.reversed) {
+      final count = paragraph.commentCount;
+      if (count == null || count <= 0) continue;
+      final sourceId = paragraph.id.sourceId;
+      if (sourceId == null) continue;
+      if (seenSourceIds.add(sourceId)) {
+        badgeIds.add(paragraph.id.toStringValue());
+      }
+    }
+    _badgeIdsByChapter[chapterId] = badgeIds;
+    return badgeIds;
   }
 
   double? _estimateParagraphOffset(String chapterId, String paragraphId) {
@@ -467,6 +552,13 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     return ReaderSlotPage(page);
   }
 
+  /// The badge lookup handed to the reading views: null disables badges
+  /// (reader-level switch off, or no comments plumbing).
+  Set<String> Function(String chapterId)? get _badgeLookup =>
+      widget.showComments && widget.onParagraphComments != null
+      ? _badgeIdsOf
+      : null;
+
   String? _chapterTitleOf(String chapterId) {
     for (final chapter in widget.chapters) {
       if (chapter.id == chapterId) return chapter.title;
@@ -567,6 +659,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
           ? _activeChapterId
           : (widget.chapters.isNotEmpty ? widget.chapters.first.id : '');
       _pagesByChapter.clear();
+      _badgeIdsByChapter.clear();
       _activeChapterId = anchorId;
       _activeLocalPageIndex = 0;
       if (sameBook && anchorId == _lastReportedChapterId) {
@@ -585,6 +678,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     if (oldWidget.chineseConversion != widget.chineseConversion) {
       // Paragraphs must be re-fetched through the new conversion mode.
       _pagesByChapter.clear();
+      _badgeIdsByChapter.clear();
       _window!.reloadWindow();
       _restorePositionAfterReflow();
       return;
@@ -595,7 +689,10 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
         oldWidget.fontFamily != widget.fontFamily ||
         oldWidget.letterSpacing != widget.letterSpacing ||
         oldWidget.paragraphSpacing != widget.paragraphSpacing ||
-        oldWidget.lineHeight != widget.lineHeight;
+        oldWidget.lineHeight != widget.lineHeight ||
+        oldWidget.showComments != widget.showComments ||
+        (oldWidget.onParagraphComments == null) !=
+            (widget.onParagraphComments == null);
 
     if (typographyChanged) {
       // Pages are stale but paragraphs are not — recompute lazily.
@@ -696,6 +793,8 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
         selectedParagraphId: widget.selectedParagraphId,
         scrollTarget: _verticalTarget,
         estimateParagraphOffset: _estimateParagraphOffset,
+        commentBadgeIdsOf: _badgeLookup,
+        onParagraphComments: widget.onParagraphComments,
       );
     }
 
@@ -729,6 +828,8 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       onRetryChapter: (chapterId) => window.retry(chapterId),
       onRefreshBook: widget.onRefreshBook,
       onParagraphLongPress: widget.onParagraphLongPress,
+      commentBadgeIdsOf: _badgeLookup,
+      onParagraphComments: widget.onParagraphComments,
       selectedChapterId: widget.selectedChapterId,
       selectedParagraphId: widget.selectedParagraphId,
     );

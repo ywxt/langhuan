@@ -385,5 +385,9 @@
   "listeningSearchVoices": "搜索聲音或語言",
   "listeningNoVoicesMatch": "沒有匹配的聲音",
   "listeningLoadingVoices": "正在加載系統聲音…",
-  "listeningReloadVoices": "重新加載聲音"
+  "listeningReloadVoices": "重新加載聲音",
+  "readerShowComments": "顯示段落評論",
+  "readerHideComments": "隱藏段落評論",
+  "readerCommentCountCompact": "{count}萬",
+  "@readerCommentCountCompact": { "placeholders": { "count": { "type": "String" } } }
 }

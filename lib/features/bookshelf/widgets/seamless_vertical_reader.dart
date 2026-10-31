@@ -83,6 +83,8 @@ class SeamlessVerticalReader extends StatefulWidget {
     this.selectedParagraphId,
     this.scrollTarget,
     this.estimateParagraphOffset,
+    this.commentBadgeIdsOf,
+    this.onParagraphComments,
   });
 
   final ReaderChapterWindow window;
@@ -124,6 +126,16 @@ class SeamlessVerticalReader extends StatefulWidget {
   /// content manager (backed by [PageBreaker]).
   final double? Function(String chapterId, String paragraphId)?
   estimateParagraphOffset;
+
+  /// Identity strings of paragraphs that carry a comment badge, by chapter
+  /// (computed by the content manager: last fragment per source paragraph
+  /// with a positive comment count). Null/empty disables badges.
+  final Set<String> Function(String chapterId)? commentBadgeIdsOf;
+
+  /// Opens a paragraph's comments. Only invoked for paragraphs that show a
+  /// badge — others keep the tap-to-toggle-controls behaviour.
+  final void Function(String chapterId, ParagraphContent paragraph)?
+  onParagraphComments;
 
   @override
   State<SeamlessVerticalReader> createState() => _SeamlessVerticalReaderState();
@@ -734,6 +746,8 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
         widget.selectedChapterId == chapterId &&
         widget.selectedParagraphId == paragraphId;
 
+    final badgeCount = _commentBadgeCount(chapterId, paragraphId, paragraph);
+
     return KeyedSubtree(
       key: isTarget ? _targetItemKey : ValueKey('$chapterId:$paragraphId'),
       child: Padding(
@@ -760,11 +774,33 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
                       rect,
                     )
                   : null,
+              commentCount: badgeCount,
+              onCommentTap: badgeCount == null
+                  ? null
+                  : () => widget.onParagraphComments!(
+                      chapterId,
+                      paragraph,
+                    ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  /// The badge count for a paragraph, or null when it shows no badge —
+  /// either no count, zero comments, or a later fragment of a source
+  /// paragraph whose badge already showed earlier.
+  int? _commentBadgeCount(
+    String chapterId,
+    String paragraphId,
+    ParagraphContent paragraph,
+  ) {
+    final count = paragraph.commentCount;
+    if (count == null || count <= 0) return null;
+    final badges = widget.commentBadgeIdsOf?.call(chapterId);
+    if (badges == null || !badges.contains(paragraphId)) return null;
+    return count;
   }
 }
 
