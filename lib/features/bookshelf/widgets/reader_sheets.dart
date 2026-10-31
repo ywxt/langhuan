@@ -122,9 +122,9 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                     labelBuilder: (v) =>
                         l10n.readerFontScale(v.toStringAsFixed(2)),
                     value: settings.fontScale,
-                    min: 0.8,
-                    max: 1.8,
-                    divisions: 10,
+                    min: ReaderSettingsState.minFontScale,
+                    max: ReaderSettingsState.maxFontScale,
+                    divisions: 25,
                     onCommit: notifier.setFontScale,
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
@@ -459,31 +459,42 @@ Future<void> showReaderTocSheet({
                 return _SheetMessage(message: l10n.readerSearchNoMatch(query));
               }
 
-              return ListView.builder(
+              return Scrollbar(
                 controller: scrollController,
-                itemCount: filtered.length,
-                itemExtent: 56.0,
-                itemBuilder: (context, index) {
-                  final (chapterNo, chapter) = filtered[index];
-                  final isActive = chapter.id == currentActiveId;
-                  return ListTile(
-                    leading: Text('$chapterNo'),
-                    title: Text(
-                      chapter.title,
-                      style: isActive
-                          ? TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.bold,
-                            )
-                          : null,
-                    ),
-                    selected: isActive,
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onJumpToChapter(chapter.id);
+                thumbVisibility: false,
+                trackVisibility: false,
+                interactive: true,
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(
+                    context,
+                  ).copyWith(scrollbars: false),
+                  child: ListView.builder(
+                    controller: scrollController,
+                    itemCount: filtered.length,
+                    itemExtent: 56.0,
+                    itemBuilder: (context, index) {
+                      final (chapterNo, chapter) = filtered[index];
+                      final isActive = chapter.id == currentActiveId;
+                      return ListTile(
+                        leading: Text('$chapterNo'),
+                        title: Text(
+                          chapter.title,
+                          style: isActive
+                              ? TextStyle(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontWeight: FontWeight.bold,
+                                )
+                              : null,
+                        ),
+                        selected: isActive,
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          onJumpToChapter(chapter.id);
+                        },
+                      );
                     },
-                  );
-                },
+                  ),
+                ),
               );
             },
           );

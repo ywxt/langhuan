@@ -68,6 +68,9 @@ const readerFontOptions = <ReaderFontOption>[
 ];
 
 class ReaderSettingsState {
+  static const minFontScale = 0.5;
+  static const maxFontScale = 3.0;
+
   const ReaderSettingsState({
     this.fontScale = 1.0,
     this.fontFamily,
@@ -155,7 +158,12 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
   }
 
   void setFontScale(double fontScale) {
-    state = state.copyWith(fontScale: fontScale.clamp(0.8, 1.8));
+    state = state.copyWith(
+      fontScale: fontScale.clamp(
+        ReaderSettingsState.minFontScale,
+        ReaderSettingsState.maxFontScale,
+      ),
+    );
     _persistState();
   }
 
@@ -287,8 +295,8 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
     final prefs = await SharedPreferences.getInstance();
 
     final fontScale = (prefs.getDouble(_kFontScale) ?? state.fontScale).clamp(
-      0.8,
-      1.8,
+      ReaderSettingsState.minFontScale,
+      ReaderSettingsState.maxFontScale,
     );
     final letterSpacing =
         (prefs.getDouble(_kLetterSpacing) ?? state.letterSpacing).clamp(
