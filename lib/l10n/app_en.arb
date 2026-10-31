@@ -250,6 +250,7 @@
   "@readerModeLabel": { "description": "Section label above the reader mode toggle" },
 
   "readerEndOfBook": "You've reached the end of the book",
+  "readerRefreshChapters": "Check for new chapters",
   "@readerEndOfBook": { "description": "Message shown after the last chapter of the book" },
 
   "readerLoading": "Loading\u2026",

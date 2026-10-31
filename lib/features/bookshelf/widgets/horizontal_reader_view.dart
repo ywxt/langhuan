@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/widgets/loading.dart';
+import '../../../shared/utils/errors.dart';
+import '../../../shared/utils/snackbars.dart';
 import '../../../src/rust/api/types.dart';
 import 'chapter_status_block.dart';
 import 'page_content_view.dart';
 import 'page_breaker.dart';
+import 'reader_page_canvas_painter.dart';
+import 'reader_pixel_aligned.dart';
 
 /// What a page slot of the paged reader shows.
 ///
@@ -72,6 +76,7 @@ class HorizontalReaderView extends StatefulWidget {
     required this.onToggleControls,
     this.onPageTurnStart,
     this.onRetryChapter,
+    this.onRefreshBook,
     this.onParagraphLongPress,
     this.selectedChapterId,
     this.selectedParagraphId,
@@ -93,6 +98,7 @@ class HorizontalReaderView extends StatefulWidget {
   final VoidCallback onToggleControls;
   final VoidCallback? onPageTurnStart;
   final void Function(String chapterId)? onRetryChapter;
+  final Future<void> Function()? onRefreshBook;
 
   final void Function(
     String chapterId,
@@ -113,7 +119,9 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
     with SingleTickerProviderStateMixin {
   late AnimationController _anim;
   late final SnapshotController _pageSnapshots;
+  late final ReaderPageCanvasPainter _pagePainter;
   bool _dependenciesInitialized = false;
+  bool _showEndPage = false;
 
   /// Pixel offset of the 3-page strip. 0 = center visible.
   /// Driven by drag or animation. Updated via ValueNotifier to avoid rebuild.
@@ -121,6 +129,7 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
 
   bool _isDragging = false;
   bool _isSettling = false;
+  bool _holdingSettle = false;
 
   /// Frozen snapshot — only updated when idle (not dragging / settling).
   ReaderSlot? _snapCurrent;
@@ -151,12 +160,17 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
       ..addListener(_onAnimTick)
       ..addStatusListener(_onAnimStatus);
     _pageSnapshots = SnapshotController(allowSnapshotting: true);
+    _pagePainter = ReaderPageCanvasPainter();
     _syncSnapshot();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // Register these dependencies on this State, not only on LayoutBuilder.
+    // Otherwise a theme update rebuilds the live child beneath a stale image.
+    Theme.of(context);
+    MediaQuery.devicePixelRatioOf(context);
     if (_dependenciesInitialized) {
       // Theme, text scale, locale or device-pixel-ratio changes invalidate
       // the texture even when the PageContent object itself stayed stable.
@@ -168,6 +182,15 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
   @override
   void didUpdateWidget(covariant HorizontalReaderView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!widget.isLastPage ||
+        (oldWidget.currentSlot is ReaderSlotPage &&
+            widget.currentSlot is ReaderSlotPage &&
+            !identical(
+              (oldWidget.currentSlot as ReaderSlotPage).page,
+              (widget.currentSlot as ReaderSlotPage).page,
+            ))) {
+      _showEndPage = false;
+    }
     if (oldWidget.fontScale != widget.fontScale ||
         oldWidget.fontFamily != widget.fontFamily ||
         oldWidget.letterSpacing != widget.letterSpacing ||
@@ -184,6 +207,7 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
   void dispose() {
     _anim.dispose();
     _pageSnapshots.dispose();
+    _pagePainter.dispose();
     _offset.dispose();
     super.dispose();
   }
@@ -198,18 +222,40 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
     _snapIsLast = widget.isLastPage;
   }
 
-  bool get _canGoPrev => _snapPrev != null || !_snapIsFirst;
-  bool get _canGoNext => _snapNext != null || !_snapIsLast;
+  bool get _canGoPrev => _showEndPage || _snapPrev != null || !_snapIsFirst;
+  bool get _canGoNext =>
+      !_showEndPage &&
+      (_snapNext != null || !_snapIsLast || _snapCurrent is ReaderSlotPage);
 
   // ─ Gesture handling ───────────────────────────────────────────────────
+
+  void _onDragDown(DragDownDetails _) {
+    if (!_isSettling) return;
+    // Stop at contact, rather than allowing the page to keep moving until
+    // the drag recognizer crosses its touch-slop threshold.
+    _holdingSettle = true;
+    _anim.stop();
+  }
 
   void _onDragStart(DragStartDetails _) {
     if (_isSettling) {
       _anim.stop();
       _isSettling = false;
     }
+    _holdingSettle = false;
     widget.onPageTurnStart?.call();
     _isDragging = true;
+  }
+
+  void _onDragCancel(double pageWidth) {
+    if (_holdingSettle) {
+      _holdingSettle = false;
+      _anim.forward();
+    } else if (_isDragging) {
+      _isDragging = false;
+      _settleDir = 0;
+      _animateTo(0, pageWidth);
+    }
   }
 
   void _onDragUpdate(DragUpdateDetails details) {
@@ -302,6 +348,14 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
       return;
     }
 
+    if (_showEndPage || (dir == -1 && _snapIsLast && _snapNext == null)) {
+      setState(() {
+        _showEndPage = !_showEndPage;
+        _offset.value = 0;
+      });
+      return;
+    }
+
     // Page turn: keep the offset at the final position (±pageWidth) so the
     // old snapshot stays visually in place. Mark _pendingSettle so _busy
     // remains true until the parent rebuild delivers new props.
@@ -339,9 +393,18 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
       builder: (context, constraints) {
         final pageWidth = constraints.maxWidth;
 
-        final prevChild = _buildSlot(_snapPrev, isPrev: true);
-        final currentChild = _buildCurrentPage(context);
-        final nextChild = _buildSlot(_snapNext, isNext: true);
+        final prevSlot = _showEndPage ? _snapCurrent : _snapPrev;
+        final currentSlot = _showEndPage ? null : _snapCurrent;
+        final nextSlot = _showEndPage ? null : _snapNext;
+        final prevChild = _showEndPage
+            ? _buildCurrentPage(context)
+            : _buildSlot(prevSlot, isPrev: true);
+        final currentChild = _showEndPage
+            ? _buildEndOfBook(context)
+            : _buildCurrentPage(context);
+        final nextChild = _showEndPage
+            ? const SizedBox.shrink()
+            : _buildSlot(nextSlot, isNext: true);
 
         // Keep page layout outside the animation builder and retain each text
         // page as a texture. On Impeller/OpenGLES, sliding live custom-font
@@ -352,33 +415,35 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
           clipBehavior: Clip.none,
           children: [
             Positioned(
-              key: _slotKey(_snapPrev, 'previous'),
+              key: _slotKey(prevSlot, 'previous'),
               left: -pageWidth,
               top: 0,
               bottom: 0,
               width: pageWidth,
-              child: _snapshotSlot(context, _snapPrev, prevChild),
+              child: _snapshotSlot(context, prevSlot, prevChild),
             ),
             Positioned.fill(
-              key: _slotKey(_snapCurrent, 'current'),
-              child: _snapshotSlot(context, _snapCurrent, currentChild),
+              key: _slotKey(currentSlot, 'current'),
+              child: _snapshotSlot(context, currentSlot, currentChild),
             ),
             Positioned(
-              key: _slotKey(_snapNext, 'next'),
+              key: _slotKey(nextSlot, 'next'),
               left: pageWidth,
               top: 0,
               bottom: 0,
               width: pageWidth,
-              child: _snapshotSlot(context, _snapNext, nextChild),
+              child: _snapshotSlot(context, nextSlot, nextChild),
             ),
           ],
         );
 
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
+          onHorizontalDragDown: _onDragDown,
           onHorizontalDragStart: _onDragStart,
           onHorizontalDragUpdate: _onDragUpdate,
           onHorizontalDragEnd: (d) => _onDragEnd(d, pageWidth),
+          onHorizontalDragCancel: () => _onDragCancel(pageWidth),
           onTapUp: (d) => _onTapUp(d, pageWidth),
           child: ClipRect(
             child: ValueListenableBuilder<double>(
@@ -389,7 +454,7 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
                   key: const ValueKey('horizontal-reader-page-strip'),
                   offset: Offset(offset, 0),
                   transformHitTests: false,
-                  child: child,
+                  child: ReaderPixelAligned(child: child!),
                 );
               },
             ),
@@ -430,6 +495,7 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
     // into the snapshot from scratch.
     return SnapshotWidget(
       controller: _pageSnapshots,
+      painter: _pagePainter,
       mode: SnapshotMode.permissive,
       child: page,
     );
@@ -501,13 +567,64 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
   }
 
   Widget _buildEndOfBook(BuildContext context) {
+    return _ReaderEndPage(onRefresh: widget.onRefreshBook);
+  }
+}
+
+class _ReaderEndPage extends StatefulWidget {
+  const _ReaderEndPage({this.onRefresh});
+  final Future<void> Function()? onRefresh;
+
+  @override
+  State<_ReaderEndPage> createState() => _ReaderEndPageState();
+}
+
+class _ReaderEndPageState extends State<_ReaderEndPage> {
+  bool _refreshing = false;
+
+  Future<void> _refresh() async {
+    setState(() => _refreshing = true);
+    try {
+      await widget.onRefresh!();
+    } catch (error) {
+      if (mounted) {
+        showErrorSnack(
+          ScaffoldMessenger.of(context),
+          normalizeErrorMessage(error),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Center(
-      child: Text(
-        l10n.readerEndOfBook,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            l10n.readerEndOfBook,
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            key: const ValueKey('reader-end-refresh'),
+            onPressed: _refreshing || widget.onRefresh == null
+                ? null
+                : _refresh,
+            icon: _refreshing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+            label: Text(l10n.readerRefreshChapters),
+          ),
+        ],
       ),
     );
   }

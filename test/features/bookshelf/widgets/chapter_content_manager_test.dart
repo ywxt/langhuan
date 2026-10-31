@@ -56,6 +56,7 @@ void main() {
     ReaderPageMode pageMode = ReaderPageMode.horizontal,
     ChineseConversionMode conversion = ChineseConversionMode.none,
     List<ReaderPosition>? positions,
+    Future<void> Function()? onRefreshBook,
   }) async {
     final controller = ReaderController();
     controller.onPositionChanged = positions?.add;
@@ -79,6 +80,7 @@ void main() {
             controller: controller,
             pageMode: pageMode,
             onToggleControls: () {},
+            onRefreshBook: onRefreshBook,
             fontScale: 1.0,
             lineHeight: 1.5,
             contentPadding: const EdgeInsets.all(16),
@@ -105,6 +107,49 @@ void main() {
     expect(find.text('Chapter One'), findsOneWidget);
     expect(calls.where((c) => c.$3 == 'c1' && c.$4 == false), isNotEmpty);
   });
+
+  testWidgets(
+    'last page turns into an end page, refreshes, and returns without changing progress',
+    (tester) async {
+      final positions = <ReaderPosition>[];
+      var refreshes = 0;
+      await pumpManager(
+        tester,
+        service: service(calls: []),
+        positions: positions,
+        onRefreshBook: () async {
+          refreshes++;
+        },
+      );
+      await tester.tapAt(const Offset(700, 300));
+      await tester.pumpAndSettle();
+      final saved = positions.last;
+      final reports = positions.length;
+      await tester.tapAt(const Offset(700, 300));
+      await tester.pumpAndSettle();
+      expect(
+        find.text("You've reached the end of the book").hitTestable(),
+        findsOneWidget,
+      );
+      expect(positions.length, reports);
+      expect(positions.last, same(saved));
+      await tester.tap(
+        find.byKey(const ValueKey('reader-end-refresh')).hitTestable(),
+      );
+      await tester.pumpAndSettle();
+      expect(refreshes, 1);
+      await tester.tapAt(const Offset(700, 300));
+      await tester.pumpAndSettle();
+      expect(
+        find.text("You've reached the end of the book").hitTestable(),
+        findsOneWidget,
+      );
+      await tester.tapAt(const Offset(100, 300));
+      await tester.pumpAndSettle();
+      expect(find.text('Body two.').hitTestable(), findsOneWidget);
+      expect(positions.length, reports);
+    },
+  );
 
   testWidgets('a jump command switches chapters and reports the position', (
     tester,

@@ -1,4 +1,7 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:langhuan/features/bookshelf/widgets/horizontal_reader_view.dart';
@@ -64,7 +67,73 @@ Widget _host({
   );
 }
 
+double _stripOffset(WidgetTester tester) => tester
+    .widget<Transform>(
+      find.byKey(const ValueKey('horizontal-reader-page-strip')),
+    )
+    .transform
+    .storage[12];
+
 void main() {
+  testWidgets('system brightness updates pixels of the retained current page', (
+    tester,
+  ) async {
+    final key = GlobalKey();
+    final page = _page('stable', 'retained page');
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
+    addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: ThemeData.light().copyWith(
+          scaffoldBackgroundColor: Colors.white,
+        ),
+        darkTheme: ThemeData.dark().copyWith(
+          scaffoldBackgroundColor: Colors.black,
+        ),
+        home: Scaffold(
+          body: RepaintBoundary(
+            key: key,
+            child: HorizontalReaderView(
+              currentSlot: ReaderSlotPage(page),
+              isFirstPage: true,
+              isLastPage: true,
+              fontScale: 1,
+              lineHeight: 1.8,
+              contentPadding: EdgeInsets.zero,
+              onNextPage: () {},
+              onPrevPage: () {},
+              onToggleControls: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Future<int> background() async {
+      final image =
+          await (key.currentContext!.findRenderObject()!
+                  as RenderRepaintBoundary)
+              .toImage();
+      final data = (await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      ))!;
+      final offset = ((image.height ~/ 2) * image.width + image.width ~/ 2) * 4;
+      final red = data.getUint8(offset);
+      image.dispose();
+      return red;
+    }
+
+    expect(await tester.runAsync(background), 255);
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+    await tester.pumpAndSettle();
+    expect(await tester.runAsync(background), 0);
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
+    await tester.pumpAndSettle();
+    expect(await tester.runAsync(background), 255);
+  });
+
   testWidgets('renders the current page text', (tester) async {
     await tester.pumpWidget(
       _host(current: ReaderSlotPage(_page('p1', 'page one'))),
@@ -177,6 +246,67 @@ void main() {
   });
 
   group('swipe', () {
+    testWidgets('held drag preserves small movements and immediate reversals', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 3.5;
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        _host(
+          prev: ReaderSlotPage(_page('previous', 'previous page')),
+          next: ReaderSlotPage(_page('next', 'next page')),
+        ),
+      );
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(HorizontalReaderView)),
+      );
+      await gesture.moveBy(const Offset(-60, 0));
+      await tester.pump();
+      final start = _stripOffset(tester);
+      for (var i = 0; i < 100; i++) {
+        await gesture.moveBy(const Offset(-0.1, 0));
+        await tester.pump(const Duration(milliseconds: 4));
+      }
+      expect(_stripOffset(tester), closeTo(start - 10, 0.01));
+      final paintedOrigin = tester.getTopLeft(find.text('page one')) * 3.5;
+      expect(paintedOrigin.dx, closeTo(paintedOrigin.dx.roundToDouble(), 1e-6));
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(_stripOffset(tester), closeTo(start - 10, 0.01));
+      for (final delta in [80.0, -120.0, 50.0]) {
+        final before = _stripOffset(tester);
+        await gesture.moveBy(Offset(delta, 0));
+        await tester.pump(const Duration(milliseconds: 4));
+        expect(_stripOffset(tester), closeTo(before + delta, 0.01));
+      }
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+      expect(_stripOffset(tester), 0);
+    });
+
+    testWidgets('touch down holds settling immediately and tap resumes it', (
+      tester,
+    ) async {
+      var turns = 0;
+      await tester.pumpWidget(
+        _host(
+          next: ReaderSlotPage(_page('next', 'next page')),
+          onNext: () => turns++,
+        ),
+      );
+      await tester.tapAt(const Offset(600, 300));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      final contactOffset = _stripOffset(tester);
+      expect(contactOffset, lessThan(0));
+
+      final gesture = await tester.startGesture(const Offset(400, 300));
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(_stripOffset(tester), contactOffset);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(turns, 1);
+    });
+
     testWidgets('snapshots retained text pages for the turn animation', (
       tester,
     ) async {

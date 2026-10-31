@@ -327,4 +327,27 @@ void main() {
       expect(reader.consumeChapterReload(), 'c2');
     });
   });
+
+  testWidgets(
+    'catalogue refresh preserves identical lists and publishes new chapters',
+    (tester) async {
+      var result = chapters;
+      final (controller, _, reader) = await pumpHost(
+        tester,
+        service: baseService(chapterStream: (f, b) async => result),
+      );
+      await controller.initialize();
+      reader.consumeJump();
+      final original = controller.chapters;
+      result = List.of(chapters);
+      await controller.refreshChapters();
+      expect(controller.chapters, same(original));
+      result = [...chapters, const ChapterInfoModel(id: 'c4', title: 'Four')];
+      await controller.refreshChapters();
+      expect(controller.chapters.last.id, 'c4');
+      expect(controller.isRefreshingChapter, isFalse);
+      expect(reader.pendingChapterId, isNull);
+      await tester.pump(const Duration(milliseconds: 600));
+    },
+  );
 }

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../reader_gesture_binding.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/utils/app_log.dart';
 import '../../shared/widgets/empty_state.dart';
@@ -282,35 +283,39 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: RepaintBoundary(
-                    child: ChapterContentManager(
-                      feedService: ref.read(feedServiceProvider),
-                      feedId: widget.feedId,
-                      bookId: widget.bookId,
-                      chapters: _screenController.chapters,
-                      controller: _readerController,
-                      pageMode: settings.pageMode,
-                      onToggleControls: _toggleControls,
-                      onPageTurnStart: _clearSelection,
-                      fontScale: settings.fontScale,
-                      fontFamily: settings.fontFamily,
-                      prewarmCustomFont:
-                          settings.customFontFilePath != null &&
-                          settings.fontFamily != null,
-                      letterSpacing: settings.letterSpacing,
-                      paragraphSpacing: settings.paragraphSpacing,
-                      lineHeight: settings.lineHeight,
-                      chineseConversion: settings.chineseConversion,
-                      contentPadding: EdgeInsets.fromLTRB(
-                        LanghuanTheme.spaceLg,
-                        topPadding + LanghuanTheme.spaceMd,
-                        LanghuanTheme.spaceLg,
-                        LanghuanTheme.spaceLg,
+                  child: ReaderInputRegion(
+                    child: RepaintBoundary(
+                      child: ChapterContentManager(
+                        feedService: ref.read(feedServiceProvider),
+                        feedId: widget.feedId,
+                        bookId: widget.bookId,
+                        chapters: _screenController.chapters,
+                        controller: _readerController,
+                        pageMode: settings.pageMode,
+                        onToggleControls: _toggleControls,
+                        onPageTurnStart: _clearSelection,
+                        onRefreshBook: _screenController.refreshChapters,
+                        fontScale: settings.fontScale,
+                        fontFamily: settings.fontFamily,
+                        prewarmCustomFont:
+                            settings.customFontFilePath != null &&
+                            settings.fontFamily != null,
+                        letterSpacing: settings.letterSpacing,
+                        paragraphSpacing: settings.paragraphSpacing,
+                        lineHeight: settings.lineHeight,
+                        chineseConversion: settings.chineseConversion,
+                        contentPadding: EdgeInsets.fromLTRB(
+                          LanghuanTheme.spaceLg,
+                          topPadding + LanghuanTheme.spaceMd,
+                          LanghuanTheme.spaceLg,
+                          LanghuanTheme.spaceLg,
+                        ),
+                        onParagraphLongPress: _onParagraphLongPress,
+                        selectedChapterId:
+                            _screenController.selection?.chapterId,
+                        selectedParagraphId:
+                            _screenController.selection?.paragraphId,
                       ),
-                      onParagraphLongPress: _onParagraphLongPress,
-                      selectedChapterId: _screenController.selection?.chapterId,
-                      selectedParagraphId:
-                          _screenController.selection?.paragraphId,
                     ),
                   ),
                 ),

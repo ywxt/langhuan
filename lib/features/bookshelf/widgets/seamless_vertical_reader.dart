@@ -11,6 +11,7 @@ import '../../feeds/feed_service.dart'
 import 'chapter_status_block.dart';
 import 'paragraph_view.dart';
 import 'reader_chapter_window.dart';
+import 'reader_pixel_aligned.dart';
 import 'reader_types.dart';
 
 /// A scroll target handed to [SeamlessVerticalReader].
@@ -572,6 +573,12 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
         child: CustomScrollView(
           controller: _controller,
           center: _centerKey,
+          // The default 250 logical-pixel cache may not cover even one large
+          // paragraph. Lay out two viewports ahead to reduce layout work as
+          // paragraphs enter the screen during a drag.
+          scrollCacheExtent: ScrollCacheExtent.pixels(
+            MediaQuery.sizeOf(context).height * 2,
+          ),
           slivers: [
             SliverToBoxAdapter(
               key: _topInsetKey,
@@ -614,16 +621,20 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
       final beforeAnchor = _isBeforeAnchor(chapterId);
       return SliverList(
         key: key,
-        delegate: SliverChildBuilderDelegate((context, index) {
-          // Slivers before [CustomScrollView.center] use reverse growth:
-          // child zero is placed closest to the center (the visual bottom).
-          // Reverse their data index so paragraphs still read top-to-bottom
-          // and the preceding chapter's title stays at its beginning.
-          final paragraphIndex = beforeAnchor
-              ? paragraphs.length - 1 - index
-              : index;
-          return _buildParagraphItem(chapterId, paragraphs[paragraphIndex]);
-        }, childCount: paragraphs.length),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            // Slivers before [CustomScrollView.center] use reverse growth:
+            // child zero is placed closest to the center (the visual bottom).
+            // Reverse their data index so paragraphs still read top-to-bottom
+            // and the preceding chapter's title stays at its beginning.
+            final paragraphIndex = beforeAnchor
+                ? paragraphs.length - 1 - index
+                : index;
+            return _buildParagraphItem(chapterId, paragraphs[paragraphIndex]);
+          },
+          childCount: paragraphs.length,
+          addRepaintBoundaries: false,
+        ),
       );
     }
 
@@ -675,22 +686,26 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
           right: widget.contentPadding.right,
           bottom: widget.paragraphSpacing,
         ),
-        child: ParagraphView(
-          paragraph: paragraph,
-          fontScale: widget.fontScale,
-          fontFamily: widget.fontFamily,
-          letterSpacing: widget.letterSpacing,
-          paragraphSpacing: widget.paragraphSpacing,
-          lineHeight: widget.lineHeight,
-          selected: selected,
-          onLongPress: widget.onParagraphLongPress != null
-              ? (rect) => widget.onParagraphLongPress!(
-                  chapterId,
-                  paragraphId,
-                  paragraph,
-                  rect,
-                )
-              : null,
+        child: ReaderPixelAligned(
+          child: RepaintBoundary(
+            child: ParagraphView(
+              paragraph: paragraph,
+              fontScale: widget.fontScale,
+              fontFamily: widget.fontFamily,
+              letterSpacing: widget.letterSpacing,
+              paragraphSpacing: widget.paragraphSpacing,
+              lineHeight: widget.lineHeight,
+              selected: selected,
+              onLongPress: widget.onParagraphLongPress != null
+                  ? (rect) => widget.onParagraphLongPress!(
+                      chapterId,
+                      paragraphId,
+                      paragraph,
+                      rect,
+                    )
+                  : null,
+            ),
+          ),
         ),
       ),
     );

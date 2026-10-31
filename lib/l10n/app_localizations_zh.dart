@@ -266,6 +266,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerEndOfBook => '已讀完全書';
 
   @override
+  String get readerRefreshChapters => '刷新目錄';
+
+  @override
   String get readerLoading => '加載中…';
 
   @override

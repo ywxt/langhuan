@@ -68,6 +68,44 @@ Future<void> _pumpLoaded(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('held drag preserves small movements in both directions', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 3.5;
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final window = ReaderChapterWindow(
+      chapters: _chapters(4),
+      anchorChapterId: 'c1',
+      loader: _loader,
+    );
+    await tester.pumpWidget(_host(window: window));
+    await _pumpLoaded(tester);
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(CustomScrollView)),
+    );
+    await gesture.moveBy(const Offset(0, -60));
+    await tester.pump();
+    final start = _scrollable(tester).position.pixels;
+
+    // One slow finger movement is delivered as many subpixel deltas. Rounding
+    // the scroll offset per event loses those deltas and makes text stick.
+    for (var i = 0; i < 100; i++) {
+      await gesture.moveBy(const Offset(0, -0.1));
+      await tester.pump(const Duration(milliseconds: 8));
+    }
+    expect(_scrollable(tester).position.pixels - start, closeTo(10, 0.01));
+    final paintedOrigin = tester.getTopLeft(find.text('c1 paragraph 3')) * 3.5;
+    expect(paintedOrigin.dy, closeTo(paintedOrigin.dy.roundToDouble(), 1e-6));
+    for (var i = 0; i < 100; i++) {
+      await gesture.moveBy(const Offset(0, 0.1));
+      await tester.pump(const Duration(milliseconds: 8));
+    }
+    expect(_scrollable(tester).position.pixels, closeTo(start, 0.01));
+    await gesture.up();
+  });
+
   testWidgets('renders anchor chapter content on open', (tester) async {
     final window = ReaderChapterWindow(
       chapters: _chapters(4),

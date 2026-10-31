@@ -268,6 +268,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readerEndOfBook => 'You\'ve reached the end of the book';
 
   @override
+  String get readerRefreshChapters => 'Check for new chapters';
+
+  @override
   String get readerLoading => 'Loading…';
 
   @override

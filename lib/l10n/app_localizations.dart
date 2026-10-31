@@ -548,6 +548,12 @@ abstract class AppLocalizations {
   /// **'You\'ve reached the end of the book'**
   String get readerEndOfBook;
 
+  /// No description provided for @readerRefreshChapters.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for new chapters'**
+  String get readerRefreshChapters;
+
   /// Loading indicator text shown while a chapter is being fetched
   ///
   /// In en, this message translates to:

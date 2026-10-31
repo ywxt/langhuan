@@ -232,6 +232,28 @@ class ReaderScreenController extends ChangeNotifier {
     _readerController.jumpTo(chapterId: chapterId, paragraphId: paragraphId);
   }
 
+  Future<void> refreshChapters() async {
+    if (_isRefreshingChapter) return;
+    _isRefreshingChapter = true;
+    _notify();
+    try {
+      final chapters = await _ref
+          .read(feedServiceProvider)
+          .chapters(feedId: feedId, bookId: bookId, forceRefresh: true);
+      if (chapters.length != _chapters.length ||
+          Iterable<int>.generate(chapters.length).any(
+            (i) =>
+                chapters[i].id != _chapters[i].id ||
+                chapters[i].title != _chapters[i].title,
+          )) {
+        _chapters = chapters;
+      }
+    } finally {
+      _isRefreshingChapter = false;
+      _notify();
+    }
+  }
+
   Future<void> refreshCurrentChapter(String chapterId) async {
     if (_isRefreshingChapter || chapterId.isEmpty) return;
 

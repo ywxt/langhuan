@@ -37,6 +37,7 @@ class ChapterContentManager extends StatefulWidget {
     required this.pageMode,
     required this.onToggleControls,
     this.onPageTurnStart,
+    this.onRefreshBook,
     required this.fontScale,
     this.fontFamily,
     this.prewarmCustomFont = false,
@@ -60,6 +61,7 @@ class ChapterContentManager extends StatefulWidget {
   final ReaderPageMode pageMode;
   final VoidCallback onToggleControls;
   final VoidCallback? onPageTurnStart;
+  final Future<void> Function()? onRefreshBook;
   final double fontScale;
   final String? fontFamily;
   final bool prewarmCustomFont;
@@ -534,6 +536,9 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
         oldWidget.chapters != widget.chapters;
 
     if (sourceChanged) {
+      final sameBook =
+          oldWidget.feedId == widget.feedId &&
+          oldWidget.bookId == widget.bookId;
       final anchorId =
           _activeChapterId.isNotEmpty &&
               widget.chapters.any((c) => c.id == _activeChapterId)
@@ -542,6 +547,10 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       _pagesByChapter.clear();
       _activeChapterId = anchorId;
       _activeLocalPageIndex = 0;
+      if (sameBook && anchorId == _lastReportedChapterId) {
+        _pendingJumpParagraphId = _lastReportedParagraphId;
+        _pendingJumpCharOffset = _lastReportedCharOffset;
+      }
       _window!.setChapters(widget.chapters, anchorId);
       _verticalTarget = ReaderScrollTarget(
         token: ++_scrollToken,
@@ -696,6 +705,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       onToggleControls: widget.onToggleControls,
       onPageTurnStart: widget.onPageTurnStart,
       onRetryChapter: (chapterId) => window.retry(chapterId),
+      onRefreshBook: widget.onRefreshBook,
       onParagraphLongPress: widget.onParagraphLongPress,
       selectedChapterId: widget.selectedChapterId,
       selectedParagraphId: widget.selectedParagraphId,
