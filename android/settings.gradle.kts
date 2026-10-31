@@ -17,11 +17,21 @@ pluginManagement {
     }
 }
 
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // AGP 9.2 bundles Kotlin 2.2.10; Flutter 3.47 requires >= 2.2.20.
+        // Upgrade the compiler/API used by built-in Kotlin without applying KGP.
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.0")
+    }
+}
+
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "9.2.1" apply false
-    // Needed for legacy third-party plugins that still apply KGP.
-    id("org.jetbrains.kotlin.android") version "2.4.0" apply false
 }
 
 include(":app")
