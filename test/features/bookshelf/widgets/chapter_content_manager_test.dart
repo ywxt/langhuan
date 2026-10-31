@@ -127,10 +127,7 @@ void main() {
       final reports = positions.length;
       await tester.tapAt(const Offset(700, 300));
       await tester.pumpAndSettle();
-      expect(
-        find.text("You've reached the end of the book").hitTestable(),
-        findsOneWidget,
-      );
+      expect(find.text("You're all caught up").hitTestable(), findsOneWidget);
       expect(positions.length, reports);
       expect(positions.last, same(saved));
       await tester.tap(
@@ -140,11 +137,10 @@ void main() {
       expect(refreshes, 1);
       await tester.tapAt(const Offset(700, 300));
       await tester.pumpAndSettle();
-      expect(
-        find.text("You've reached the end of the book").hitTestable(),
-        findsOneWidget,
+      expect(find.text("You're all caught up").hitTestable(), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('reader-end-return')).hitTestable(),
       );
-      await tester.tapAt(const Offset(100, 300));
       await tester.pumpAndSettle();
       expect(find.text('Body two.').hitTestable(), findsOneWidget);
       expect(positions.length, reports);

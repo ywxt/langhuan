@@ -471,7 +471,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text("You've reached the end of the book"), findsOneWidget);
+      expect(find.text("You're all caught up"), findsOneWidget);
     });
   });
 

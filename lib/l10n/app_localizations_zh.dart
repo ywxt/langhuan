@@ -272,7 +272,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerModeLabel => '閱讀方式';
 
   @override
-  String get readerEndOfBook => '已讀完全書';
+  String get readerEndOfBook => '已讀至最新章節';
+
+  @override
+  String get readerEndHint => '暫時沒有更多章節。\n刷新目錄，查看是否有更新。';
+
+  @override
+  String get readerEndChecking => '正在檢查更新…';
+
+  @override
+  String get readerEndChecked => '目錄已刷新，暫時沒有新章節。';
+
+  @override
+  String get readerBackToText => '返回正文';
 
   @override
   String get readerRefreshChapters => '刷新目錄';

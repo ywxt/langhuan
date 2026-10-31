@@ -274,7 +274,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readerModeLabel => 'Reading Mode';
 
   @override
-  String get readerEndOfBook => 'You\'ve reached the end of the book';
+  String get readerEndOfBook => 'You\'re all caught up';
+
+  @override
+  String get readerEndHint =>
+      'No more chapters for now.\nRefresh the contents to check for updates.';
+
+  @override
+  String get readerEndChecking => 'Checking for updates…';
+
+  @override
+  String get readerEndChecked => 'Contents refreshed. No new chapters yet.';
+
+  @override
+  String get readerBackToText => 'Back to reading';
 
   @override
   String get readerRefreshChapters => 'Check for new chapters';

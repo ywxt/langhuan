@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 
-import '../../../l10n/app_localizations.dart';
 import '../../../shared/widgets/loading.dart';
-import '../../../shared/utils/errors.dart';
-import '../../../shared/utils/snackbars.dart';
 import '../../../src/rust/api/types.dart';
 import 'chapter_status_block.dart';
 import 'page_content_view.dart';
 import 'page_breaker.dart';
 import 'reader_page_canvas_painter.dart';
 import 'reader_pixel_aligned.dart';
+import 'reader_end_page.dart';
 
 /// What a page slot of the paged reader shows.
 ///
@@ -567,65 +565,18 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
   }
 
   Widget _buildEndOfBook(BuildContext context) {
-    return _ReaderEndPage(onRefresh: widget.onRefreshBook);
-  }
-}
-
-class _ReaderEndPage extends StatefulWidget {
-  const _ReaderEndPage({this.onRefresh});
-  final Future<void> Function()? onRefresh;
-
-  @override
-  State<_ReaderEndPage> createState() => _ReaderEndPageState();
-}
-
-class _ReaderEndPageState extends State<_ReaderEndPage> {
-  bool _refreshing = false;
-
-  Future<void> _refresh() async {
-    setState(() => _refreshing = true);
-    try {
-      await widget.onRefresh!();
-    } catch (error) {
-      if (mounted) {
-        showErrorSnack(
-          ScaffoldMessenger.of(context),
-          normalizeErrorMessage(error),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _refreshing = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            l10n.readerEndOfBook,
-            style: Theme.of(context).textTheme.bodyLarge,
-          ),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            key: const ValueKey('reader-end-refresh'),
-            onPressed: _refreshing || widget.onRefresh == null
-                ? null
-                : _refresh,
-            icon: _refreshing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh),
-            label: Text(l10n.readerRefreshChapters),
-          ),
-        ],
-      ),
+    return ReaderEndPage(
+      onRefresh: widget.onRefreshBook,
+      onReturnToText: _returnToText,
     );
+  }
+
+  void _returnToText() {
+    if (!_showEndPage || _busy) return;
+    final width = context.size?.width ?? 0;
+    if (width <= 0) return;
+    widget.onPageTurnStart?.call();
+    _settleDir = 1;
+    _animateTo(width, width);
   }
 }

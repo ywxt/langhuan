@@ -273,7 +273,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text("You've reached the end of the book"), findsOneWidget);
+    expect(find.text("You're all caught up"), findsOneWidget);
   });
 
   testWidgets('mid-session jump lands on the anchor chapter start', (

@@ -563,8 +563,32 @@ abstract class AppLocalizations {
   /// Message shown after the last chapter of the book
   ///
   /// In en, this message translates to:
-  /// **'You\'ve reached the end of the book'**
+  /// **'You\'re all caught up'**
   String get readerEndOfBook;
+
+  /// No description provided for @readerEndHint.
+  ///
+  /// In en, this message translates to:
+  /// **'No more chapters for now.\nRefresh the contents to check for updates.'**
+  String get readerEndHint;
+
+  /// No description provided for @readerEndChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking for updates…'**
+  String get readerEndChecking;
+
+  /// No description provided for @readerEndChecked.
+  ///
+  /// In en, this message translates to:
+  /// **'Contents refreshed. No new chapters yet.'**
+  String get readerEndChecked;
+
+  /// No description provided for @readerBackToText.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to reading'**
+  String get readerBackToText;
 
   /// No description provided for @readerRefreshChapters.
   ///

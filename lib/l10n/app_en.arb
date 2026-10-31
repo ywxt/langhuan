@@ -252,7 +252,11 @@
   "readerModeLabel": "Reading Mode",
   "@readerModeLabel": { "description": "Section label above the reader mode toggle" },
 
-  "readerEndOfBook": "You've reached the end of the book",
+  "readerEndOfBook": "You're all caught up",
+  "readerEndHint": "No more chapters for now.\nRefresh the contents to check for updates.",
+  "readerEndChecking": "Checking for updates…",
+  "readerEndChecked": "Contents refreshed. No new chapters yet.",
+  "readerBackToText": "Back to reading",
   "readerRefreshChapters": "Check for new chapters",
   "@readerEndOfBook": { "description": "Message shown after the last chapter of the book" },
 
