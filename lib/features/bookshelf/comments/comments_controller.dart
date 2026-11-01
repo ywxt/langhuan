@@ -4,8 +4,10 @@ import 'package:flutter/foundation.dart';
 import '../../../src/rust/api/comments.dart';
 import '../../feeds/feed_service.dart';
 
-/// UI-side ordering of the comment list. Sources keep sending pages in their
-/// own order; the panel re-sorts what has already arrived.
+/// UI-side ordering of the root comment thread. Sources keep sending pages
+/// in their own order; the panel re-sorts what has already arrived. Reply
+/// frames never re-sort: replies read as a conversation, so they always keep
+/// the source's order.
 enum CommentsSort {
   /// Likes first (unknown counts rank as zero), then newest.
   hot,
@@ -33,6 +35,8 @@ class CommentsController extends ChangeNotifier {
   /// Arrival order per comment id — the stable final tiebreak, because
   /// [List.sort] is not stable.
   final Map<String, int> _arrival = {};
+
+  /// Root-thread ordering only; reply frames ([parentId] set) ignore it.
   CommentsSort sort = CommentsSort.hot;
   String? _cursor;
   bool loading = false, hasMore = true;
@@ -107,15 +111,19 @@ class CommentsController extends ChangeNotifier {
   }
 
   /// Re-orders [items] under [value]; already-loaded comments keep their new
-  /// relative order and pages loaded afterwards merge into it.
+  /// relative order and pages loaded afterwards merge into it. Reply frames
+  /// ignore it: they always keep the source's order.
   void setSort(CommentsSort value) {
-    if (value == sort) return;
+    if (parentId != null || value == sort) return;
     sort = value;
     _applySort();
     notifyListeners();
   }
 
   void _applySort() {
+    // Reply frames keep the source's conversation order; only the root
+    // thread re-sorts what has arrived.
+    if (parentId != null) return;
     items.sort(_compare);
   }
 

@@ -229,4 +229,49 @@ void main() {
     controller.setSort(CommentsSort.hot);
     expect(notified, 0);
   });
+  test('reply frames keep the source order despite likes and times', () async {
+    final service = _Service()
+      ..pages.addAll([
+        Future.value(
+          CommentPage(
+            items: [
+              _item('plain', createdAtMs: 10),
+              _item('liked', likes: 99),
+              _item('newest', createdAtMs: 999),
+            ],
+            nextCursorJson: '{"page":2}',
+          ),
+        ),
+        Future.value(
+          CommentPage(items: [_item('tail', likes: 88, createdAtMs: 888)]),
+        ),
+      ]);
+    final controller = _controller(service, parent: 'root');
+    addTearDown(controller.dispose);
+    await controller.loadMore();
+    await controller.loadMore();
+    expect(
+      controller.items.map((c) => c.id),
+      ['plain', 'liked', 'newest', 'tail'],
+    );
+  });
+  test('setSort on a reply frame is a silent no-op', () async {
+    final service = _Service()
+      ..pages.add(
+        Future.value(
+          CommentPage(items: [_item('first'), _item('second', likes: 5)]),
+        ),
+      );
+    final controller = _controller(service, parent: 'root');
+    addTearDown(controller.dispose);
+    await controller.loadMore();
+    var notified = 0;
+    controller.addListener(() => ++notified);
+    controller.setSort(CommentsSort.latest);
+    expect(
+      controller.items.map((c) => c.id),
+      ['first', 'second'],
+    );
+    expect(notified, 0);
+  });
 }
