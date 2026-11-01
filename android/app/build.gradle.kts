@@ -27,6 +27,7 @@ android {
     }
 
     defaultConfig {
+        manifestPlaceholders["appLabel"] = "langhuan"
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "org.eu.ywxt.langhuan"
         // You can update the following values to match your application needs.
@@ -49,6 +50,14 @@ android {
     }
 
     buildTypes {
+        // Development builds must never replace a signed user install.
+        configureEach {
+            if (name != "release") {
+                applicationIdSuffix = ".dev"
+                versionNameSuffix = "-dev"
+                manifestPlaceholders["appLabel"] = "Langhuan Dev"
+            }
+        }
         release {
             // A release without all four signing values fails instead of silently
             // producing an artifact with the machine-specific debug certificate.
