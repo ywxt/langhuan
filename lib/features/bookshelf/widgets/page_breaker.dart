@@ -93,156 +93,47 @@ class PageBreaker {
   final TextScaler textScaler;
   final Locale? locale;
 
+  /// Paginates [items] synchronously to completion.
+  ///
+  /// Entering the reader must never block a build on this — a full chapter
+  /// of TextPainter work — so the horizontal reader uses [startPagination]
+  /// and steps the job across frames instead. This synchronous form remains
+  /// for callers that need the final result now (the vertical reader's
+  /// restore estimate) and for tests.
   List<PageContent> computePages(
     List<ParagraphContent> items, {
     String chapterId = '',
     Map<String, Size> commentBadgeSizes = const {},
   }) {
     if (items.isEmpty) return const [];
+    final job = startPagination(
+      items,
+      chapterId: chapterId,
+      commentBadgeSizes: commentBadgeSizes,
+    );
+    while (!job.step(const Duration(seconds: 10))) {}
+    return job.result;
+  }
 
-    final double w = pageSize.width;
-    final double h = pageSize.height - 4.0;
-
-    if (w <= 0 || h <= 0) {
-      return [
-        PageContent(
-          chapterId: chapterId,
-          items: [
-            for (int i = 0; i < items.length; i++)
-              PageItem(
-                source: items[i],
-                paragraphIndex: i,
-                paragraphId: items[i].id.toStringValue(),
-              ),
-          ],
-        ),
-      ];
-    }
-
-    final List<PageContent> pages = [];
-    List<PageItem> cur = [];
-    double remaining = h;
-
-    for (int i = 0; i < items.length; i++) {
-      final item = items[i];
-      var badgeSize = commentBadgeSizes[item.id.toStringValue()];
-      var style = item is ParagraphContent_Title ? titleStyle : textStyle;
-      CommentParagraphLayout? badgeLayout;
-      if (badgeSize != null &&
-          (item is ParagraphContent_Text || item is ParagraphContent_Title)) {
-        badgeLayout = CommentParagraphLayout.resolve(
-          text: item is ParagraphContent_Text
-              ? item.content
-              : (item as ParagraphContent_Title).text,
-          style: style,
-          badgeSize: badgeSize,
-          width: w,
-          textScaler: textScaler,
-          direction: textDirection,
-          locale: locale,
-          align: item is ParagraphContent_Title
-              ? TextAlign.center
-              : TextAlign.start,
-        );
-        style = badgeLayout.style;
-        badgeSize = badgeLayout.badgeSize(badgeSize);
-      }
-      final spacing = cur.isEmpty ? 0.0 : paragraphSpacing;
-
-      if (item is ParagraphContent_Title) {
-        final height = _measureText(
-          item.text,
-          style,
-          TextAlign.center,
-          w,
-          badgeSize,
-        );
-        // Keep ordinary headings together. Only headings taller than an entire
-        // page need the same continuation logic as body paragraphs.
-        if (height <= h) {
-          if (remaining - spacing < height && cur.isNotEmpty) {
-            pages.add(PageContent(chapterId: chapterId, items: cur));
-            cur = [];
-            remaining = h;
-          }
-          remaining -= (cur.isEmpty ? 0 : paragraphSpacing) + height;
-          cur.add(
-            PageItem(
-              source: item,
-              paragraphIndex: i,
-              paragraphId: item.id.toStringValue(),
-              letterSpacing: badgeLayout?.style.letterSpacing,
-              badgeGap: badgeLayout?.gap,
-            ),
-          );
-          continue;
-        }
-      }
-
-      if (item is ParagraphContent_Title || item is ParagraphContent_Text) {
-        _layoutText(
-          chapterId: chapterId,
-          text: switch (item) {
-            ParagraphContent_Title(:final text) => text,
-            ParagraphContent_Text(:final content) => content,
-            _ => throw StateError('Expected text or title'),
-          },
-          style: style,
-          badgeGap: badgeLayout?.gap,
-          textAlign: item is ParagraphContent_Title
-              ? TextAlign.center
-              : TextAlign.start,
-          badgeSize: badgeSize,
-          paragraphIndex: i,
-          paragraphId: item.id.toStringValue(),
-          source: item,
-          width: w,
-          pageHeight: h,
-          remaining: remaining,
-          currentItems: cur,
-          pages: pages,
-          onUpdate: (newItems, newRemaining) {
-            cur = newItems;
-            remaining = newRemaining;
-          },
-        );
-      } else if (item is ParagraphContent_Image) {
-        if (remaining - spacing < imageHeight && cur.isNotEmpty) {
-          pages.add(PageContent(chapterId: chapterId, items: cur));
-          cur = [];
-          remaining = h;
-        }
-        final sp = cur.isEmpty ? 0.0 : paragraphSpacing;
-        remaining -= sp + imageHeight;
-        cur.add(
-          PageItem(
-            source: item,
-            paragraphIndex: i,
-            paragraphId: item.id.toStringValue(),
-          ),
-        );
-      }
-    }
-
-    if (cur.isNotEmpty) {
-      pages.add(PageContent(chapterId: chapterId, items: cur));
-    }
-
-    return pages.isEmpty
-        ? [
-            PageContent(
-              chapterId: chapterId,
-              items: [
-                for (int i = 0; i < items.length; i++)
-                  PageItem(
-                    source: items[i],
-                    paragraphIndex: i,
-                    paragraphId: items[i].id.toStringValue(),
-                  ),
-              ],
-            ),
-          ]
-        : pages;
+  /// Starts an incremental pagination job over one chapter.
+  ///
+  /// [commentBadgeSizeOf] resolves a paragraph's badge size lazily, as the
+  /// paragraph is reached; [commentBadgeSizes] is the pre-measured form.
+  /// Lazy resolution lets a chunked pagination spread badge measurements
+  /// across slices instead of paying for the whole table up front.
+  PaginationJob startPagination(
+    List<ParagraphContent> items, {
+    String chapterId = '',
+    Map<String, Size> commentBadgeSizes = const {},
+    Size? Function(String paragraphId)? commentBadgeSizeOf,
+  }) {
+    return PaginationJob(
+      breaker: this,
+      items: items,
+      chapterId: chapterId,
+      commentBadgeSizes: commentBadgeSizes,
+      commentBadgeSizeOf: commentBadgeSizeOf,
+    );
   }
 
   double _measureText(
@@ -546,5 +437,215 @@ class PageBreaker {
       if (pages[i].firstParagraphId == paragraphId) return i;
     }
     return pageForParagraph(pages, paragraphId);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Incremental pagination
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Resumable [PageBreaker] pagination over one chapter.
+///
+/// [PageBreaker.computePages] runs a job to completion in one synchronous
+/// burst. The horizontal reader cannot afford that on the UI thread when
+/// several chapters arrive at once (entering the reader), so it steps a job
+/// with a per-frame time budget instead: each [step] processes at least one
+/// paragraph and keeps going until the budget elapses.
+///
+/// [pages] is append-only — callers may read it between steps and see a
+/// stable prefix that only ever grows, so a partially paginated chapter can
+/// display what exists while the rest is still being computed. The finest
+/// granularity is one paragraph: a single pathological paragraph can exceed
+/// the budget by itself, because its badge fitting probes several layouts.
+class PaginationJob {
+  PaginationJob({
+    required PageBreaker breaker,
+    required List<ParagraphContent> items,
+    this.chapterId = '',
+    Map<String, Size> commentBadgeSizes = const {},
+    Size? Function(String paragraphId)? commentBadgeSizeOf,
+  }) : _breaker = breaker,
+       _items = items,
+       _badgeSizeOf =
+           commentBadgeSizeOf ?? ((id) => commentBadgeSizes[id]) {
+    final height = breaker.pageSize.height - 4.0;
+    if (breaker.pageSize.width <= 0 || height <= 0) {
+      // Degenerate geometry: emit everything on one page, like computePages.
+      _degenerate = true;
+    } else {
+      _remaining = height;
+    }
+  }
+
+  final PageBreaker _breaker;
+  final List<ParagraphContent> _items;
+
+  /// Badge size per paragraph id, measured on demand.
+  final Size? Function(String paragraphId) _badgeSizeOf;
+
+  /// The chapter these pages belong to.
+  final String chapterId;
+
+  /// Pages emitted so far. Append-only while the job runs.
+  final List<PageContent> pages = [];
+
+  List<PageItem> _current = [];
+  double _remaining = 0;
+  int _index = 0;
+  bool _degenerate = false;
+  bool _done = false;
+
+  bool get isDone => _done;
+
+  /// Processes at least one paragraph, then continues until [budget] elapses
+  /// or the chapter completes. Returns `true` once fully paginated.
+  bool step(Duration budget) {
+    if (_done) return true;
+    if (_degenerate) {
+      _done = true;
+      if (_items.isNotEmpty) {
+        pages.add(_allItemsPage());
+      }
+      return true;
+    }
+    final watch = Stopwatch()..start();
+    do {
+      _processNext();
+    } while (!_done && watch.elapsed < budget);
+    return _done;
+  }
+
+  /// The completed pagination result — [pages], or the single all-items page
+  /// when nothing fit.
+  List<PageContent> get result =>
+      pages.isEmpty && _items.isNotEmpty ? [_allItemsPage()] : pages;
+
+  PageContent _allItemsPage() => PageContent(
+    chapterId: chapterId,
+    items: [
+      for (var i = 0; i < _items.length; i++)
+        PageItem(
+          source: _items[i],
+          paragraphIndex: i,
+          paragraphId: _items[i].id.toStringValue(),
+        ),
+    ],
+  );
+
+  void _processNext() {
+    if (_index >= _items.length) {
+      if (_current.isNotEmpty) {
+        pages.add(PageContent(chapterId: chapterId, items: _current));
+        _current = [];
+      }
+      _done = true;
+      return;
+    }
+
+    final i = _index++;
+    final item = _items[i];
+    var badgeSize = _badgeSizeOf(item.id.toStringValue());
+    var style = item is ParagraphContent_Title
+        ? _breaker.titleStyle
+        : _breaker.textStyle;
+    CommentParagraphLayout? badgeLayout;
+    if (badgeSize != null &&
+        (item is ParagraphContent_Text || item is ParagraphContent_Title)) {
+      badgeLayout = CommentParagraphLayout.resolve(
+        text: item is ParagraphContent_Text
+            ? item.content
+            : (item as ParagraphContent_Title).text,
+        style: style,
+        badgeSize: badgeSize,
+        width: _breaker.pageSize.width,
+        textScaler: _breaker.textScaler,
+        direction: _breaker.textDirection,
+        locale: _breaker.locale,
+        align: item is ParagraphContent_Title
+            ? TextAlign.center
+            : TextAlign.start,
+      );
+      style = badgeLayout.style;
+      badgeSize = badgeLayout.badgeSize(badgeSize);
+    }
+
+    final width = _breaker.pageSize.width;
+    final pageHeight = _breaker.pageSize.height - 4.0;
+    final spacing = _current.isEmpty ? 0.0 : _breaker.paragraphSpacing;
+
+    if (item is ParagraphContent_Title) {
+      final height = _breaker._measureText(
+        item.text,
+        style,
+        TextAlign.center,
+        width,
+        badgeSize,
+      );
+      // Keep ordinary headings together. Only headings taller than an entire
+      // page need the same continuation logic as body paragraphs.
+      if (height <= pageHeight) {
+        if (_remaining - spacing < height && _current.isNotEmpty) {
+          pages.add(PageContent(chapterId: chapterId, items: _current));
+          _current = [];
+          _remaining = pageHeight;
+        }
+        _remaining -= (_current.isEmpty ? 0 : _breaker.paragraphSpacing) +
+            height;
+        _current.add(
+          PageItem(
+            source: item,
+            paragraphIndex: i,
+            paragraphId: item.id.toStringValue(),
+            letterSpacing: badgeLayout?.style.letterSpacing,
+            badgeGap: badgeLayout?.gap,
+          ),
+        );
+        return;
+      }
+    }
+
+    if (item is ParagraphContent_Title || item is ParagraphContent_Text) {
+      _breaker._layoutText(
+        chapterId: chapterId,
+        text: switch (item) {
+          ParagraphContent_Title(:final text) => text,
+          ParagraphContent_Text(:final content) => content,
+          _ => throw StateError('Expected text or title'),
+        },
+        style: style,
+        badgeGap: badgeLayout?.gap,
+        textAlign: item is ParagraphContent_Title
+            ? TextAlign.center
+            : TextAlign.start,
+        badgeSize: badgeSize,
+        paragraphIndex: i,
+        paragraphId: item.id.toStringValue(),
+        source: item,
+        width: width,
+        pageHeight: pageHeight,
+        remaining: _remaining,
+        currentItems: _current,
+        pages: pages,
+        onUpdate: (newItems, newRemaining) {
+          _current = newItems;
+          _remaining = newRemaining;
+        },
+      );
+    } else if (item is ParagraphContent_Image) {
+      if (_remaining - spacing < _breaker.imageHeight && _current.isNotEmpty) {
+        pages.add(PageContent(chapterId: chapterId, items: _current));
+        _current = [];
+        _remaining = pageHeight;
+      }
+      final sp = _current.isEmpty ? 0.0 : _breaker.paragraphSpacing;
+      _remaining -= sp + _breaker.imageHeight;
+      _current.add(
+        PageItem(
+          source: item,
+          paragraphIndex: i,
+          paragraphId: item.id.toStringValue(),
+        ),
+      );
+    }
   }
 }

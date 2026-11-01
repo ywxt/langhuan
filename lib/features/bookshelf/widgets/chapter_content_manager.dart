@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/loading.dart';
@@ -47,6 +48,7 @@ class ChapterContentManager extends StatefulWidget {
     required this.lineHeight,
     required this.contentPadding,
     required this.chineseConversion,
+    this.paginationSliceBudget = const Duration(milliseconds: 4),
     this.onParagraphLongPress,
     this.selectedChapterId,
     this.selectedParagraphId,
@@ -73,6 +75,11 @@ class ChapterContentManager extends StatefulWidget {
   final double lineHeight;
   final EdgeInsets contentPadding;
   final ChineseConversionMode chineseConversion;
+
+  /// Per-frame time budget for incremental pagination (horizontal mode).
+  /// Tests inject [Duration.zero] to make one paragraph paginate per frame,
+  /// which makes the loading-mask lifecycle observable deterministically.
+  final Duration paginationSliceBudget;
   final void Function(
     String chapterId,
     String paragraphId,
@@ -128,6 +135,14 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   Size _lastPageSize = Size.zero;
   final Map<String, List<PageContent>> _pagesByChapter = {};
 
+  /// In-flight chunked paginations. Entering the reader can load several
+  /// chapters at once; paginating them all inside one build froze the UI
+  /// for hundreds of milliseconds (badge-dense chapters especially), so in
+  /// horizontal mode each chapter paginates incrementally — a few
+  /// milliseconds per frame — while the reader shows loading slots.
+  final Map<String, PaginationJob> _paginationJobs = {};
+  bool _paginationSliceScheduled = false;
+
   /// Per-chapter comment-badge paragraph identity sets. Depends only on
   /// paragraph identity and counts — typography changes keep it; chapter
   /// reloads and conversion changes invalidate it (mirrors
@@ -173,8 +188,40 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       chapters: widget.chapters,
       anchorChapterId: startId,
       loader: _loadChapterParagraphs,
+      maxWindowChapters: 8,
     );
     _window!.addListener(_onWindowChanged);
+
+    // The pagination machinery's first use pays one-time costs — the badge
+    // label style's first layout, body-text shaping for this breaker's font
+    // configuration, and the placeholder-span path a badged paragraph takes
+    // (~20ms combined in debug). Left alone, that lands in the first
+    // pagination slice after entry and blows its frame budget. Chapters are
+    // still loading from the network now, so warming here hides the cost.
+    if (widget.showComments && widget.onParagraphComments != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _warmupPagination());
+    }
+  }
+
+  /// Steps one synthetic badged paragraph through the real pagination path.
+  void _warmupPagination() {
+    if (!mounted || _breaker == null) return;
+    final badgeSize = CommentBadge.inlineSize(context, 1);
+    final job = _breaker!.startPagination(
+      [
+        ParagraphContent.text(
+          id: ParagraphId(
+            original: const OriginalParagraphId.source('__warmup__'),
+            path: const [],
+          ),
+          content: '預',
+          commentCount: 1,
+        ),
+      ],
+      chapterId: '__warmup__',
+      commentBadgeSizeOf: (_) => badgeSize,
+    );
+    while (!job.step(const Duration(seconds: 1))) {}
   }
 
   @override
@@ -182,6 +229,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     widget.controller.removeListener(_onControllerCommand);
     _window?.removeListener(_onWindowChanged);
     _window?.dispose();
+    _paginationJobs.clear();
     super.dispose();
   }
 
@@ -295,6 +343,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   void _onChapterReloadCommand(String chapterId) {
     _pagesByChapter.remove(chapterId);
     _badgeIdsByChapter.remove(chapterId);
+    _paginationJobs.remove(chapterId);
     unawaited(_window!.reload(chapterId));
   }
 
@@ -312,7 +361,19 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     if (widget.pageMode != ReaderPageMode.horizontal) return;
     if (_pendingJumpParagraphId.isEmpty) return;
     if (_activeChapterId.isEmpty) return;
-    final pages = _pagesFor(_activeChapterId);
+    // Resolving against a partially paginated chapter would land on a
+    // truncated page list. Only fully paginated (cached) pages may answer a
+    // jump; otherwise kick the job off and let _completePaginationJob
+    // re-run this once the active chapter finishes.
+    if (_pagesByChapter[_activeChapterId] == null) {
+      if (!_paginationJobs.containsKey(_activeChapterId)) {
+        final paragraphs = _window!.paragraphsOf(_activeChapterId);
+        if (paragraphs == null || paragraphs.isEmpty) return;
+        _startPaginationJob(_activeChapterId, paragraphs);
+      }
+      return;
+    }
+    final pages = _pagesByChapter[_activeChapterId]!;
     if (pages.isEmpty) return;
     _activeLocalPageIndex = PageBreaker.pageForPosition(
       pages,
@@ -328,12 +389,39 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   void _preloadWindowEdgesForHorizontal() {
     final window = _window!;
     final entries = _buildFlatEntries();
-    final abs = _resolveActiveAbsoluteIndex(entries);
-    if (abs < 0) return;
-    if (abs <= 2 && window.hasChapterAbove) window.expandAbove();
-    if (abs >= entries.length - 3 && window.hasChapterBelow) {
+    if (entries.isEmpty) return;
+    // Only a materialized active page can judge edge distance. Resolving
+    // against loading placeholders used to fall back to index 0 on entry,
+    // which read as "at both edges" and expanded the window before anything
+    // was even paginated.
+    final abs = _exactActiveIndex(entries);
+    if (abs == null) return;
+    // A boundary chapter still paginating would fake an edge: its page list
+    // only grows, so its last page is provisional.
+    final firstSettled = !_paginationJobs.containsKey(entries.first.chapterId);
+    final lastSettled = !_paginationJobs.containsKey(entries.last.chapterId);
+    if (firstSettled && abs <= 2 && window.hasChapterAbove) {
+      window.expandAbove();
+    }
+    if (lastSettled && abs >= entries.length - 3 && window.hasChapterBelow) {
       window.expandBelow();
     }
+  }
+
+  /// The active page's flat index, or null when it is not on a materialized
+  /// page (still loading, restoring, or failed). Unlike
+  /// [_resolveActiveAbsoluteIndex] this never falls back.
+  int? _exactActiveIndex(List<_FlatEntry> entries) {
+    for (var i = 0; i < entries.length; i++) {
+      final entry = entries[i];
+      if (entry.chapterId == _activeChapterId &&
+          entry.localPageIndex == _activeLocalPageIndex &&
+          !entry.loading &&
+          entry.error == null) {
+        return i;
+      }
+    }
+    return null;
   }
 
   // ── Page computation ────────────────────────────────────────────────────
@@ -359,6 +447,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     final reflow = _breaker != null;
     if (reflow) {
       _pagesByChapter.clear();
+      _paginationJobs.clear();
       _pendingJumpParagraphId = _lastReportedParagraphId;
       _pendingJumpCharOffset = _lastReportedCharOffset;
     }
@@ -405,26 +494,111 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   List<PageContent> _pagesFor(String chapterId) {
     final cached = _pagesByChapter[chapterId];
     if (cached != null) return cached;
+    final paragraphs = _window?.paragraphsOf(chapterId);
+    if (paragraphs == null || paragraphs.isEmpty) return const [];
     final breaker = _breaker;
     if (breaker == null) return const [];
-    final paragraphs = _window!.paragraphsOf(chapterId);
-    if (paragraphs == null || paragraphs.isEmpty) return const [];
+    final inFlight = _paginationJobs[chapterId];
+    if (widget.pageMode != ReaderPageMode.horizontal) {
+      // The vertical reader renders paragraphs directly; only the restore
+      // estimate reads pages, and it needs the final result synchronously.
+      // Adopt any in-flight job so the work is not done twice.
+      final job =
+          inFlight ??
+          breaker.startPagination(
+            paragraphs,
+            chapterId: chapterId,
+            commentBadgeSizeOf: _commentBadgeSizeOf(chapterId, paragraphs),
+          );
+      _paginationJobs.remove(chapterId);
+      while (!job.step(const Duration(seconds: 10))) {}
+      _pagesByChapter[chapterId] = job.result;
+      return job.result;
+    }
+    if (inFlight != null) return inFlight.pages;
+    _startPaginationJob(chapterId, paragraphs);
+    return _paginationJobs[chapterId]!.pages;
+  }
+
+  /// Lazy badge-size resolver for a chapter's paragraphs.
+  ///
+  /// Building a full size table up front costs one TextPainter measurement
+  /// per distinct count (~17ms for a badge-dense chapter in debug) — inside
+  /// the very build that starts pagination. Resolving per paragraph inside
+  /// the job spreads that cost across slices, and [CommentBadge.inlineSize]'s
+  /// process-wide cache keeps repeat counts free.
+  Size? Function(String paragraphId) _commentBadgeSizeOf(
+    String chapterId,
+    List<ParagraphContent> paragraphs,
+  ) {
     final badges = _badgeLookup?.call(chapterId) ?? const <String>{};
-    final sizesByCount = <int, Size>{};
-    final pages = breaker.computePages(
+    final counts = <String, int>{
+      for (final paragraph in paragraphs)
+        if (badges.contains(paragraph.id.toStringValue()))
+          paragraph.id.toStringValue(): paragraph.commentCount!,
+    };
+    return (paragraphId) {
+      final count = counts[paragraphId];
+      if (count == null) return null;
+      return CommentBadge.inlineSize(context, count);
+    };
+  }
+
+  void _startPaginationJob(
+    String chapterId,
+    List<ParagraphContent> paragraphs,
+  ) {
+    _paginationJobs[chapterId] = _breaker!.startPagination(
       paragraphs,
       chapterId: chapterId,
-      commentBadgeSizes: {
-        for (final paragraph in paragraphs)
-          if (badges.contains(paragraph.id.toStringValue()))
-            paragraph.id.toStringValue(): sizesByCount.putIfAbsent(
-              paragraph.commentCount!,
-              () => CommentBadge.inlineSize(context, paragraph.commentCount!),
-            ),
-      },
+      commentBadgeSizeOf: _commentBadgeSizeOf(chapterId, paragraphs),
     );
-    _pagesByChapter[chapterId] = pages;
-    return pages;
+    _schedulePaginationSlice();
+  }
+
+  /// One pagination slice per rendered frame: the slice shares the frame's
+  /// time budget with build and raster, so a chapter fills in over a few
+  /// dozen frames instead of freezing the first one after entry.
+  void _schedulePaginationSlice() {
+    if (_paginationSliceScheduled || !mounted) return;
+    _paginationSliceScheduled = true;
+    final scheduler = SchedulerBinding.instance;
+    scheduler.scheduleFrame();
+    scheduler.addPostFrameCallback((_) => _runPaginationSlice());
+  }
+
+  void _runPaginationSlice() {
+    _paginationSliceScheduled = false;
+    if (!mounted) return;
+    // The chapter on screen always wins; queued neighbours follow in window
+    // order so forward reading stays ahead of the reader.
+    PaginationJob? job = _paginationJobs[_activeChapterId];
+    if (job == null || job.isDone) {
+      job = null;
+      for (final chapterId in _window!.windowChapterIds) {
+        final candidate = _paginationJobs[chapterId];
+        if (candidate != null && !candidate.isDone) {
+          job = candidate;
+          break;
+        }
+      }
+    }
+    if (job == null) return;
+    if (job.step(widget.paginationSliceBudget)) {
+      _completePaginationJob(job);
+    }
+    setState(() {});
+    if (_paginationJobs.values.any((job) => !job.isDone)) {
+      _schedulePaginationSlice();
+    }
+  }
+
+  void _completePaginationJob(PaginationJob job) {
+    _paginationJobs.remove(job.chapterId);
+    _pagesByChapter[job.chapterId] = job.result;
+    if (job.chapterId == _activeChapterId) {
+      _resolveHorizontalPendingJump();
+    }
   }
 
   /// Identity strings of the final transformed children carrying a source
@@ -469,7 +643,21 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       final state = window.stateOf(chapterId);
       if (state is ChapterLoaded) {
         if (state.paragraphs.isEmpty) continue;
-        final pages = _pagesFor(chapterId);
+        // Restoring into mid-chapter must not flash the chapter's first page
+        // while the target page is still being computed, and a chapter with
+        // no pages yet keeps one placeholder so the flat list never skips
+        // over it. Both display as loading until pagination catches up.
+        final masked =
+            chapterId == _activeChapterId &&
+            _pendingJumpParagraphId.isNotEmpty &&
+            _paginationJobs.containsKey(chapterId);
+        final pages = masked ? const <PageContent>[] : _pagesFor(chapterId);
+        if (masked || pages.isEmpty) {
+          entries.add(
+            _FlatEntry(chapterId: chapterId, localPageIndex: -1, loading: true),
+          );
+          continue;
+        }
         for (var i = 0; i < pages.length; i++) {
           entries.add(
             _FlatEntry(chapterId: chapterId, localPageIndex: i, loading: false),
@@ -660,6 +848,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
           : (widget.chapters.isNotEmpty ? widget.chapters.first.id : '');
       _pagesByChapter.clear();
       _badgeIdsByChapter.clear();
+      _paginationJobs.clear();
       _activeChapterId = anchorId;
       _activeLocalPageIndex = 0;
       if (sameBook && anchorId == _lastReportedChapterId) {
@@ -679,6 +868,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       // Paragraphs must be re-fetched through the new conversion mode.
       _pagesByChapter.clear();
       _badgeIdsByChapter.clear();
+      _paginationJobs.clear();
       _window!.reloadWindow();
       _restorePositionAfterReflow();
       return;
@@ -697,6 +887,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     if (typographyChanged) {
       // Pages are stale but paragraphs are not — recompute lazily.
       _pagesByChapter.clear();
+      _paginationJobs.clear();
       _breaker = null;
       _lastPageSize = Size.zero;
       if (widget.prewarmCustomFont) {
