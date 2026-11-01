@@ -27,16 +27,23 @@ class CommentBadge extends StatelessWidget {
 
   /// Unscaled placeholder dimensions. WidgetSpan applies the paragraph's
   /// text scaler once; the badge's inner text must not scale a second time.
+  ///
+  /// Geometry depends only on (count, direction, locale, label style), so
+  /// sizes are cached process-wide: pagination and every badge render re-use
+  /// one measurement per distinct count instead of re-shaping the label.
   static Size inlineSize(BuildContext context, int count) {
+    final style = DefaultTextStyle.of(context).style.merge(
+      Theme.of(context).textTheme.labelSmall?.copyWith(height: 1.1),
+    );
+    final direction = Directionality.of(context);
+    final locale = Localizations.localeOf(context);
+    final key = (count, direction, locale, style);
+    final cached = _inlineSizeCache[key];
+    if (cached != null) return cached;
     final painter = TextPainter(
-      text: TextSpan(
-        text: formatCommentCount(count, context),
-        style: DefaultTextStyle.of(context).style.merge(
-          Theme.of(context).textTheme.labelSmall?.copyWith(height: 1.1),
-        ),
-      ),
-      textDirection: Directionality.of(context),
-      locale: Localizations.localeOf(context),
+      text: TextSpan(text: formatCommentCount(count, context), style: style),
+      textDirection: direction,
+      locale: locale,
     )..layout();
     final size = Size(
       inlineGap +
@@ -48,8 +55,18 @@ class CommentBadge extends StatelessWidget {
           (painter.height > _iconSize ? painter.height : _iconSize),
     );
     painter.dispose();
+    if (_inlineSizeCache.length >= _inlineSizeCacheLimit) {
+      _inlineSizeCache.clear();
+    }
+    _inlineSizeCache[key] = size;
     return size;
   }
+
+  /// Badge labels repeat heavily across chapters and renders; a full clear
+  /// on overflow keeps the cache bounded without bookkeeping.
+  static const _inlineSizeCacheLimit = 512;
+  static final _inlineSizeCache =
+      <(int, TextDirection, Locale, TextStyle), Size>{};
 
   @override
   Widget build(BuildContext context) {
@@ -253,67 +270,103 @@ class CommentParagraphLayout {
     if (!width.isFinite || width <= 0 || text.isEmpty) return original;
     final fontSize = style.fontSize ?? 14;
     final scale = fontSize == 0 ? 0.0 : textScaler.scale(fontSize) / fontSize;
-    int lines(CommentParagraphLayout layout, {bool withBadge = true}) {
+
+    TextPainter badged(CommentParagraphLayout layout) {
       final painter = TextPainter(
-        text: withBadge
-            ? BadgedText.inlineSpan(text, layout.style, const SizedBox.shrink())
-            : TextSpan(text: text, style: layout.style),
+        text: BadgedText.inlineSpan(
+          text,
+          layout.style,
+          const SizedBox.shrink(),
+        ),
         textDirection: direction,
         textAlign: align,
         textScaler: textScaler,
         locale: locale,
       );
-      if (withBadge) {
-        painter.setPlaceholderDimensions([
-          BadgedText.tailDimensions(
-            text,
-            layout.style,
-            layout.badgeSize(badgeSize),
-            direction,
-            locale,
-            scale: scale,
-          ),
-        ]);
-      }
+      painter.setPlaceholderDimensions([
+        BadgedText.tailDimensions(
+          text,
+          layout.style,
+          layout.badgeSize(badgeSize),
+          direction,
+          locale,
+          scale: scale,
+        ),
+      ]);
       painter.layout(maxWidth: width);
+      return painter;
+    }
+
+    int lineCount(TextPainter painter) {
       final count = painter.computeLineMetrics().length;
       painter.dispose();
       return count;
     }
 
-    final target = lines(original, withBadge: false);
-    if (lines(original) <= target) return original;
+    final plain = TextPainter(
+      text: TextSpan(text: text, style: original.style),
+      textDirection: direction,
+      textAlign: align,
+      textScaler: textScaler,
+      locale: locale,
+    )..layout(maxWidth: width);
+    final plainLines = plain.computeLineMetrics();
+    plain.dispose();
+    final target = plainLines.length;
+    if (target == 0) return original;
+    final leftover = width - plainLines.last.width;
+
+    if (lineCount(badged(original)) <= target) return original;
+
+    // The badge wraps to an extra line. Reclaim exactly the overflowing
+    // width instead of searching for it: the previous binary searches
+    // re-shaped the whole paragraph up to 17 extra times, which dominated
+    // pagination cost for badge-dense chapters.
     const minGap = 2.0;
-    final tightenedGap = CommentParagraphLayout(style, minGap);
-    if (lines(tightenedGap) <= target) {
-      var low = minGap, high = CommentBadge.inlineGap;
-      for (var i = 0; i < 8; i++) {
-        final middle = (low + high) / 2;
-        if (lines(CommentParagraphLayout(style, middle)) <= target) {
-          low = middle;
-        } else {
-          high = middle;
-        }
-      }
-      return CommentParagraphLayout(style, low);
+
+    // Stage 1 — a smaller badge gap alone can free enough room.
+    final gapCandidate = leftover - badgeSize.width + CommentBadge.inlineGap;
+    if (gapCandidate >= minGap) {
+      final tightened = CommentParagraphLayout(
+        style,
+        (gapCandidate - 0.25).clamp(minGap, CommentBadge.inlineGap),
+      );
+      if (lineCount(badged(tightened)) <= target) return tightened;
     }
+
+    // Stage 2 — letter-spacing reduction, gap already minimal.
+    final overflow =
+        badgeSize.width - CommentBadge.inlineGap + minGap - leftover;
     final tracking = style.letterSpacing ?? 0;
     final maxReduction = fontSize * 0.05;
     CommentParagraphLayout reduced(double amount) => CommentParagraphLayout(
       style.copyWith(letterSpacing: tracking - amount),
       minGap,
     );
-    if (lines(reduced(maxReduction)) > target) return original;
-    var low = 0.0, high = maxReduction;
-    for (var i = 0; i < 8; i++) {
-      final middle = (low + high) / 2;
-      if (lines(reduced(middle)) <= target) {
-        high = middle;
-      } else {
-        low = middle;
-      }
+    bool fitsReduction(double amount) {
+      if (amount > maxReduction) return false;
+      return lineCount(badged(reduced(amount))) <= target;
     }
-    return reduced(high);
+
+    final glyphCount = text.characters.length;
+    var reduction = overflow / (glyphCount > 0 ? glyphCount : 1) * 1.2 + 0.05;
+    if (reduction > maxReduction) reduction = maxReduction;
+    if (fitsReduction(reduction)) {
+      // Prefer the loosest tracking that fits: one halving probe recovers
+      // most of the slack the safety margin added.
+      final relaxed = reduction / 2;
+      if (relaxed >= 0.05 && fitsReduction(relaxed)) {
+        return reduced(relaxed);
+      }
+      return reduced(reduction);
+    }
+    // Line-break discreteness can overshoot the linear estimate; correct
+    // once before giving up (the badge then takes its own line, as before).
+    final corrected = (reduction * 1.6).clamp(reduction, maxReduction);
+    if (corrected > reduction && fitsReduction(corrected)) {
+      return reduced(corrected);
+    }
+    return original;
   }
 }
 
