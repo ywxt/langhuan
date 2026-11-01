@@ -311,9 +311,8 @@ mod comment_count_tests {
             }
         );
 
-        let raw: RawParagraph =
-            serde_json::from_str(r#"{"type":"text","content":"正文"}"#)
-                .expect("valid script paragraph");
+        let raw: RawParagraph = serde_json::from_str(r#"{"type":"text","content":"正文"}"#)
+            .expect("valid script paragraph");
         let paragraph = raw.into_paragraph(1);
         assert_eq!(
             paragraph,

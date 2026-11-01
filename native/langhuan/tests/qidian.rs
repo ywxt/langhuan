@@ -1419,13 +1419,13 @@ async fn paragraphs_with_login_carry_summary_comment_counts() {
         .paragraphs("1010868264", "402733549")
         .collect::<Vec<_>>()
         .await;
-    let paragraphs: Vec<_> = results
-        .into_iter()
-        .map(|p| p.expect("paragraph"))
-        .collect();
+    let paragraphs: Vec<_> = results.into_iter().map(|p| p.expect("paragraph")).collect();
     assert!(paragraphs.len() >= 3);
 
-    assert!(matches!(paragraphs[0], langhuan::model::Paragraph::Title { .. }));
+    assert!(matches!(
+        paragraphs[0],
+        langhuan::model::Paragraph::Title { .. }
+    ));
     assert_eq!(paragraphs[0].id().source_id(), Some("-1"));
     assert_eq!(
         paragraphs[0].comment_count(),

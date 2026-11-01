@@ -345,12 +345,12 @@ impl JsFeed {
             ));
         }
         let next_cursor = complete.next_cursor.map(JsData::into_json);
-        if let Some(next) = &next_cursor {
-            if *next == cursor || serde_json::to_vec(next).map_or(true, |v| v.len() > 4096) {
-                return Err(Error::invalid_feed(
-                    "comment cursor does not advance or exceeds limit",
-                ));
-            }
+        if let Some(next) = &next_cursor
+            && (*next == cursor || serde_json::to_vec(next).map_or(true, |v| v.len() > 4096))
+        {
+            return Err(Error::invalid_feed(
+                "comment cursor does not advance or exceeds limit",
+            ));
         }
         let total_count = page.total_count;
         Ok(CommentPage {

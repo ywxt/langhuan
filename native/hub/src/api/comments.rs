@@ -169,11 +169,9 @@ pub async fn get_comments_page(
                 text: c.text,
                 created_at_ms: c.created_at_ms,
                 like_count: c.like_count,
-                replies: c
-                    .replies
-                    .map(|r| CommentReplies {
-                        total_count: r.total_count,
-                    }),
+                replies: c.replies.map(|r| CommentReplies {
+                    total_count: r.total_count,
+                }),
             })
             .collect(),
         next_cursor_json: page.next_cursor.map(|v| v.to_string()),

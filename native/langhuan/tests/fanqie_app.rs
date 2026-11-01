@@ -1133,8 +1133,7 @@ async fn live_comment_model_dump() {
     }
 
     let script = include_str!("../../../docs/book-sources/fanqie-app.js");
-    let engine =
-        ScriptEngine::new().with_storage(Arc::new(storage) as SharedStorageHandler);
+    let engine = ScriptEngine::new().with_storage(Arc::new(storage) as SharedStorageHandler);
     let feed = engine.load_script(script).await.expect("load failed");
 
     // Find a paragraph that actually carries comments.
@@ -1173,7 +1172,10 @@ async fn live_comment_model_dump() {
         .expect("live paragraph comments page");
     let (trace, _) = recorder.finish();
 
-    println!("== normalized items (total_count={:?}) ==", page.total_count);
+    println!(
+        "== normalized items (total_count={:?}) ==",
+        page.total_count
+    );
     for item in &page.items {
         println!(
             "  id={} name={} avatar={:?} like={:?} replies={:?}",
