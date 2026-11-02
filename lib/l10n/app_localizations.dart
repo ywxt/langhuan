@@ -542,6 +542,18 @@ abstract class AppLocalizations {
   /// **'Chapter {current} / {total}'**
   String readerChapterProgress(int current, int total);
 
+  /// Reader status bar: current page within the chapter
+  ///
+  /// In en, this message translates to:
+  /// **'Page {current} / {total}'**
+  String readerPageProgress(int current, int total);
+
+  /// Reader status bar: whole-book reading progress percentage
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% of book'**
+  String readerBookProgress(int percent);
+
   /// Reader mode toggle label: vertical scroll
   ///
   /// In en, this message translates to:

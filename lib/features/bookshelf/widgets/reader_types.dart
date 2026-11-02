@@ -23,6 +23,47 @@ class ParagraphSelection {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Page progress — reported from the content manager to the reader chrome
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The active chapter's live page position (horizontal mode).
+///
+/// Published by [ChapterContentManager] through a parent-supplied
+/// [ValueNotifier] so the reader status bar can show `current/total` page
+/// progress without rebuilding the whole reader on every page turn. The
+/// page count is final once the chapter's pagination job completes; while
+/// the job runs, values are provisional and the count only grows.
+class ReaderPageProgress {
+  const ReaderPageProgress({
+    required this.chapterId,
+    required this.pageIndex,
+    required this.pageCount,
+  });
+
+  final String chapterId;
+
+  /// 0-based index of the active page within its chapter.
+  final int pageIndex;
+
+  /// Page count of the chapter (final after pagination completes).
+  final int pageCount;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ReaderPageProgress &&
+      other.chapterId == chapterId &&
+      other.pageIndex == pageIndex &&
+      other.pageCount == pageCount;
+
+  @override
+  int get hashCode => Object.hash(chapterId, pageIndex, pageCount);
+
+  @override
+  String toString() =>
+      'ReaderPageProgress($chapterId, ${pageIndex + 1}/$pageCount)';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Chapter load state — sealed hierarchy
 // ─────────────────────────────────────────────────────────────────────────────
 

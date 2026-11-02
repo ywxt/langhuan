@@ -263,6 +263,16 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String readerPageProgress(int current, int total) {
+    return '第 $current/$total 頁';
+  }
+
+  @override
+  String readerBookProgress(int percent) {
+    return '本書 $percent%';
+  }
+
+  @override
   String get readerModeVertical => '上下滑動';
 
   @override

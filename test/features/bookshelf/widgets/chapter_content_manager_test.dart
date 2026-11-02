@@ -7,6 +7,7 @@ import 'package:langhuan/features/bookshelf/reader_settings_provider.dart'
 import 'package:langhuan/features/bookshelf/widgets/chapter_content_manager.dart';
 import 'package:langhuan/features/bookshelf/widgets/comment_badge.dart';
 import 'package:langhuan/features/bookshelf/widgets/reader_controller.dart';
+import 'package:langhuan/features/bookshelf/widgets/reader_types.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/src/rust/api/types.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
@@ -321,5 +322,112 @@ void main() {
 
     expect(find.text('Chapter One'), findsOneWidget);
     expect(find.textContaining('boom'), findsNothing);
+  });
+
+  // A chapter long enough to span several pages at the default test
+  // surface, with a unique-source badged paragraph per entry.
+  List<ParagraphContent> pagedBodyOf(String chapterId) => [
+    for (var i = 0; i < 60; i++)
+      ParagraphContent.text(
+        id: ParagraphId(
+          original: OriginalParagraphId.source('$chapterId-p$i'),
+          path: const [],
+        ),
+        content: '$chapterId paragraph $i',
+        commentCount: 12,
+      ),
+  ];
+
+  /// Controller shared by successive [pumpWithSettings] calls of one test,
+  /// so rebuilding with different settings updates the same manager state.
+  ReaderController? sharedController;
+
+  tearDown(() {
+    sharedController?.dispose();
+    sharedController = null;
+  });
+
+  /// Pumps the manager with configurable showComments and a page-progress
+  /// notifier; each call rebuilds the SAME state with new settings.
+  Future<void> pumpWithSettings(
+    WidgetTester tester, {
+    required FakeFeedService fake,
+    required ValueNotifier<ReaderPageProgress?> pageProgress,
+    required bool showComments,
+  }) async {
+    final controller = sharedController ??= ReaderController();
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: ChapterContentManager(
+            feedService: fake,
+            feedId: 'f1',
+            bookId: 'b1',
+            chapters: chapters,
+            controller: controller,
+            pageMode: ReaderPageMode.horizontal,
+            onToggleControls: () {},
+            onParagraphComments: (_, _) {},
+            fontScale: 1.0,
+            lineHeight: 1.5,
+            contentPadding: const EdgeInsets.all(16),
+            chineseConversion: ChineseConversionMode.none,
+            showComments: showComments,
+            pageProgress: pageProgress,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle(const Duration(milliseconds: 50));
+  }
+
+  testWidgets('page progress tracks page turns and chapter jumps', (
+    tester,
+  ) async {
+    final pageProgress = ValueNotifier<ReaderPageProgress?>(null);
+    addTearDown(pageProgress.dispose);
+    final fake = FakeFeedService(
+      paragraphsHandler:
+          (feedId, bookId, chapterId, {forceRefresh = false}) async =>
+              pagedBodyOf(chapterId),
+    );
+
+    await pumpWithSettings(
+      tester,
+      fake: fake,
+      pageProgress: pageProgress,
+      showComments: true,
+    );
+
+    final initial = pageProgress.value;
+    expect(initial, isNotNull, reason: 'the active chapter paginated');
+    expect(initial!.chapterId, 'c1');
+    expect(initial.pageIndex, 0);
+    expect(initial.pageCount, greaterThan(1), reason: 'multi-page chapter');
+
+    // Turn within the chapter: the index advances, the count holds.
+    await tester.tapAt(const Offset(760, 300));
+    await tester.pumpAndSettle(const Duration(milliseconds: 50));
+    final turned = pageProgress.value;
+    expect(turned, isNotNull);
+    expect(turned!.chapterId, 'c1');
+    expect(turned.pageIndex, 1);
+    expect(turned.pageCount, initial.pageCount);
+
+    // A jump to another chapter resets to that chapter's resolved page.
+    sharedController!.jumpTo(chapterId: 'c2');
+    await tester.pumpAndSettle(const Duration(milliseconds: 50));
+    final jumped = pageProgress.value;
+    expect(jumped, isNotNull);
+    expect(jumped!.chapterId, 'c2');
+    expect(jumped.pageIndex, 0);
+    expect(jumped.pageCount, greaterThan(1));
   });
 }

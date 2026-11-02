@@ -27,6 +27,7 @@ import 'widgets/reader_feedback.dart';
 import 'widgets/reader_frame_monitor.dart';
 import 'widgets/reader_overlays.dart';
 import 'widgets/reader_sheets.dart';
+import 'widgets/reader_status_bar.dart';
 import 'widgets/reader_types.dart';
 
 class ReaderPage extends ConsumerStatefulWidget {
@@ -54,6 +55,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   bool _chapterComments = false, _paragraphComments = false;
   late final ListeningController _listening;
   String _followingParagraph = '';
+
+  /// Live page progress of the active chapter, fed by the content manager
+  /// and rendered by the bottom status bar.
+  final ValueNotifier<ReaderPageProgress?> _pageProgress = ValueNotifier(null);
 
   @override
   void initState() {
@@ -132,6 +137,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     _screenController.dispose();
     _readerController.onPositionChanged = null;
     _readerController.dispose();
+    _pageProgress.dispose();
     super.dispose();
   }
 
@@ -398,6 +404,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
     final mediaQuery = MediaQuery.of(context);
     final topPadding = mediaQuery.padding.top;
+    // The transparent bottom status line (plus the safe-area inset) stays
+    // clear of reading content: pages end above it and the vertical reader's
+    // viewport is inset likewise.
+    final bottomChrome =
+        mediaQuery.viewPadding.bottom + ReaderStatusBar.reservedHeight;
     final brightness = readerTheme.brightness;
     // Icon contrast follows the reader theme; the bar itself stays
     // transparent (edge-to-edge, see main()) so it always matches the
@@ -456,11 +467,13 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                           paragraphSpacing: settings.paragraphSpacing,
                           lineHeight: settings.lineHeight,
                           chineseConversion: settings.chineseConversion,
+                          pageProgress: _pageProgress,
+                          viewportBottomInset: bottomChrome,
                           contentPadding: EdgeInsets.fromLTRB(
                             LanghuanTheme.spaceLg,
                             topPadding + LanghuanTheme.spaceMd,
                             LanghuanTheme.spaceLg,
-                            LanghuanTheme.spaceLg,
+                            bottomChrome,
                           ),
                           onParagraphLongPress: _onParagraphLongPress,
                           selectedChapterId:
@@ -478,6 +491,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                         ),
                       ),
                     ),
+                  ),
+                  ReaderStatusBar(
+                    visible: !_screenController.showControls,
+                    theme: readerTheme,
+                    chapterId: effectiveChapterId,
+                    chapterTitle: chapterTitle,
+                    chapterIndex: currentIdx,
+                    chapterCount: _screenController.chapters.length,
+                    pageProgress: _pageProgress,
                   ),
                   ReaderTopOverlay(
                     showControls: _screenController.showControls,

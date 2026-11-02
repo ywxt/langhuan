@@ -71,6 +71,7 @@ class SeamlessVerticalReader extends StatefulWidget {
     required this.window,
     required this.chapters,
     required this.contentPadding,
+    this.viewportBottomInset = 0,
     required this.fontScale,
     this.fontFamily,
     this.letterSpacing = 0.0,
@@ -93,6 +94,12 @@ class SeamlessVerticalReader extends StatefulWidget {
   /// Horizontal padding applies per paragraph; the vertical components
   /// apply once at the very top/bottom of the whole scroll content.
   final EdgeInsets contentPadding;
+
+  /// Persistent bottom chrome (the reader status bar, including the
+  /// safe-area inset) the scroll viewport must not lay content into:
+  /// content scrolls *under* it while moving but can never come to rest
+  /// beneath the status line.
+  final double viewportBottomInset;
 
   final double fontScale;
   final String? fontFamily;
@@ -636,37 +643,40 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
       onTapUp: _onTapUp,
       child: NotificationListener<ScrollNotification>(
         onNotification: _onScrollNotification,
-        child: CustomScrollView(
-          controller: _controller,
-          center: _centerKey,
-          // The default 250 logical-pixel cache may not cover even one large
-          // paragraph. Lay out two viewports ahead to reduce layout work as
-          // paragraphs enter the screen during a drag.
-          scrollCacheExtent: ScrollCacheExtent.pixels(
-            MediaQuery.sizeOf(context).height * 2,
-          ),
-          slivers: [
-            SliverToBoxAdapter(
-              key: _topInsetKey,
-              child: SizedBox(height: widget.contentPadding.top),
+        child: Padding(
+          padding: EdgeInsets.only(bottom: widget.viewportBottomInset),
+          child: CustomScrollView(
+            controller: _controller,
+            center: _centerKey,
+            // The default 250 logical-pixel cache may not cover even one large
+            // paragraph. Lay out two viewports ahead to reduce layout work as
+            // paragraphs enter the screen during a drag.
+            scrollCacheExtent: ScrollCacheExtent.pixels(
+              MediaQuery.sizeOf(context).height * 2,
             ),
-            for (final chapterId in chapterIds) ...[
-              if (chapterId == window.anchorChapterId)
-                SliverToBoxAdapter(
-                  key: _centerKey,
-                  child: SizedBox(height: widget.contentPadding.top),
+            slivers: [
+              SliverToBoxAdapter(
+                key: _topInsetKey,
+                child: SizedBox(height: widget.contentPadding.top),
+              ),
+              for (final chapterId in chapterIds) ...[
+                if (chapterId == window.anchorChapterId)
+                  SliverToBoxAdapter(
+                    key: _centerKey,
+                    child: SizedBox(height: widget.contentPadding.top),
+                  ),
+                _buildChapterSliver(
+                  chapterId,
+                  showLoading: chapterId == loadingIndicatorChapterId,
                 ),
-              _buildChapterSliver(
-                chapterId,
-                showLoading: chapterId == loadingIndicatorChapterId,
+              ],
+              if (atBookEnd) const SliverToBoxAdapter(child: _EndOfBookMark()),
+              SliverToBoxAdapter(
+                key: _bottomInsetKey,
+                child: SizedBox(height: widget.contentPadding.bottom),
               ),
             ],
-            if (atBookEnd) const SliverToBoxAdapter(child: _EndOfBookMark()),
-            SliverToBoxAdapter(
-              key: _bottomInsetKey,
-              child: SizedBox(height: widget.contentPadding.bottom),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -777,10 +787,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
               commentCount: badgeCount,
               onCommentTap: badgeCount == null
                   ? null
-                  : () => widget.onParagraphComments!(
-                      chapterId,
-                      paragraph,
-                    ),
+                  : () => widget.onParagraphComments!(chapterId, paragraph),
             ),
           ),
         ),

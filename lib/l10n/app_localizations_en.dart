@@ -265,6 +265,16 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String readerPageProgress(int current, int total) {
+    return 'Page $current / $total';
+  }
+
+  @override
+  String readerBookProgress(int percent) {
+    return '$percent% of book';
+  }
+
+  @override
   String get readerModeVertical => 'Vertical Scroll';
 
   @override

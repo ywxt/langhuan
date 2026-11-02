@@ -54,6 +54,8 @@ class ChapterContentManager extends StatefulWidget {
     this.selectedParagraphId,
     this.showComments = true,
     this.onParagraphComments,
+    this.pageProgress,
+    this.viewportBottomInset = 0,
   });
 
   /// Chapter paragraph source. Injected so tests can supply a fake and the
@@ -98,6 +100,16 @@ class ChapterContentManager extends StatefulWidget {
   /// Opens a paragraph's comments (badge tap). Null disables badges.
   final void Function(String chapterId, ParagraphContent paragraph)?
   onParagraphComments;
+
+  /// Live page progress of the active chapter (horizontal mode), written
+  /// by this manager as pages turn and pagination completes. Owned by the
+  /// parent (the reader chrome); null skips publishing entirely.
+  final ValueNotifier<ReaderPageProgress?>? pageProgress;
+
+  /// Height of persistent bottom chrome (the reader status bar) that
+  /// vertical-mode content must not scroll beneath. Horizontal mode needs
+  /// no such inset: its content padding already ends above the chrome.
+  final double viewportBottomInset;
 
   @override
   State<ChapterContentManager> createState() => _ChapterContentManagerState();
@@ -158,6 +170,9 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   // Vertical scroll target (token distinguishes consecutive commands).
   int _scrollToken = 0;
   ReaderScrollTarget? _verticalTarget;
+
+  /// A page-progress publish is pending for the end of the current frame.
+  bool _pageProgressPublishScheduled = false;
 
   String _lastReportedChapterId = '';
   String _lastReportedParagraphId = '';
@@ -821,6 +836,51 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     );
   }
 
+  // ── Page progress publishing ────────────────────────────────────────────
+
+  /// Publish page progress after the frame that changed it.
+  ///
+  /// Every mutation that can move the active page (turns, jumps, pagination
+  /// slices, window changes, re-flows) ends in a rebuild of this manager, so
+  /// scheduling from [build] covers them all with one deduplicated callback.
+  /// Publishing post-frame keeps the parent's ValueNotifier — and whatever
+  /// listens to it — out of this widget's build phase.
+  void _schedulePageProgressPublish() {
+    if (_pageProgressPublishScheduled || !mounted) return;
+    _pageProgressPublishScheduled = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _pageProgressPublishScheduled = false;
+      if (!mounted) return;
+      _publishPageProgress();
+    });
+  }
+
+  void _publishPageProgress() {
+    final notifier = widget.pageProgress;
+    if (notifier == null) return;
+    final progress = _computePageProgress();
+    if (notifier.value != progress) notifier.value = progress;
+  }
+
+  ReaderPageProgress? _computePageProgress() {
+    if (widget.pageMode != ReaderPageMode.horizontal) return null;
+    final chapterId = _activeChapterId;
+    if (chapterId.isEmpty) return null;
+    // A pending jump means the target page is not resolved yet (or the
+    // chapter is still masked behind a loading placeholder).
+    if (_pendingJumpParagraphId.isNotEmpty) return null;
+    // Provisional while the job runs: the page count only grows, which is
+    // fine for a status label; the final value lands on completion.
+    final pages =
+        _paginationJobs[chapterId]?.pages ?? _pagesByChapter[chapterId];
+    if (pages == null || pages.isEmpty) return null;
+    return ReaderPageProgress(
+      chapterId: chapterId,
+      pageIndex: _activeLocalPageIndex.clamp(0, pages.length - 1),
+      pageCount: pages.length,
+    );
+  }
+
   // ── Widget updates ──────────────────────────────────────────────────────
 
   @override
@@ -967,11 +1027,14 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       return const SizedBox.shrink();
     }
 
+    _schedulePageProgressPublish();
+
     if (widget.pageMode == ReaderPageMode.vertical) {
       return SeamlessVerticalReader(
         window: window,
         chapters: widget.chapters,
         contentPadding: widget.contentPadding,
+        viewportBottomInset: widget.viewportBottomInset,
         fontScale: widget.fontScale,
         fontFamily: widget.fontFamily,
         letterSpacing: widget.letterSpacing,

@@ -243,6 +243,23 @@
     }
   },
 
+  "readerPageProgress": "Page {current} / {total}",
+  "@readerPageProgress": {
+    "description": "Reader status bar: current page within the chapter",
+    "placeholders": {
+      "current": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+
+  "readerBookProgress": "{percent}% of book",
+  "@readerBookProgress": {
+    "description": "Reader status bar: whole-book reading progress percentage",
+    "placeholders": {
+      "percent": { "type": "int" }
+    }
+  },
+
   "readerModeVertical": "Vertical Scroll",
   "@readerModeVertical": { "description": "Reader mode toggle label: vertical scroll" },
 
