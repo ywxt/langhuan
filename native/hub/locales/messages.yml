@@ -41,6 +41,9 @@ error.duplicate_id:
 error.file_read:
   en: "Failed to read file: %{error}"
   zh: "無法讀取文件：%{error}"
+error.script_too_large:
+  en: "Feed script exceeds the %{limit} size limit"
+  zh: "書源腳本超過 %{limit} 大小上限"
 error.no_pending_preview:
   en: "No pending preview for this request"
   zh: "找不到對應的預覽記錄"

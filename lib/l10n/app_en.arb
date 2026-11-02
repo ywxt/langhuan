@@ -615,6 +615,12 @@
   "@feedsExportError": { "description": "Snack: feed export failed" },
   "feedsImportError": "Failed to import feeds",
   "@feedsImportError": { "description": "Snack: feed import failed (unreadable file, bad format)" },
+
+  "feedsImportTooLarge": "Import file exceeds {size}",
+  "@feedsImportTooLarge": {
+    "description": "Snack: the picked feed-import file is larger than accepted",
+    "placeholders": { "size": { "type": "String" } }
+  },
   "feedsImportTitle": "Import feeds",
   "@feedsImportTitle": { "description": "Dialog title: confirm a feed import" },
   "feedsImportConfirm": "Import",
@@ -747,6 +753,54 @@
 
   "addFeedSuccess": "Feed installed successfully",
   "@addFeedSuccess": { "description": "Snackbar message on successful install" },
+
+  "addFeedAuditAction": "View script ({size})",
+  "@addFeedAuditAction": {
+    "description": "Install preview: button opening the pre-install script viewer",
+    "placeholders": { "size": { "type": "String" } }
+  },
+
+  "addFeedAuditTitle": "Script audit",
+  "@addFeedAuditTitle": { "description": "Script audit viewer: app bar title" },
+
+  "addFeedAuditStats": "{size} · {lines} lines",
+  "@addFeedAuditStats": {
+    "description": "Script audit viewer header: script size and line count",
+    "placeholders": {
+      "size": { "type": "String" },
+      "lines": { "type": "int" }
+    }
+  },
+
+  "addFeedAuditCopy": "Copy",
+  "@addFeedAuditCopy": { "description": "Script audit viewer: copy-script tooltip" },
+
+  "addFeedAuditCopied": "Script copied",
+  "@addFeedAuditCopied": { "description": "Snackbar after copying the whole script" },
+
+  "addFeedAuditWrap": "Toggle line wrapping",
+  "@addFeedAuditWrap": { "description": "Script audit viewer: soft-wrap toggle tooltip" },
+
+  "addFeedAuditFormat": "Toggle formatted view",
+  "@addFeedAuditFormat": { "description": "Script audit viewer: formatted-view toggle tooltip" },
+
+  "addFeedAuditFormattedNote": "Formatted for reading — the installed script stays untouched",
+  "@addFeedAuditFormattedNote": { "description": "Script audit viewer: note shown while the formatted view is active" },
+
+  "addFeedAuditSearchHint": "Search the script…",
+  "@addFeedAuditSearchHint": { "description": "Script audit viewer: search field hint" },
+
+  "addFeedAuditMatchCount": "{count, plural, =1{1 match} other{{count} matches}}",
+  "@addFeedAuditMatchCount": {
+    "description": "Script audit viewer: live search match count",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "addFeedAuditNoMatch": "No matches",
+  "@addFeedAuditNoMatch": { "description": "Script audit viewer: search found nothing" },
+
+  "addFeedAuditEmpty": "The script is empty",
+  "@addFeedAuditEmpty": { "description": "Script audit viewer: empty-script placeholder" },
 
   "settingsReading": "Reading",
   "@settingsReading": { "description": "Settings section: reading preferences" },

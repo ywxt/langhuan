@@ -665,6 +665,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get feedsImportError => 'Failed to import feeds';
 
   @override
+  String feedsImportTooLarge(String size) {
+    return 'Import file exceeds $size';
+  }
+
+  @override
   String get feedsImportTitle => 'Import feeds';
 
   @override
@@ -809,6 +814,55 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addFeedSuccess => 'Feed installed successfully';
+
+  @override
+  String addFeedAuditAction(String size) {
+    return 'View script ($size)';
+  }
+
+  @override
+  String get addFeedAuditTitle => 'Script audit';
+
+  @override
+  String addFeedAuditStats(String size, int lines) {
+    return '$size · $lines lines';
+  }
+
+  @override
+  String get addFeedAuditCopy => 'Copy';
+
+  @override
+  String get addFeedAuditCopied => 'Script copied';
+
+  @override
+  String get addFeedAuditWrap => 'Toggle line wrapping';
+
+  @override
+  String get addFeedAuditFormat => 'Toggle formatted view';
+
+  @override
+  String get addFeedAuditFormattedNote =>
+      'Formatted for reading — the installed script stays untouched';
+
+  @override
+  String get addFeedAuditSearchHint => 'Search the script…';
+
+  @override
+  String addFeedAuditMatchCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count matches',
+      one: '1 match',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get addFeedAuditNoMatch => 'No matches';
+
+  @override
+  String get addFeedAuditEmpty => 'The script is empty';
 
   @override
   String get settingsReading => 'Reading';

@@ -112,6 +112,7 @@ void main() {
                 baseUrl: 'https://example.com',
                 accessDomains: ['example.com'],
                 versionChange: VersionChange.new_,
+                script: '// ==Feed==\n// @id org.example.feed\n',
               ),
               colorScheme: Theme.of(context).colorScheme,
               l10n: AppLocalizations.of(context),

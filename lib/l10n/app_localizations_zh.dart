@@ -652,6 +652,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get feedsImportError => '導入書源失敗';
 
   @override
+  String feedsImportTooLarge(String size) {
+    return '匯入文件超過 $size 上限';
+  }
+
+  @override
   String get feedsImportTitle => '導入書源';
 
   @override
@@ -786,6 +791,48 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get addFeedSuccess => '書源安裝成功';
+
+  @override
+  String addFeedAuditAction(String size) {
+    return '查看腳本（$size）';
+  }
+
+  @override
+  String get addFeedAuditTitle => '腳本審計';
+
+  @override
+  String addFeedAuditStats(String size, int lines) {
+    return '$size · $lines 行';
+  }
+
+  @override
+  String get addFeedAuditCopy => '複製';
+
+  @override
+  String get addFeedAuditCopied => '已複製腳本';
+
+  @override
+  String get addFeedAuditWrap => '切換自動換行';
+
+  @override
+  String get addFeedAuditFormat => '切換格式化檢視';
+
+  @override
+  String get addFeedAuditFormattedNote => '已格式化以便閱讀，安裝的腳本保持原文';
+
+  @override
+  String get addFeedAuditSearchHint => '搜尋腳本內容…';
+
+  @override
+  String addFeedAuditMatchCount(int count) {
+    return '$count 處匹配';
+  }
+
+  @override
+  String get addFeedAuditNoMatch => '無匹配';
+
+  @override
+  String get addFeedAuditEmpty => '腳本內容為空';
 
   @override
   String get settingsReading => '閱讀';

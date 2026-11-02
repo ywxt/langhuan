@@ -183,6 +183,7 @@ class FeedPreviewModel {
     required this.baseUrl,
     required this.accessDomains,
     required this.versionChange,
+    required this.script,
     this.author,
     this.description,
     this.currentVersion,
@@ -200,6 +201,10 @@ class FeedPreviewModel {
 
   /// How [version] relates to the installed [currentVersion].
   final VersionChange versionChange;
+
+  /// The full script text this preview would install — surfaced by the
+  /// pre-install audit viewer.
+  final String script;
 }
 
 @immutable
@@ -803,6 +808,7 @@ class FeedService {
       accessDomains: info.accessDomains.toList(growable: false),
       currentVersion: info.currentVersion,
       versionChange: info.versionChange,
+      script: info.script,
     );
   }
 

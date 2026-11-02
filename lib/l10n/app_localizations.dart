@@ -1286,6 +1286,12 @@ abstract class AppLocalizations {
   /// **'Failed to import feeds'**
   String get feedsImportError;
 
+  /// Snack: the picked feed-import file is larger than accepted
+  ///
+  /// In en, this message translates to:
+  /// **'Import file exceeds {size}'**
+  String feedsImportTooLarge(String size);
+
   /// Dialog title: confirm a feed import
   ///
   /// In en, this message translates to:
@@ -1531,6 +1537,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Feed installed successfully'**
   String get addFeedSuccess;
+
+  /// Install preview: button opening the pre-install script viewer
+  ///
+  /// In en, this message translates to:
+  /// **'View script ({size})'**
+  String addFeedAuditAction(String size);
+
+  /// Script audit viewer: app bar title
+  ///
+  /// In en, this message translates to:
+  /// **'Script audit'**
+  String get addFeedAuditTitle;
+
+  /// Script audit viewer header: script size and line count
+  ///
+  /// In en, this message translates to:
+  /// **'{size} · {lines} lines'**
+  String addFeedAuditStats(String size, int lines);
+
+  /// Script audit viewer: copy-script tooltip
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get addFeedAuditCopy;
+
+  /// Snackbar after copying the whole script
+  ///
+  /// In en, this message translates to:
+  /// **'Script copied'**
+  String get addFeedAuditCopied;
+
+  /// Script audit viewer: soft-wrap toggle tooltip
+  ///
+  /// In en, this message translates to:
+  /// **'Toggle line wrapping'**
+  String get addFeedAuditWrap;
+
+  /// Script audit viewer: formatted-view toggle tooltip
+  ///
+  /// In en, this message translates to:
+  /// **'Toggle formatted view'**
+  String get addFeedAuditFormat;
+
+  /// Script audit viewer: note shown while the formatted view is active
+  ///
+  /// In en, this message translates to:
+  /// **'Formatted for reading — the installed script stays untouched'**
+  String get addFeedAuditFormattedNote;
+
+  /// Script audit viewer: search field hint
+  ///
+  /// In en, this message translates to:
+  /// **'Search the script…'**
+  String get addFeedAuditSearchHint;
+
+  /// Script audit viewer: live search match count
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 match} other{{count} matches}}'**
+  String addFeedAuditMatchCount(int count);
+
+  /// Script audit viewer: search found nothing
+  ///
+  /// In en, this message translates to:
+  /// **'No matches'**
+  String get addFeedAuditNoMatch;
+
+  /// Script audit viewer: empty-script placeholder
+  ///
+  /// In en, this message translates to:
+  /// **'The script is empty'**
+  String get addFeedAuditEmpty;
 
   /// Settings section: reading preferences
   ///

@@ -35,6 +35,9 @@ pub(crate) fn localize_error(e: &langhuan::error::Error) -> String {
             ScriptError::InvalidFeed { message } => {
                 t!("error.invalid_feed", message = message).to_string()
             }
+            ScriptError::TooLarge { limit } => {
+                t!("error.script_too_large", limit = size_label(*limit)).to_string()
+            }
             ScriptError::Parse { line, message } => {
                 t!("error.script_parse", line = line, message = message).to_string()
             }
@@ -114,4 +117,15 @@ fn join<'a>(mut iter: impl Iterator<Item = &'a str>, joiner: &str) -> String {
     }
 
     joined
+}
+
+/// Render a byte size the way the UI does (e.g. `2 MB`).
+pub(crate) fn size_label(bytes: usize) -> String {
+    const MB: usize = 1024 * 1024;
+    const KB: usize = 1024;
+    if bytes >= MB {
+        format!("{} MB", bytes / MB)
+    } else {
+        format!("{} KB", bytes / KB)
+    }
 }

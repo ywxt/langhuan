@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
@@ -6,6 +8,7 @@ import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart' show VersionChange;
 import '../feed_service.dart';
 import 'feed_security_warning.dart';
+import 'script_audit_page.dart';
 
 // ---------------------------------------------------------------------------
 // URL text field
@@ -130,6 +133,31 @@ class FeedPreviewContent extends StatelessWidget {
           ],
           const SizedBox(height: LanghuanTheme.spaceMd),
           const FeedSecurityWarning(),
+          const SizedBox(height: LanghuanTheme.spaceSm),
+          // The security warning asks the user to trust the source; this
+          // lets them verify it first — the viewer shows exactly the text
+          // an install would persist and run.
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.of(context, rootNavigator: true).push(
+                MaterialPageRoute<void>(
+                  fullscreenDialog: true,
+                  builder: (_) => ScriptAuditPage(
+                    script: preview.script,
+                    name: preview.name,
+                    version: preview.version,
+                  ),
+                ),
+              ),
+              icon: const Icon(Icons.code_rounded, size: 18),
+              label: Text(
+                l10n.addFeedAuditAction(
+                  formatScriptSize(utf8.encode(preview.script).length),
+                ),
+              ),
+            ),
+          ),
           const SizedBox(height: LanghuanTheme.spaceMd),
           Divider(color: colorScheme.outline),
           const SizedBox(height: LanghuanTheme.spaceMd),

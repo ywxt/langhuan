@@ -53,6 +53,12 @@ pub enum ScriptError {
     #[error("invalid feed metadata: {message}")]
     InvalidFeed { message: String },
 
+    /// A feed script (downloaded or read from disk) exceeded the maximum
+    /// accepted size. Refused before it is buffered in full, shipped to the
+    /// UI for auditing, or compiled.
+    #[error("feed script exceeds {limit} bytes")]
+    TooLarge { limit: usize },
+
     /// An error occurred while parsing the feed script header.
     #[error("script parse error at line {line}: {message}")]
     Parse { line: usize, message: String },
@@ -212,6 +218,11 @@ impl Error {
             message: message.into(),
         }
         .into()
+    }
+
+    #[inline]
+    pub fn script_too_large(limit: usize) -> Self {
+        ScriptError::TooLarge { limit }.into()
     }
 
     #[inline]

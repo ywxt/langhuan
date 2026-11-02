@@ -26,6 +26,7 @@ import 'add_feed_sheet.dart';
 import 'feed_providers.dart';
 import 'widgets/feed_card.dart';
 import 'widgets/feed_import_dialog.dart';
+import 'widgets/script_audit_page.dart' show formatScriptSize;
 
 // ---------------------------------------------------------------------------
 // FeedsPage — Wise-inspired feed (book source) management
@@ -39,6 +40,10 @@ class FeedsPage extends ConsumerStatefulWidget {
 }
 
 class _FeedsPageState extends ConsumerState<FeedsPage> {
+  /// Feed-import JSON files are bounded before they are read into memory —
+  /// each entry installs through the same compile path as a manual install.
+  static const maxImportFileBytes = 64 * 1024 * 1024;
+
   final _filterController = TextEditingController();
   String _filterText = '';
   final Set<String> _pendingDeleteIds = <String>{};
@@ -101,7 +106,18 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
       final path = picked.first.path;
       if (path == null) return;
 
-      final json = await File(path).readAsString();
+      // Bound the payload before reading it into memory.
+      final file = File(path);
+      if (await file.length() > maxImportFileBytes) {
+        if (!mounted) return;
+        showErrorSnack(
+          ScaffoldMessenger.of(context),
+          l10n.feedsImportTooLarge(formatScriptSize(maxImportFileBytes)),
+        );
+        return;
+      }
+
+      final json = await file.readAsString();
       final preview = await ref
           .read(feedServiceProvider)
           .previewImportFeeds(json);

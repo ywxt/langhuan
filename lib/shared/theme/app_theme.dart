@@ -14,6 +14,16 @@ abstract final class LanghuanTheme {
   static const Color forestGreen = Color(0xFF163300);
   static const Color brightGreen = Color(0xFF9FE870);
 
+  // ─── Caution yellow (security warnings) ──────────────────────────────
+
+  /// Material schemes define no yellow role. These pairs follow the
+  /// error-container convention for caution callouts that should alert
+  /// without signalling failure — e.g. the feed-install security warning.
+  static const Color warningContainerLight = Color(0xFFFFF3CD);
+  static const Color onWarningContainerLight = Color(0xFF664D03);
+  static const Color warningContainerDark = Color(0xFF403A0A);
+  static const Color onWarningContainerDark = Color(0xFFF3E17B);
+
   // ─── Spacing scale (8px grid) ────────────────────────────────────────
 
   static const double spaceXs = 4;

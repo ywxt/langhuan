@@ -252,6 +252,19 @@ impl RegistryActor {
 
     async fn do_preview_from_file(&mut self, path: String) -> Result<FeedPreviewInfo, BridgeError> {
         tracing::debug!(path = %path, "preview feed from file");
+        // Refuse oversized scripts before reading them into memory — the
+        // preview payload carries the full text to Dart for auditing.
+        // The typed error carries the classification (ScriptConfig) and
+        // localization through the shared From<langhuan::Error> path.
+        let size = tokio::fs::metadata(&path).await.map_err(|e| {
+            BridgeError::from(t!("error.file_read", error = e.to_string()).to_string())
+        })?;
+        if size.len() as usize > langhuan::script::source::MAX_SCRIPT_BYTES {
+            return Err(langhuan::error::Error::script_too_large(
+                langhuan::script::source::MAX_SCRIPT_BYTES,
+            )
+            .into());
+        }
         let content = tokio::fs::read_to_string(&path).await.map_err(|e| {
             BridgeError::from(t!("error.file_read", error = e.to_string()).to_string())
         })?;
@@ -280,7 +293,7 @@ impl RegistryActor {
         self.push_pending(
             meta.id.clone(),
             PendingInstall {
-                content,
+                content: content.clone(),
                 source_url,
                 seq: 0,
             },
@@ -297,6 +310,7 @@ impl RegistryActor {
             current_version,
             version_change,
             schema_version: meta.schema_version,
+            script: content,
         })
     }
 
@@ -859,5 +873,62 @@ export default (() => {{
         assert!(!actor.pending_installs.contains_key("f1"), "oldest evicted");
         assert!(actor.pending_installs.contains_key("f0"), "refreshed kept");
         assert!(actor.pending_installs.contains_key("new"));
+    }
+
+    #[tokio::test]
+    async fn preview_returns_the_script_that_installs() -> TestResult {
+        let db = Db::open_in_memory().await?;
+        let mut actor = RegistryActor::new(ScriptEngine::new(), webview_address());
+        actor.initialize_app_data_directory(db.clone()).await?;
+
+        let script = import_script("f1", "2.0.0");
+        let info = actor.do_preview(script.clone(), None).await?;
+
+        // The audit view shows exactly the text a confirm-install persists.
+        assert_eq!(info.id, "f1");
+        assert_eq!(info.script, script);
+
+        actor.do_install(info.id).await?;
+        let rows = db.call(|repo| repo.list_feeds_with_scripts()).await?;
+        let (row, installed) = rows
+            .into_iter()
+            .find(|(row, _)| row.id == "f1")
+            .expect("f1 row");
+        assert_eq!(row.version, "2.0.0");
+        assert_eq!(installed.as_deref(), Some(script.as_str()));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn preview_from_file_rejects_oversized_scripts() -> TestResult {
+        // One byte over the cap; nothing is read into memory.
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("big.js");
+        std::fs::write(
+            &path,
+            vec![b'a'; langhuan::script::source::MAX_SCRIPT_BYTES + 1],
+        )?;
+
+        let mut actor = RegistryActor::new(ScriptEngine::new(), webview_address());
+        let error = match actor
+            .do_preview_from_file(path.to_string_lossy().into_owned())
+            .await
+        {
+            Err(error) => error,
+            Ok(_) => panic!("an oversized file must be refused before reading"),
+        };
+        // The typed error keeps its ScriptConfig classification through the
+        // shared From<langhuan::Error> conversion.
+        assert!(matches!(
+            error.kind,
+            crate::api::types::ErrorKind::ScriptConfig
+        ));
+        assert!(
+            error.message.contains("2 MB"),
+            "expected a size-limit message, got: {}",
+            error.message
+        );
+        assert!(actor.pending_installs.is_empty());
+        Ok(())
     }
 }

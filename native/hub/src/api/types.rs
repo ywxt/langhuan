@@ -229,6 +229,10 @@ pub struct FeedPreviewInfo {
     /// Relation between `version` and `current_version`.
     pub version_change: VersionChange,
     pub schema_version: u32,
+    /// The full script text this preview would install — surfaced to the
+    /// user for auditing before they confirm, so what they read is exactly
+    /// what gets persisted and run.
+    pub script: String,
 }
 
 // ---------------------------------------------------------------------------
