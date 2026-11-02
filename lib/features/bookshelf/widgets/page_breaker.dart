@@ -19,6 +19,7 @@ class PageItem {
     this.endOffset,
     this.letterSpacing,
     this.badgeGap,
+    this.badgeCompact = false,
   });
 
   final ParagraphContent source;
@@ -28,6 +29,10 @@ class PageItem {
   final int? endOffset;
   final double? letterSpacing;
   final double? badgeGap;
+
+  /// Whether this paragraph's badge resolved to the compact icon-only
+  /// capsule (see [CommentParagraphLayout.compact]).
+  final bool badgeCompact;
 
   String get visibleText {
     final full = switch (source) {
@@ -193,6 +198,7 @@ class PageBreaker {
     required TextAlign textAlign,
     Size? badgeSize,
     double? badgeGap,
+    bool badgeCompact = false,
     required double width,
     required double pageHeight,
     required double remaining,
@@ -241,6 +247,7 @@ class PageBreaker {
             startOffset: charStart == 0 ? null : charStart,
             letterSpacing: badgeGap == null ? null : style.letterSpacing,
             badgeGap: badgeGap,
+            badgeCompact: badgeCompact,
           ),
         );
         pages.add(PageContent(chapterId: chapterId, items: currentItems));
@@ -282,6 +289,7 @@ class PageBreaker {
             startOffset: charStart == 0 ? null : charStart,
             letterSpacing: badgeGap == null ? null : style.letterSpacing,
             badgeGap: badgeGap,
+            badgeCompact: badgeCompact,
           ),
         );
         onUpdate(currentItems, remainingSpace);
@@ -343,6 +351,7 @@ class PageBreaker {
               startOffset: charStart == 0 ? null : charStart,
               letterSpacing: badgeGap == null ? null : style.letterSpacing,
               badgeGap: badgeGap,
+              badgeCompact: badgeCompact,
             ),
           );
           remainingSpace -= sp + restHeight;
@@ -387,6 +396,7 @@ class PageBreaker {
           endOffset: splitChar,
           letterSpacing: badgeGap == null ? null : style.letterSpacing,
           badgeGap: badgeGap,
+          badgeCompact: badgeCompact,
         ),
       );
 
@@ -466,8 +476,7 @@ class PaginationJob {
     Size? Function(String paragraphId)? commentBadgeSizeOf,
   }) : _breaker = breaker,
        _items = items,
-       _badgeSizeOf =
-           commentBadgeSizeOf ?? ((id) => commentBadgeSizes[id]) {
+       _badgeSizeOf = commentBadgeSizeOf ?? ((id) => commentBadgeSizes[id]) {
     final height = breaker.pageSize.height - 4.0;
     if (breaker.pageSize.width <= 0 || height <= 0) {
       // Degenerate geometry: emit everything on one page, like computePages.
@@ -589,8 +598,8 @@ class PaginationJob {
           _current = [];
           _remaining = pageHeight;
         }
-        _remaining -= (_current.isEmpty ? 0 : _breaker.paragraphSpacing) +
-            height;
+        _remaining -=
+            (_current.isEmpty ? 0 : _breaker.paragraphSpacing) + height;
         _current.add(
           PageItem(
             source: item,
@@ -598,6 +607,7 @@ class PaginationJob {
             paragraphId: item.id.toStringValue(),
             letterSpacing: badgeLayout?.style.letterSpacing,
             badgeGap: badgeLayout?.gap,
+            badgeCompact: badgeLayout?.compact ?? false,
           ),
         );
         return;
@@ -614,6 +624,7 @@ class PaginationJob {
         },
         style: style,
         badgeGap: badgeLayout?.gap,
+        badgeCompact: badgeLayout?.compact ?? false,
         textAlign: item is ParagraphContent_Title
             ? TextAlign.center
             : TextAlign.start,

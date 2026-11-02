@@ -144,6 +144,7 @@ class PageContentView extends StatelessWidget {
         textAlign: TextAlign.center,
         commentCount: badgeCount,
         badgeGap: item.badgeGap,
+        badgeCompact: item.badgeCompact,
         onCommentTap: badgeTap,
       );
     }
@@ -159,6 +160,7 @@ class PageContentView extends StatelessWidget {
         ),
         commentCount: badgeCount,
         badgeGap: item.badgeGap,
+        badgeCompact: item.badgeCompact,
         onCommentTap: badgeTap,
       );
     }

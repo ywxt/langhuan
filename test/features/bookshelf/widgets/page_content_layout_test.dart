@@ -87,9 +87,25 @@ void main() {
   test('badge spacing tightens before paragraph tracking', () {
     final text = List.filled(18, '文').join();
     final layout = layoutFor(text, 44);
+    expect(layout.compact, isFalse);
     expect(layout.style.letterSpacing, isNull);
     expect(layout.gap, inInclusiveRange(2, 4.01));
     expect(layoutFor('短正文', 44).gap, CommentBadge.inlineGap);
+  });
+
+  test('a tight last line falls back to the icon-only badge', () {
+    // 18 glyphs = 10 + 8; the last line has 40px free but the full badge
+    // unit needs 78. The icon capsule's 52px unit fits (140 + 52 = 192),
+    // keeping the final character on its line instead of wrapping both
+    // to a near-empty extra line.
+    final layout = layoutFor(List.filled(18, '文').join(), 58);
+    expect(layout.compact, isTrue);
+    expect(layout.gap, CommentBadge.inlineGap);
+    expect(layout.style, compressionStyle);
+    expect(
+      layout.badgeSize(const Size(58, 20)),
+      const Size(32, 18), // capsule 26 + gap 6, per inlineSize's convention.
+    );
   });
 
   test('compression applies to every page fragment of the paragraph', () {
@@ -121,12 +137,96 @@ void main() {
     for (final item in pages.expand((p) => p.items)) {
       expect(item.letterSpacing, layout.style.letterSpacing);
       expect(item.badgeGap, layout.gap);
+      expect(item.badgeCompact, isFalse);
     }
     expect(pages.expand((p) => p.items).map((p) => p.visibleText).join(), text);
   });
 
+  test('compact badges paginate on the paragraph line grid', () {
+    final text = List.filled(18, '文').join();
+    final paragraph = ParagraphContent.text(
+      id: const ParagraphId(
+        original: OriginalParagraphId.source('compact'),
+        path: [],
+      ),
+      content: text,
+      commentCount: 12,
+    );
+    final pages =
+        PageBreaker(
+          pageSize: const Size(200, 24),
+          textStyle: compressionStyle,
+          titleStyle: compressionStyle,
+          paragraphSpacing: 0,
+          imageHeight: 20,
+          textDirection: TextDirection.ltr,
+        ).computePages(
+          [paragraph],
+          commentBadgeSizes: {paragraph.id.toStringValue(): const Size(58, 20)},
+        );
+    // The full badge would need a third line — and a third page.
+    expect(pages, hasLength(2));
+    for (final item in pages.expand((p) => p.items)) {
+      expect(item.badgeCompact, isTrue);
+      expect(item.letterSpacing, isNull);
+      expect(item.badgeGap, CommentBadge.inlineGap);
+    }
+    expect(pages.expand((p) => p.items).map((p) => p.visibleText).join(), text);
+  });
+
+  testWidgets('the compact badge drops the count label, not the count', (
+    tester,
+  ) async {
+    Future<void> pump(int glyphCount) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 200,
+                child: BadgedText(
+                  text: List.filled(glyphCount, '文').join(),
+                  style: compressionStyle,
+                  commentCount: 12,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 18 glyphs: the last line cannot fit the full badge, so the paragraph
+    // falls back to the icon-only capsule and keeps its two lines.
+    await pump(18);
+    expect(
+      tester.widget<CommentBadge>(find.byType(CommentBadge)).compact,
+      isTrue,
+    );
+    expect(find.text('12'), findsNothing);
+    expect(find.byIcon(Icons.chat_bubble_outline), findsOneWidget);
+    expect(tester.getSize(find.byType(BadgedText)).height, closeTo(40, 1.01));
+    final handle = tester.ensureSemantics();
+    await tester.pumpAndSettle();
+    // No label text, but the count stays reachable for assistive tech.
+    expect(find.bySemanticsLabel(RegExp(r'12')), findsWidgets);
+    handle.dispose();
+
+    // Roomy paragraph: the full badge with its count label stays.
+    await pump(5);
+    expect(
+      tester.widget<CommentBadge>(find.byType(CommentBadge)).compact,
+      isFalse,
+    );
+    expect(find.text('12'), findsOneWidget);
+    expect(tester.getSize(find.byType(BadgedText)).height, closeTo(20, 1.01));
+  });
+
   test('excessive compression falls back to wrapping', () {
     final layout = layoutFor(List.filled(20, '文').join(), 46);
+    expect(layout.compact, isFalse);
     expect(layout.style, compressionStyle);
     expect(layout.gap, CommentBadge.inlineGap);
   });

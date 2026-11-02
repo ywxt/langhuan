@@ -9,8 +9,19 @@ import '../../../l10n/app_localizations.dart';
 /// badge — see the reader's paragraph-comment plumbing for the "last
 /// fragment per source paragraph" dedup that keeps split paragraphs from
 /// stacking badges.
+///
+/// When no layout stage can fit the full capsule on the paragraph's last
+/// line ([CommentParagraphLayout.resolve]), the badge falls back to
+/// [compact]: the icon-only capsule, one third as wide, whose narrower
+/// inline unit keeps the last character on its line instead of wrapping
+/// character and badge to a near-empty extra line.
 class CommentBadge extends StatelessWidget {
-  const CommentBadge({super.key, required this.count, this.onTap});
+  const CommentBadge({
+    super.key,
+    required this.count,
+    this.onTap,
+    this.compact = false,
+  });
 
   final int count;
 
@@ -18,6 +29,11 @@ class CommentBadge extends StatelessWidget {
   /// target for comments — the surrounding paragraph stays free for the
   /// reader's tap-to-toggle-controls gesture.
   final VoidCallback? onTap;
+
+  /// Drops the count label and shows the 💬 icon capsule alone — the
+  /// space-saving fallback for paragraphs whose last line cannot fit the
+  /// full badge. The count stays exposed to semantics.
+  final bool compact;
 
   static const inlineGap = 6.0;
   static const _horizontalPadding = 7.0;
@@ -68,42 +84,64 @@ class CommentBadge extends StatelessWidget {
   static final _inlineSizeCache =
       <(int, TextDirection, Locale, TextStyle), Size>{};
 
+  /// The compact (icon-only) capsule, following [inlineSize]'s convention:
+  /// width includes the leading [inlineGap], the rest is the capsule
+  /// itself. Constant geometry — there is no label to measure — and
+  /// roughly a third the width of the full badge, which is what lets
+  /// tight last lines keep their final character.
+  static const compactInlineSize = Size(
+    inlineGap + _horizontalPadding * 2 + _iconSize,
+    _verticalPadding * 2 + _iconSize,
+  );
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final badge = Container(
       padding: const EdgeInsets.symmetric(
         horizontal: _horizontalPadding,
         vertical: _verticalPadding,
       ),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.chat_bubble_outline,
-            size: _iconSize,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: _labelGap),
-          Text(
-            formatCommentCount(count, context),
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              height: 1.1,
+      child: compact
+          ? Icon(
+              Icons.chat_bubble_outline,
+              size: _iconSize,
+              color: scheme.onSurfaceVariant,
+            )
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.chat_bubble_outline,
+                  size: _iconSize,
+                  color: scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: _labelGap),
+                Text(
+                  formatCommentCount(count, context),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    height: 1.1,
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
     );
-    if (onTap == null) return badge;
+    // The compact form has no label text; keep the count reachable for
+    // assistive tech (the full form exposes it through its own Text).
+    final labeled = compact
+        ? Semantics(label: formatCommentCount(count, context), child: badge)
+        : badge;
+    if (onTap == null) return labeled;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: badge,
+      child: labeled,
     );
   }
 }
@@ -111,6 +149,11 @@ class CommentBadge extends StatelessWidget {
 /// Paragraph text with the comment badge flowing inline right after the
 /// last character — the official-app placement. A null or non-positive
 /// [commentCount] renders a plain [Text].
+///
+/// When the last line cannot fit the full badge, [CommentParagraphLayout]
+/// may resolve to the compact icon-only capsule ([CommentBadge.compact]);
+/// pagination communicates that through [badgeCompact], the standalone
+/// path re-resolves it in [build] from the live constraints.
 class BadgedText extends StatelessWidget {
   /// Keep the last complete text grapheme, closing punctuation and spaces
   /// with the badge, so punctuation cannot become an isolated final line.
@@ -177,6 +220,7 @@ class BadgedText extends StatelessWidget {
     this.commentCount,
     this.onCommentTap,
     this.badgeGap,
+    this.badgeCompact = false,
   });
 
   final String text;
@@ -191,6 +235,11 @@ class BadgedText extends StatelessWidget {
 
   /// Supplied by pagination so every fragment uses the same paragraph layout.
   final double? badgeGap;
+
+  /// Whether this paragraph resolved to the compact icon-only capsule
+  /// (pagination path; derived by [CommentParagraphLayout.resolve] on the
+  /// standalone path).
+  final bool badgeCompact;
 
   @override
   Widget build(BuildContext context) {
@@ -212,7 +261,11 @@ class BadgedText extends StatelessWidget {
                 locale: Localizations.localeOf(context),
                 align: textAlign ?? TextAlign.start,
               )
-            : CommentParagraphLayout(effectiveStyle, badgeGap!);
+            : CommentParagraphLayout(
+                effectiveStyle,
+                badgeGap!,
+                compact: badgeCompact,
+              );
         return Text.rich(
           inlineSpan(
             text,
@@ -230,7 +283,11 @@ class BadgedText extends StatelessWidget {
                       ),
                       child: Padding(
                         padding: EdgeInsets.only(left: layout.gap),
-                        child: CommentBadge(count: count, onTap: onCommentTap),
+                        child: CommentBadge(
+                          count: count,
+                          onTap: onCommentTap,
+                          compact: layout.compact,
+                        ),
                       ),
                     ),
                   ),
@@ -246,15 +303,26 @@ class BadgedText extends StatelessWidget {
 }
 
 /// Paragraph-wide tracking, bounded to 0.05 em. Glyphs are never scaled.
-/// Compression is applied only if it avoids the extra line caused by a badge.
+/// Compression is applied only if it avoids the extra line caused by a
+/// badge. When neither gap nor tracking fits the full badge, [resolve]
+/// retries the stages with the compact icon-only capsule (see
+/// [CommentBadge.compactInlineSize]) before accepting the wrap.
 class CommentParagraphLayout {
-  const CommentParagraphLayout(this.style, this.gap);
+  const CommentParagraphLayout(this.style, this.gap, {this.compact = false});
 
   final TextStyle style;
   final double gap;
 
-  Size badgeSize(Size original) =>
-      Size(original.width - CommentBadge.inlineGap + gap, original.height);
+  /// Whether the paragraph renders the compact icon-only capsule — set
+  /// by [resolve] when only the narrower badge keeps the last line intact.
+  final bool compact;
+
+  Size badgeSize(Size original) => compact
+      ? Size(
+          CommentBadge.compactInlineSize.width - CommentBadge.inlineGap + gap,
+          CommentBadge.compactInlineSize.height,
+        )
+      : Size(original.width - CommentBadge.inlineGap + gap, original.height);
 
   static CommentParagraphLayout resolve({
     required String text,
@@ -324,48 +392,76 @@ class CommentParagraphLayout {
     // pagination cost for badge-dense chapters.
     const minGap = 2.0;
 
-    // Stage 1 — a smaller badge gap alone can free enough room.
-    final gapCandidate = leftover - badgeSize.width + CommentBadge.inlineGap;
-    if (gapCandidate >= minGap) {
-      final tightened = CommentParagraphLayout(
-        style,
-        (gapCandidate - 0.25).clamp(minGap, CommentBadge.inlineGap),
-      );
-      if (lineCount(badged(tightened)) <= target) return tightened;
-    }
+    // Stage 1 — a smaller badge gap alone — and stage 2 — letter-spacing
+    // reduction, gap already minimal — parameterised by the badge width
+    // being fitted. Null when no stage fits that badge.
+    CommentParagraphLayout? fitStages({required bool compact}) {
+      final badgeWidth = compact
+          ? CommentBadge.compactInlineSize.width
+          : badgeSize.width;
 
-    // Stage 2 — letter-spacing reduction, gap already minimal.
-    final overflow =
-        badgeSize.width - CommentBadge.inlineGap + minGap - leftover;
-    final tracking = style.letterSpacing ?? 0;
-    final maxReduction = fontSize * 0.05;
-    CommentParagraphLayout reduced(double amount) => CommentParagraphLayout(
-      style.copyWith(letterSpacing: tracking - amount),
-      minGap,
-    );
-    bool fitsReduction(double amount) {
-      if (amount > maxReduction) return false;
-      return lineCount(badged(reduced(amount))) <= target;
-    }
-
-    final glyphCount = text.characters.length;
-    var reduction = overflow / (glyphCount > 0 ? glyphCount : 1) * 1.2 + 0.05;
-    if (reduction > maxReduction) reduction = maxReduction;
-    if (fitsReduction(reduction)) {
-      // Prefer the loosest tracking that fits: one halving probe recovers
-      // most of the slack the safety margin added.
-      final relaxed = reduction / 2;
-      if (relaxed >= 0.05 && fitsReduction(relaxed)) {
-        return reduced(relaxed);
+      // Stage 1 — a smaller badge gap alone can free enough room.
+      final gapCandidate = leftover - badgeWidth + CommentBadge.inlineGap;
+      if (gapCandidate >= minGap) {
+        final tightened = CommentParagraphLayout(
+          style,
+          (gapCandidate - 0.25).clamp(minGap, CommentBadge.inlineGap),
+          compact: compact,
+        );
+        if (lineCount(badged(tightened)) <= target) return tightened;
       }
-      return reduced(reduction);
+
+      // Stage 2 — letter-spacing reduction, gap already minimal.
+      final overflow = badgeWidth - CommentBadge.inlineGap + minGap - leftover;
+      final tracking = style.letterSpacing ?? 0;
+      final maxReduction = fontSize * 0.05;
+      CommentParagraphLayout reduced(double amount) => CommentParagraphLayout(
+        style.copyWith(letterSpacing: tracking - amount),
+        minGap,
+        compact: compact,
+      );
+      bool fitsReduction(double amount) {
+        if (amount > maxReduction) return false;
+        return lineCount(badged(reduced(amount))) <= target;
+      }
+
+      final glyphCount = text.characters.length;
+      var reduction = overflow / (glyphCount > 0 ? glyphCount : 1) * 1.2 + 0.05;
+      if (reduction > maxReduction) reduction = maxReduction;
+      if (fitsReduction(reduction)) {
+        // Prefer the loosest tracking that fits: one halving probe recovers
+        // most of the slack the safety margin added.
+        final relaxed = reduction / 2;
+        if (relaxed >= 0.05 && fitsReduction(relaxed)) {
+          return reduced(relaxed);
+        }
+        return reduced(reduction);
+      }
+      // Line-break discreteness can overshoot the linear estimate; correct
+      // once before giving up on this badge width.
+      final corrected = (reduction * 1.6).clamp(reduction, maxReduction);
+      if (corrected > reduction && fitsReduction(corrected)) {
+        return reduced(corrected);
+      }
+      return null;
     }
-    // Line-break discreteness can overshoot the linear estimate; correct
-    // once before giving up (the badge then takes its own line, as before).
-    final corrected = (reduction * 1.6).clamp(reduction, maxReduction);
-    if (corrected > reduction && fitsReduction(corrected)) {
-      return reduced(corrected);
-    }
+
+    // Full badge first: the count label is worth the ≤0.05em compression.
+    final full = fitStages(compact: false);
+    if (full != null) return full;
+
+    // Compact fallback — the icon-only capsule, narrow enough to keep the
+    // last character on its line. Untouched first, then the same stages.
+    final compactAsIs = CommentParagraphLayout(
+      style,
+      CommentBadge.inlineGap,
+      compact: true,
+    );
+    if (lineCount(badged(compactAsIs)) <= target) return compactAsIs;
+    final compactFit = fitStages(compact: true);
+    if (compactFit != null) return compactFit;
+
+    // Neither fits: keep the full badge and accept its extra line.
     return original;
   }
 }
