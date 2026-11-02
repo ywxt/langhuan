@@ -101,8 +101,8 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String bookshelfReadingProgressWithChapter(String chapter, int percent) {
-    return '$chapter · $percent%';
+  String bookshelfReadingProgressPercent(int percent) {
+    return '$percent%';
   }
 
   @override

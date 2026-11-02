@@ -260,11 +260,11 @@ abstract class AppLocalizations {
   /// **'Chapter {current} of {total} · {percent}%'**
   String bookshelfReadingProgress(int current, int total, int percent);
 
-  /// Reading progress on a bookshelf card showing the current chapter title
+  /// Whole-book progress percentage on a bookshelf card, always rendered after the chapter title even when the title is ellipsised
   ///
   /// In en, this message translates to:
-  /// **'{chapter} · {percent}%'**
-  String bookshelfReadingProgressWithChapter(String chapter, int percent);
+  /// **'{percent}%'**
+  String bookshelfReadingProgressPercent(int percent);
 
   /// No description provided for @bookshelfFeedPaused.
   ///

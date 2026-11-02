@@ -86,8 +86,9 @@
   "bookshelfReadingProgress": "Chapter {current} of {total} · {percent}%",
   "@bookshelfReadingProgress": { "description": "Chapter-level reading progress shown on a bookshelf card", "placeholders": { "current": { "type": "int" }, "total": { "type": "int" }, "percent": { "type": "int" } } },
 
-  "bookshelfReadingProgressWithChapter": "{chapter} · {percent}%",
-  "@bookshelfReadingProgressWithChapter": { "description": "Reading progress on a bookshelf card showing the current chapter title", "placeholders": { "chapter": { "type": "String" }, "percent": { "type": "int" } } },
+  "bookshelfReadingProgressPercent": "{percent}%",
+  "@bookshelfReadingProgressPercent": { "description": "Whole-book progress percentage on a bookshelf card, always rendered after the chapter title even when the title is ellipsised", "placeholders": { "percent": { "type": "int" } } },
+
   "bookshelfFeedPaused": "Feed paused",
   "bookshelfFeedPausedHint": "This feed is paused. The saved book remains readable, but update checks are skipped.",
 

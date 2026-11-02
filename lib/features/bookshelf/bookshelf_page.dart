@@ -370,6 +370,10 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
 
 /// Where the reader stopped: the current chapter's title plus the overall
 /// percentage, e.g. "Frostfall · 34%".
+///
+/// The title and the percentage are separate children of a row: a long
+/// title ellipsises while the percentage keeps its place at the end,
+/// instead of the single-line label's ellipsis eating it.
 class _ReadingProgress extends StatelessWidget {
   const _ReadingProgress({
     required this.item,
@@ -386,24 +390,40 @@ class _ReadingProgress extends StatelessWidget {
     final theme = Theme.of(context);
     final percent = (value * 100).round();
     final chapterTitle = item.progressChapterTitleOrNull;
-    final label = chapterTitle != null
-        ? l10n.bookshelfReadingProgressWithChapter(chapterTitle, percent)
-        : l10n.bookshelfReadingProgress(
-            item.progressCurrentChapter!,
-            item.progressTotalChapters!,
-            percent,
-          );
+    final style = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
 
     return Padding(
       padding: const EdgeInsets.only(top: LanghuanTheme.spaceXs),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
+      child: chapterTitle != null
+          ? Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    chapterTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: style,
+                  ),
+                ),
+                Text(
+                  ' · ${l10n.bookshelfReadingProgressPercent(percent)}',
+                  maxLines: 1,
+                  style: style,
+                ),
+              ],
+            )
+          : Text(
+              l10n.bookshelfReadingProgress(
+                item.progressCurrentChapter!,
+                item.progressTotalChapters!,
+                percent,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: style,
+            ),
     );
   }
 }
