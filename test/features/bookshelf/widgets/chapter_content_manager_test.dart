@@ -430,4 +430,63 @@ void main() {
     expect(jumped.pageIndex, 0);
     expect(jumped.pageCount, greaterThan(1));
   });
+
+  testWidgets('toggling showComments keeps pages and position intact', (
+    tester,
+  ) async {
+    final calls = <(String, String, String, bool)>[];
+    final pageProgress = ValueNotifier<ReaderPageProgress?>(null);
+    addTearDown(pageProgress.dispose);
+    final fake = FakeFeedService(
+      paragraphsHandler:
+          (feedId, bookId, chapterId, {forceRefresh = false}) async {
+            calls.add((feedId, bookId, chapterId, forceRefresh));
+            return pagedBodyOf(chapterId);
+          },
+    );
+
+    await pumpWithSettings(
+      tester,
+      fake: fake,
+      pageProgress: pageProgress,
+      showComments: true,
+    );
+
+    await tester.tapAt(const Offset(760, 300));
+    await tester.pumpAndSettle(const Duration(milliseconds: 50));
+
+    final withBadges = pageProgress.value;
+    expect(withBadges, isNotNull);
+    expect(withBadges!.pageIndex, greaterThan(0));
+    final fetchesBefore = calls.length;
+    expect(
+      tester
+          .widgetList<BadgedText>(find.byType(BadgedText))
+          .where((t) => t.commentCount != null),
+      isNotEmpty,
+      reason: 'badges render while comments are shown',
+    );
+
+    // Same state, comments hidden — only the badge capsules may change.
+    await pumpWithSettings(
+      tester,
+      fake: fake,
+      pageProgress: pageProgress,
+      showComments: false,
+    );
+
+    expect(calls.length, fetchesBefore, reason: 'no chapter re-fetched');
+    expect(
+      pageProgress.value,
+      withBadges,
+      reason: 'page breaks and active page must be untouched',
+    );
+    expect(
+      tester
+          .widgetList<BadgedText>(find.byType(BadgedText))
+          .where((t) => t.commentCount != null),
+      isEmpty,
+      reason: 'badges stopped rendering',
+    );
+  });
 }

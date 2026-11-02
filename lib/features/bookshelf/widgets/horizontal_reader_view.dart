@@ -210,6 +210,13 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
         oldWidget.selectedParagraphId != widget.selectedParagraphId) {
       _pageSnapshots.clear();
     }
+    // Badge visibility flipping (the lookup's null-ness) changes what pages
+    // render without changing the PageContent objects — the slot keys stay
+    // put, so the frozen snapshots must be dropped by hand to re-capture.
+    if ((oldWidget.commentBadgeIdsOf == null) !=
+        (widget.commentBadgeIdsOf == null)) {
+      _pageSnapshots.clear();
+    }
   }
 
   @override

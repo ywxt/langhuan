@@ -95,6 +95,11 @@ class ChapterContentManager extends StatefulWidget {
   /// Whether commented paragraphs show their comment badge and intercept
   /// taps to open the comments. The reader-level switch; only meaningful
   /// for feeds whose script reports paragraph comment counts.
+  ///
+  /// Layout never depends on this: pagination always reserves badge space
+  /// while [onParagraphComments] exists, so flipping the switch only stops
+  /// badges from rendering — pages, line grid and reading position stay
+  /// exactly where they were.
   final bool showComments;
 
   /// Opens a paragraph's comments (badge tap). Null disables badges.
@@ -213,7 +218,9 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     // (~20ms combined in debug). Left alone, that lands in the first
     // pagination slice after entry and blows its frame budget. Chapters are
     // still loading from the network now, so warming here hides the cost.
-    if (widget.showComments && widget.onParagraphComments != null) {
+    // Pagination always reserves badge space while comment plumbing exists
+    // (see [_layoutBadgeIdsOf]), so the visibility switch plays no part.
+    if (widget.onParagraphComments != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _warmupPagination());
     }
   }
@@ -546,7 +553,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     String chapterId,
     List<ParagraphContent> paragraphs,
   ) {
-    final badges = _badgeLookup?.call(chapterId) ?? const <String>{};
+    final badges = _layoutBadgeIdsOf?.call(chapterId) ?? const <String>{};
     final counts = <String, int>{
       for (final paragraph in paragraphs)
         if (badges.contains(paragraph.id.toStringValue()))
@@ -755,12 +762,20 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     return ReaderSlotPage(page);
   }
 
-  /// The badge lookup handed to the reading views: null disables badges
-  /// (reader-level switch off, or no comments plumbing).
+  /// The badge lookup handed to the reading views: null disables badge
+  /// rendering (reader-level switch off, or no comments plumbing).
   Set<String> Function(String chapterId)? get _badgeLookup =>
       widget.showComments && widget.onParagraphComments != null
       ? _badgeIdsOf
       : null;
+
+  /// Badge paragraphs for pagination. Deliberately independent of
+  /// [ChapterContentManager.showComments]: pages always reserve badge space
+  /// while comment plumbing exists, so toggling badge visibility never
+  /// re-pages the book — text, page breaks and the restored position stay
+  /// identical, only the capsules appear or disappear.
+  Set<String> Function(String chapterId)? get _layoutBadgeIdsOf =>
+      widget.onParagraphComments != null ? _badgeIdsOf : null;
 
   String? _chapterTitleOf(String chapterId) {
     for (final chapter in widget.chapters) {
@@ -934,13 +949,15 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       return;
     }
 
+    // showComments is intentionally absent here: badge visibility never
+    // changes pagination (see [_layoutBadgeIdsOf]), so flipping the switch
+    // leaves every page and the restored position untouched.
     final typographyChanged =
         oldWidget.fontScale != widget.fontScale ||
         oldWidget.fontFamily != widget.fontFamily ||
         oldWidget.letterSpacing != widget.letterSpacing ||
         oldWidget.paragraphSpacing != widget.paragraphSpacing ||
         oldWidget.lineHeight != widget.lineHeight ||
-        oldWidget.showComments != widget.showComments ||
         (oldWidget.onParagraphComments == null) !=
             (widget.onParagraphComments == null);
 
