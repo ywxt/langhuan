@@ -12,7 +12,6 @@ use messages::prelude::{Actor, Address, Context, Handler};
 use crate::api::types::{
     AuthCapability, AuthEntryInfo, AuthStatus, BridgeError, CookieEntry, ScriptExpectedReason,
 };
-use crate::localize_error;
 
 use super::app_data_actor::InitializeAppDataDirectory;
 use super::registry_actor::{GetFeed, GetFeedIds, RegistryActor};
@@ -64,10 +63,10 @@ impl LoginActor {
         }
     }
 
-    async fn initialize_app_data_directory(&mut self, db: Db) -> Result<(), String> {
+    async fn initialize_app_data_directory(&mut self, db: Db) -> Result<(), BridgeError> {
         tracing::info!("initializing login actor storage");
         if self.db.is_some() {
-            return Err(t!("error.registry_reload_not_supported").to_string());
+            return Err(BridgeError::reload_not_supported());
         }
 
         self.db = Some(db);
@@ -76,12 +75,8 @@ impl LoginActor {
         Ok(())
     }
 
-    async fn hydrate_all_feeds(&mut self) -> Result<(), String> {
-        let feed_ids = match self.registry_addr.send(GetFeedIds).await {
-            Ok(Ok(ids)) => ids,
-            Ok(Err(err)) => return Err(err.to_string()),
-            Err(err) => return Err(format!("internal error: {err}")),
-        };
+    async fn hydrate_all_feeds(&mut self) -> Result<(), BridgeError> {
+        let feed_ids = self.registry_addr.send(GetFeedIds).await??;
 
         for feed_id in feed_ids {
             let feed = self.resolve_feed(&feed_id).await?;
@@ -91,24 +86,20 @@ impl LoginActor {
         Ok(())
     }
 
-    async fn resolve_feed(&mut self, feed_id: &str) -> Result<Arc<CachedFeed<ScriptFeed>>, String> {
-        match self
+    async fn resolve_feed(
+        &mut self,
+        feed_id: &str,
+    ) -> Result<Arc<CachedFeed<ScriptFeed>>, BridgeError> {
+        Ok(self
             .registry_addr
             .send(GetFeed {
                 feed_id: feed_id.to_owned(),
             })
-            .await
-        {
-            Ok(Ok(feed)) => Ok(feed),
-            Ok(Err(err)) => Err(err.to_string()),
-            Err(err) => Err(format!("internal error: {err}")),
-        }
+            .await??)
     }
 
     fn db(&self) -> Result<&Db, BridgeError> {
-        self.db
-            .as_ref()
-            .ok_or_else(|| BridgeError::from(t!("error.app_data_dir_not_set").to_string()))
+        self.db.as_ref().ok_or_else(BridgeError::not_initialized)
     }
 
     /// Push the stored auth payload (if any) into a compiled feed.
@@ -116,30 +107,25 @@ impl LoginActor {
         &self,
         feed_id: &str,
         feed: &CachedFeed<ScriptFeed>,
-    ) -> Result<(), String> {
+    ) -> Result<(), BridgeError> {
         let Some(support) = feed.supports_auth() else {
             return Ok(());
         };
 
-        let db = self
-            .db
-            .as_ref()
-            .ok_or_else(|| t!("error.app_data_dir_not_set").to_string())?;
+        let db = self.db.as_ref().ok_or_else(BridgeError::not_initialized)?;
         let id = feed_id.to_owned();
-        let auth_info = db
-            .call(move |repo| repo.get_auth(&id))
-            .await
-            .map_err(|e| localize_error(&e))?;
-        feed.set_auth_info(&support, auth_info)
-            .map_err(|e| localize_error(&e))
+        let auth_info = db.call(move |repo| repo.get_auth(&id)).await?;
+        feed.set_auth_info(&support, auth_info)?;
+        Ok(())
     }
 
     async fn do_auth_capability(&mut self, feed_id: &str) -> Result<AuthCapability, BridgeError> {
-        match self.resolve_feed(feed_id).await {
-            Err(msg) => Err(BridgeError::from(msg)),
-            Ok(feed) if feed.supports_auth().is_some() => Ok(AuthCapability::Supported),
-            Ok(_) => Ok(AuthCapability::Unsupported),
-        }
+        let feed = self.resolve_feed(feed_id).await?;
+        Ok(if feed.supports_auth().is_some() {
+            AuthCapability::Supported
+        } else {
+            AuthCapability::Unsupported
+        })
     }
 
     async fn do_auth_entry(&mut self, feed_id: &str) -> Result<Option<AuthEntryInfo>, BridgeError> {
@@ -160,9 +146,7 @@ impl LoginActor {
     async fn do_auth_submit_page(&mut self, msg: FeedAuthSubmitPageMsg) -> Result<(), BridgeError> {
         let feed = self.resolve_feed(&msg.feed_id).await?;
         let Some(support) = feed.supports_auth() else {
-            return Err(BridgeError::from(
-                t!("error.auth_status_not_supported", feed_id = &msg.feed_id).to_string(),
-            ));
+            return Err(BridgeError::auth_status_not_supported(&msg.feed_id));
         };
         let page = AuthPageContext {
             current_url: msg.current_url,
@@ -232,9 +216,7 @@ impl LoginActor {
         let feed = self.resolve_feed(feed_id).await?;
         self.hydrate_feed_auth(feed_id, &feed).await?;
         let Some(support) = feed.supports_auth() else {
-            return Err(BridgeError::from(
-                t!("error.auth_status_not_supported", feed_id = feed_id).to_string(),
-            ));
+            return Err(BridgeError::auth_status_not_supported(feed_id));
         };
         match feed.auth_status(&support).await {
             Ok(FeedAuthStatus::LoggedIn) => Ok(AuthStatus::LoggedIn),
@@ -263,7 +245,7 @@ impl LoginActor {
 
 #[async_trait]
 impl Handler<InitializeAppDataDirectory> for LoginActor {
-    type Result = Result<(), String>;
+    type Result = Result<(), BridgeError>;
 
     async fn handle(&mut self, msg: InitializeAppDataDirectory, _: &Context<Self>) -> Self::Result {
         self.initialize_app_data_directory(msg.db).await

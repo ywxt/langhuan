@@ -85,6 +85,61 @@ impl BridgeError {
             detail: None,
         }
     }
+
+    /// The data store was used before the app-data directory was
+    /// initialized (`InitializeAppDataDirectory` has not run): the store
+    /// is unavailable, not broken.
+    pub fn not_initialized() -> Self {
+        Self {
+            kind: ErrorKind::Storage,
+            message: t!("error.app_data_dir_not_set").to_string(),
+            detail: None,
+        }
+    }
+
+    /// The app-data directory was already initialized with a different
+    /// path; re-initialization is not supported. An invariant of the
+    /// bootstrap flow rather than a runtime failure.
+    pub fn reload_not_supported() -> Self {
+        Self {
+            kind: ErrorKind::Internal,
+            message: t!("error.app_data_reload_not_supported").to_string(),
+            detail: None,
+        }
+    }
+
+    /// Reading a local (picked) file failed.
+    pub fn file_read(error: impl std::fmt::Display) -> Self {
+        Self {
+            kind: ErrorKind::Storage,
+            message: t!("error.file_read", error = error.to_string()).to_string(),
+            detail: None,
+        }
+    }
+
+    /// A confirm-install referenced a preview that is no longer pending —
+    /// never previewed, or already installed and evicted.
+    pub fn no_pending_preview() -> Self {
+        Self {
+            kind: ErrorKind::Registry,
+            message: t!("error.no_pending_preview").to_string(),
+            detail: None,
+        }
+    }
+
+    /// The feed's script declares no auth support, so the auth request
+    /// cannot apply to it.
+    pub fn auth_status_not_supported(feed_id: impl std::fmt::Display) -> Self {
+        Self {
+            kind: ErrorKind::ScriptConfig,
+            message: t!(
+                "error.auth_status_not_supported",
+                feed_id = feed_id.to_string()
+            )
+            .to_string(),
+            detail: None,
+        }
+    }
 }
 
 impl From<String> for BridgeError {
@@ -561,6 +616,31 @@ mod tests {
             err.message.contains("VIP chapter needs login"),
             "localized message still presents the script detail"
         );
+    }
+
+    /// Hub-side conditions construct through named constructors, so each
+    /// carries the kind fixed where its message is defined.
+    #[test]
+    fn hub_conditions_carry_fixed_kinds() {
+        assert!(matches!(
+            BridgeError::not_initialized().kind,
+            ErrorKind::Storage
+        ));
+        assert!(matches!(
+            BridgeError::reload_not_supported().kind,
+            ErrorKind::Internal
+        ));
+        assert!(matches!(
+            BridgeError::file_read("nope").kind,
+            ErrorKind::Storage
+        ));
+        assert!(matches!(
+            BridgeError::no_pending_preview().kind,
+            ErrorKind::Registry
+        ));
+        let err = BridgeError::auth_status_not_supported("feed-7");
+        assert!(matches!(err.kind, ErrorKind::ScriptConfig));
+        assert!(err.message.contains("feed-7"), "message: {}", err.message);
     }
 
     /// A code this app does not know survives as `Other { code }` — the

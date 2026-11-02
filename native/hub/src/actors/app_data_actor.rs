@@ -70,9 +70,7 @@ impl AppDataActor {
                 return Ok(AppDataInitResult { feed_count });
             }
             tracing::warn!("app data directory already set to another path — ignoring");
-            return Err(BridgeError::from(
-                t!("error.app_data_reload_not_supported").to_string(),
-            ));
+            return Err(BridgeError::reload_not_supported());
         }
 
         // One database for everything: registry, cache, bookshelf, progress,

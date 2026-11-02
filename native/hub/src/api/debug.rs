@@ -304,9 +304,7 @@ pub async fn debug_get_installed_script(feed_id: String) -> Result<String, Bridg
         .map_err(BridgeError::from)?;
     match script {
         Some(script) => Ok(script),
-        None => Err(BridgeError::from(
-            rust_i18n::t!("error.feed_not_found", id = feed_id).to_string(),
-        )),
+        None => Err(langhuan::error::Error::feed_not_found(feed_id).into()),
     }
 }
 
@@ -413,10 +411,7 @@ async fn run_stage(
             let Some(support) = feed.supports_auth() else {
                 return (
                     None,
-                    Some(BridgeError::from(
-                        rust_i18n::t!("error.auth_status_not_supported", feed_id = feed.meta().id)
-                            .to_string(),
-                    )),
+                    Some(BridgeError::auth_status_not_supported(&feed.meta().id)),
                 );
             };
             match feed.auth_status(&support).await {

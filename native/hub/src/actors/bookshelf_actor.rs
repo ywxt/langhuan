@@ -58,9 +58,7 @@ impl BookshelfActor {
     }
 
     fn db(&self) -> Result<&Db, BridgeError> {
-        self.db
-            .as_ref()
-            .ok_or_else(|| BridgeError::from(t!("error.app_data_dir_not_set").to_string()))
+        self.db.as_ref().ok_or_else(BridgeError::not_initialized)
     }
 
     async fn add(&mut self, msg: BookshelfAdd) -> Result<BookshelfAddOutcome, BridgeError> {
@@ -165,7 +163,7 @@ impl From<ShelfItem> for BookshelfListItem {
 
 #[async_trait]
 impl Handler<InitializeAppDataDirectory> for BookshelfActor {
-    type Result = Result<(), String>;
+    type Result = Result<(), BridgeError>;
 
     async fn handle(
         &mut self,

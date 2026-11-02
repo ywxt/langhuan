@@ -46,15 +46,13 @@ impl BookmarkActor {
     }
 
     fn db(&self) -> Result<&Db, BridgeError> {
-        self.db
-            .as_ref()
-            .ok_or_else(|| BridgeError::from(t!("error.app_data_dir_not_set").to_string()))
+        self.db.as_ref().ok_or_else(BridgeError::not_initialized)
     }
 }
 
 #[async_trait]
 impl Handler<InitializeAppDataDirectory> for BookmarkActor {
-    type Result = Result<(), String>;
+    type Result = Result<(), BridgeError>;
 
     async fn handle(&mut self, msg: InitializeAppDataDirectory, _: &Context<Self>) -> Self::Result {
         tracing::info!("initializing bookmark storage");

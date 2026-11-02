@@ -336,7 +336,7 @@ impl FeedActor {
 
         match result {
             Ok(Ok(feed)) => Ok(feed),
-            Ok(Err(e)) => Err(BridgeError::from(e.to_string())),
+            Ok(Err(e)) => Err(e.into()),
             Err(e) => Err(BridgeError::from(e)),
         }
     }

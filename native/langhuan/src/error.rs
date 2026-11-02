@@ -82,11 +82,6 @@ pub enum ScriptError {
         supported_version: u32,
     },
 
-    /// The feed script does not implement a `status` handler but
-    /// `auth_status` was called.
-    #[error("feed {feed_id}: auth status check is not supported by this feed")]
-    AuthStatusNotSupported { feed_id: String },
-
     /// A feed script returned duplicate IDs in a single stream.
     #[error("feed {feed_id}: duplicate {kind} id: {id}")]
     DuplicateId {
@@ -266,14 +261,6 @@ impl Error {
     pub fn database(message: impl Into<String>) -> Self {
         PersistenceError::Database {
             message: message.into(),
-        }
-        .into()
-    }
-
-    #[inline]
-    pub fn auth_status_not_supported(feed_id: impl Into<String>) -> Self {
-        ScriptError::AuthStatusNotSupported {
-            feed_id: feed_id.into(),
         }
         .into()
     }

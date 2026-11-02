@@ -20,7 +20,8 @@ use langhuan::script::runtime::ScriptEngine;
 use messages::prelude::{Actor, Address, Context, Handler};
 
 use crate::api::types::{
-    BridgeError, FeedImportFailure, FeedImportOutcome, FeedMetaItem, FeedPreviewInfo, VersionChange,
+    BridgeError, ErrorKind, FeedImportFailure, FeedImportOutcome, FeedMetaItem, FeedPreviewInfo,
+    VersionChange,
 };
 use crate::localize_error;
 
@@ -58,6 +59,25 @@ impl fmt::Display for ResolveError {
             ResolveError::NotFound { id } => {
                 write!(f, "{}", t!("error.feed_not_found", id = id))
             }
+        }
+    }
+}
+
+/// Resolve failures classify like their typed counterparts: the store not
+/// being ready, the feed missing from the registry, or its script having
+/// failed to load. The `Display` impl above stays the single localized
+/// message definition.
+impl From<ResolveError> for BridgeError {
+    fn from(err: ResolveError) -> Self {
+        let kind = match &err {
+            ResolveError::DirNotSet => ErrorKind::Storage,
+            ResolveError::NotFound { .. } => ErrorKind::Registry,
+            ResolveError::Unavailable { .. } => ErrorKind::ScriptConfig,
+        };
+        Self {
+            kind,
+            message: err.to_string(),
+            detail: None,
         }
     }
 }
@@ -173,16 +193,13 @@ impl RegistryActor {
     async fn initialize_app_data_directory(
         &mut self,
         db: Db,
-    ) -> Result<RegistryInitializationResult, String> {
+    ) -> Result<RegistryInitializationResult, BridgeError> {
         tracing::info!("initializing registry actor from database");
         if self.db.is_some() {
-            return Err(t!("error.registry_reload_not_supported").to_string());
+            return Err(BridgeError::reload_not_supported());
         }
 
-        let rows = db
-            .call(|repo| repo.list_feeds_with_scripts())
-            .await
-            .map_err(|e| localize_error(&e))?;
+        let rows = db.call(|repo| repo.list_feeds_with_scripts()).await?;
 
         let mut feeds = HashMap::new();
         let mut load_errors: HashMap<String, String> = HashMap::new();
@@ -217,9 +234,7 @@ impl RegistryActor {
     }
 
     fn require_db(&self) -> Result<&Db, BridgeError> {
-        self.db
-            .as_ref()
-            .ok_or_else(|| BridgeError::from(t!("error.app_data_dir_not_set").to_string()))
+        self.db.as_ref().ok_or_else(BridgeError::not_initialized)
     }
 
     async fn do_list_feeds(&self) -> Vec<FeedMetaItem> {
@@ -256,18 +271,18 @@ impl RegistryActor {
         // preview payload carries the full text to Dart for auditing.
         // The typed error carries the classification (ScriptConfig) and
         // localization through the shared From<langhuan::Error> path.
-        let size = tokio::fs::metadata(&path).await.map_err(|e| {
-            BridgeError::from(t!("error.file_read", error = e.to_string()).to_string())
-        })?;
+        let size = tokio::fs::metadata(&path)
+            .await
+            .map_err(BridgeError::file_read)?;
         if size.len() as usize > langhuan::script::source::MAX_SCRIPT_BYTES {
             return Err(langhuan::error::Error::script_too_large(
                 langhuan::script::source::MAX_SCRIPT_BYTES,
             )
             .into());
         }
-        let content = tokio::fs::read_to_string(&path).await.map_err(|e| {
-            BridgeError::from(t!("error.file_read", error = e.to_string()).to_string())
-        })?;
+        let content = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(BridgeError::file_read)?;
         self.do_preview(content, None).await
     }
 
@@ -338,7 +353,7 @@ impl RegistryActor {
         let pending = self
             .pending_installs
             .remove(&request_id)
-            .ok_or_else(|| BridgeError::from(t!("error.no_pending_preview").to_string()))?;
+            .ok_or_else(BridgeError::no_pending_preview)?;
         let db = self.require_db()?;
 
         // Compile first — a script that cannot run is never persisted.
@@ -581,7 +596,7 @@ impl Handler<GetFeedIds> for RegistryActor {
 
 #[async_trait]
 impl Handler<InitializeAppDataDirectory> for RegistryActor {
-    type Result = Result<RegistryInitializationResult, String>;
+    type Result = Result<RegistryInitializationResult, BridgeError>;
 
     async fn handle(&mut self, msg: InitializeAppDataDirectory, _: &Context<Self>) -> Self::Result {
         self.initialize_app_data_directory(msg.db).await
