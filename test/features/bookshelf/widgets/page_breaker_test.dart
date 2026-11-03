@@ -470,6 +470,107 @@ void main() {
       ]);
     });
   });
+
+  group('vertical justification fills pages that break at text', () {
+    const pageSize = Size(240, 120);
+    // PageContent.extraGap is measured against the breaker's own page
+    // height (pageSize.height - 4).
+    const pageHeight = 116.0;
+    const body = TextStyle(fontSize: 18, height: 1.5);
+
+    ParagraphContent text(String id, String content) => ParagraphContent_Text(
+      id: ParagraphId(original: OriginalParagraphId.source(id), path: []),
+      content: content,
+    );
+
+    double naturalHeight(PageContent page, double spacing) {
+      var total = 0.0;
+      for (var j = 0; j < page.items.length; j++) {
+        if (j > 0) total += spacing;
+        final tp = TextPainter(
+          text: TextSpan(text: page.items[j].visibleText, style: body),
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: pageSize.width);
+        total += tp.height;
+        tp.dispose();
+      }
+      return total;
+    }
+
+    test('a text-break page distributes its leftover into the gaps', () {
+      final breaker = PageBreaker(
+        pageSize: pageSize,
+        textStyle: body,
+        titleStyle: const TextStyle(fontSize: 24),
+        paragraphSpacing: 12,
+        imageHeight: 100,
+        textDirection: TextDirection.ltr,
+      );
+      final pages = breaker.computePages([
+        for (var i = 0; i < 30; i++) text('p$i', '短句$i。'),
+      ], chapterId: 'c');
+
+      // Every page except the last breaks because the next one-line
+      // paragraph (12 spacing + 27 line) does not fit its 11 leftover
+      // pixels, so each carries 11 / 2 = 5.5 extra gap pixels.
+      expect(pages.length, 10);
+      for (final page in pages.take(pages.length - 1)) {
+        expect(page.items.length, 3);
+        expect(page.extraGap, closeTo(5.5, 0.01));
+        final gaps = page.items.length - 1;
+        expect(
+          naturalHeight(page, 12) + gaps * page.extraGap,
+          closeTo(pageHeight, 0.01),
+          reason: 'the stretched gaps fill the page to its bottom',
+        );
+      }
+
+      // The chapter's final page ends where its content does.
+      expect(pages.last.extraGap, 0);
+    });
+
+    test('a page before a kept-whole title keeps its natural space', () {
+      final breaker = PageBreaker(
+        pageSize: pageSize,
+        textStyle: body,
+        titleStyle: const TextStyle(fontSize: 24),
+        paragraphSpacing: 12,
+        imageHeight: 100,
+        textDirection: TextDirection.ltr,
+      );
+      final pages = breaker.computePages([
+        for (var i = 0; i < 20; i++) text('p$i', '短句$i。'),
+        ParagraphContent_Title(
+          id: const ParagraphId(
+            original: OriginalParagraphId.source('heading'),
+            path: [],
+          ),
+          text: '很长很长很长很长很长很长的标题',
+        ),
+        text('after', '後文。'),
+      ], chapterId: 'c');
+
+      // computePages stamps each item with its source id's string form
+      // (ParagraphId.toStringValue), not the bare source value.
+      const headingId = ParagraphId(
+        original: OriginalParagraphId.source('heading'),
+        path: [],
+      );
+      final titlePage = pages.indexWhere(
+        (p) => p.items.any((i) => i.paragraphId == headingId.toStringValue()),
+      );
+      expect(titlePage, greaterThan(0), reason: 'the title moved off a page');
+      // The title starts its own page by design; the page it left behind
+      // keeps its trailing space instead of stretching its gaps.
+      expect(pages[titlePage - 1].extraGap, 0);
+      expect(
+        pages[titlePage].items.first.paragraphId,
+        headingId.toStringValue(),
+      );
+      // The chapter-final page is never justified either.
+      expect(pages.last.extraGap, 0);
+    });
+  });
 }
 
 /// Frozen copy of the original (quadratic) `PageBreaker`, verbatim from the

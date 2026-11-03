@@ -57,7 +57,10 @@ class PageContentView extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (int i = 0; i < items.length; i++) ...[
-            if (i > 0) SizedBox(height: paragraphSpacing),
+            // The gap plus the page's distributed leftover: pages that broke
+            // at a text boundary stretch their gaps to fill the page
+            // ([PageContent.extraGap]); other pages pass a zero leftover.
+            if (i > 0) SizedBox(height: paragraphSpacing + page.extraGap),
             _buildItem(context, theme, items[i]),
           ],
         ],

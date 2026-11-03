@@ -411,4 +411,68 @@ void main() {
       );
     }
   }
+
+  testWidgets('extraGap stretches the inter-item gap when rendering', (
+    tester,
+  ) async {
+    ParagraphContent_Text src(String id) => ParagraphContent_Text(
+      id: ParagraphId(original: OriginalParagraphId.source(id), path: const []),
+      content: '正文',
+    );
+    PageContent build(double extraGap) => PageContent(
+      chapterId: 'c',
+      items: [
+        PageItem(source: src('a'), paragraphIndex: 0, paragraphId: 'a'),
+        PageItem(source: src('b'), paragraphIndex: 1, paragraphId: 'b'),
+      ],
+      extraGap: extraGap,
+    );
+
+    Widget host(PageContent page) => MaterialApp(
+      theme: ThemeData(
+        textTheme: const TextTheme(
+          bodyLarge: TextStyle(fontSize: 20, height: 1.0, fontFamily: 'Ahem'),
+        ),
+      ),
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 200,
+            height: 200,
+            child: PageContentView(
+              page: page,
+              paragraphSpacing: 12,
+              // Defaults would override the theme: keep the 1.0 line height
+              // this test's arithmetic assumes.
+              lineHeight: 1.0,
+              letterSpacing: 0.0,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    double itemStep() {
+      final tops =
+          find
+              .byType(BadgedText)
+              .evaluate()
+              .map(
+                (e) =>
+                    (e.renderObject as RenderBox).localToGlobal(Offset.zero).dy,
+              )
+              .toList()
+            ..sort();
+      expect(tops.length, 2);
+      return tops[1] - tops[0];
+    }
+
+    await tester.pumpWidget(host(build(0)));
+    // One 20px line plus the 12px gap.
+    expect(itemStep(), closeTo(32, 0.01));
+    await tester.pumpWidget(host(build(5)));
+    expect(itemStep(), closeTo(37, 0.01));
+    expect(tester.takeException(), isNull);
+  });
 }

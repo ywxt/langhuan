@@ -49,13 +49,25 @@ class PageItem {
 }
 
 class PageContent {
-  const PageContent({required this.items, this.chapterId = ''});
+  const PageContent({
+    required this.items,
+    this.chapterId = '',
+    this.extraGap = 0,
+  });
 
   final List<PageItem> items;
 
   /// Chapter this page belongs to (set by the content manager when pages
   /// from several chapters are concatenated into one list).
   final String chapterId;
+
+  /// Extra height the renderer adds to every inter-item gap so the page
+  /// fills to its bottom edge — this page's leftover space, distributed
+  /// across its gaps (typeset vertical justification). Set only on pages
+  /// that broke because the next *text* chunk would not fit; the chapter's
+  /// final page and pages before blocks kept whole (titles, images) keep
+  /// their natural trailing space instead, since their break is deliberate.
+  final double extraGap;
 
   int get firstParagraphIndex => items.isEmpty ? 0 : items.first.paragraphIndex;
   String get firstParagraphId => items.isEmpty ? '' : items.first.paragraphId;
@@ -230,6 +242,37 @@ class PageBreaker {
     double spacingFor(List<PageItem> items) =>
         items.isEmpty ? 0.0 : paragraphSpacing;
 
+    // Closes the current page, distributing [leftover] — the space the next
+    // text chunk could not use — into the page's gaps so it fills to its
+    // bottom. Only text-driven breaks do this; see [PageContent.extraGap].
+    void closeJustified(double leftover) {
+      final gaps = currentItems.length - 1;
+      // A paragraph that renders its comment badge can lay out a few pixels
+      // taller than any TextPainter pre-measurement of the same span reports:
+      // even when handed the placeholder's exact dimensions, SkParagraph's
+      // real inline-child layout (the first layout of a baseline-aligned
+      // WidgetSpan) pushes the badge line down by up to about a quarter of
+      // the scaled font size. Hold that much of the leftover back per
+      // badge-rendering item so the stretched gaps can never push real
+      // content past the page host; badge-free pages measure exactly and
+      // stretch to the full leftover.
+      const badgeLineSlackEm = 0.25;
+      var slack = leftover;
+      for (final item in currentItems) {
+        if (item.badgeGap == null || item.endOffset != null) continue;
+        final font =
+            (item.source is ParagraphContent_Title
+                ? titleStyle.fontSize
+                : textStyle.fontSize) ??
+            0;
+        slack -= badgeLineSlackEm * textScaler.scale(font);
+      }
+      final extra = gaps > 0 && slack > 0 ? slack / gaps : 0.0;
+      pages.add(
+        PageContent(chapterId: chapterId, items: currentItems, extraGap: extra),
+      );
+    }
+
     var charStart = 0;
     var lineIdx = 0;
     var remainingSpace = remaining;
@@ -298,7 +341,7 @@ class PageBreaker {
 
       if (space <= 0 ||
           (space < lineMetrics[lineIdx].height && currentItems.isNotEmpty)) {
-        pages.add(PageContent(chapterId: chapterId, items: currentItems));
+        closeJustified(remainingSpace);
         currentItems = [];
         remainingSpace = pageHeight;
         continue;
@@ -314,7 +357,7 @@ class PageBreaker {
 
       if (fitLines == 0) {
         if (currentItems.isNotEmpty) {
-          pages.add(PageContent(chapterId: chapterId, items: currentItems));
+          closeJustified(remainingSpace);
           currentItems = [];
           remainingSpace = pageHeight;
           continue;
@@ -336,7 +379,7 @@ class PageBreaker {
         // move to the next page together, never as an orphan badge.
         final prefixLines = lineMetrics.length - lineIdx - 1;
         if (prefixLines == 0 && currentItems.isNotEmpty) {
-          pages.add(PageContent(chapterId: chapterId, items: currentItems));
+          closeJustified(remainingSpace);
           currentItems = [];
           remainingSpace = pageHeight;
           continue;
@@ -376,7 +419,7 @@ class PageBreaker {
           }
         }
         if (best == 0 && currentItems.isNotEmpty) {
-          pages.add(PageContent(chapterId: chapterId, items: currentItems));
+          closeJustified(remainingSpace);
           currentItems = [];
           remainingSpace = pageHeight;
           continue;
@@ -400,7 +443,9 @@ class PageBreaker {
         ),
       );
 
-      pages.add(PageContent(chapterId: chapterId, items: currentItems));
+      // The fragment consumed `sp` plus its `accH` of lines; whatever the
+      // page could not spend on them is its leftover.
+      closeJustified(remainingSpace - sp - accH);
       currentItems = [];
       remainingSpace = pageHeight;
       charStart = splitChar;
@@ -544,6 +589,8 @@ class PaginationJob {
   void _processNext() {
     if (_index >= _items.length) {
       if (_current.isNotEmpty) {
+        // The chapter's final page ends where its content does — no
+        // justification.
         pages.add(PageContent(chapterId: chapterId, items: _current));
         _current = [];
       }
@@ -594,6 +641,8 @@ class PaginationJob {
       // page need the same continuation logic as body paragraphs.
       if (height <= pageHeight) {
         if (_remaining - spacing < height && _current.isNotEmpty) {
+          // Not justified: the kept-whole title starts the next page by
+          // design, so this page's trailing space is a deliberate break.
           pages.add(PageContent(chapterId: chapterId, items: _current));
           _current = [];
           _remaining = pageHeight;
@@ -644,6 +693,8 @@ class PaginationJob {
       );
     } else if (item is ParagraphContent_Image) {
       if (_remaining - spacing < _breaker.imageHeight && _current.isNotEmpty) {
+        // Not justified, like titles: the kept-whole image starts the next
+        // page by design.
         pages.add(PageContent(chapterId: chapterId, items: _current));
         _current = [];
         _remaining = pageHeight;
