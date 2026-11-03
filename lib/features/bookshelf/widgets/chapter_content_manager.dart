@@ -106,10 +106,11 @@ class ChapterContentManager extends StatefulWidget {
   final void Function(String chapterId, ParagraphContent paragraph)?
   onParagraphComments;
 
-  /// Live page progress of the active chapter (horizontal mode), written
-  /// by this manager as pages turn and pagination completes. Owned by the
-  /// parent (the reader chrome); null skips publishing entirely.
-  final ValueNotifier<ReaderPageProgress?>? pageProgress;
+  /// Live progress of the active chapter, written by this manager as the
+  /// position moves: page units while paging horizontally, paragraph units
+  /// while scrolling vertically. Owned by the parent (the reader chrome);
+  /// null skips publishing entirely.
+  final ValueNotifier<ReaderChapterProgress?>? pageProgress;
 
   /// Height of persistent bottom chrome (the reader status bar) that
   /// vertical-mode content must not scroll beneath. Horizontal mode needs
@@ -849,17 +850,22 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       paragraphOffset: offset,
       charOffset: charOffset,
     );
+    // Vertical scrolls report positions without rebuilding this manager,
+    // so the publish cannot wait for the next build there.
+    _schedulePageProgressPublish();
   }
 
   // ── Page progress publishing ────────────────────────────────────────────
 
-  /// Publish page progress after the frame that changed it.
+  /// Publishes page progress after the frame that changed it.
   ///
   /// Every mutation that can move the active page (turns, jumps, pagination
   /// slices, window changes, re-flows) ends in a rebuild of this manager, so
   /// scheduling from [build] covers them all with one deduplicated callback.
-  /// Publishing post-frame keeps the parent's ValueNotifier — and whatever
-  /// listens to it — out of this widget's build phase.
+  /// Position reports schedule it too, because vertical scrolling moves the
+  /// progress without rebuilding this widget. Publishing post-frame keeps
+  /// the parent's ValueNotifier — and whatever listens to it — out of this
+  /// widget's build phase.
   void _schedulePageProgressPublish() {
     if (_pageProgressPublishScheduled || !mounted) return;
     _pageProgressPublishScheduled = true;
@@ -877,8 +883,10 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     if (notifier.value != progress) notifier.value = progress;
   }
 
-  ReaderPageProgress? _computePageProgress() {
-    if (widget.pageMode != ReaderPageMode.horizontal) return null;
+  ReaderChapterProgress? _computePageProgress() {
+    if (widget.pageMode != ReaderPageMode.horizontal) {
+      return _computeVerticalProgress();
+    }
     final chapterId = _activeChapterId;
     if (chapterId.isEmpty) return null;
     // A pending jump means the target page is not resolved yet (or the
@@ -889,10 +897,37 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     final pages =
         _paginationJobs[chapterId]?.pages ?? _pagesByChapter[chapterId];
     if (pages == null || pages.isEmpty) return null;
-    return ReaderPageProgress(
+    return ReaderChapterProgress(
       chapterId: chapterId,
-      pageIndex: _activeLocalPageIndex.clamp(0, pages.length - 1),
-      pageCount: pages.length,
+      unitIndex: _activeLocalPageIndex.clamp(0, pages.length - 1),
+      unitCount: pages.length,
+    );
+  }
+
+  /// Vertical mode has no pages: the paragraph-granular position feeds the
+  /// same whole-book percentage the bookshelf computes, so the two surfaces
+  /// agree on one reading position.
+  ReaderChapterProgress? _computeVerticalProgress() {
+    final chapterId = _lastReportedChapterId.isNotEmpty
+        ? _lastReportedChapterId
+        : _activeChapterId;
+    final paragraphId = _lastReportedParagraphId;
+    if (chapterId.isEmpty || paragraphId.isEmpty) return null;
+    final paragraphs = _window?.paragraphsOf(chapterId);
+    if (paragraphs == null || paragraphs.isEmpty) return null;
+    var index = -1;
+    for (var i = 0; i < paragraphs.length; i++) {
+      if (paragraphs[i].id.toStringValue() == paragraphId) {
+        index = i;
+        break;
+      }
+    }
+    if (index < 0) return null;
+    return ReaderChapterProgress(
+      chapterId: chapterId,
+      unitIndex: index,
+      unitCount: paragraphs.length,
+      unit: ReaderProgressUnit.paragraph,
     );
   }
 

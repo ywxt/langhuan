@@ -352,8 +352,9 @@ void main() {
   Future<void> pumpWithSettings(
     WidgetTester tester, {
     required FakeFeedService fake,
-    required ValueNotifier<ReaderPageProgress?> pageProgress,
+    required ValueNotifier<ReaderChapterProgress?> pageProgress,
     required bool showComments,
+    ReaderPageMode pageMode = ReaderPageMode.horizontal,
   }) async {
     final controller = sharedController ??= ReaderController();
     await tester.pumpWidget(
@@ -372,7 +373,7 @@ void main() {
             bookId: 'b1',
             chapters: chapters,
             controller: controller,
-            pageMode: ReaderPageMode.horizontal,
+            pageMode: pageMode,
             onToggleControls: () {},
             onParagraphComments: (_, _) {},
             fontScale: 1.0,
@@ -391,7 +392,7 @@ void main() {
   testWidgets('page progress tracks page turns and chapter jumps', (
     tester,
   ) async {
-    final pageProgress = ValueNotifier<ReaderPageProgress?>(null);
+    final pageProgress = ValueNotifier<ReaderChapterProgress?>(null);
     addTearDown(pageProgress.dispose);
     final fake = FakeFeedService(
       paragraphsHandler:
@@ -409,8 +410,8 @@ void main() {
     final initial = pageProgress.value;
     expect(initial, isNotNull, reason: 'the active chapter paginated');
     expect(initial!.chapterId, 'c1');
-    expect(initial.pageIndex, 0);
-    expect(initial.pageCount, greaterThan(1), reason: 'multi-page chapter');
+    expect(initial.unitIndex, 0);
+    expect(initial.unitCount, greaterThan(1), reason: 'multi-page chapter');
 
     // Turn within the chapter: the index advances, the count holds.
     await tester.tapAt(const Offset(760, 300));
@@ -418,8 +419,8 @@ void main() {
     final turned = pageProgress.value;
     expect(turned, isNotNull);
     expect(turned!.chapterId, 'c1');
-    expect(turned.pageIndex, 1);
-    expect(turned.pageCount, initial.pageCount);
+    expect(turned.unitIndex, 1);
+    expect(turned.unitCount, initial.unitCount);
 
     // A jump to another chapter resets to that chapter's resolved page.
     sharedController!.jumpTo(chapterId: 'c2');
@@ -427,15 +428,47 @@ void main() {
     final jumped = pageProgress.value;
     expect(jumped, isNotNull);
     expect(jumped!.chapterId, 'c2');
-    expect(jumped.pageIndex, 0);
-    expect(jumped.pageCount, greaterThan(1));
+    expect(jumped.unitIndex, 0);
+    expect(jumped.unitCount, greaterThan(1));
+  });
+
+  testWidgets('vertical mode publishes paragraph-granular progress', (
+    tester,
+  ) async {
+    final pageProgress = ValueNotifier<ReaderChapterProgress?>(null);
+    addTearDown(pageProgress.dispose);
+    final fake = FakeFeedService(
+      paragraphsHandler:
+          (feedId, bookId, chapterId, {forceRefresh = false}) async =>
+              pagedBodyOf(chapterId),
+    );
+
+    await pumpWithSettings(
+      tester,
+      fake: fake,
+      pageProgress: pageProgress,
+      showComments: true,
+      pageMode: ReaderPageMode.vertical,
+    );
+
+    // Scrolling reports the first visible paragraph, and that report feeds
+    // the progress notifier — paragraph units, not pages.
+    await tester.dragFrom(const Offset(400, 300), const Offset(0, -300));
+    await tester.pumpAndSettle(const Duration(milliseconds: 50));
+
+    final progress = pageProgress.value;
+    expect(progress, isNotNull, reason: 'scrolling published progress');
+    expect(progress!.chapterId, 'c1');
+    expect(progress.unit, ReaderProgressUnit.paragraph);
+    expect(progress.unitCount, 60, reason: 'title-free body paragraph count');
+    expect(progress.unitIndex, greaterThan(0));
   });
 
   testWidgets('toggling showComments keeps pages and position intact', (
     tester,
   ) async {
     final calls = <(String, String, String, bool)>[];
-    final pageProgress = ValueNotifier<ReaderPageProgress?>(null);
+    final pageProgress = ValueNotifier<ReaderChapterProgress?>(null);
     addTearDown(pageProgress.dispose);
     final fake = FakeFeedService(
       paragraphsHandler:
@@ -457,7 +490,7 @@ void main() {
 
     final withBadges = pageProgress.value;
     expect(withBadges, isNotNull);
-    expect(withBadges!.pageIndex, greaterThan(0));
+    expect(withBadges!.unitIndex, greaterThan(0));
     final fetchesBefore = calls.length;
     expect(
       tester

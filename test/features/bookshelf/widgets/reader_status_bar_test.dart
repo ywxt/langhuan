@@ -10,7 +10,7 @@ import 'package:langhuan/shared/theme/app_theme.dart';
 void main() {
   Future<void> pumpBar(
     WidgetTester tester, {
-    required ValueNotifier<ReaderPageProgress?> progress,
+    required ValueNotifier<ReaderChapterProgress?> progress,
     String chapterTitle = 'Chapter title',
     String chapterId = 'c1',
     int chapterIndex = 1,
@@ -50,8 +50,8 @@ void main() {
   testWidgets('shows the chapter title with page and book progress', (
     tester,
   ) async {
-    final progress = ValueNotifier<ReaderPageProgress?>(
-      const ReaderPageProgress(chapterId: 'c1', pageIndex: 2, pageCount: 24),
+    final progress = ValueNotifier<ReaderChapterProgress?>(
+      const ReaderChapterProgress(chapterId: 'c1', unitIndex: 2, unitCount: 24),
     );
     addTearDown(progress.dispose);
 
@@ -62,28 +62,57 @@ void main() {
     expect(find.text('Page 3 / 24 · 28% of book'), findsOneWidget);
   });
 
-  testWidgets('without page progress (vertical mode) only book percent shows', (
-    tester,
-  ) async {
-    final progress = ValueNotifier<ReaderPageProgress?>(null);
-    addTearDown(progress.dispose);
+  testWidgets(
+    'without any progress (position unresolved) only book percent shows',
+    (tester) async {
+      final progress = ValueNotifier<ReaderChapterProgress?>(null);
+      addTearDown(progress.dispose);
 
-    await pumpBar(
-      tester,
-      progress: progress,
-      chapterIndex: 2,
-      chapterCount: 10,
-    );
+      await pumpBar(
+        tester,
+        progress: progress,
+        chapterIndex: 2,
+        chapterCount: 10,
+      );
 
-    expect(find.text('20% of book'), findsOneWidget);
-    expect(find.textContaining('Page'), findsNothing);
-  });
+      expect(find.text('20% of book'), findsOneWidget);
+      expect(find.textContaining('Page'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'paragraph progress (vertical mode) feeds the book percent only',
+    (tester) async {
+      final progress = ValueNotifier<ReaderChapterProgress?>(
+        const ReaderChapterProgress(
+          chapterId: 'c1',
+          unitIndex: 9,
+          unitCount: 20,
+          unit: ReaderProgressUnit.paragraph,
+        ),
+      );
+      addTearDown(progress.dispose);
+
+      await pumpBar(
+        tester,
+        progress: progress,
+        chapterId: 'c1',
+        chapterIndex: 1,
+        chapterCount: 10,
+      );
+
+      // Book = (1 + 10/20) / 10 = 15% — the bookshelf's paragraph-granularity
+      // formula. No page label: vertical mode has no pages.
+      expect(find.text('15% of book'), findsOneWidget);
+      expect(find.textContaining('Page'), findsNothing);
+    },
+  );
 
   testWidgets('a progress value from another chapter is ignored', (
     tester,
   ) async {
-    final progress = ValueNotifier<ReaderPageProgress?>(
-      const ReaderPageProgress(chapterId: 'c0', pageIndex: 5, pageCount: 24),
+    final progress = ValueNotifier<ReaderChapterProgress?>(
+      const ReaderChapterProgress(chapterId: 'c0', unitIndex: 5, unitCount: 24),
     );
     addTearDown(progress.dispose);
 
@@ -101,10 +130,10 @@ void main() {
     expect(find.textContaining('Page'), findsNothing);
 
     // A later progress update addressing the visible chapter applies.
-    progress.value = const ReaderPageProgress(
+    progress.value = const ReaderChapterProgress(
       chapterId: 'c1',
-      pageIndex: 3,
-      pageCount: 24,
+      unitIndex: 3,
+      unitCount: 24,
     );
     await tester.pump();
     expect(find.text('Page 4 / 24 · 29% of book'), findsOneWidget);
@@ -113,8 +142,8 @@ void main() {
   testWidgets('an overly long title is truncated, not the progress', (
     tester,
   ) async {
-    final progress = ValueNotifier<ReaderPageProgress?>(
-      const ReaderPageProgress(chapterId: 'c1', pageIndex: 0, pageCount: 12),
+    final progress = ValueNotifier<ReaderChapterProgress?>(
+      const ReaderChapterProgress(chapterId: 'c1', unitIndex: 0, unitCount: 12),
     );
     addTearDown(progress.dispose);
 
@@ -137,7 +166,7 @@ void main() {
   testWidgets('hidden state fades the bar out of the hit-test tree', (
     tester,
   ) async {
-    final progress = ValueNotifier<ReaderPageProgress?>(null);
+    final progress = ValueNotifier<ReaderChapterProgress?>(null);
     addTearDown(progress.dispose);
 
     await pumpBar(tester, progress: progress, visible: false);
@@ -150,8 +179,8 @@ void main() {
   });
 
   testWidgets('renders without errors across reader themes', (tester) async {
-    final progress = ValueNotifier<ReaderPageProgress?>(
-      const ReaderPageProgress(chapterId: 'c1', pageIndex: 1, pageCount: 8),
+    final progress = ValueNotifier<ReaderChapterProgress?>(
+      const ReaderChapterProgress(chapterId: 'c1', unitIndex: 1, unitCount: 8),
     );
     addTearDown(progress.dispose);
 
@@ -189,5 +218,85 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
     }
+  });
+
+  test('reservedHeightOf follows the scaled labelSmall line box', () {
+    const labelSmall = TextStyle(fontSize: 11, height: 16 / 11);
+    // Fallback metrics when the theme style is absent.
+    expect(ReaderStatusBar.lineHeightOf(null, TextScaler.noScaling), 16);
+    // 11px × 1.6 → 17.6 scaled font, × 16/11 line height = 25.6.
+    expect(
+      ReaderStatusBar.lineHeightOf(labelSmall, TextScaler.linear(1.6)),
+      closeTo(25.6, 0.001),
+    );
+    final base = ReaderStatusBar.reservedHeightOf(
+      labelSmall,
+      TextScaler.noScaling,
+    );
+    final scaled = ReaderStatusBar.reservedHeightOf(
+      labelSmall,
+      TextScaler.linear(1.6),
+    );
+    expect(
+      base,
+      closeTo(
+        16 + ReaderStatusBar.bottomGap + ReaderStatusBar.contentGap,
+        0.001,
+      ),
+    );
+    expect(scaled - base, closeTo(9.6, 0.001));
+  });
+
+  testWidgets('large text scales grow the status line, not clip it', (
+    tester,
+  ) async {
+    final progress = ValueNotifier<ReaderChapterProgress?>(null);
+    addTearDown(progress.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(1.6)),
+            child: Builder(
+              builder: (context) => Stack(
+                children: [
+                  ReaderStatusBar(
+                    visible: true,
+                    theme: Theme.of(context),
+                    chapterId: 'c1',
+                    chapterTitle: 'Chapter title',
+                    chapterIndex: 0,
+                    chapterCount: 2,
+                    pageProgress: progress,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // The line box must hold the scaled text: labelSmall's own metrics at
+    // 1.6 scale, rather than a fixed 16 logical px.
+    final style = tester.widget<Text>(find.text('Chapter title')).style!;
+    final expected =
+        const TextScaler.linear(1.6).scale(style.fontSize ?? 11) *
+        (style.height ?? 16 / 11);
+    final lineBox = tester.renderObject<RenderBox>(
+      find.byWidgetPredicate(
+        (w) => w is SizedBox && w.height != null && w.child is Row,
+      ),
+    );
+    expect(lineBox.size.height, closeTo(expected, 0.01));
+    expect(expected, greaterThan(16));
   });
 }

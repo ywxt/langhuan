@@ -23,44 +23,58 @@ class ParagraphSelection {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Page progress — reported from the content manager to the reader chrome
+// Chapter progress — reported from the content manager to the reader chrome
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// The active chapter's live page position (horizontal mode).
+/// What the position within a chapter is counted in: pages (horizontal
+/// mode) or paragraphs (vertical mode).
+enum ReaderProgressUnit { page, paragraph }
+
+/// The active chapter's live position.
 ///
 /// Published by [ChapterContentManager] through a parent-supplied
-/// [ValueNotifier] so the reader status bar can show `current/total` page
-/// progress without rebuilding the whole reader on every page turn. The
-/// page count is final once the chapter's pagination job completes; while
-/// the job runs, values are provisional and the count only grows.
-class ReaderPageProgress {
-  const ReaderPageProgress({
+/// [ValueNotifier] so the reader status bar can show `current/total`
+/// progress without rebuilding the whole reader on every page turn.
+///
+/// * horizontal mode — [unit] is [ReaderProgressUnit.page]; the count is
+///   final once the chapter's pagination job completes, and provisional
+///   while it runs (the count only grows).
+/// * vertical mode — [unit] is [ReaderProgressUnit.paragraph], the same
+///   granularity the bookshelf's whole-book percentage uses, so both
+///   surfaces agree on one reading position.
+class ReaderChapterProgress {
+  const ReaderChapterProgress({
     required this.chapterId,
-    required this.pageIndex,
-    required this.pageCount,
+    required this.unitIndex,
+    required this.unitCount,
+    this.unit = ReaderProgressUnit.page,
   });
 
   final String chapterId;
 
-  /// 0-based index of the active page within its chapter.
-  final int pageIndex;
+  /// What [unitIndex] and [unitCount] count.
+  final ReaderProgressUnit unit;
 
-  /// Page count of the chapter (final after pagination completes).
-  final int pageCount;
+  /// 0-based index of the active page or paragraph within its chapter.
+  final int unitIndex;
+
+  /// Page or paragraph count of the chapter.
+  final int unitCount;
 
   @override
   bool operator ==(Object other) =>
-      other is ReaderPageProgress &&
+      other is ReaderChapterProgress &&
       other.chapterId == chapterId &&
-      other.pageIndex == pageIndex &&
-      other.pageCount == pageCount;
+      other.unit == unit &&
+      other.unitIndex == unitIndex &&
+      other.unitCount == unitCount;
 
   @override
-  int get hashCode => Object.hash(chapterId, pageIndex, pageCount);
+  int get hashCode => Object.hash(chapterId, unit, unitIndex, unitCount);
 
   @override
   String toString() =>
-      'ReaderPageProgress($chapterId, ${pageIndex + 1}/$pageCount)';
+      'ReaderChapterProgress($chapterId, ${unitIndex + 1}/$unitCount ${unit.name})';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

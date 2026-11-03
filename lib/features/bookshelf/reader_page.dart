@@ -58,7 +58,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
   /// Live page progress of the active chapter, fed by the content manager
   /// and rendered by the bottom status bar.
-  final ValueNotifier<ReaderPageProgress?> _pageProgress = ValueNotifier(null);
+  final ValueNotifier<ReaderChapterProgress?> _pageProgress = ValueNotifier(
+    null,
+  );
 
   @override
   void initState() {
@@ -406,9 +408,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     final topPadding = mediaQuery.padding.top;
     // The transparent bottom status line (plus the safe-area inset) stays
     // clear of reading content: pages end above it and the vertical reader's
-    // viewport is inset likewise.
+    // viewport is inset likewise. The reserved height follows the status
+    // text's own scaled line box, so large accessibility text scales stay
+    // clear of it too.
     final bottomChrome =
-        mediaQuery.viewPadding.bottom + ReaderStatusBar.reservedHeight;
+        mediaQuery.viewPadding.bottom +
+        ReaderStatusBar.reservedHeightOf(
+          readerTheme.textTheme.labelSmall,
+          mediaQuery.textScaler,
+        );
     final brightness = readerTheme.brightness;
     // Icon contrast follows the reader theme; the bar itself stays
     // transparent (edge-to-edge, see main()) so it always matches the
@@ -469,11 +477,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                           chineseConversion: settings.chineseConversion,
                           pageProgress: _pageProgress,
                           viewportBottomInset: bottomChrome,
+                          // Horizontal pages end above the status line via
+                          // this padding; the vertical reader keeps content
+                          // off it with [ChapterContentManager]'s viewport
+                          // inset instead — passing a bottom padding there
+                          // too would double it at the book's end.
                           contentPadding: EdgeInsets.fromLTRB(
                             LanghuanTheme.spaceLg,
                             topPadding + LanghuanTheme.spaceMd,
                             LanghuanTheme.spaceLg,
-                            bottomChrome,
+                            settings.pageMode == ReaderPageMode.vertical
+                                ? 0
+                                : bottomChrome,
                           ),
                           onParagraphLongPress: _onParagraphLongPress,
                           selectedChapterId:

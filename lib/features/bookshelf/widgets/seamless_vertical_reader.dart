@@ -91,8 +91,13 @@ class SeamlessVerticalReader extends StatefulWidget {
   final ReaderChapterWindow window;
   final List<ChapterInfoModel> chapters;
 
-  /// Horizontal padding applies per paragraph; the vertical components
-  /// apply once at the very top/bottom of the whole scroll content.
+  /// Horizontal padding applies per paragraph; the top applies once at the
+  /// very top of the whole scroll content; the bottom is trailing scroll
+  /// space reserved for chrome the viewport does *not* already avoid —
+  /// with [viewportBottomInset] > 0 the viewport itself is inset past the
+  /// chrome, so callers pass a zero bottom and pages rest no lower than
+  /// the inset edge (a non-zero bottom would stack dead space at the
+  /// book's end).
   final EdgeInsets contentPadding;
 
   /// Persistent bottom chrome (the reader status bar, including the
@@ -671,10 +676,11 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
                 ),
               ],
               if (atBookEnd) const SliverToBoxAdapter(child: _EndOfBookMark()),
-              SliverToBoxAdapter(
-                key: _bottomInsetKey,
-                child: SizedBox(height: widget.contentPadding.bottom),
-              ),
+              if (widget.contentPadding.bottom > 0)
+                SliverToBoxAdapter(
+                  key: _bottomInsetKey,
+                  child: SizedBox(height: widget.contentPadding.bottom),
+                ),
             ],
           ),
         ),

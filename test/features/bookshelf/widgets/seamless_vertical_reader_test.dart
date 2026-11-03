@@ -39,6 +39,8 @@ Widget _host({
   VoidCallback? onToggle,
   ReaderScrollTarget? target,
   double Function(String chapterId, String paragraphId)? estimate,
+  double viewportBottomInset = 0,
+  double contentBottom = 32,
 }) {
   return MaterialApp(
     localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -48,7 +50,8 @@ Widget _host({
         child: SeamlessVerticalReader(
           window: window,
           chapters: window.chapters,
-          contentPadding: const EdgeInsets.fromLTRB(16, 32, 16, 32),
+          contentPadding: EdgeInsets.fromLTRB(16, 32, 16, contentBottom),
+          viewportBottomInset: viewportBottomInset,
           fontScale: 1,
           lineHeight: 1.8,
           onPositionChanged: (c, p, o) => onPosition?.call(c, p, o),
@@ -358,6 +361,69 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text("You're all caught up"), findsOneWidget);
+  });
+
+  testWidgets('a viewport inset replaces, not stacks with, the bottom inset', (
+    tester,
+  ) async {
+    final window = ReaderChapterWindow(
+      chapters: _chapters(2),
+      anchorChapterId: 'c0',
+      loader: _loader,
+    );
+    // The reader in production passes the status-bar chrome as the
+    // viewport inset and a zero content bottom: no trailing spacer.
+    await tester.pumpWidget(
+      _host(window: window, viewportBottomInset: 32, contentBottom: 0),
+    );
+    await _pumpLoaded(tester);
+
+    expect(
+      find.byKey(const ValueKey('vertical-bottom-inset')),
+      findsNothing,
+      reason: 'the viewport inset already keeps content off the chrome',
+    );
+
+    // Scrolled to the very bottom, the end mark rests on the inset edge —
+    // no second dead spacer above it.
+    await tester.fling(
+      find.byType(CustomScrollView),
+      const Offset(0, -8000),
+      4000,
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final hostBottom = tester.getSize(find.byType(Scaffold)).height;
+    final markBottom = tester
+        .getBottomLeft(find.text("You're all caught up"))
+        .dy;
+    // The mark's own vertical padding is part of its design; what must not
+    // happen is the viewport inset stacking a dead spacer above it.
+    expect(markBottom, lessThan(hostBottom - 32));
+
+    // Without a viewport inset the trailing spacer is the mechanism again,
+    // and it must land the mark at the very same place — the inset replaces
+    // the spacer one-for-one instead of stacking on top of it.
+    await tester.pumpWidget(
+      _host(window: window, viewportBottomInset: 0, contentBottom: 32),
+    );
+    await _pumpLoaded(tester);
+    expect(find.byKey(const ValueKey('vertical-bottom-inset')), findsOneWidget);
+    await tester.fling(
+      find.byType(CustomScrollView),
+      const Offset(0, -8000),
+      4000,
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      tester.getBottomLeft(find.text("You're all caught up")).dy,
+      closeTo(markBottom, 2),
+      reason: 'the viewport inset replaces the spacer, not stacks with it',
+    );
   });
 
   testWidgets('mid-session jump lands on the anchor chapter start', (

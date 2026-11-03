@@ -8,12 +8,13 @@ import 'reader_types.dart';
 /// The reader's persistent, transparent status line along the bottom edge.
 ///
 /// * left — the current chapter title, ellipsised when long;
-/// * right — chapter progress (`page / total`) plus whole-book progress.
+/// * right — chapter page progress (`page / total`, horizontal mode) plus
+///   whole-book progress.
 ///
 /// It rides directly on the reading surface with no background of its own
 /// and fades out while the control bars are up (the solid bottom bar would
 /// cover it). Reading content never scrolls beneath it: the reader reserves
-/// [reservedHeight] plus the safe-area inset at the bottom of its content
+/// [reservedHeightOf] plus the safe-area inset at the bottom of its content
 /// area, and the vertical reader's viewport is inset likewise.
 class ReaderStatusBar extends StatelessWidget {
   const ReaderStatusBar({
@@ -32,9 +33,9 @@ class ReaderStatusBar extends StatelessWidget {
 
   final ThemeData theme;
 
-  /// Source id of the chapter the reader is showing. Page progress is only
-  /// applied when it addresses this chapter, so a progress value left over
-  /// from the previous chapter during a turn never leaks into the label.
+  /// Source id of the chapter the reader is showing. Progress is only
+  /// applied when it addresses this chapter, so a value left over from the
+  /// previous chapter during a turn never leaks into the label.
   final String chapterId;
 
   final String chapterTitle;
@@ -44,12 +45,10 @@ class ReaderStatusBar extends StatelessWidget {
 
   final int chapterCount;
 
-  /// Live page progress of the active chapter (horizontal mode); null in
-  /// vertical mode and while the target page is unresolved.
-  final ValueListenable<ReaderPageProgress?> pageProgress;
-
-  /// Line box of the status text (labelSmall ≈ 16 logical px).
-  static const lineHeight = 16.0;
+  /// Live progress of the active chapter — page units in horizontal mode,
+  /// paragraph units in vertical mode; null while the target position is
+  /// unresolved.
+  final ValueListenable<ReaderChapterProgress?> pageProgress;
 
   /// Gap between the status line and the bottom safe-area edge.
   static const bottomGap = LanghuanTheme.spaceXs;
@@ -57,17 +56,32 @@ class ReaderStatusBar extends StatelessWidget {
   /// Gap kept between the reading content and the status line.
   static const contentGap = LanghuanTheme.spaceSm;
 
+  /// Line box of the status text under [scaler].
+  ///
+  /// [labelSmall] comes from the theme the bar renders with. The metrics
+  /// are read from the style itself rather than assuming a constant: the
+  /// line box only measures 16 logical px at the default text scale, and
+  /// larger accessibility scales overflow that.
+  static double lineHeightOf(TextStyle? labelSmall, TextScaler scaler) {
+    final fontSize = labelSmall?.fontSize ?? 11;
+    final height = labelSmall?.height ?? 16 / 11;
+    return scaler.scale(fontSize) * height;
+  }
+
   /// Bottom space the bar keeps free of reading content, excluding the
   /// safe-area inset (the caller adds `MediaQuery.viewPadding.bottom`).
-  static const reservedHeight = lineHeight + bottomGap + contentGap;
+  static double reservedHeightOf(TextStyle? labelSmall, TextScaler scaler) =>
+      lineHeightOf(labelSmall, scaler) + bottomGap + contentGap;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final mediaQuery = MediaQuery.of(context);
     final style = theme.textTheme.labelSmall?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
-    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+    final bottomInset = mediaQuery.viewPadding.bottom;
+    final lineHeight = lineHeightOf(style, mediaQuery.textScaler);
 
     return Positioned(
       left: 0,
@@ -98,7 +112,7 @@ class ReaderStatusBar extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: LanghuanTheme.spaceSm),
-                  ValueListenableBuilder<ReaderPageProgress?>(
+                  ValueListenableBuilder<ReaderChapterProgress?>(
                     valueListenable: pageProgress,
                     builder: (context, progress, _) {
                       return Text(
@@ -117,22 +131,30 @@ class ReaderStatusBar extends StatelessWidget {
     );
   }
 
-  String _trailingLabel(AppLocalizations l10n, ReaderPageProgress? progress) {
+  String _trailingLabel(
+    AppLocalizations l10n,
+    ReaderChapterProgress? progress,
+  ) {
     final percent = _bookPercent(progress);
-    final applies = progress != null && progress.chapterId == chapterId;
-    return applies
-        ? '${l10n.readerPageProgress(progress.pageIndex + 1, progress.pageCount)} · ${l10n.readerBookProgress(percent)}'
+    final pagesApply =
+        progress != null &&
+        progress.unit == ReaderProgressUnit.page &&
+        progress.chapterId == chapterId;
+    return pagesApply
+        ? '${l10n.readerPageProgress(progress.unitIndex + 1, progress.unitCount)} · ${l10n.readerBookProgress(percent)}'
         : l10n.readerBookProgress(percent);
   }
 
-  /// Whole-book progress as a percentage. Chapter granularity plus, in
-  /// horizontal mode, the page fraction within the chapter — the same
-  /// formula the bookshelf progress uses at paragraph granularity.
-  int _bookPercent(ReaderPageProgress? progress) {
+  /// Whole-book progress as a percentage: the chapter's 0-based position
+  /// plus the position within the chapter — page fraction in horizontal
+  /// mode, paragraph fraction in vertical mode. Both count the current
+  /// unit as completed, exactly the bookshelf's paragraph-granularity
+  /// formula, so the two surfaces agree on one reading position.
+  int _bookPercent(ReaderChapterProgress? progress) {
     if (chapterCount <= 0) return 0;
     var intraChapter = 0.0;
     if (progress != null && progress.chapterId == chapterId) {
-      intraChapter = ((progress.pageIndex + 1) / progress.pageCount).clamp(
+      intraChapter = ((progress.unitIndex + 1) / progress.unitCount).clamp(
         0.0,
         1.0,
       );
