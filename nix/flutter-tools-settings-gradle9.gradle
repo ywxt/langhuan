@@ -22,14 +22,29 @@ def engineShortRev = (new File("$settingsDir/../../../bin/internal/engine.versio
 def dir = new File("$System.env.HOME/.cache/flutter/nix-flutter-tools-gradle/$engineShortRev")
 dir.mkdirs()
 
+// The engine revision is not unique to a nix store path: rebuilding the
+// Flutter wrapper (for example after changing one of our patches) keeps the
+// same engine revision while producing a different store path. Refresh a
+// cached symlink whenever its target changes, and also recover from dangling
+// links left behind by nix store garbage collection.
+def ensureCurrentSymlink = { File link, File target ->
+  def linkPath = link.toPath()
+  def targetPath = target.toPath()
+  if (java.nio.file.Files.isSymbolicLink(linkPath)) {
+    if (java.nio.file.Files.readSymbolicLink(linkPath) == targetPath) {
+      return
+    }
+    java.nio.file.Files.delete(linkPath)
+  } else if (java.nio.file.Files.exists(linkPath)) {
+    throw new GradleException("Expected Flutter cache entry to be a symlink: $link")
+  }
+  java.nio.file.Files.createSymbolicLink(linkPath, targetPath)
+}
+
 def buildScript = new File(dir, "build.gradle.kts")
-if (!buildScript.exists()) {
-  java.nio.file.Files.createSymbolicLink(buildScript.toPath(), new File("$settingsDir/build.gradle.kts").toPath())
-}
+ensureCurrentSymlink(buildScript, new File("$settingsDir/build.gradle.kts"))
 def srcLink = new File(dir, "src")
-if (!srcLink.exists()) {
-  java.nio.file.Files.createSymbolicLink(srcLink.toPath(), new File("$settingsDir/src").toPath())
-}
+ensureCurrentSymlink(srcLink, new File("$settingsDir/src"))
 
 rootProject.projectDir = dir
 

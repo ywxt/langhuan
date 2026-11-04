@@ -71,6 +71,7 @@ class SeamlessVerticalReader extends StatefulWidget {
     required this.window,
     required this.chapters,
     required this.contentPadding,
+    this.viewportTopInset = 0,
     this.viewportBottomInset = 0,
     required this.fontScale,
     this.fontFamily,
@@ -92,19 +93,22 @@ class SeamlessVerticalReader extends StatefulWidget {
   final ReaderChapterWindow window;
   final List<ChapterInfoModel> chapters;
 
-  /// Horizontal padding applies per paragraph; the top applies once at the
-  /// very top of the whole scroll content; the bottom is trailing scroll
-  /// space reserved for chrome the viewport does *not* already avoid —
+  /// Horizontal padding applies per paragraph; the top is the gap after the
+  /// viewport's status-bar inset at the start of an anchor chapter. The
+  /// bottom is trailing scroll space reserved for chrome the viewport does
+  /// *not* already avoid —
   /// with [viewportBottomInset] > 0 the viewport itself is inset past the
   /// chrome, so callers pass a zero bottom and pages rest no lower than
   /// the inset edge (a non-zero bottom would stack dead space at the
   /// book's end).
   final EdgeInsets contentPadding;
 
+  /// Keeps the scrolling viewport below the system status bar even after
+  /// the reader moves past the initial top spacer.
+  final double viewportTopInset;
+
   /// Persistent bottom chrome (the reader status bar, including the
-  /// safe-area inset) the scroll viewport must not lay content into:
-  /// content scrolls *under* it while moving but can never come to rest
-  /// beneath the status line.
+  /// safe-area inset) the scroll viewport must not lay content into.
   final double viewportBottomInset;
 
   final double fontScale;
@@ -509,8 +513,10 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
     final renderObject = scrollContext.findRenderObject();
     if (renderObject is! RenderBox || !renderObject.hasSize) return null;
 
-    final viewportTop = renderObject.localToGlobal(Offset.zero).dy;
-    final viewportBottom = viewportTop + renderObject.size.height;
+    final readerTop = renderObject.localToGlobal(Offset.zero).dy;
+    final viewportTop = readerTop + widget.viewportTopInset;
+    final viewportBottom =
+        readerTop + renderObject.size.height - widget.viewportBottomInset;
 
     String? activeChapter;
     String? activeParagraph;
@@ -671,7 +677,10 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
       child: NotificationListener<ScrollNotification>(
         onNotification: _onScrollNotification,
         child: Padding(
-          padding: EdgeInsets.only(bottom: widget.viewportBottomInset),
+          padding: EdgeInsets.only(
+            top: widget.viewportTopInset,
+            bottom: widget.viewportBottomInset,
+          ),
           child: CustomScrollView(
             controller: _controller,
             center: _centerKey,

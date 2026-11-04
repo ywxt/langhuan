@@ -476,6 +476,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                           lineHeight: settings.lineHeight,
                           chineseConversion: settings.chineseConversion,
                           pageProgress: _pageProgress,
+                          viewportTopInset:
+                              settings.pageMode == ReaderPageMode.vertical
+                              ? topPadding
+                              : 0,
                           viewportBottomInset: bottomChrome,
                           // Horizontal pages end above the status line via
                           // this padding; the vertical reader keeps content
@@ -483,9 +487,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                           // inset instead — passing a bottom padding there
                           // too would double it at the book's end.
                           contentPadding: EdgeInsets.fromLTRB(
-                            LanghuanTheme.spaceLg,
-                            topPadding + LanghuanTheme.spaceMd,
-                            LanghuanTheme.spaceLg,
+                            LanghuanTheme.spaceMd,
+                            settings.pageMode == ReaderPageMode.vertical
+                                ? LanghuanTheme.spaceMd
+                                : topPadding + LanghuanTheme.spaceMd,
+                            LanghuanTheme.spaceMd,
                             settings.pageMode == ReaderPageMode.vertical
                                 ? 0
                                 : bottomChrome,

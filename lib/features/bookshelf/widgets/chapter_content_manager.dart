@@ -55,6 +55,7 @@ class ChapterContentManager extends StatefulWidget {
     this.showComments = true,
     this.onParagraphComments,
     this.pageProgress,
+    this.viewportTopInset = 0,
     this.viewportBottomInset = 0,
   });
 
@@ -111,6 +112,10 @@ class ChapterContentManager extends StatefulWidget {
   /// while scrolling vertically. Owned by the parent (the reader chrome);
   /// null skips publishing entirely.
   final ValueNotifier<ReaderChapterProgress?>? pageProgress;
+
+  /// System status-bar height kept clear of the vertical scroll viewport.
+  /// Horizontal mode uses its content padding for this instead.
+  final double viewportTopInset;
 
   /// Height of persistent bottom chrome (the reader status bar) that
   /// vertical-mode content must not scroll beneath. Horizontal mode needs
@@ -1162,6 +1167,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
         window: window,
         chapters: widget.chapters,
         contentPadding: widget.contentPadding,
+        viewportTopInset: widget.viewportTopInset,
         viewportBottomInset: widget.viewportBottomInset,
         fontScale: widget.fontScale,
         fontFamily: widget.fontFamily,

@@ -40,6 +40,7 @@ Widget _host({
   ReaderScrollTarget? target,
   double? Function(String chapterId, String paragraphId)? estimate,
   VoidCallback? onTargetSettled,
+  double viewportTopInset = 0,
   double viewportBottomInset = 0,
   double contentBottom = 32,
 }) {
@@ -52,6 +53,7 @@ Widget _host({
           window: window,
           chapters: window.chapters,
           contentPadding: EdgeInsets.fromLTRB(16, 32, 16, contentBottom),
+          viewportTopInset: viewportTopInset,
           viewportBottomInset: viewportBottomInset,
           fontScale: 1,
           lineHeight: 1.8,
@@ -76,6 +78,27 @@ Future<void> _pumpLoaded(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('scroll viewport stays below the top system inset', (
+    tester,
+  ) async {
+    final window = ReaderChapterWindow(
+      chapters: _chapters(3),
+      anchorChapterId: 'c1',
+      loader: _loader,
+    );
+    addTearDown(window.dispose);
+    await tester.pumpWidget(_host(window: window, viewportTopInset: 28));
+    await _pumpLoaded(tester);
+
+    final viewport = tester.getRect(find.byType(CustomScrollView));
+    expect(viewport.top, 28);
+    expect(tester.getTopLeft(find.text('c1 paragraph 0')).dy, closeTo(60, 2));
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -350));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byType(CustomScrollView)).top, 28);
+  });
+
   testWidgets('scroll targets scope repeated paragraph IDs to their chapter', (
     tester,
   ) async {
