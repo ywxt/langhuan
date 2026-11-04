@@ -386,4 +386,75 @@ void main() {
       expect(find.text('No bookmarks yet'), findsOneWidget);
     });
   });
+
+  group('showReaderInterfaceSheet typography sliders', () {
+    testWidgets(
+      'the font slider commits throttled live values and the exact final one',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        container.read(readerSettingsProvider);
+
+        // Tall surface so the interface column (mode row, font row, four
+        // sliders) is reachable without scrolling the sheet.
+        tester.view.physicalSize = const Size(800, 1800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: localized(
+              Scaffold(
+                body: sheetLauncher(
+                  (ref, context) => showReaderInterfaceSheet(context),
+                ),
+              ),
+            ),
+          ),
+        );
+        // Let the notifier's async restore settle before interacting.
+        await tester.pump(const Duration(milliseconds: 100));
+
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        final slider = find.byType(Slider).first;
+        final before = container.read(readerSettingsProvider).fontScale;
+
+        final gesture = await tester.startGesture(tester.getCenter(slider));
+        await tester.pump();
+
+        // The first discrete change commits immediately (leading edge) —
+        // the reader reflows as live feedback.
+        await gesture.moveBy(const Offset(60, 0));
+        await tester.pump();
+        final firstCommit = container.read(readerSettingsProvider).fontScale;
+        expect(firstCommit, isNot(before));
+
+        // Further rapid changes inside the throttle window are
+        // rate-limited: no commit lands between them.
+        await gesture.moveBy(const Offset(60, 0));
+        await tester.pump();
+        expect(
+          container.read(readerSettingsProvider).fontScale,
+          firstCommit,
+          reason: 'rate-limited while the throttle window is open',
+        );
+
+        // The trailing timer lands the latest dragged value.
+        await tester.pump(const Duration(milliseconds: 400));
+        final latestCommit = container.read(readerSettingsProvider).fontScale;
+        expect(latestCommit, isNot(firstCommit));
+
+        // Releasing commits the exact final value (same as the latest
+        // here — no drift, no lost commits).
+        await gesture.up();
+        await tester.pump();
+        expect(container.read(readerSettingsProvider).fontScale, latestCommit);
+      },
+    );
+  });
 }

@@ -84,6 +84,7 @@ class SeamlessVerticalReader extends StatefulWidget {
     this.selectedParagraphId,
     this.scrollTarget,
     this.estimateParagraphOffset,
+    this.onTargetSettled,
     this.commentBadgeIdsOf,
     this.onParagraphComments,
   });
@@ -135,9 +136,18 @@ class SeamlessVerticalReader extends StatefulWidget {
 
   /// Coarse pixel offset of a paragraph within its chapter, used to restore
   /// positions without laying out the whole chapter. Provided by the
-  /// content manager (backed by [PageBreaker]).
+  /// content manager (backed by [PageBreaker]). A `null` answer means the
+  /// chapter is still being paginated: the current offset is held and the
+  /// manager re-issues the target once the pages are complete.
   final double? Function(String chapterId, String paragraphId)?
   estimateParagraphOffset;
+
+  /// Fired when the pending target has been landed on exactly (or was a
+  /// chapter-start target, which lands on offset 0 by definition). The
+  /// content manager cancels its deferred-estimate re-issue with it. Not
+  /// fired when the walk gives up — there the re-issue stays armed as the
+  /// last chance to land correctly.
+  final VoidCallback? onTargetSettled;
 
   /// Identity strings of paragraphs that carry a comment badge, by chapter
   /// (computed by the content manager: last fragment per source paragraph
@@ -279,13 +289,22 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
     final controller = _controller;
     if (controller == null || !controller.hasClients) return;
     final position = controller.position;
-    final estimate = target.paragraphId.isEmpty
-        ? 0.0
-        : widget.estimateParagraphOffset?.call(
-                target.chapterId,
-                target.paragraphId,
-              ) ??
-              0.0;
+    if (target.paragraphId.isEmpty) {
+      position.correctPixels(0);
+      return;
+    }
+    final estimate = widget.estimateParagraphOffset?.call(
+      target.chapterId,
+      target.paragraphId,
+    );
+    if (estimate == null) {
+      // The chapter's pages are still being computed (pagination runs in
+      // frame-budgeted slices now). Holding the current offset shows the
+      // reflowed paragraphs in place; the fine-tune below lands exactly
+      // once the target is built, and the manager re-issues the target
+      // with a page estimate when pagination completes.
+      return;
+    }
     position.correctPixels(estimate);
   }
 
@@ -310,6 +329,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
     if (target.paragraphId.isEmpty) {
       _pendingTarget = null;
       _activeTargetParagraphId = null;
+      widget.onTargetSettled?.call();
       return;
     }
 
@@ -322,6 +342,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
       );
       _pendingTarget = null;
       _activeTargetParagraphId = null;
+      widget.onTargetSettled?.call();
       return;
     }
 
@@ -334,7 +355,8 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
     }
     if (state is ChapterLoaded || state is ChapterLoadError) {
       // Content is there but the paragraph is not built — the coarse
-      // estimate stands.
+      // estimate stands. Deliberately *not* settled: the manager's
+      // re-issue may still land the estimate once pagination completes.
       _pendingTarget = null;
       _activeTargetParagraphId = null;
     }

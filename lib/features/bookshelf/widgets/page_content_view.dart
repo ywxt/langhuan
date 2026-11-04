@@ -52,18 +52,29 @@ class PageContentView extends StatelessWidget {
     final items = page.items;
 
     return ClipRect(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (int i = 0; i < items.length; i++) ...[
-            // The gap plus the page's distributed leftover: pages that broke
-            // at a text boundary stretch their gaps to fill the page
-            // ([PageContent.extraGap]); other pages pass a zero leftover.
-            if (i > 0) SizedBox(height: paragraphSpacing + page.extraGap),
-            _buildItem(context, theme, items[i]),
+      // While a typography change re-paginates, the manager keeps the
+      // previous page displayed (see ChapterContentManager): its measured
+      // boundaries render at the new sizes and can exceed the page height.
+      // A non-scrollable viewport lets that overflow clip silently instead
+      // of tripping the Flex overflow assertion; pages fresh out of
+      // pagination always fit their measured layout, so nothing changes
+      // for them.
+      child: SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (int i = 0; i < items.length; i++) ...[
+              // The gap plus the page's distributed leftover: pages that
+              // broke at a text boundary stretch their gaps to fill the
+              // page ([PageContent.extraGap]); other pages pass a zero
+              // leftover.
+              if (i > 0) SizedBox(height: paragraphSpacing + page.extraGap),
+              _buildItem(context, theme, items[i]),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

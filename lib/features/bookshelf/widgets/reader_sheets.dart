@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
@@ -115,10 +117,11 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                     ],
                   ),
                   const SizedBox(height: LanghuanTheme.spaceMd),
-                  // Typography changes invalidate every cached page, so
-                  // each commit re-paginates the loaded window — committing
-                  // per drag tick froze every animation in flight. The
-                  // sliders preview locally and commit once on release.
+                  // Each commit re-paginates the loaded window (a few
+                  // milliseconds of layout per frame until it settles), so
+                  // the sliders commit throttled live values while dragging
+                  // — the reader reflows in place as a preview — and commit
+                  // the exact value when the drag ends.
                   _TypoSlider(
                     labelBuilder: (v) =>
                         l10n.readerFontScale(v.toStringAsFixed(2)),
@@ -168,13 +171,15 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
   );
 }
 
-/// A typography slider that never commits mid-drag.
+/// A typography slider that commits throttled live values mid-drag.
 ///
-/// Committing a typography change re-paginates the whole loaded chapter
-/// window synchronously; doing that per drag tick stalled the frame
-/// budget (worst with user-loaded fonts) and made the sheet, its slider
-/// and every reader animation stutter. The thumb now previews locally
-/// (label included) and commits once when the drag ends.
+/// Committing a typography change re-paginates the loaded chapter window,
+/// but that work is spread across frame-budgeted slices (about 4 ms per
+/// frame; a window chapter needs a handful of them), so a drag can commit
+/// as it goes: the first tick lands immediately, further ticks are
+/// rate-limited to one commit per [_liveCommitInterval], and a trailing
+/// timer picks up the latest value. Releasing the slider cancels any
+/// pending timer and commits the exact final value.
 class _TypoSlider extends StatefulWidget {
   const _TypoSlider({
     required this.labelBuilder,
@@ -197,7 +202,54 @@ class _TypoSlider extends StatefulWidget {
 }
 
 class _TypoSliderState extends State<_TypoSlider> {
+  /// Minimum spacing between live commits during a drag. A reflowed
+  /// window chapter paginates for roughly this long (measured 12–35 ms of
+  /// work spread over 3–9 frames on realistic chapters), so commits at
+  /// this rate let pagination settle between them.
+  static const _liveCommitInterval = Duration(milliseconds: 250);
+
   double? _dragValue;
+  Timer? _liveCommitTimer;
+  DateTime? _lastLiveCommitAt;
+
+  @override
+  void dispose() {
+    _liveCommitTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onChanged(double value) {
+    setState(() => _dragValue = value);
+    final now = DateTime.now();
+    final last = _lastLiveCommitAt;
+    if (last == null || now.difference(last) >= _liveCommitInterval) {
+      _commitLive(value, at: now);
+      return;
+    }
+    // Rate-limited: schedule the trailing commit for the latest value so
+    // continuous drags still land every change within one interval.
+    _liveCommitTimer?.cancel();
+    _liveCommitTimer = Timer(_liveCommitInterval - now.difference(last), () {
+      _liveCommitTimer = null;
+      if (!mounted) return;
+      final latest = _dragValue;
+      if (latest == null) return;
+      _commitLive(latest, at: DateTime.now());
+    });
+  }
+
+  void _onChangeEnd(double value) {
+    _liveCommitTimer?.cancel();
+    _liveCommitTimer = null;
+    _lastLiveCommitAt = null;
+    setState(() => _dragValue = null);
+    widget.onCommit(value);
+  }
+
+  void _commitLive(double value, {required DateTime at}) {
+    _lastLiveCommitAt = at;
+    widget.onCommit(value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -212,11 +264,8 @@ class _TypoSliderState extends State<_TypoSlider> {
           min: widget.min,
           max: widget.max,
           divisions: widget.divisions,
-          onChanged: (v) => setState(() => _dragValue = v),
-          onChangeEnd: (v) {
-            setState(() => _dragValue = null);
-            widget.onCommit(v);
-          },
+          onChanged: _onChanged,
+          onChangeEnd: _onChangeEnd,
         ),
       ],
     );

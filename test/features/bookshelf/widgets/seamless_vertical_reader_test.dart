@@ -38,7 +38,8 @@ Widget _host({
   onPosition,
   VoidCallback? onToggle,
   ReaderScrollTarget? target,
-  double Function(String chapterId, String paragraphId)? estimate,
+  double? Function(String chapterId, String paragraphId)? estimate,
+  VoidCallback? onTargetSettled,
   double viewportBottomInset = 0,
   double contentBottom = 32,
 }) {
@@ -58,6 +59,7 @@ Widget _host({
           onToggleControls: () => onToggle?.call(),
           scrollTarget: target,
           estimateParagraphOffset: estimate,
+          onTargetSettled: onTargetSettled,
         ),
       ),
     ),
@@ -336,6 +338,90 @@ void main() {
 
     final pixels = _scrollable(tester).position.pixels;
     expect(pixels, greaterThan(1000));
+    expect(find.text('c1 paragraph 30'), findsOneWidget);
+  });
+
+  testWidgets('a target whose estimate is unknown holds the offset', (
+    tester,
+  ) async {
+    // Saved positions report ParagraphId.toStringValue, and the target
+    // key matching below needs that exact form.
+    final p30Id = ParagraphId(
+      original: const OriginalParagraphId.source('c1_p30'),
+      path: const [],
+    ).toStringValue();
+    final window = ReaderChapterWindow(
+      chapters: _chapters(2),
+      anchorChapterId: 'c1',
+      loader: _loader,
+    );
+    addTearDown(window.dispose);
+    await tester.pumpWidget(
+      _host(
+        window: window,
+        target: ReaderScrollTarget(
+          token: 1,
+          chapterId: 'c1',
+          paragraphId: p30Id,
+        ),
+        estimate: (chapterId, paragraphId) => 30 * 44.0,
+      ),
+    );
+    await _pumpLoaded(tester);
+    await tester.pumpAndSettle();
+    final landed = _scrollable(tester).position.pixels;
+    expect(landed, greaterThan(1000));
+
+    // A new target (a reflow re-issue) whose pages are still being
+    // paginated reports no estimate: the current offset must be held —
+    // jumping to the chapter top mid-drag would be disorienting.
+    await tester.pumpWidget(
+      _host(
+        window: window,
+        target: ReaderScrollTarget(
+          token: 2,
+          chapterId: 'c1',
+          paragraphId: p30Id,
+        ),
+        estimate: (chapterId, paragraphId) => null,
+      ),
+    );
+    expect(_scrollable(tester).position.pixels, greaterThan(1000));
+
+    // The fine-tune still lands on the paragraph without any estimate.
+    await tester.pumpAndSettle();
+    expect(find.text('c1 paragraph 30'), findsOneWidget);
+    expect(_scrollable(tester).position.pixels, greaterThan(1000));
+  });
+
+  testWidgets('notifies once when the target lands exactly', (tester) async {
+    var settled = 0;
+    final p30Id = ParagraphId(
+      original: const OriginalParagraphId.source('c1_p30'),
+      path: const [],
+    ).toStringValue();
+    final window = ReaderChapterWindow(
+      chapters: _chapters(2),
+      anchorChapterId: 'c1',
+      loader: _loader,
+    );
+    addTearDown(window.dispose);
+    await tester.pumpWidget(
+      _host(
+        window: window,
+        target: ReaderScrollTarget(
+          token: 1,
+          chapterId: 'c1',
+          paragraphId: p30Id,
+        ),
+        estimate: (chapterId, paragraphId) => 30 * 44.0,
+        onTargetSettled: () => settled++,
+      ),
+    );
+    await _pumpLoaded(tester);
+    await tester.pumpAndSettle();
+
+    expect(settled, 1);
     expect(find.text('c1 paragraph 30'), findsOneWidget);
   });
 

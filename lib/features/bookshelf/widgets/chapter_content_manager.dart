@@ -161,6 +161,13 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   final Map<String, PaginationJob> _paginationJobs = {};
   bool _paginationSliceScheduled = false;
 
+  /// Chapters whose cached pages match the current breaker configuration.
+  /// A typography change keeps stale pages displayed (the old
+  /// clear-and-mask path would flash a loading slot on every live commit
+  /// during slider drags), but only chapters in this set may answer jumps
+  /// and estimates — stale page boundaries are preview-only.
+  final Set<String> _freshPages = {};
+
   /// Per-chapter comment-badge paragraph identity sets. Depends only on
   /// paragraph identity and counts — typography changes keep it; chapter
   /// reloads and conversion changes invalidate it (mirrors
@@ -176,6 +183,13 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   // Vertical scroll target (token distinguishes consecutive commands).
   int _scrollToken = 0;
   ReaderScrollTarget? _verticalTarget;
+
+  /// True while the current [_verticalTarget] still needs a page estimate
+  /// that pagination has not produced yet. The reader holds its offset in
+  /// the meantime; [_completePaginationJob] re-issues the target (fresh
+  /// token) once the chapter's pages are complete. Cleared when an
+  /// estimate answers or the reader reports an exact landing.
+  bool _verticalEstimatePending = false;
 
   /// A page-progress publish is pending for the end of the current frame.
   bool _pageProgressPublishScheduled = false;
@@ -199,11 +213,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     _activeChapterId = startId;
     _pendingJumpParagraphId = pendingParagraphId;
     _pendingJumpCharOffset = pendingCharOffset;
-    _verticalTarget = ReaderScrollTarget(
-      token: ++_scrollToken,
-      chapterId: startId,
-      paragraphId: pendingParagraphId,
-    );
+    _issueVerticalTarget(chapterId: startId, paragraphId: pendingParagraphId);
 
     _window = ReaderChapterWindow(
       chapters: widget.chapters,
@@ -281,11 +291,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
             ids.first;
         _pendingJumpParagraphId = resolved;
         _pendingJumpCharOffset = 0;
-        _verticalTarget = ReaderScrollTarget(
-          token: ++_scrollToken,
-          chapterId: chapterId,
-          paragraphId: resolved,
-        );
+        _issueVerticalTarget(chapterId: chapterId, paragraphId: resolved);
       }
     }
     _scheduleGlyphWarmup(chapterId, paragraphs);
@@ -350,11 +356,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     _activeLocalPageIndex = 0;
     _pendingJumpParagraphId = paragraphId;
     _pendingJumpCharOffset = charOffset;
-    _verticalTarget = ReaderScrollTarget(
-      token: ++_scrollToken,
-      chapterId: chapterId,
-      paragraphId: paragraphId,
-    );
+    _issueVerticalTarget(chapterId: chapterId, paragraphId: paragraphId);
 
     _window!.jumpTo(chapterId);
     _reportPosition(chapterId, paragraphId, 0, charOffset);
@@ -367,6 +369,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     _pagesByChapter.remove(chapterId);
     _badgeIdsByChapter.remove(chapterId);
     _paginationJobs.remove(chapterId);
+    _freshPages.remove(chapterId);
     unawaited(_window!.reload(chapterId));
   }
 
@@ -385,10 +388,12 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     if (_pendingJumpParagraphId.isEmpty) return;
     if (_activeChapterId.isEmpty) return;
     // Resolving against a partially paginated chapter would land on a
-    // truncated page list. Only fully paginated (cached) pages may answer a
-    // jump; otherwise kick the job off and let _completePaginationJob
-    // re-run this once the active chapter finishes.
-    if (_pagesByChapter[_activeChapterId] == null) {
+    // truncated page list, and stale (pre-reflow) pages answer with the
+    // wrong boundaries. Only pages stamped fresh — fully paginated for the
+    // current breaker configuration — may answer a jump; otherwise kick
+    // the job off and let _completePaginationJob re-run this once the
+    // active chapter finishes.
+    if (!_freshPages.contains(_activeChapterId)) {
       if (!_paginationJobs.containsKey(_activeChapterId)) {
         final paragraphs = _window!.paragraphsOf(_activeChapterId);
         if (paragraphs == null || paragraphs.isEmpty) return;
@@ -471,6 +476,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     if (reflow) {
       _pagesByChapter.clear();
       _paginationJobs.clear();
+      _freshPages.clear();
       _pendingJumpParagraphId = _lastReportedParagraphId;
       _pendingJumpCharOffset = _lastReportedCharOffset;
     }
@@ -522,22 +528,6 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     final breaker = _breaker;
     if (breaker == null) return const [];
     final inFlight = _paginationJobs[chapterId];
-    if (widget.pageMode != ReaderPageMode.horizontal) {
-      // The vertical reader renders paragraphs directly; only the restore
-      // estimate reads pages, and it needs the final result synchronously.
-      // Adopt any in-flight job so the work is not done twice.
-      final job =
-          inFlight ??
-          breaker.startPagination(
-            paragraphs,
-            chapterId: chapterId,
-            commentBadgeSizeOf: _commentBadgeSizeOf(chapterId, paragraphs),
-          );
-      _paginationJobs.remove(chapterId);
-      while (!job.step(const Duration(seconds: 10))) {}
-      _pagesByChapter[chapterId] = job.result;
-      return job.result;
-    }
     if (inFlight != null) return inFlight.pages;
     _startPaginationJob(chapterId, paragraphs);
     return _paginationJobs[chapterId]!.pages;
@@ -619,9 +609,49 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   void _completePaginationJob(PaginationJob job) {
     _paginationJobs.remove(job.chapterId);
     _pagesByChapter[job.chapterId] = job.result;
+    _freshPages.add(job.chapterId);
     if (job.chapterId == _activeChapterId) {
       _resolveHorizontalPendingJump();
+      _reissueVerticalTargetAfterPagination(job.chapterId);
     }
+  }
+
+  /// Issues a vertical scroll target (token distinguishes consecutive
+  /// commands). Mid-chapter targets need a page estimate to land; while the
+  /// chapter is still paginating the estimate reports unknown, so
+  /// [_verticalEstimatePending] keeps the re-issue alive until an estimate
+  /// answers or the reader reports an exact landing. Chapter-start targets
+  /// jump to offset 0 and never need an estimate.
+  void _issueVerticalTarget({
+    required String chapterId,
+    String paragraphId = '',
+  }) {
+    _verticalTarget = ReaderScrollTarget(
+      token: ++_scrollToken,
+      chapterId: chapterId,
+      paragraphId: paragraphId,
+    );
+    _verticalEstimatePending = paragraphId.isNotEmpty;
+  }
+
+  /// A vertical target whose estimate was deferred (pagination was still
+  /// running when it was applied) gets a fresh token now that the chapter's
+  /// pages are complete; the reader applies the page estimate and
+  /// fine-tunes onto the exact paragraph.
+  void _reissueVerticalTargetAfterPagination(String chapterId) {
+    if (widget.pageMode == ReaderPageMode.horizontal) return;
+    if (!_verticalEstimatePending) return;
+    final target = _verticalTarget;
+    if (target == null || target.chapterId != chapterId) return;
+    _issueVerticalTarget(chapterId: chapterId, paragraphId: target.paragraphId);
+    setState(() {});
+  }
+
+  /// The vertical reader landed on its target exactly without needing the
+  /// deferred estimate — a later job completion must not re-issue and yank
+  /// the position away from the user.
+  void _onVerticalTargetSettled() {
+    _verticalEstimatePending = false;
   }
 
   /// Identity strings of the final transformed children carrying a source
@@ -650,9 +680,29 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   }
 
   double? _estimateParagraphOffset(String chapterId, String paragraphId) {
-    final pages = _pagesFor(chapterId);
-    if (pages.isEmpty) return null;
+    final paragraphs = _window?.paragraphsOf(chapterId);
+    if (paragraphs == null || paragraphs.isEmpty) {
+      // Chapter content unavailable: the window anchors on the target
+      // chapter, so offset 0 is its top (the old synchronous contract).
+      return 0;
+    }
+    if (_breaker == null) return 0;
+    if (!_freshPages.contains(chapterId)) {
+      // Stale or missing pages. Never block a frame on a full-chapter
+      // synchronous run (that cost 13–37 ms per slider tick on realistic
+      // chapters) — kick the sliced job and report "unknown". The reader
+      // holds its offset and [_completePaginationJob] re-issues the target
+      // once the chapter completes.
+      if (!_paginationJobs.containsKey(chapterId)) {
+        _startPaginationJob(chapterId, paragraphs);
+      }
+      return null;
+    }
+    final pages = _pagesByChapter[chapterId];
+    if (pages == null || pages.isEmpty) return 0;
     final idx = PageBreaker.pageForParagraph(pages, paragraphId);
+    // The estimate has answered — the re-issue machinery can stand down.
+    _verticalEstimatePending = false;
     if (idx <= 0) return 0;
     return idx * (_breaker?.pageSize.height ?? 0);
   }
@@ -669,11 +719,15 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
         // Restoring into mid-chapter must not flash the chapter's first page
         // while the target page is still being computed, and a chapter with
         // no pages yet keeps one placeholder so the flat list never skips
-        // over it. Both display as loading until pagination catches up.
+        // over it. Both display as loading until pagination catches up. A
+        // chapter with stale (pre-reflow) pages shows those instead — the
+        // live typography preview reads far better than a mask, and the
+        // pending-jump resolution still waits for fresh pages above.
         final masked =
             chapterId == _activeChapterId &&
             _pendingJumpParagraphId.isNotEmpty &&
-            _paginationJobs.containsKey(chapterId);
+            _paginationJobs.containsKey(chapterId) &&
+            _pagesByChapter[chapterId] == null;
         final pages = masked ? const <PageContent>[] : _pagesFor(chapterId);
         if (masked || pages.isEmpty) {
           entries.add(
@@ -831,6 +885,14 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       }
     }
     _reportPosition(_activeChapterId, paragraphId, 0, charOffset);
+    if (paragraphId.isNotEmpty &&
+        _paginationJobs.containsKey(_activeChapterId)) {
+      // A re-pagination is in flight; the pending-jump landing should
+      // follow the page the user is actually reading now, not the one they
+      // were on when the typography change committed.
+      _pendingJumpParagraphId = paragraphId;
+      _pendingJumpCharOffset = charOffset;
+    }
   }
 
   // ── Position reporting ──────────────────────────────────────────────────
@@ -959,6 +1021,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       _pagesByChapter.clear();
       _badgeIdsByChapter.clear();
       _paginationJobs.clear();
+      _freshPages.clear();
       _activeChapterId = anchorId;
       _activeLocalPageIndex = 0;
       if (sameBook && anchorId == _lastReportedChapterId) {
@@ -966,10 +1029,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
         _pendingJumpCharOffset = _lastReportedCharOffset;
       }
       _window!.setChapters(widget.chapters, anchorId);
-      _verticalTarget = ReaderScrollTarget(
-        token: ++_scrollToken,
-        chapterId: anchorId,
-      );
+      _issueVerticalTarget(chapterId: anchorId);
       setState(() {});
       return;
     }
@@ -979,6 +1039,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       _pagesByChapter.clear();
       _badgeIdsByChapter.clear();
       _paginationJobs.clear();
+      _freshPages.clear();
       _window!.reloadWindow();
       _restorePositionAfterReflow();
       return;
@@ -997,11 +1058,26 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
             (widget.onParagraphComments == null);
 
     if (typographyChanged) {
-      // Pages are stale but paragraphs are not — recompute lazily.
-      _pagesByChapter.clear();
+      // Pages are stale but paragraphs are not. Keep them displayed while
+      // fresh ones paginate — masking on every live-commit during a slider
+      // drag would flash loading slots at throttle rate — but drop their
+      // freshness stamp so restores only trust fully re-paginated chapters.
+      // Horizontal mode re-runs the window's jobs right away (on-screen
+      // chapter first); vertical mode paginates lazily when the restore
+      // estimate asks.
       _paginationJobs.clear();
+      _freshPages.clear();
       _breaker = null;
       _lastPageSize = Size.zero;
+      if (widget.pageMode == ReaderPageMode.horizontal) {
+        _ensureBreaker();
+        for (final chapterId in _window!.windowChapterIds) {
+          final paragraphs = _window!.paragraphsOf(chapterId);
+          if (paragraphs != null && paragraphs.isNotEmpty) {
+            _startPaginationJob(chapterId, paragraphs);
+          }
+        }
+      }
       if (widget.prewarmCustomFont) {
         for (final chapterId in _window!.windowChapterIds) {
           final paragraphs = _window!.paragraphsOf(chapterId);
@@ -1030,11 +1106,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     _activeChapterId = chapterId;
     _pendingJumpParagraphId = paragraphId;
     _pendingJumpCharOffset = charOffset;
-    _verticalTarget = ReaderScrollTarget(
-      token: ++_scrollToken,
-      chapterId: chapterId,
-      paragraphId: paragraphId,
-    );
+    _issueVerticalTarget(chapterId: chapterId, paragraphId: paragraphId);
     _ensureBreaker();
     _resolveHorizontalPendingJump();
     setState(() {});
@@ -1053,8 +1125,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     }
 
     if (newMode == ReaderPageMode.vertical) {
-      _verticalTarget = ReaderScrollTarget(
-        token: ++_scrollToken,
+      _issueVerticalTarget(
         chapterId: chapterId,
         paragraphId: _lastReportedParagraphId,
       );
@@ -1082,6 +1153,11 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     _schedulePageProgressPublish();
 
     if (widget.pageMode == ReaderPageMode.vertical) {
+      // The vertical reader renders paragraphs directly, but its restore
+      // estimates read pages — the breaker must exist for the async
+      // estimate + re-issue flow to work at all (and the badge warmup in
+      // initState expects it by its post-frame callback).
+      _ensureBreaker();
       return SeamlessVerticalReader(
         window: window,
         chapters: widget.chapters,
@@ -1099,6 +1175,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
         selectedParagraphId: widget.selectedParagraphId,
         scrollTarget: _verticalTarget,
         estimateParagraphOffset: _estimateParagraphOffset,
+        onTargetSettled: _onVerticalTargetSettled,
         commentBadgeIdsOf: _badgeLookup,
         onParagraphComments: widget.onParagraphComments,
       );

@@ -6,6 +6,8 @@ import 'package:langhuan/features/bookshelf/reader_settings_provider.dart'
     show ReaderPageMode;
 import 'package:langhuan/features/bookshelf/widgets/chapter_content_manager.dart';
 import 'package:langhuan/features/bookshelf/widgets/comment_badge.dart';
+import 'package:langhuan/features/bookshelf/widgets/horizontal_reader_view.dart'
+    show ReaderSlotLoading;
 import 'package:langhuan/features/bookshelf/widgets/reader_controller.dart';
 import 'package:langhuan/features/bookshelf/widgets/reader_types.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
@@ -355,6 +357,8 @@ void main() {
     required ValueNotifier<ReaderChapterProgress?> pageProgress,
     required bool showComments,
     ReaderPageMode pageMode = ReaderPageMode.horizontal,
+    double fontScale = 1.0,
+    bool settle = true,
   }) async {
     final controller = sharedController ??= ReaderController();
     await tester.pumpWidget(
@@ -376,7 +380,7 @@ void main() {
             pageMode: pageMode,
             onToggleControls: () {},
             onParagraphComments: (_, _) {},
-            fontScale: 1.0,
+            fontScale: fontScale,
             lineHeight: 1.5,
             contentPadding: const EdgeInsets.all(16),
             chineseConversion: ChineseConversionMode.none,
@@ -386,7 +390,9 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle(const Duration(milliseconds: 50));
+    if (settle) {
+      await tester.pumpAndSettle(const Duration(milliseconds: 50));
+    }
   }
 
   testWidgets('page progress tracks page turns and chapter jumps', (
@@ -520,6 +526,131 @@ void main() {
           .where((t) => t.commentCount != null),
       isEmpty,
       reason: 'badges stopped rendering',
+    );
+  });
+
+  group('live typography reflow', () {
+    /// Saved positions report [ParagraphId.toStringValue]; jumps must use
+    /// the same form to match paginated items.
+    final p30Id = ParagraphId(
+      original: const OriginalParagraphId.source('c1-p30'),
+      path: const [],
+    ).toStringValue();
+
+    /// Badge-free multi-page body: badged paragraphs render through
+    /// [BadgedText]'s rich-span path, which plain text finders cannot
+    /// match, so the reflow assertions below use clean [Text] widgets.
+    List<ParagraphContent> plainBodyOf(String chapterId) => [
+      for (var i = 0; i < 60; i++)
+        ParagraphContent.text(
+          id: ParagraphId(
+            original: OriginalParagraphId.source('$chapterId-p$i'),
+            path: const [],
+          ),
+          content: '$chapterId paragraph $i',
+        ),
+    ];
+
+    testWidgets(
+      'horizontal: a font change keeps the page on screen, then restores the position',
+      (tester) async {
+        final pageProgress = ValueNotifier<ReaderChapterProgress?>(null);
+        addTearDown(pageProgress.dispose);
+        final fake = FakeFeedService(
+          paragraphsHandler:
+              (feedId, bookId, chapterId, {forceRefresh = false}) async =>
+                  plainBodyOf(chapterId),
+        );
+
+        await pumpWithSettings(
+          tester,
+          fake: fake,
+          pageProgress: pageProgress,
+          showComments: true,
+        );
+
+        // Land mid-chapter so the reflow has a real position to restore.
+        sharedController!.jumpTo(chapterId: 'c1', paragraphId: p30Id);
+        await tester.pumpAndSettle(const Duration(milliseconds: 50));
+        expect(find.text('c1 paragraph 30').hitTestable(), findsOneWidget);
+
+        // Commit bigger type like a live slider commit would. One frame in,
+        // the chapter is still re-paginating: the stale page stays on
+        // screen (its paragraphs reflowed at the new size) instead of a
+        // loading mask flashing over the reader.
+        await pumpWithSettings(
+          tester,
+          fake: fake,
+          pageProgress: pageProgress,
+          showComments: true,
+          fontScale: 1.6,
+          settle: false,
+        );
+        expect(find.byType(ReaderSlotLoading), findsNothing);
+        expect(find.text('c1 paragraph 30'), findsOneWidget);
+
+        // Once the fresh pages land, the position is restored onto the
+        // same paragraph.
+        await tester.pumpAndSettle(const Duration(milliseconds: 50));
+        expect(find.text('c1 paragraph 30').hitTestable(), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'vertical: a font change holds the offset, then re-lands on the paragraph',
+      (tester) async {
+        final pageProgress = ValueNotifier<ReaderChapterProgress?>(null);
+        addTearDown(pageProgress.dispose);
+        final fake = FakeFeedService(
+          paragraphsHandler:
+              (feedId, bookId, chapterId, {forceRefresh = false}) async =>
+                  plainBodyOf(chapterId),
+        );
+
+        await pumpWithSettings(
+          tester,
+          fake: fake,
+          pageProgress: pageProgress,
+          showComments: true,
+          pageMode: ReaderPageMode.vertical,
+        );
+
+        // Jump deep; the async estimate plus the re-issue after pagination
+        // must land on the paragraph (never rely on the 16-viewport walk
+        // alone).
+        sharedController!.jumpTo(chapterId: 'c1', paragraphId: p30Id);
+        await tester.pumpAndSettle(const Duration(milliseconds: 50));
+        final scrollable = tester.state<ScrollableState>(
+          find.byType(Scrollable),
+        );
+        final landed = scrollable.position.pixels;
+        expect(landed, greaterThan(500));
+        expect(find.text('c1 paragraph 30').hitTestable(), findsOneWidget);
+
+        // Commit bigger type. The first reflow frame holds the current
+        // offset — the estimate is pending while pagination runs, and
+        // jumping to the chapter top would be disorienting.
+        await pumpWithSettings(
+          tester,
+          fake: fake,
+          pageProgress: pageProgress,
+          showComments: true,
+          pageMode: ReaderPageMode.vertical,
+          fontScale: 1.6,
+          settle: false,
+        );
+        expect(
+          scrollable.position.pixels,
+          greaterThan(500),
+          reason: 'offset held while the estimate is pending',
+        );
+
+        // Pagination completes, the target is re-issued with an estimate,
+        // and the fine-tune lands on the paragraph again.
+        await tester.pumpAndSettle(const Duration(milliseconds: 50));
+        expect(find.text('c1 paragraph 30').hitTestable(), findsOneWidget);
+        expect(scrollable.position.pixels, greaterThan(500));
+      },
     );
   });
 }
