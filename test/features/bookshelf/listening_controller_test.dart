@@ -4,6 +4,7 @@ import 'package:langhuan/features/bookshelf/listening/listening_controller.dart'
 import 'package:langhuan/features/bookshelf/listening/local_speech_engine.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/src/rust/api/types.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../feeds/fake_feed_service.dart';
 
 class _Service extends FakeFeedService {
@@ -11,15 +12,30 @@ class _Service extends FakeFeedService {
   ReadingProgressModel? restore;
   bool failSecondChapter = false;
   String firstText = '第一句。第二句。';
+  final chapterCalls = <String>[];
+  final paragraphCalls = <String>[];
   @override
   Future<List<ChapterInfoModel>> chapters({
     required String feedId,
     required String bookId,
     bool forceRefresh = false,
-  }) async => const [
-    ChapterInfoModel(id: 'c1', title: 'One'),
-    ChapterInfoModel(id: 'c2', title: 'Two'),
-  ];
+  }) async {
+    chapterCalls.add(bookId);
+    return const [
+      ChapterInfoModel(id: 'c1', title: 'One'),
+      ChapterInfoModel(id: 'c2', title: 'Two'),
+    ];
+  }
+
+  ParagraphContent text(String sourceId, String content) =>
+      ParagraphContent.text(
+        id: ParagraphId(
+          original: OriginalParagraphId.source(sourceId),
+          path: const [],
+        ),
+        content: content,
+      );
+
   @override
   Future<List<ParagraphContent>> paragraphs({
     required String feedId,
@@ -27,18 +43,11 @@ class _Service extends FakeFeedService {
     required String chapterId,
     bool forceRefresh = false,
   }) async {
+    paragraphCalls.add(chapterId);
     if (failSecondChapter && chapterId == 'c2') {
       throw StateError('chapter failed');
     }
-    return [
-      ParagraphContent.text(
-        id: const ParagraphId(
-          original: OriginalParagraphId.source('839'),
-          path: [],
-        ),
-        content: chapterId == 'c1' ? firstText : '下一章。',
-      ),
-    ];
+    return [text('839', chapterId == 'c1' ? firstText : '下一章。')];
   }
 
   @override
@@ -299,4 +308,122 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(controller.status, ListeningStatus.paused);
   });
+  test('next chapter is prefetched while the current one plays', () async {
+    final service = _Service();
+    final engine = _Engine();
+    final controller = ListeningController(service, engine);
+    addTearDown(controller.dispose);
+    await controller.start(feedId: 'f', bookId: 'b', chapterId: 'c1');
+    await _flush();
+    // The prefetch for c2 was kicked as soon as c1 began speaking.
+    expect(service.paragraphCalls, ['c1', 'c2']);
+    engine.finish();
+    await _flush();
+    // c2 came out of the prefetch slot: no second fetch, no gap.
+    expect(service.paragraphCalls, ['c1', 'c2']);
+    expect(engine.spoken, ['第一句。第二句。', '下一章。']);
+    await controller.stop();
+  });
+  test('resume keeps in-memory chapters and paragraphs', () async {
+    final service = _Service();
+    final engine = _Engine();
+    final controller = ListeningController(service, engine);
+    addTearDown(controller.dispose);
+    await controller.start(feedId: 'f', bookId: 'b', chapterId: 'c1');
+    await _flush();
+    await controller.pause();
+    controller.resume();
+    await _flush();
+    // One chapters read, one c1 fetch (plus the c2 prefetch): no refetch.
+    expect(service.chapterCalls, hasLength(1));
+    expect(service.paragraphCalls, ['c1', 'c2']);
+    expect(engine.spoken, ['第一句。第二句。', '第一句。第二句。']);
+    await controller.stop();
+  });
+  test('resume follows manual reading within the same chapter', () async {
+    final service = _MultiParagraphService();
+    final engine = _Engine();
+    final controller = ListeningController(service, engine);
+    addTearDown(controller.dispose);
+    await controller.start(feedId: 'f', bookId: 'b', chapterId: 'c1');
+    await _flush();
+    expect(engine.spoken, ['第一段。']);
+    await controller.pause();
+    await service.setReadingProgress(
+      feedId: 'f',
+      bookId: 'b',
+      chapterId: 'c1',
+      paragraphId: const ParagraphId(
+        original: OriginalParagraphId.source('840'),
+        path: [],
+      ).toStringValue(),
+      updatedAtMs: 2,
+    );
+    controller.resume();
+    await _flush();
+    expect(engine.spoken, ['第一段。', '第二段。']);
+    await controller.stop();
+  });
+  test('sleep at chapter end pauses instead of advancing', () async {
+    final service = _Service();
+    final engine = _Engine();
+    final controller = ListeningController(service, engine);
+    addTearDown(controller.dispose);
+    controller.setSleepTimer(null, atChapterEnd: true);
+    await controller.start(feedId: 'f', bookId: 'b', chapterId: 'c1');
+    await _flush();
+    engine.finish();
+    await _flush();
+    expect(controller.status, ListeningStatus.paused);
+    expect(controller.sleepAtChapterEnd, isFalse);
+    expect(engine.spoken, ['第一句。第二句。']);
+    controller.resume();
+    await _flush();
+    expect(controller.status, ListeningStatus.playing);
+    expect(engine.spoken.last, '下一章。');
+    await controller.stop();
+  });
+  test('rate and voice persist across controller instances', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
+    final engine = _Engine()
+      ..availableVoices = const [
+        LocalVoice('zh', 'Chinese', 'zh-CN'),
+        LocalVoice('zh', 'Chinese', 'zh-HK'),
+      ];
+    final first = ListeningController(_Service(), engine);
+    addTearDown(first.dispose);
+    await first.loadVoices();
+    await first.configure(voice: first.voices.last, rate: 1.5);
+    await _drain();
+    final second = ListeningController(_Service(), engine);
+    addTearDown(second.dispose);
+    await _drain();
+    expect(second.rate, 1.5);
+    await second.loadVoices();
+    expect(second.voice!.locale, 'zh-HK');
+    // Keep later tests in this isolate free of the mock store.
+    SharedPreferences.setMockInitialValues({});
+  });
+}
+
+class _MultiParagraphService extends _Service {
+  @override
+  Future<List<ParagraphContent>> paragraphs({
+    required String feedId,
+    required String bookId,
+    required String chapterId,
+    bool forceRefresh = false,
+  }) async {
+    paragraphCalls.add(chapterId);
+    if (chapterId != 'c1') return [text('939', '下一章。')];
+    return [text('839', '第一段。'), text('840', '第二段。')];
+  }
+}
+
+/// Pumps the event loop enough for fire-and-forget preference writes.
+Future<void> _drain() async {
+  for (var i = 0; i < 8; i++) {
+    await Future<void>.delayed(Duration.zero);
+  }
 }

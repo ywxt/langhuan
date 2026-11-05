@@ -1108,6 +1108,28 @@
   "listeningNoVoicesMatch": "No matching voices",
   "listeningLoadingVoices": "Loading system voices…",
   "listeningReloadVoices": "Reload voices",
+  "listeningChapterEnd": "End of chapter",
+  "listeningStopsAfterChapter": "Stops after this chapter",
+  "listeningCustomTimer": "Custom",
+  "listeningCustomTimerTitle": "Custom sleep timer",
+  "listeningMinutesLabel": "{count} min",
+  "@listeningMinutesLabel": {
+    "description": "Sleep timer: duration in whole minutes",
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "listeningRemainingTime": "Stops in {time}",
+  "@listeningRemainingTime": {
+    "description": "Sleep timer: time left before speech pauses, e.g. 27:59",
+    "placeholders": { "time": { "type": "String" } }
+  },
+  "listeningParagraphProgress": "Paragraph {current} / {total}",
+  "@listeningParagraphProgress": {
+    "description": "Listening mini player: paragraph position within the chapter",
+    "placeholders": {
+      "current": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
   "readerShowComments": "Show paragraph comments",
   "readerHideComments": "Hide paragraph comments",
   "readerCommentCountCompact": "{count}K",

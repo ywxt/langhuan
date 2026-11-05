@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../src/rust/api/types.dart';
 import '../../feeds/feed_providers.dart';
@@ -28,7 +29,9 @@ final listeningControllerProvider = Provider<ListeningController>((ref) {
 });
 
 class ListeningController extends ChangeNotifier {
-  ListeningController(this._service, this._engine);
+  ListeningController(this._service, this._engine) {
+    _restoreSettings();
+  }
   final FeedService _service;
   final SpeechEngine _engine;
   int _generation = 0;
@@ -39,20 +42,54 @@ class ListeningController extends ChangeNotifier {
   Object? voicesError;
   Timer? _sleepTimer;
   DateTime? sleepDeadline;
+  Duration? sleepDuration;
+
+  /// One-shot sleep mode: stop after the current chapter finishes instead
+  /// of advancing. Cleared once it fires.
+  bool sleepAtChapterEnd = false;
   ListeningStatus status = ListeningStatus.idle;
   Object? error;
   String feedId = '', bookId = '', chapterId = '', paragraphId = '';
+  String bookTitle = '';
   List<ChapterInfoModel> _chapters = [];
   List<ParagraphContent> _paragraphs = [];
   int _chapterIndex = 0, _paragraphIndex = 0;
   List<LocalVoice> voices = [];
   LocalVoice? voice;
   double rate = 1;
+
+  // Single-slot next-chapter prefetch: one in-flight (or completed) fetch
+  // for the chapter after the one now playing. Errors are swallowed and
+  // re-fetched inline when the slot is consumed.
+  String? _prefetchChapterId;
+  Future<List<ParagraphContent>>? _prefetchFuture;
+
+  // Persisted settings (SharedPreferences, best-effort).
+  static const _rateKey = 'listening.rate';
+  static const _voiceIdKey = 'listening.voiceId';
+  static const _voiceLocaleKey = 'listening.voiceLocale';
+  LocalVoiceKey? _persistedVoiceKey;
+
   bool get canMoveParagraph => _paragraphs.isNotEmpty;
   bool get active =>
       status == ListeningStatus.playing || status == ListeningStatus.loading;
   bool ownsBook(String feed, String book) =>
       active && feedId == feed && bookId == book;
+
+  /// Display title of the current chapter, '' while chapters are loading.
+  String get chapterTitle =>
+      _chapterIndex >= 0 && _chapterIndex < _chapters.length
+      ? _chapters[_chapterIndex].title
+      : '';
+
+  /// 1-based position within the current chapter (0 while unavailable).
+  int get paragraphPosition => _paragraphs.isEmpty ? 0 : _paragraphIndex + 1;
+  int get paragraphTotal => _paragraphs.length;
+
+  /// Fraction of the current chapter's paragraphs already spoken.
+  double get chapterProgress => _paragraphs.isEmpty
+      ? 0
+      : (_paragraphIndex / _paragraphs.length).clamp(0.0, 1.0);
 
   /// Enumerate voices without starting playback or touching reading progress.
   Future<void> loadVoices() {
@@ -72,7 +109,10 @@ class ListeningController extends ChangeNotifier {
       }
       voices = available;
       voice =
-          voices.where((v) => v.key == voice?.key).firstOrNull ?? voices.first;
+          voices.where((v) => v.key == _persistedVoiceKey).firstOrNull ??
+          voices.where((v) => v.key == voice?.key).firstOrNull ??
+          voices.first;
+      _persistedVoiceKey = voice!.key;
     } catch (e) {
       if (!_disposed) voicesError = e;
     } finally {
@@ -86,6 +126,7 @@ class ListeningController extends ChangeNotifier {
     required String bookId,
     String chapterId = '',
     String paragraphId = '',
+    String bookTitle = '',
   }) async {
     final generation = ++_generation;
     try {
@@ -95,8 +136,10 @@ class ListeningController extends ChangeNotifier {
       this.bookId = bookId;
       this.chapterId = chapterId;
       this.paragraphId = paragraphId;
+      this.bookTitle = bookTitle;
       _paragraphs = [];
       _chapters = [];
+      _clearPrefetch();
       status = ListeningStatus.loading;
       error = null;
       notifyListeners();
@@ -105,17 +148,21 @@ class ListeningController extends ChangeNotifier {
       }
       if (generation != _generation) return;
       if (voicesError case final failure?) throw failure;
-      final saved = chapterId.isEmpty
-          ? await _service.getReadingProgress(feedId: feedId, bookId: bookId)
-          : null;
+      // Reading progress and the chapter list are independent — fetch both
+      // in parallel so first sound only waits for the slower of the two.
+      final (saved, chapters) = await (
+        chapterId.isEmpty
+            ? _service.getReadingProgress(feedId: feedId, bookId: bookId)
+            : Future<ReadingProgressModel?>.value(),
+        _service.chapters(feedId: feedId, bookId: bookId),
+      ).wait;
       if (generation != _generation) return;
       if (saved != null) {
         this.chapterId = saved.chapterId;
         this.paragraphId = saved.paragraphId;
       }
-      _chapters = await _service.chapters(feedId: feedId, bookId: bookId);
-      if (generation != _generation) return;
-      _chapterIndex = _chapters.indexWhere((c) => c.id == this.chapterId);
+      _chapters = chapters;
+      _chapterIndex = chapters.indexWhere((c) => c.id == this.chapterId);
       if (_chapterIndex < 0) _chapterIndex = 0;
       unawaited(_run(generation));
     } catch (e) {
@@ -129,6 +176,7 @@ class ListeningController extends ChangeNotifier {
         if (sleepDeadline case final deadline?
             when !deadline.isAfter(DateTime.now())) {
           sleepDeadline = null;
+          sleepDuration = null;
           await pause();
           return;
         }
@@ -143,21 +191,12 @@ class ListeningController extends ChangeNotifier {
             await _save();
             if (generation != _generation) return;
           }
-          final content = await _service.paragraphs(
-            feedId: feedId,
-            bookId: bookId,
-            chapterId: nextChapter,
-          );
+          final content = await _takeParagraphs(nextChapter);
           if (generation != _generation) return;
           _paragraphs = content;
-          _paragraphIndex = content.indexWhere((p) => _id(p) == paragraphId);
-          if (_paragraphIndex < 0) {
-            _paragraphIndex = content.indexWhere(
-              (p) => sameOriginalParagraph(_id(p), paragraphId),
-            );
-            if (_paragraphIndex < 0) _paragraphIndex = 0;
-          }
+          _syncParagraphIndex();
         }
+        _kickPrefetch(generation);
         while (generation == _generation &&
             _paragraphIndex < _paragraphs.length) {
           final paragraph = _paragraphs[_paragraphIndex];
@@ -188,6 +227,14 @@ class ListeningController extends ChangeNotifier {
         }
         _chapterIndex++;
         _paragraphs = [];
+        if (sleepAtChapterEnd &&
+            generation == _generation &&
+            _chapterIndex < _chapters.length) {
+          // One-shot: fires at the first chapter boundary reached.
+          sleepAtChapterEnd = false;
+          await pause();
+          return;
+        }
       }
       if (generation == _generation) {
         status = ListeningStatus.completed;
@@ -201,6 +248,8 @@ class ListeningController extends ChangeNotifier {
   Future<void> pause() async {
     if (!active) return;
     final generation = ++_generation;
+    // Keep _chapters/_paragraphs/indices: a later resume() re-enters
+    // playback from memory instead of re-fetching everything.
     status = ListeningStatus.paused;
     notifyListeners();
     try {
@@ -211,11 +260,47 @@ class ListeningController extends ChangeNotifier {
     }
   }
 
-  void resume() {
+  Future<void> resume() async {
     if (active || feedId.isEmpty) return;
-    // Reading progress is the only resume position, including manual reading
-    // that happened while speech was paused.
-    unawaited(start(feedId: feedId, bookId: bookId));
+    // Fast path: the paused session is still in memory. Reading progress is
+    // the resume position — including manual reading done while paused — so
+    // coordinate with one cheap database read, relocate in memory, and
+    // re-enter playback without re-fetching chapters or paragraphs.
+    if (status == ListeningStatus.paused &&
+        _chapters.isNotEmpty &&
+        chapterId.isNotEmpty) {
+      final generation = ++_generation;
+      try {
+        final saved = await _service.getReadingProgress(
+          feedId: feedId,
+          bookId: bookId,
+        );
+        if (generation != _generation) return;
+        if (saved != null && saved.chapterId != chapterId) {
+          final savedIndex = _chapters.indexWhere(
+            (c) => c.id == saved.chapterId,
+          );
+          if (savedIndex < 0) {
+            // Chapter not in the retained list — full restart.
+            await start(feedId: feedId, bookId: bookId, bookTitle: bookTitle);
+            return;
+          }
+          _chapterIndex = savedIndex;
+          _paragraphs = [];
+          chapterId = saved.chapterId;
+          paragraphId = saved.paragraphId;
+        } else if (saved != null && saved.paragraphId != paragraphId) {
+          paragraphId = saved.paragraphId;
+          _syncParagraphIndex();
+        }
+        _resumeFromMemory(generation);
+        return;
+      } catch (e) {
+        if (generation == _generation) _fail(e);
+        return;
+      }
+    }
+    await start(feedId: feedId, bookId: bookId, bookTitle: bookTitle);
   }
 
   Future<void> stop() async {
@@ -223,6 +308,11 @@ class ListeningController extends ChangeNotifier {
     status = ListeningStatus.idle;
     _sleepTimer?.cancel();
     sleepDeadline = null;
+    sleepDuration = null;
+    sleepAtChapterEnd = false;
+    _paragraphs = [];
+    _chapters = [];
+    _clearPrefetch();
     notifyListeners();
     try {
       await _engine.stop();
@@ -240,12 +330,8 @@ class ListeningController extends ChangeNotifier {
       _paragraphs.length - 1,
     );
     paragraphId = _id(_paragraphs[_paragraphIndex]);
-    await start(
-      feedId: feedId,
-      bookId: bookId,
-      chapterId: chapterId,
-      paragraphId: paragraphId,
-    );
+    // Explicit jump: re-enter from memory without progress coordination.
+    _resumeFromMemory(++_generation);
   }
 
   Future<void> configure({LocalVoice? voice, double? rate}) async {
@@ -253,8 +339,12 @@ class ListeningController extends ChangeNotifier {
     final playing = active;
     await pause();
     if (configuration != _configuration) return;
-    if (voice != null) this.voice = voice;
+    if (voice != null) {
+      this.voice = voice;
+      _persistedVoiceKey = voice.key;
+    }
     if (rate != null) this.rate = rate.clamp(0.5, 2.0);
+    _persistSettings();
     notifyListeners();
     if (playing) resume();
   }
@@ -264,12 +354,17 @@ class ListeningController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setSleepTimer(Duration? duration) {
+  void setSleepTimer(Duration? duration, {bool atChapterEnd = false}) {
     _sleepTimer?.cancel();
-    sleepDeadline = duration == null ? null : DateTime.now().add(duration);
+    sleepDeadline = null;
+    sleepDuration = null;
+    sleepAtChapterEnd = atChapterEnd;
     if (duration != null) {
+      sleepDuration = duration;
+      sleepDeadline = DateTime.now().add(duration);
       _sleepTimer = Timer(duration, () {
         sleepDeadline = null;
+        sleepDuration = null;
         unawaited(pause());
         notifyListeners();
       });
@@ -287,6 +382,103 @@ class ListeningController extends ChangeNotifier {
       paragraphCharOffset: 0,
       updatedAtMs: DateTime.now().millisecondsSinceEpoch,
     );
+  }
+
+  /// Point [_paragraphIndex] at [paragraphId] within [_paragraphs].
+  void _syncParagraphIndex() {
+    _paragraphIndex = _paragraphs.indexWhere((p) => _id(p) == paragraphId);
+    if (_paragraphIndex < 0) {
+      _paragraphIndex = _paragraphs.indexWhere(
+        (p) => sameOriginalParagraph(_id(p), paragraphId),
+      );
+      if (_paragraphIndex < 0) _paragraphIndex = 0;
+    }
+  }
+
+  /// Re-enter playback from the in-memory chapter/paragraph state without
+  /// re-fetching. [generation] must be current.
+  void _resumeFromMemory(int generation) {
+    status = ListeningStatus.loading;
+    error = null;
+    notifyListeners();
+    unawaited(_run(generation));
+  }
+
+  /// Start prefetching the chapter after the current one, if any, while the
+  /// network would otherwise idle during playback.
+  void _kickPrefetch(int generation) {
+    final nextIndex = _chapterIndex + 1;
+    if (nextIndex >= _chapters.length) return;
+    final nextId = _chapters[nextIndex].id;
+    if (_prefetchChapterId == nextId) return;
+    _prefetchChapterId = nextId;
+    final future = _service.paragraphs(
+      feedId: feedId,
+      bookId: bookId,
+      chapterId: nextId,
+    );
+    _prefetchFuture = future;
+    // A prefetch nobody consumes (stop, failure, pause without resume) must
+    // not surface as an unhandled async error.
+    future.ignore();
+  }
+
+  /// Consume the prefetch slot for [chapterId] if it matches, otherwise (or
+  /// after a failed prefetch) fetch directly so errors surface normally.
+  Future<List<ParagraphContent>> _takeParagraphs(String chapterId) async {
+    final future = _prefetchChapterId == chapterId ? _prefetchFuture : null;
+    _clearPrefetch();
+    if (future != null) {
+      try {
+        return await future;
+      } catch (_) {
+        // Prefetch failures are silent; the direct fetch below reports them.
+      }
+    }
+    return _service.paragraphs(
+      feedId: feedId,
+      bookId: bookId,
+      chapterId: chapterId,
+    );
+  }
+
+  void _clearPrefetch() {
+    _prefetchChapterId = null;
+    _prefetchFuture = null;
+  }
+
+  Future<void> _restoreSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_disposed) return;
+      final savedRate = prefs.getDouble(_rateKey);
+      if (savedRate != null) rate = savedRate.clamp(0.5, 2.0);
+      final voiceId = prefs.getString(_voiceIdKey);
+      final voiceLocale = prefs.getString(_voiceLocaleKey);
+      if (voiceId != null && voiceLocale != null) {
+        _persistedVoiceKey = (id: voiceId, locale: voiceLocale);
+      }
+      notifyListeners();
+    } catch (_) {
+      // Persistence is best-effort: fresh installs and environments without
+      // a SharedPreferences implementation start from defaults.
+    }
+  }
+
+  void _persistSettings() {
+    unawaited(() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setDouble(_rateKey, rate);
+        final key = voice?.key;
+        if (key != null) {
+          await prefs.setString(_voiceIdKey, key.id);
+          await prefs.setString(_voiceLocaleKey, key.locale);
+        }
+      } catch (_) {
+        // Best-effort persistence.
+      }
+    }());
   }
 
   void _fail(Object e) {

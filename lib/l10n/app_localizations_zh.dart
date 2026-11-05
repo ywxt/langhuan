@@ -1246,6 +1246,33 @@ class AppLocalizationsZh extends AppLocalizations {
   String get listeningReloadVoices => '重新加載聲音';
 
   @override
+  String get listeningChapterEnd => '本章結束';
+
+  @override
+  String get listeningStopsAfterChapter => '本章結束後停止';
+
+  @override
+  String get listeningCustomTimer => '自訂';
+
+  @override
+  String get listeningCustomTimerTitle => '自訂定時';
+
+  @override
+  String listeningMinutesLabel(int count) {
+    return '$count 分鐘';
+  }
+
+  @override
+  String listeningRemainingTime(String time) {
+    return '剩餘 $time';
+  }
+
+  @override
+  String listeningParagraphProgress(int current, int total) {
+    return '本段 $current/$total';
+  }
+
+  @override
   String get readerShowComments => '顯示段落評論';
 
   @override

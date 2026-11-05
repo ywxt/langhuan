@@ -2378,6 +2378,48 @@ abstract class AppLocalizations {
   /// **'Reload voices'**
   String get listeningReloadVoices;
 
+  /// No description provided for @listeningChapterEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'End of chapter'**
+  String get listeningChapterEnd;
+
+  /// No description provided for @listeningStopsAfterChapter.
+  ///
+  /// In en, this message translates to:
+  /// **'Stops after this chapter'**
+  String get listeningStopsAfterChapter;
+
+  /// No description provided for @listeningCustomTimer.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get listeningCustomTimer;
+
+  /// No description provided for @listeningCustomTimerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom sleep timer'**
+  String get listeningCustomTimerTitle;
+
+  /// Sleep timer: duration in whole minutes
+  ///
+  /// In en, this message translates to:
+  /// **'{count} min'**
+  String listeningMinutesLabel(int count);
+
+  /// Sleep timer: time left before speech pauses, e.g. 27:59
+  ///
+  /// In en, this message translates to:
+  /// **'Stops in {time}'**
+  String listeningRemainingTime(String time);
+
+  /// Listening mini player: paragraph position within the chapter
+  ///
+  /// In en, this message translates to:
+  /// **'Paragraph {current} / {total}'**
+  String listeningParagraphProgress(int current, int total);
+
   /// No description provided for @readerShowComments.
   ///
   /// In en, this message translates to:

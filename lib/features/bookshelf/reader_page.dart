@@ -16,6 +16,7 @@ import '../feeds/feed_providers.dart';
 import '../feeds/feed_service.dart';
 import 'comments/comments_controller.dart';
 import 'comments/comments_panel.dart';
+import 'bookshelf_provider.dart';
 import 'listening/listening_controller.dart';
 import 'listening/listening_panel.dart';
 import 'reader_screen_controller.dart';
@@ -260,6 +261,20 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     unawaited(_openComments(chapterId, paragraphId: sourceId));
   }
 
+  /// Shelf title for the book being read ('' when the shelf has not loaded).
+  String get _bookTitle =>
+      ref
+          .read(bookshelfProvider)
+          .items
+          .where(
+            (item) =>
+                item.feedId == widget.feedId &&
+                item.sourceBookId == widget.bookId,
+          )
+          .firstOrNull
+          ?.title ??
+      '';
+
   Future<void> _openListening() => showListeningPanel(
     context,
     _listening,
@@ -270,6 +285,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
         bookId: widget.bookId,
         chapterId: progress.activeChapterId,
         paragraphId: progress.activeParagraphId,
+        bookTitle: _bookTitle,
       );
     },
   );

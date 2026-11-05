@@ -403,6 +403,28 @@
   "listeningNoVoicesMatch": "沒有匹配的聲音",
   "listeningLoadingVoices": "正在加載系統聲音…",
   "listeningReloadVoices": "重新加載聲音",
+  "listeningChapterEnd": "本章結束",
+  "listeningStopsAfterChapter": "本章結束後停止",
+  "listeningCustomTimer": "自訂",
+  "listeningCustomTimerTitle": "自訂定時",
+  "listeningMinutesLabel": "{count} 分鐘",
+  "@listeningMinutesLabel": {
+    "description": "Sleep timer: duration in whole minutes",
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "listeningRemainingTime": "剩餘 {time}",
+  "@listeningRemainingTime": {
+    "description": "Sleep timer: time left before speech pauses, e.g. 27:59",
+    "placeholders": { "time": { "type": "String" } }
+  },
+  "listeningParagraphProgress": "本段 {current}/{total}",
+  "@listeningParagraphProgress": {
+    "description": "Listening mini player: paragraph position within the chapter",
+    "placeholders": {
+      "current": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
   "readerShowComments": "顯示段落評論",
   "readerHideComments": "隱藏段落評論",
   "readerCommentCountCompact": "{count}萬",
