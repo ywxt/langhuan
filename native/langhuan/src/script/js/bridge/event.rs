@@ -152,11 +152,6 @@ impl<'js> IntoJs<'js> for &HttpRequest {
         let object = Object::new(ctx.clone())?;
         object.set("url", self.url.as_str())?;
         object.set("method", self.method.as_str())?;
-        let params = Object::new(ctx.clone())?;
-        for (key, value) in &self.params {
-            params.set(key.as_str(), value.as_str())?;
-        }
-        object.set("params", params)?;
         // Headers are presented as a map so feeds can patch them with
         // ordinary property mutation (`request.headers.Authorization = ...`).
         let headers = Object::new(ctx.clone())?;

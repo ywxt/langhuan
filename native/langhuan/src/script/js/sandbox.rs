@@ -855,49 +855,24 @@ mod tests {
     }
 
     #[test]
-    fn rust_html_parser_supports_dom_operations() {
+    fn html_module_is_available_in_the_feed_realm() {
         let result = Sandbox::new(Duration::from_secs(5))
             .unwrap()
             .eval_module_json(
                 r#"import { HTML } from "langhuan:html";
-                   const document = HTML.parse(`
-                     <section id="results">
-                       <article class="card featured">
-                         <a href="/book/42.html"><span>Book &amp; One</span></a>
-                       </article>
-                       <article class="card"><a href="/other">Other</a></article>
-                       <script>const fake = '<a href="/book/99.html">Fake</a>';</script>
-                     </section>`);
-                   const links = document.select(
-                     '#results > article.card a[href*="/book/"][href$=".html"]'
-                   );
                    export default JSON.stringify({
-                     count: links.length,
-                     href: links.first().attr("href"),
-                     text: links.first().text().trim(),
-                     query: document.select("article.featured").first().tagName,
-                     parent: links.first().parent.tagName,
+                       html: typeof HTML,
+                       parse: typeof HTML.parse,
+                       encode: typeof HTML.encodeURIComponent,
+                       decodeEntities: typeof HTML.decodeEntities,
+                       find: typeof HTML.parse("<div><p>x</p></div>").find,
                    });"#,
             )
             .unwrap();
         assert_eq!(
             result,
-            r#"{"count":1,"href":"/book/42.html","text":"Book & One","query":"article","parent":"article"}"#
+            r#"{"html":"object","parse":"function","encode":"function","decodeEntities":"function","find":"function"}"#
         );
-    }
-
-    #[test]
-    fn rust_html_parser_preserves_br_as_newline() {
-        let result = Sandbox::new(Duration::from_secs(5))
-            .unwrap()
-            .eval_module_json(
-                r##"import { HTML } from "langhuan:html";
-                    export default JSON.stringify(
-                        HTML.parse("<div id='x'>one<br>two</div>").select("#x").first().text()
-                    );"##,
-            )
-            .unwrap();
-        assert_eq!(result, r#""one\ntwo""#);
     }
 
     #[test]

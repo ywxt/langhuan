@@ -806,7 +806,7 @@ mod tests {
 // @description  Fixture feed backed by a mockito server
 // @base_url     __BASE_URL__
 // @access_domain 127.0.0.1
-// @schema_version 5
+// @schema_version 6
 // ==/Feed==
 import { TextDecoder } from "langhuan:encoding";
 export default (() => {
@@ -868,7 +868,7 @@ export default (() => {
             description: None,
             base_url: base_url.to_owned(),
             access_domains,
-            schema_version: 5,
+            schema_version: 6,
         }
     }
 

@@ -62,8 +62,9 @@ impl ScriptEngine {
         if feed_meta.schema_version != crate::feed::meta::FEED_SCHEMA_VERSION {
             return Err(crate::error::Error::invalid_feed(format!(
                 "JavaScript feeds require schema_version {}; schema {} must migrate: \
-                 complete steps require result, request bodies require Uint8Array, \
-                 and operation names match exported handlers",
+                 requests carry a full URL instead of `params` (encode query strings \
+                 with HTML.encodeURIComponent), and the HTML module follows the \
+                 jQuery and DOM interface (find, parent(), children())",
                 crate::feed::meta::FEED_SCHEMA_VERSION,
                 feed_meta.schema_version,
             )));
@@ -136,7 +137,7 @@ mod tests {
           };
         "#;
         let feed = ScriptEngine::new()
-            .load_script(&source(5, script))
+            .load_script(&source(6, script))
             .await
             .unwrap();
         assert_eq!(feed.comment_support(), (true, false));
@@ -166,13 +167,13 @@ mod tests {
         let invalid = script.replace("paragraph: null", "paragraph: 42");
         assert!(
             ScriptEngine::new()
-                .load_script(&source(5, &invalid))
+                .load_script(&source(6, &invalid))
                 .await
                 .is_err()
         );
         let no_progress = script.replace("{ page: 2 }", "{ page: 1 }");
         let feed = ScriptEngine::new()
-            .load_script(&source(5, &no_progress))
+            .load_script(&source(6, &no_progress))
             .await
             .unwrap();
         query.paragraph_id = None;
@@ -184,9 +185,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn schema_five_accepts_exported_feed_object() {
+    async fn schema_six_accepts_exported_feed_object() {
         ScriptEngine::new()
-            .load_script(&source(5, RETURNED_FEED))
+            .load_script(&source(6, RETURNED_FEED))
             .await
             .expect("exported feed object should load");
     }
@@ -204,22 +205,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_schema_four_with_a_migration_hint() {
+    async fn rejects_schema_five_with_a_migration_hint() {
         let error = ScriptEngine::new()
-            .load_script(&source(4, RETURNED_FEED))
+            .load_script(&source(5, RETURNED_FEED))
             .await
-            .expect_err("schema 4 must not be accepted");
+            .expect_err("schema 5 must not be accepted");
         let message = error.to_string();
-        assert!(message.contains("schema_version 5"));
-        assert!(message.contains("result"));
+        assert!(message.contains("schema_version 6"));
+        assert!(message.contains("params"));
     }
 
     #[tokio::test]
     async fn rejects_newer_schema() {
         let error = ScriptEngine::new()
-            .load_script(&source(6, RETURNED_FEED))
+            .load_script(&source(7, RETURNED_FEED))
             .await
-            .expect_err("schema 6 must not be accepted");
+            .expect_err("schema 7 must not be accepted");
         assert!(matches!(
             error,
             Error::Script(ScriptError::SchemaTooNew { .. })
@@ -238,7 +239,7 @@ mod tests {
           globalThis.feed = handlers;
         "#;
         let error = ScriptEngine::new()
-            .load_script(&source(5, body))
+            .load_script(&source(6, body))
             .await
             .expect_err("globalThis.feed registration must be rejected");
         assert!(error.to_string().contains("export default"));
@@ -251,7 +252,7 @@ mod tests {
             "export default { search: complete, bookInfo, chapters: complete, paragraphs: complete, login: { entry() {} } };",
         );
         let error = ScriptEngine::new()
-            .load_script(&source(5, &body))
+            .load_script(&source(6, &body))
             .await
             .expect_err("partial login contract must be rejected");
         assert!(error.to_string().contains("login.entry, login.parse"));
@@ -270,7 +271,7 @@ mod tests {
           export default { search: complete, bookInfo, chapters: complete, paragraphs: complete, login };
         "#;
         let feed = ScriptEngine::new()
-            .load_script(&source(5, body))
+            .load_script(&source(6, body))
             .await
             .expect("feed should compile");
         let support = feed.supports_auth().expect("login should be supported");
@@ -319,7 +320,7 @@ mod tests {
         "#
             .replace("__BASE__", &server.url());
         let feed = ScriptEngine::new()
-            .load_script(&source(5, &body))
+            .load_script(&source(6, &body))
             .await
             .unwrap();
         let support = feed.supports_auth().unwrap();
@@ -372,7 +373,7 @@ mod tests {
         "#
         .replace("__BASE__", &server.url());
         let feed = ScriptEngine::new()
-            .load_script(&source(5, &body))
+            .load_script(&source(6, &body))
             .await
             .unwrap();
 
@@ -411,7 +412,7 @@ mod tests {
         "#
             .replace("__BASE__", &server.url());
         let feed = ScriptEngine::new()
-            .load_script(&source(5, &body))
+            .load_script(&source(6, &body))
             .await
             .unwrap();
 
@@ -430,7 +431,7 @@ mod tests {
           export default { search, bookInfo, chapters: empty, paragraphs: empty };
         "#;
         let feed = ScriptEngine::new()
-            .load_script(&source(5, body))
+            .load_script(&source(6, body))
             .await
             .unwrap();
 
@@ -461,7 +462,7 @@ mod tests {
           export default { search, bookInfo, chapters: empty, paragraphs: empty };
         "#;
         let feed = ScriptEngine::new()
-            .load_script(&source(5, body))
+            .load_script(&source(6, body))
             .await
             .unwrap();
 
@@ -493,7 +494,7 @@ mod tests {
           export default { search, bookInfo, chapters: empty, paragraphs: empty };
         "#;
         let feed = ScriptEngine::new()
-            .load_script(&source(5, body))
+            .load_script(&source(6, body))
             .await
             .unwrap();
 
@@ -521,7 +522,7 @@ mod tests {
           export default { search: empty, bookInfo, chapters: empty, paragraphs: empty };
         "#;
         let feed = ScriptEngine::new()
-            .load_script(&source(5, body))
+            .load_script(&source(6, body))
             .await
             .unwrap();
 
@@ -554,7 +555,7 @@ mod tests {
           export default { search: empty, bookInfo, chapters: empty, paragraphs: empty };
         "#;
         let feed = ScriptEngine::new()
-            .load_script(&source(5, body))
+            .load_script(&source(6, body))
             .await
             .unwrap();
 
@@ -579,7 +580,7 @@ mod tests {
         "#;
         let feed = Arc::new(
             ScriptEngine::new()
-                .load_script(&source(5, body))
+                .load_script(&source(6, body))
                 .await
                 .unwrap(),
         );
@@ -693,7 +694,7 @@ mod tests {
           export default { search, bookInfo, chapters: empty, paragraphs: empty };
         "#;
         let feed = ScriptEngine::new()
-            .load_script(&source(5, body))
+            .load_script(&source(6, body))
             .await
             .unwrap();
         let handler = CannedWebview::with_snapshot(sample_snapshot());
@@ -728,7 +729,7 @@ mod tests {
           const bookInfo = () => ({ type: "complete", result: { id: "1", title: "One", author: "Test" } });
           export default { search, bookInfo, chapters: empty, paragraphs: empty };
         "#;
-        let script = source(5, body)
+        let script = source(6, body)
             .replace("// @access_domain example.com\n", "")
             .replace("// @access_domain 127.0.0.1\n", "");
         let feed = ScriptEngine::new().load_script(&script).await.unwrap();
@@ -761,7 +762,7 @@ mod tests {
           export default { search, bookInfo, chapters: empty, paragraphs: empty };
         "#;
         let feed = ScriptEngine::new()
-            .load_script(&source(5, body))
+            .load_script(&source(6, body))
             .await
             .unwrap();
 
@@ -796,7 +797,7 @@ mod tests {
           export default { search, bookInfo, chapters: empty, paragraphs: empty };
         "#;
         let feed = ScriptEngine::new()
-            .load_script(&source(5, body))
+            .load_script(&source(6, body))
             .await
             .unwrap();
         feed.set_webview_handler(Some(CannedWebview::canceled()))
@@ -876,7 +877,7 @@ mod tests {
     async fn storage_round_trips_persists_and_isolates_feeds() {
         let engine = ScriptEngine::new().with_storage(Arc::new(MemoryStorage::default()) as _);
 
-        let feed = engine.load_script(&source(5, STORAGE_FEED)).await.unwrap();
+        let feed = engine.load_script(&source(6, STORAGE_FEED)).await.unwrap();
         feed.search("x").collect::<Vec<_>>().await;
         assert_eq!(feed.book_info("1").await.unwrap().title, "abc");
         feed.chapters("1").collect::<Vec<_>>().await;
@@ -885,7 +886,7 @@ mod tests {
         // A freshly loaded feed reads what the previous instance stored:
         // values live in the host backend, not in the realm.
         feed.search("x").collect::<Vec<_>>().await;
-        let reloaded = engine.load_script(&source(5, STORAGE_FEED)).await.unwrap();
+        let reloaded = engine.load_script(&source(6, STORAGE_FEED)).await.unwrap();
         assert_eq!(reloaded.book_info("1").await.unwrap().title, "abc");
 
         // Another feed never sees the first feed's namespace.
@@ -895,7 +896,7 @@ mod tests {
 // @name Other
 // @version 3.0.0
 // @base_url https://example.com
-// @schema_version 5
+// @schema_version 6
 // ==/Feed==
 {STORAGE_FEED}
 "#
@@ -907,7 +908,7 @@ mod tests {
     #[tokio::test]
     async fn storage_module_fails_to_load_without_a_backend() {
         let error = ScriptEngine::new()
-            .load_script(&source(5, STORAGE_FEED))
+            .load_script(&source(6, STORAGE_FEED))
             .await
             .expect_err("importing langhuan:storage without a backend must fail");
         assert!(
@@ -932,7 +933,7 @@ mod tests {
         }
 
         let engine = ScriptEngine::new().with_storage(Arc::new(FailingStorage) as _);
-        let feed = engine.load_script(&source(5, STORAGE_FEED)).await.unwrap();
+        let feed = engine.load_script(&source(6, STORAGE_FEED)).await.unwrap();
         let collected = feed.search("x").collect::<Vec<_>>().await;
         let error = collected[0]
             .as_ref()
@@ -966,7 +967,7 @@ mod tests {
           export default { search, bookInfo, chapters, paragraphs };
         "#;
         let engine = ScriptEngine::new().with_storage(Arc::new(MemoryStorage::default()) as _);
-        let feed = engine.load_script(&source(5, body)).await.unwrap();
+        let feed = engine.load_script(&source(6, body)).await.unwrap();
 
         let search = feed.search("x").collect::<Vec<_>>().await;
         let chapters = feed.chapters("1").collect::<Vec<_>>().await;
@@ -1026,7 +1027,7 @@ mod tests {
           export default { search: empty, bookInfo, chapters: empty, paragraphs: empty };
         "#;
         let engine = ScriptEngine::new().with_storage(Arc::new(MemoryStorage::default()) as _);
-        let feed = engine.load_script(&source(5, body)).await.unwrap();
+        let feed = engine.load_script(&source(6, body)).await.unwrap();
         // The wiring global is gone once the feed is loaded, while the
         // module's own handle keeps working.
         assert_eq!(feed.book_info("1").await.unwrap().title, "undefined:1");
@@ -1039,8 +1040,11 @@ mod tests {
     fn checked_in_book_sources_load() {
         let manifest = env!("CARGO_MANIFEST_DIR");
         let sources = [
+            ("../../docs/book-sources/biquge-tw.js", false),
             ("../../docs/book-sources/fanqie.js", false),
             ("../../docs/book-sources/fanqie-app.js", true),
+            ("../../docs/book-sources/jjwxc.js", false),
+            ("../../docs/book-sources/qidian.js", false),
         ];
         for (path, needs_storage) in sources {
             let script =

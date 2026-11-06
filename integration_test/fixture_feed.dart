@@ -19,7 +19,7 @@ String fixtureFeedScript({
 // @description  Hermetic fixture feed backed by a local HTTP server
 // @base_url     http://127.0.0.1:$port
 // @access_domain 127.0.0.1
-// @schema_version 5
+// @schema_version 6
 // ==/Feed==
 
 import { TextDecoder } from "langhuan:encoding";

@@ -4,7 +4,7 @@
 //! data types as well as the runtime helpers that execute requests and convert
 //! them to/from sandboxed JavaScript values.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt;
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock};
@@ -174,14 +174,11 @@ impl<'de> Deserialize<'de> for HttpBody {
 /// HTTP call outside the sandbox.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpRequest {
-    /// The target URL.
+    /// The full target URL, including any query string.
     pub url: String,
     /// HTTP method (GET, POST, …). Defaults to `"GET"`.
     #[serde(default = "default_method")]
     pub method: String,
-    /// Query parameters appended to the URL.
-    #[serde(default)]
-    pub params: HashMap<String, String>,
     /// Additional HTTP headers.
     ///
     /// Scripts provide a string-keyed object. Response headers separately
@@ -306,10 +303,6 @@ pub async fn execute(
         "sending HTTP request"
     );
     let mut builder = client.request(method, &req.url).timeout(timeout);
-
-    if !req.params.is_empty() {
-        builder = builder.query(&req.params);
-    }
 
     for (key, value) in &req.headers {
         builder = builder.header(key.as_str(), value.as_str());
@@ -471,7 +464,7 @@ pub(crate) fn domain_allowed(url: &str, access_domains: &HashSet<String>) -> boo
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashSet;
     use std::time::{Duration, Instant};
 
     use super::{
@@ -524,7 +517,6 @@ mod tests {
         let request = HttpRequest {
             url: "https://example.com/books".to_owned(),
             method: "GET".to_owned(),
-            params: HashMap::new(),
             headers: Vec::new(),
             body: None,
         };
@@ -578,7 +570,6 @@ mod tests {
         let request = HttpRequest {
             url: format!("http://{addr}/stall"),
             method: "GET".to_owned(),
-            params: HashMap::new(),
             headers: Vec::new(),
             body: None,
         };

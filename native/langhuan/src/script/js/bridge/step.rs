@@ -8,8 +8,6 @@
 //! context label, so the same reader reports as `invalid feed step` inside a
 //! step and as `invalid patched request` for a `login.patchRequest` result.
 
-use std::collections::HashMap;
-
 use rquickjs::{Ctx, Error as JsError, FromJs, Result as JsResult, Value as JsValue};
 use serde_json::Value;
 
@@ -147,7 +145,16 @@ impl<'js> FromJs<'js> for HttpRequest {
         let method = fields
             .optional_string("method")?
             .unwrap_or_else(|| "GET".to_owned());
-        let params = read_params(&fields)?;
+        // Requests no longer carry `params`; scripts build the full URL.
+        // Reject the removed field instead of silently dropping it.
+        let leftover = fields.value("params")?;
+        if !leftover.is_undefined() && !leftover.is_null() {
+            return Err(fields.error(
+                "params",
+                "is no longer part of a request; build the full URL with \
+                 HTML.encodeURIComponent",
+            ));
+        }
         let headers = read_headers(&fields)?;
         let body = fields
             .optional_bytes(ctx, "body")?
@@ -155,34 +162,10 @@ impl<'js> FromJs<'js> for HttpRequest {
         Ok(HttpRequest {
             url,
             method,
-            params,
             headers,
             body,
         })
     }
-}
-
-fn read_params(fields: &Fields<'_>) -> JsResult<HashMap<String, String>> {
-    let value = fields.value("params")?;
-    if value.is_undefined() || value.is_null() {
-        return Ok(HashMap::new());
-    }
-    if value.is_array() {
-        return Err(fields.error("params", "must be an object"));
-    }
-    let Some(map) = value.clone().into_object() else {
-        return Err(fields.error("params", "must be an object"));
-    };
-    let mut params = HashMap::with_capacity(map.len());
-    for entry in map.props::<String, JsValue>() {
-        let (key, prop) =
-            entry.map_err(|error| fields.invalid(format!("reading params failed: {error}")))?;
-        let text = prop
-            .get::<String>()
-            .map_err(|_| fields.error("params", "values must be strings"))?;
-        params.insert(key, text);
-    }
-    Ok(params)
 }
 
 fn read_headers(fields: &Fields<'_>) -> JsResult<Vec<(String, String)>> {
@@ -414,6 +397,23 @@ mod tests {
             request_error("({url:'https://example.com', headers:[['X','Y']]})"),
             "invalid patched request: `headers` must be an object"
         );
+    }
+
+    #[test]
+    fn requests_reject_leftover_params_with_migration_hint() {
+        assert_eq!(
+            request_error("({url:'https://example.com', params: {q: 'x'}})"),
+            "invalid patched request: `params` is no longer part of a request; \
+             build the full URL with HTML.encodeURIComponent"
+        );
+        // Explicitly empty `params` stays accepted, like other optional fields.
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let object = sandbox
+            .eval_object("({url:'https://example.com', params: null})")
+            .unwrap();
+        object
+            .with_realm(|_ctx, object| Ok(read_patched_request(&object.into_value())))
+            .unwrap();
     }
 
     #[test]

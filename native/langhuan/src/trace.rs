@@ -350,7 +350,6 @@ mod tests {
         let req = HttpRequest {
             url: "https://blocked.example/page".to_owned(),
             method: "GET".to_owned(),
-            params: Default::default(),
             headers: Vec::new(),
             body: None,
         };

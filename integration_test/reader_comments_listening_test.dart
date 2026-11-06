@@ -83,11 +83,12 @@ void main() {
               .replaceFirst(
                 'export default { search, bookInfo, chapters, paragraphs };',
                 '''
+import { HTML } from "langhuan:html";
 function comments(event) {
   if (event.state == null) {
-    const params = { page: String(event.cursor?.page ?? 1) };
-    if (event.input.parentId != null) params.parent = event.input.parentId;
-    return { type: "request", request: { url: meta.base_url + "/comments", method: "GET", params },
+    let query = "?page=" + (event.cursor?.page ?? 1);
+    if (event.input.parentId != null) query += "&parent=" + HTML.encodeURIComponent(String(event.input.parentId));
+    return { type: "request", request: { url: meta.base_url + "/comments" + query, method: "GET" },
       next_state: { requested: true } };
   }
   const page = JSON.parse(DECODER.decode(event.response.body));

@@ -552,7 +552,7 @@ mod tests {
 // @version      3.0.0
 // @base_url     {base_url}
 // @access_domain 127.0.0.1
-// @schema_version 5
+// @schema_version 6
 // ==/Feed==
 import {{ TextDecoder }} from "langhuan:encoding";
 export default (() => {{
@@ -597,7 +597,7 @@ export default (() => {{
 // @version      1.0.0
 // @base_url     https://example.com
 // @access_domain example.com
-// @schema_version 5
+// @schema_version 6
 // ==/Feed==
 function search(event) {
   const page = event.cursor?.page ?? 1;

@@ -1,7 +1,7 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.fanqie_app
 // @name         番茄小說（APP 直連）
-// @version      2.2.2
+// @version      2.2.3
 // @author       Langhuan
 // @description  番茄小說 APP 網關書源（reading.snssdk.com）：匿名設備註冊後經 x-argus/x-ladon 簽名直連閱讀 API，VIP 章節全文解密，無需帳號；支持正文段落評論，章節段落附帶評論數角標。需要宿主提供存儲後端（langhuan:storage）
 // @base_url     https://reading.snssdk.com
@@ -9,7 +9,7 @@
 // @access_domain i.snssdk.com
 // @access_domain fanqienovel.com
 // @access_domain api5-normal-sinfonlineb.fqnovel.com
-// @schema_version 5
+// @schema_version 6
 // ==/Feed==
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -248,9 +248,9 @@ function uuid() {
 }
 
 // URLSearchParams 風格的查詢編碼（空格 → +）。請求 URL 與簽名輸入必須
-// 由同一字符串構造，故不用宿主的 params 拼接。
+// 由同一字符串構造：兩者共用這一個編碼函數。
 function formEncode(value) {
-  return encodeURIComponent(String(value)).replace(/%20/g, "+");
+  return HTML.encodeURIComponent(String(value)).replace(/%20/g, "+");
 }
 
 function encodeQuery(params) {
@@ -890,13 +890,13 @@ function contentParagraphs(plain) {
 function paragraphsFromHtml(htmlText) {
   const document = HTML.parse(htmlText);
   const items = [];
-  const title = document.select("h1, h2").first()?.text().trim();
+  const title = document.find("h1, h2").first()?.text().trim();
   if (title) items.push({ type: "title", text: title });
   // 服務端段評的 para_index 從正文第一個 <p> 起算（0-based，標題不佔
   // 索引，空段照常遞增——與 commentapi 實況對齊），因此計數跟隨 <p> 的
   // 遍歷而非實際輸出。
   let paraIndex = 0;
-  for (const paragraph of document.select("p")) {
+  for (const paragraph of document.find("p")) {
     const content = paragraph.text().trim();
     if (content) {
       items.push({ type: "text", content, id: String(paraIndex) });

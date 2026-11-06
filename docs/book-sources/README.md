@@ -14,7 +14,7 @@ third-party scripts unrestricted system access.
 | Document | Use it for |
 | --- | --- |
 | [Architecture](architecture.md) | Understand reducers, request execution, pagination, state, caching, and authentication. |
-| [Writing a source](writing-a-source.md) | Build a complete schema-5 source from metadata to readable paragraphs. |
+| [Writing a source](writing-a-source.md) | Build a complete schema-6 source from metadata to readable paragraphs. |
 | [Sandbox](sandbox.md) | Understand what scripts can do, what they cannot do, and every resource limit. |
 | [API Reference](api-reference.md) | Look up metadata, events, steps, result shapes, login hooks, globals, and `langhuan:*` modules. |
 | [Error handling](../error-handling.md) | Choose expected failures and understand host error categories. |
@@ -63,7 +63,7 @@ The source never receives `fetch`, sockets, or a native HTTP object.
   binary protocols, request signing, compression, and encrypted content. It is
   GPL-3.0-or-later; the other examples are covered by the repository license.
 - [`jjwxc.js`](jjwxc.js) demonstrates a GBK-encoded site: decoding GBK pages,
-  percent-encoding search keywords to GBK with a reverse-built decoder table,
+  percent-encoding search keywords to GBK with `HTML.encodeURIComponent`,
   paragraph-aligned comments from JSON APIs without login, and VIP chapters
   failing with an auth-required error.
 
@@ -72,13 +72,17 @@ URLs, device identifiers, or authentication data.
 
 ## Current contract
 
-The current contract is schema 5:
+The current contract is schema 6:
 
 - source files use `.js`;
 - they are ES modules;
 - they `export default` the Feed object;
 - HTTP response bodies are `Uint8Array` values;
-- `globalThis.feed` and schemas below 5 are rejected; old completion shapes are not adapted.
+- requests carry a full URL — scripts build their own query strings and
+  percent-encode them with `HTML.encodeURIComponent`;
+- the HTML module follows the jQuery and browser DOM interface (`find`,
+  `parent()`, `children()`, `outerHTML()`, …);
+- `globalThis.feed` and schemas below 6 are rejected; old completion shapes are not adapted.
 
 For application-level features, see [Search, comments, and listening](../search-comments-listening.md).
 

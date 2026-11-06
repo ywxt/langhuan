@@ -1,12 +1,12 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.jjwxc
 // @name         晉江文學城
-// @version      1.0.0
+// @version      1.1.0
 // @author       Langhuan
 // @description  適配晉江文學城（www.jjwxc.net）的書源：搜尋、詳情、目錄、正文（含作話），章評、段評及回覆免登入讀取；VIP 章節需站方帳號，本源暫不支持登入
 // @base_url     https://www.jjwxc.net
 // @access_domain www.jjwxc.net
-// @schema_version 5
+// @schema_version 6
 // ==/Feed==
 
 import { TextDecoder } from "langhuan:encoding";
@@ -16,7 +16,7 @@ import { HTML } from "langhuan:html";
 const GBK = new TextDecoder("gbk");
 const UTF8 = new TextDecoder("utf-8");
 
-// schema 5：response.body 是 Uint8Array，需先解碼成字串。
+// schema 6：response.body 是 Uint8Array，需先解碼成字串。
 function bodyText(response) {
   return GBK.decode(response?.body);
 }
@@ -142,68 +142,8 @@ function absoluteUrl(value) {
 
 // ── GBK 關鍵字編碼 ─────────────────────────────────────────────────────────────
 // 搜尋 kw 必須是 GBK 字節的百分號編碼：UTF-8 字節會被站點按 GBK 誤解成亂碼
-// 關鍵字（「天官赐福」被搜成「澶…」）。沙盒只提供 UTF-8 的 TextEncoder，
-// 這裏反用 GBK TextDecoder 一次解碼整個雙字節碼位空間（0x81..0xFE 配
-// 0x40..0xFE 去 0x7F，共 23,940 個），得到與碼位一一對應的字符表，再用
-// indexOf 反查編碼。表在首次搜尋時構建，常駐 feed realm。
-
-let gbkTableChars = null;
-let gbkTableCodes = null;
-
-function buildGbkTable() {
-  const codes = [];
-  const bytes = [];
-  for (let lead = 0x81; lead <= 0xfe; lead += 1) {
-    for (let trail = 0x40; trail <= 0xfe; trail += 1) {
-      if (trail === 0x7f) continue;
-      bytes.push(lead, trail);
-      codes.push(lead * 0x100 + trail);
-    }
-  }
-  const decoded = GBK.decode(new Uint8Array(bytes));
-  if (decoded.length === codes.length) {
-    return { chars: decoded, codes };
-  }
-  // 保守回退：逐碼解碼，僅保留恰好產生一個字符的碼位。
-  const chars = [];
-  const kept = [];
-  for (let index = 0; index < codes.length; index += 1) {
-    const one = GBK.decode(
-      new Uint8Array([bytes[2 * index], bytes[2 * index + 1]]),
-    );
-    if (one.length === 1) {
-      chars.push(one);
-      kept.push(codes[index]);
-    }
-  }
-  return { chars: chars.join(""), codes: kept };
-}
-
-function percentByte(byte) {
-  return `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
-}
-
-function gbkPercentEncode(keyword) {
-  if (gbkTableChars === null) {
-    const table = buildGbkTable();
-    gbkTableChars = table.chars;
-    gbkTableCodes = table.codes;
-  }
-  let encoded = "";
-  for (const ch of String(keyword ?? "")) {
-    const code = ch.codePointAt(0);
-    if (code < 0x80) {
-      encoded += percentByte(code);
-      continue;
-    }
-    if (ch === "\ufffd") continue;
-    const index = gbkTableChars.indexOf(ch);
-    if (index < 0) continue; // GBK 無法表示（擴展區字符、emoji），跳過
-    const gbk = gbkTableCodes[index];
-    encoded += percentByte(gbk >>> 8) + percentByte(gbk & 0xff);
-  }
-  return encoded;
-}
+// 關鍵字（「天官赐福」被搜成「澶…」）。HTML.encodeURIComponent 的可選
+// charset 參數直接輸出 GBK 字節的百分號編碼，無需自建碼表。
 
 // ── 搜尋 ─────────────────────────────────────────────────────────────────────
 // search.php?kw=<GBK 編碼>&t=1（按作品）。#search_result 內每個結果塊爲
@@ -212,10 +152,11 @@ function gbkPercentEncode(keyword) {
 
 function search(event) {
   if (event.state == null) {
-    const keyword = gbkPercentEncode(event.input.keyword);
-    if (!keyword) {
-      return FeedError.contentNotFound("關鍵字無法轉換爲 GBK 編碼");
+    const raw = String(event.input.keyword ?? "").trim();
+    if (!raw) {
+      return { type: "complete", result: [] };
     }
+    const keyword = HTML.encodeURIComponent(raw, "gbk");
     const page = event.cursor == null ? "" : `&p=${Number(event.cursor)}`;
     return {
       type: "request",
@@ -232,23 +173,23 @@ function search(event) {
   const document = HTML.parse(bodyText(event.response));
   const items = [];
   const seen = new Set();
-  for (const link of document.select(
+  for (const link of document.find(
     '#search_result h3.title a[href*="onebook.php?novelid="]',
   )) {
     const id = String(link.attr("href") ?? "").match(/[?&]novelid=(\d+)/)?.[1];
     const title = cleanLine(link.text());
     if (!id || seen.has(id) || !title) continue;
-    const block = link.parent?.parent; // a → h3.title → 結果塊 div
+    const block = link.parent()?.parent(); // a → h3.title → 結果塊 div
     const author =
       cleanLine(
-        block?.select('a[href*="oneauthor.php?authorid="]').first()?.text(),
+        block?.find('a[href*="oneauthor.php?authorid="]').first()?.text(),
       ) || "未知";
     items.push({
       id,
       title,
       author,
       cover_url: null,
-      description: richText(block?.select("div.intro").first()?.text()) || null,
+      description: richText(block?.find("div.intro").first()?.text()) || null,
     });
     seen.add(id);
   }
@@ -260,7 +201,7 @@ function search(event) {
 }
 
 function nextSearchCursor(document) {
-  for (const anchor of document.select("#search_result .page a")) {
+  for (const anchor of document.find("#search_result .page a")) {
     if (!anchor.text().includes("下一页")) continue;
     const page = String(anchor.attr("href") ?? "").match(/[?&]p=(\d+)/)?.[1];
     if (page) return Number(page);
@@ -276,13 +217,13 @@ function nextSearchCursor(document) {
 
 function parseBookPage(document, bookId) {
   const title = cleanLine(
-    document.select('h1[itemprop="name"]').first()?.text(),
+    document.find('h1[itemprop="name"]').first()?.text(),
   );
   const author = cleanLine(
-    document.select('span[itemprop="author"]').first()?.text(),
+    document.find('span[itemprop="author"]').first()?.text(),
   );
-  const image = document.select("img.noveldefaultimage").first();
-  const intro = document.select("#novelintro").first();
+  const image = document.find("img.noveldefaultimage").first();
+  const intro = document.find("#novelintro").first();
   return {
     id: bookId,
     title: title || "未知書名",
@@ -323,9 +264,9 @@ function bookInfo(event) {
 function parseChapters(document) {
   const items = [];
   const seen = new Set();
-  for (const row of document.select('#oneboolt tr[itemprop="chapter"]')) {
+  for (const row of document.find('#oneboolt tr[itemprop="chapter"]')) {
     const anchor = row
-      .select("span[itemprop=headline] a[itemprop=url]")
+      .find("span[itemprop=headline] a[itemprop=url]")
       .first();
     if (!anchor) continue;
     const url = anchor.attr("href") ?? anchor.attr("rel") ?? "";
@@ -444,9 +385,9 @@ function paragraphs(event) {
     if (failure) return failure;
     const body = bodyText(event.response);
     const document = HTML.parse(body);
-    const content = document.select("#paragraph_comment_content").first();
+    const content = document.find("#paragraph_comment_content").first();
     if (content == null) {
-      if (document.select('input[type="password"]').length > 0) {
+      if (document.find('input[type="password"]').length > 0) {
         return FeedError.authRequired(
           "VIP 章節需要登入晉江文學城（本源暫不支持登入）",
         );
@@ -455,8 +396,8 @@ function paragraphs(event) {
     }
     const items = [];
     const title = cleanLine(
-      document.select("div.noveltext h2").first()?.text() ??
-        document.select("h2").first()?.text(),
+      document.find("div.noveltext h2").first()?.text() ??
+        document.find("h2").first()?.text(),
     );
     if (title) items.push({ type: "title", text: title });
     let counter = 0;
@@ -475,9 +416,10 @@ function paragraphs(event) {
     return {
       type: "request",
       request: {
-        url: `${meta.base_url}/app.jjwxc/Pc/comment/getNovelParagraphCommentNum`,
+        url:
+          `${meta.base_url}/app.jjwxc/Pc/comment/getNovelParagraphCommentNum` +
+          `?novelid=${state.bookId}&chapterid=${state.chapterId}`,
         method: "GET",
-        params: { novelid: state.bookId, chapterid: state.chapterId },
         headers: requestHeaders(),
       },
       next_state: { stage: "counts", items },
@@ -576,16 +518,12 @@ function commentsStart(event, paragraphId) {
     return {
       type: "request",
       request: {
-        url: `${meta.base_url}/app.jjwxc/Pc/comment/getReplyList`,
+        url:
+          `${meta.base_url}/app.jjwxc/Pc/comment/getReplyList` +
+          `?novelid=${bookId}&chapterid=${chapterId}` +
+          `&commentid=${HTML.encodeURIComponent(String(event.input.parentId))}` +
+          `&offset=${offset}&limit=${COMMENT_PAGE}&formatter=app`,
         method: "GET",
-        params: {
-          novelid: bookId,
-          chapterid: chapterId,
-          commentid: String(event.input.parentId),
-          offset: String(offset),
-          limit: String(COMMENT_PAGE),
-          formatter: "app",
-        },
         headers: requestHeaders(),
       },
       next_state: { bookId, chapterId, offset, reply: true },
@@ -594,15 +532,12 @@ function commentsStart(event, paragraphId) {
   return {
     type: "request",
     request: {
-      url: `${meta.base_url}/app.jjwxc/Pc/comment/getCommentList`,
+      url:
+        `${meta.base_url}/app.jjwxc/Pc/comment/getCommentList` +
+        `?novelId=${bookId}&chapterId=${chapterId}` +
+        `&paragraph_id=${paragraphId ?? "0"}&offset=${offset}` +
+        `&limit=${COMMENT_PAGE}`,
       method: "GET",
-      params: {
-        novelId: bookId,
-        chapterId: chapterId,
-        paragraph_id: paragraphId ?? "0",
-        offset: String(offset),
-        limit: String(COMMENT_PAGE),
-      },
       headers: requestHeaders(),
     },
     next_state: { bookId, chapterId, offset, reply: false },

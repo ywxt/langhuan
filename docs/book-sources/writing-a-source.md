@@ -30,7 +30,7 @@ Every source starts with a header:
 // @base_url     https://books.example.org
 // @access_domain books.example.org
 // @access_domain *.cdn.example.org
-// @schema_version 5
+// @schema_version 6
 // ==/Feed==
 ```
 
@@ -70,12 +70,12 @@ The first call describes a request. The next call parses its response:
 ```js
 function search(event) {
   if (event.state == null) {
+    const keyword = HTML.encodeURIComponent(event.input.keyword);
     return {
       type: "request",
       request: {
-        url: `${meta.base_url}/search`,
+        url: `${meta.base_url}/search?q=${keyword}`,
         method: "GET",
-        params: { q: event.input.keyword },
         headers: { Accept: "text/html" },
       },
       next_state: { stage: "results" },
@@ -84,21 +84,27 @@ function search(event) {
 
   const document = HTML.parse(bodyText(event.response));
   const items = [];
-  for (const card of document.select(".book-card")) {
-    const link = card.select("a.book-title").first();
+  for (const card of document.find(".book-card")) {
+    const link = card.find("a.book-title").first();
     const id = link?.attr("href")?.match(/\/book\/(\d+)/)?.[1];
     if (!id) continue;
     items.push({
       id,
       title: text(link),
-      author: text(card.select(".author").first()) || "Unknown",
-      cover_url: card.select("img").first()?.attr("src") ?? null,
-      description: text(card.select(".summary").first()) || null,
+      author: text(card.find(".author").first()) || "Unknown",
+      cover_url: card.find("img").first()?.attr("src") ?? null,
+      description: text(card.find(".summary").first()) || null,
     });
   }
   return { type: "complete", result: items };
 }
 ```
+
+Requests carry a full URL: build query strings yourself and percent-encode
+values with `HTML.encodeURIComponent`, which follows the browser's
+`encodeURIComponent` and accepts an optional second charset label for
+non-UTF-8 sites — `HTML.encodeURIComponent("天官赐福", "gbk")` encodes to
+GBK bytes.
 
 For paginated search, read `event.cursor` when constructing the request and
 return `next_cursor` with the completed page:
@@ -127,10 +133,10 @@ function bookInfo(event) {
   const document = HTML.parse(bodyText(event.response));
   return { type: "complete", result: {
       id: event.input.bookId,
-      title: text(document.select("h1").first()),
-      author: text(document.select(".author").first()) || "Unknown",
-      cover_url: document.select(".cover img").first()?.attr("src") ?? null,
-      description: text(document.select(".description").first()) || null,
+      title: text(document.find("h1").first()),
+      author: text(document.find(".author").first()) || "Unknown",
+      cover_url: document.find(".cover img").first()?.attr("src") ?? null,
+      description: text(document.find(".description").first()) || null,
     } };
 }
 ```
@@ -151,7 +157,7 @@ function chapters(event) {
 
   const document = HTML.parse(bodyText(event.response));
   const items = [];
-  for (const link of document.select(".chapter-list a")) {
+  for (const link of document.find(".chapter-list a")) {
     const id = link.attr("href")?.match(/\/chapter\/(\d+)/)?.[1];
     if (id) items.push({ id, title: text(link) });
   }
@@ -180,10 +186,10 @@ function paragraphs(event) {
 
   const document = HTML.parse(bodyText(event.response));
   const items = [];
-  const title = text(document.select("h1").first());
+  const title = text(document.find("h1").first());
   if (title) items.push({ type: "title", text: title });
 
-  for (const node of document.select("article p")) {
+  for (const node of document.find("article p")) {
     const content = text(node);
     if (content) items.push({ type: "text", content });
   }
@@ -286,7 +292,7 @@ function paragraphs(event) {
 }
 ```
 
-One operation may execute at most eight request, compute, or WebView steps.
+One operation may execute at most sixteen request, compute, or WebView steps.
 
 ## Errors and validation
 

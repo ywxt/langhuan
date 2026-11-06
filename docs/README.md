@@ -25,6 +25,6 @@ or display delivery, which can contain results from several source pages.
 Use **listening** for the product feature and **system TTS engine** for speech
 synthesis. API identifiers retain their exact spelling and casing.
 
-The current source contract is schema 5. The
+The current source contract is schema 6. The
 [API Reference](book-sources/api-reference.md) is authoritative for the public
 source surface; architecture guides describe how those interfaces are used.

@@ -1,6 +1,6 @@
 # Book-source API Reference
 
-This reference describes schema 5. All source files are JavaScript ES modules
+This reference describes schema 6. All source files are JavaScript ES modules
 and must default-export a Feed object.
 
 ## Metadata header
@@ -15,7 +15,7 @@ and must default-export a Feed object.
 // @base_url     https://books.example.org
 // @access_domain books.example.org
 // @access_domain *.cdn.example.org
-// @schema_version 5
+// @schema_version 6
 // ==/Feed==
 ```
 
@@ -28,7 +28,7 @@ and must default-export a Feed object.
 | `description` | No | Short user-facing description. |
 | `base_url` | Yes | Non-empty primary site URL exposed as `meta.base_url`. It is not automatically added to the allowlist. |
 | `access_domain` | No | One exact hostname or leftmost subdomain wildcard per line. Repeated lines form a deduplicated set. Requests to every other host—including an undeclared `base_url` host—are blocked. When no entry exists, all network requests are blocked. |
-| `schema_version` | Yes | Integer contract version. It must be `5` for this runtime. |
+| `schema_version` | Yes | Integer contract version. It must be `6` for this runtime. |
 
 Exact IP hosts are accepted for development. Domain entries cannot contain a
 scheme, port, path, credentials, or wildcard outside the leftmost `*.` label.
@@ -209,7 +209,6 @@ type RequestStep = {
 type Request = {
   url: string;
   method?: string;                       // default: GET
-  params?: Record<string, string>;
   headers?: Record<string, string>;
   body?: Uint8Array;
 };
@@ -221,9 +220,8 @@ response cache. Only status-200 responses up to 1 MiB are stored.
 | Field | Required | Value and behaviour |
 | --- | :---: | --- |
 | `type` | Yes | Must be the exact string `"request"`. |
-| `request.url` | Yes | Absolute URL. The native host validates its hostname against `access_domain` after auth patching and before network access. |
+| `request.url` | Yes | Absolute URL including its query string. The script builds the complete URL itself; percent-encode query values with [`HTML.encodeURIComponent`](#namespace-functions). The native host validates the hostname against `access_domain` after auth patching and before network access. A `params` field is rejected — query strings belong in the URL. |
 | `request.method` | No | HTTP method string; defaults to `GET` when omitted. Invalid method syntax is rejected before the request is sent. |
-| `request.params` | No | Object of string-to-string query parameters appended by the native client. Arrays and non-string values are rejected. |
 | `request.headers` | No | String-to-string map. Arrays and non-string values are rejected. Response header pairs are a separate representation that preserves repeated Set-Cookie fields. |
 | `request.body` | No | `Uint8Array` is sent byte-for-byte. Encode text explicitly with `TextEncoder.encode(text)`. Strings and other values are rejected. Omission means no body. |
 | `next_state` | No | Live value delivered as `event.state` after the request. `null` and `undefined` mean no state. |
@@ -621,13 +619,13 @@ type OperationDescriptor = {
 };
 ```
 
-Patch and return the request. The request contains normalized `method`,
-`params`, and `headers`; an existing body is a `Uint8Array`.
+Patch and return the request. The request contains normalized `method` and
+`headers`; an existing body is a `Uint8Array`.
 
 | Parameter | Behaviour |
 | --- | --- |
 | `operation` | Fresh `{ operation, input }` descriptor for the request's current content/auth-status operation. Use it to scope credentials or headers without duplicating IDs in state. |
-| `request` | Mutable request object constructed from the reducer step. `method` is always present, `params`/`headers` are objects, and `body` is absent or a byte array. |
+| `request` | Mutable request object constructed from the reducer step. `method` is always present, `headers` is an object, and `body` is absent or a byte array. Edit `request.url` directly — with `encodeURIComponent`-style helpers from [`langhuan:html`](#langhuanhtml) — when a credential belongs in the query string. |
 | `auth` | Persisted JSON value returned by `parse`. |
 
 The function runs synchronously for every native request, including each
@@ -784,32 +782,45 @@ import { HTML } from "langhuan:html";
 ```ts
 HTML.parse(input: string): Document;
 HTML.decodeEntities(input: string): string;
+HTML.encodeURIComponent(value: string, charset?: string): string;
 
-document.select(selector: string): Selection;
+document.find(selector: string): Selection;
 
+// A Selection is a real Array of nodes (length, indices, map, for...of, …)
+// with jQuery traversal methods mixed in.
 selection.length: number;
 selection[index]: Node;
 selection.first(): Node | undefined;
+selection.last(): Node | undefined;
+selection.eq(index: number): Node | undefined;
+selection.each(fn: (index: number, node: Node) => boolean | void): Selection;
 selection.text(): string;
 selection.attr(name: string): string | undefined;
 selection.attrs(): Record<string, string>;
 selection.html(): string | undefined;
-selection.outer_html(): string | undefined;
-selection.select(selector: string): Selection;
+selection.outerHTML(): string | undefined;
+selection.find(selector: string): Selection;
+selection.parent(selector?: string): Selection;
+selection.children(selector?: string): Selection;
+selection.closest(selector: string): Selection;
 
-node.tagName: string;
+node.tagName: string;                     // uppercased, like Element.tagName
 node.text(): string;
 node.attr(name: string): string | undefined;
 node.attrs(): Record<string, string>;
 node.html(): string | undefined;
-node.outer_html(): string | undefined;
-node.select(selector: string): Selection;
-node.parent: Node | undefined;
-node.children: Selection;
+node.outerHTML(): string | undefined;
+node.find(selector: string): Selection;
+node.parent(): Node | undefined;
+node.children(): Selection;
+node.closest(selector: string): Node | undefined;
 ```
 
-The parser is read-only and backed by Rust `scraper`; none of these objects can
-modify the document.
+The interface follows jQuery and the browser's native DOM surface: selections
+are real arrays carrying jQuery traversal methods, and nodes follow browser
+element semantics (`tagName` uppercased, `attr` returning `""` for an empty
+attribute, `closest` walking ancestor-or-self). The parser is read-only and
+backed by Rust `scraper`; none of these objects can modify the document.
 
 ### Namespace functions
 
@@ -817,6 +828,7 @@ modify the document.
 | --- | --- | --- |
 | `HTML.parse` | `input: string` | Parses one HTML document and returns a `Document`. Empty/blank input, non-string input, or input larger than 4 MiB throws. |
 | `HTML.decodeEntities` | `input: string` | Parses the input as an HTML fragment and returns its text, decoding entities. Input larger than 4 MiB throws. |
+| `HTML.encodeURIComponent` | `value: string`, `charset?: string` | Percent-encodes `value` like the browser's `encodeURIComponent`: alphanumeric characters and `-_.!~*'()` stay unescaped. The optional `charset` selects the byte encoding via WHATWG labels (`"gbk"`, `"big5"`, …) and defaults to UTF-8 — `HTML.encodeURIComponent("你好", "gbk")` returns `"%C4%E3%BA%C3"`. Use it to build query strings, since requests carry full URLs. An unknown label throws. |
 
 ### Document methods
 
@@ -824,38 +836,50 @@ Every selector parameter is a CSS selector string. Invalid syntax throws.
 
 | Method | Return and behaviour |
 | --- | --- |
-| `select(selector)` | Returns every matching element in document order. |
+| `find(selector)` | Returns every matching element in document order. |
 
 Selectors support tags, `#id`, `.class`, descendant and child combinators,
 comma groups, and attribute operators `=`, `*=`, `^=`, `$=`, `~=`, and `|=`.
 
 ### Selection methods
 
-A `Selection` is an array-like snapshot with numeric entries and `length`.
+A `Selection` is a real JavaScript `Array` of nodes: `length`, numeric
+entries, and the full `Array` prototype (`map`, `filter`, `for...of`, spread)
+all work. The jQuery-style methods below are mixed in.
 
 | Method | Parameters | Return and behaviour |
 | --- | --- | --- |
 | `first()` | None | First node or `undefined` for an empty selection. |
-| `text()` | None | Concatenated text of every selected node in order. `<br>` becomes `\n`; `script` and `style` content is skipped. |
-| `attr(name)` | `name: string` | Attribute from the first node, or `undefined` when absent/empty. |
+| `last()` | None | Last node or `undefined`. |
+| `eq(index)` | `index: number` | Node at `index`; negative counts backwards from the end like jQuery's `eq`. Out-of-range indices return `undefined`. |
+| `each(fn)` | `fn: (index, node)` | Calls `fn` with `this` bound to the node, jQuery-style; returning `false` stops the iteration. Returns the selection. |
+| `text()` | None | Concatenated text of every selected node in order. `<br>` becomes `\n`; `script` and `style` content is skipped, like `innerText`. |
+| `attr(name)` | `name: string` | Attribute from the first node. An empty attribute returns `""`; only an absent attribute returns `undefined`, like `getAttribute`. |
 | `attrs()` | None | New attribute map for the first node, or an empty object. |
 | `html()` | None | Inner HTML of the first node, or `undefined`. |
-| `outer_html()` | None | Outer HTML of the first node, or `undefined`. |
-| `select(selector)` | `selector: string` | Unique matching descendants of all selected roots, preserving traversal order. |
+| `outerHTML()` | None | Outer HTML of the first node, or `undefined`. |
+| `find(selector)` | `selector: string` | Matching descendants of all selected roots. |
+| `parent(selector?)` | `selector?: string` | Immediate parent elements of the selected nodes, optionally filtered by selector. |
+| `children(selector?)` | `selector?: string` | Direct child elements, optionally filtered; text nodes are excluded. |
+| `closest(selector)` | `selector: string` | Nearest ancestor-or-self element of each selected node matching the selector. |
+
+Traversal results merged from several roots are deduplicated and ordered by
+document position, like jQuery's `uniqueSort`.
 
 ### Node properties and methods
 
 | Member | Parameters | Return and behaviour |
 | --- | --- | --- |
-| `tagName` | — | Lowercase element name. |
+| `tagName` | — | Element name uppercased, like the browser's `Element.tagName`. |
 | `text()` | None | Descendant text using the same `<br>`, `script`, and `style` rules as selection text. |
-| `attr(name)` | `name: string` | Attribute value or `undefined`. |
+| `attr(name)` | `name: string` | Attribute value; `""` for an empty attribute and `undefined` only when absent. |
 | `attrs()` | None | New object containing every attribute. |
 | `html()` | None | Inner HTML. |
-| `outer_html()` | None | Outer HTML. |
-| `select(selector)` | `selector: string` | Matching descendants of this node. |
-| `parent` | — | Nearest parent element or `undefined`. |
-| `children` | — | Selection of direct child elements; text nodes are excluded. |
+| `outerHTML()` | None | Outer HTML. |
+| `find(selector)` | `selector: string` | Matching descendants of this node. |
+| `parent()` | None | Nearest parent element or `undefined`. |
+| `children()` | None | Selection of direct child elements; text nodes are excluded. |
+| `closest(selector)` | `selector: string` | Nearest ancestor-or-self element matching the selector, or `undefined`. |
 
 ## `langhuan:crypto`
 

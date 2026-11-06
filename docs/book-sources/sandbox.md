@@ -106,7 +106,7 @@ The operation can remain parked while the user interacts.
 | Feed reducer execution deadline per call | 30 seconds |
 | Compute execution deadline | 5 seconds |
 | Bootstrap execution deadline | 5 seconds |
-| Request/compute/WebView steps per operation | 8 |
+| Request/compute/WebView steps per operation | 16 |
 | Compute programs per step | 1–8 |
 | Total compute source | 4 MiB |
 | Compute input or result bridge value | 16 MiB |

@@ -1,14 +1,14 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.fanqie
 // @name         番茄小說
-// @version      2.0.0
+// @version      2.1.0
 // @author       Langhuan
 // @description  番茄小說官網書源（fanqienovel.com）：支持關鍵詞搜尋（也可直接貼書籍連結或 ID）、帳號登入與網頁暢讀；正文採用字體混淆，內置字形映射表解碼
 // @base_url     https://fanqienovel.com
 // @access_domain fanqienovel.com
 // @access_domain *.byteimg.com
 // @access_domain *.fqnovelpic.com
-// @schema_version 5
+// @schema_version 6
 // ==/Feed==
 
 // 官網正文反爬採用字體混淆：HTML 內約 360 個高頻字以私用區（PUA）碼位存儲，
@@ -57,7 +57,7 @@ const USER_AGENT =
 
 const FONT_HASH = "dc027189e0ba4cd";
 
-// schema 5：response.body 是 Uint8Array，需先解碼成字串。
+// schema 6：response.body 是 Uint8Array，需先解碼成字串。
 const DECODER = new TextDecoder("utf-8");
 
 function bodyText(response) {
@@ -485,16 +485,18 @@ function mergeCookieHeaders(...headersToMerge) {
 }
 
 function searchRequest(keyword, pageIndex) {
+  const query = [
+    ["filter", "127,127,127,127"],
+    ["page_count", "10"],
+    ["page_index", String(pageIndex)],
+    ["query_type", "0"],
+    ["query_word", keyword],
+  ]
+    .map(([key, value]) => `${key}=${HTML.encodeURIComponent(value)}`)
+    .join("&");
   const request = {
-    url: `${meta.base_url}/api/author/search/search_book/v1`,
+    url: `${meta.base_url}/api/author/search/search_book/v1?${query}`,
     method: "POST",
-    params: {
-      filter: "127,127,127,127",
-      page_count: "10",
-      page_index: String(pageIndex),
-      query_type: "0",
-      query_word: keyword,
-    },
     headers: headers(),
   };
   if (sessionCookieHeader != null) {
@@ -554,13 +556,13 @@ function bookIdFromKeyword(keyword) {
 
 function parseBook(response, bookId) {
   const document = HTML.parse(bodyText(response));
-  const title = decode(document.select("h1").first()?.text()).trim();
+  const title = decode(document.find("h1").first()?.text()).trim();
   const author = decode(
-    document.select(".author-name-text").first()?.text(),
+    document.find(".author-name-text").first()?.text(),
   ).trim();
-  const cover = document.select("img.book-cover-img").first();
+  const cover = document.find("img.book-cover-img").first();
   const description = decode(
-    document.select(".page-abstract-content p").first()?.text(),
+    document.find(".page-abstract-content p").first()?.text(),
   ).trim();
   return {
     id: bookId,
@@ -607,7 +609,7 @@ function parseChapters(response) {
   const seen = new Set();
   // 目錄在 .page-directory-content 內完整 SSR；頁首的「最近更新」橫幅也帶
   // chapter-item-title class，但位於該容器之外，作用域選擇器天然排除它。
-  for (const anchor of document.select(
+  for (const anchor of document.find(
     ".page-directory-content a.chapter-item-title",
   )) {
     const id = (anchor.attr("href") ?? "").match(/^\/reader\/(\d+)$/)?.[1];
@@ -634,11 +636,11 @@ function parseParagraphs(response) {
   }
 
   const title = decode(
-    document.select(".muye-reader-title").first()?.text(),
+    document.find(".muye-reader-title").first()?.text(),
   ).trim();
 
   const lines = [];
-  for (const node of document.select(".muye-reader-content p")) {
+  for (const node of document.find(".muye-reader-content p")) {
     const line = decode(node.text()).trim();
     if (line) lines.push(line);
   }

@@ -1,20 +1,20 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.biquge_tw
 // @name         筆趣閣（biquge.tw）
-// @version      3.0.0
+// @version      3.1.0
 // @author       Langhuan
 // @description  適配 biquge.tw 的書源，支持搜尋、詳情、目錄、正文（含多頁章節）
 // @base_url     https://www.biquge.tw
 // @access_domain www.biquge.tw
 // @access_domain m.biquge.tw
 // @access_domain img.biquge.tw
-// @schema_version 5
+// @schema_version 6
 // ==/Feed==
 
 import { TextDecoder } from "langhuan:encoding";
 import { HTML } from "langhuan:html";
 
-// schema 5：response.body 是 Uint8Array，需先解碼成字串。
+// schema 6：response.body 是 Uint8Array，需先解碼成字串。
 const DECODER = new TextDecoder("utf-8");
 
 function bodyText(response) {
@@ -83,14 +83,14 @@ function searchItems(body) {
   const document = HTML.parse(body);
   const items = [];
   const seen = new Set();
-  let links = document.select(
+  let links = document.find(
     '.result-card .book-title[href*="/book/"][href$=".html"]',
   );
   if (links.length === 0) {
-    links = document.select('h3 a[href*="/book/"][href$=".html"]');
+    links = document.find('h3 a[href*="/book/"][href$=".html"]');
   }
   if (links.length === 0) {
-    links = document.select('a[href*="/book/"][href$=".html"]');
+    links = document.find('a[href*="/book/"][href$=".html"]');
   }
   for (const link of links) {
     const href = link.attr("href") ?? "";
@@ -98,16 +98,16 @@ function searchItems(body) {
     if (!id || seen.has(id)) continue;
     const title = text(link.text());
     if (!title) continue;
-    let card = link.parent;
+    let card = link.parent();
     while (
       card &&
       !(card.attr("class") ?? "").split(/\s+/).includes("result-card")
     ) {
-      card = card.parent;
+      card = card.parent();
     }
-    const authorNode = card?.select(".book-meta .author, .author").first();
-    const introNode = card?.select(".book-intro").first();
-    const image = card?.select(".book-cover img, img").first();
+    const authorNode = card?.find(".book-meta .author, .author").first();
+    const introNode = card?.find(".book-intro").first();
+    const image = card?.find(".book-cover img, img").first();
     items.push({
       id,
       title,
@@ -121,7 +121,7 @@ function searchItems(body) {
 }
 
 function nextSearchCursor(body) {
-  for (const anchor of HTML.parse(body).select("a")) {
+  for (const anchor of HTML.parse(body).find("a")) {
     if (!text(anchor.text()).includes("下一")) continue;
     const page = (anchor.attr("href") ?? "").match(/[?&]page=(\d+)/)?.[1];
     if (page) return Number(page);
@@ -132,17 +132,17 @@ function nextSearchCursor(body) {
 function parseBook(response) {
   const body = bodyText(response);
   const document = HTML.parse(body);
-  const title = text(document.select("h1").first()?.text()) || "未知書名";
+  const title = text(document.find("h1").first()?.text()) || "未知書名";
   let author = "未知";
-  for (const node of document.select("h2, #info p, p")) {
+  for (const node of document.find("h2, #info p, p")) {
     const value = text(node.text());
     if (!value.includes("作者")) continue;
     author = value.replace(/^.*?作者\s*[：:]\s*/, "").split(/\s+/)[0] || "未知";
     break;
   }
-  const intro = document.select("#intro, .intro").first();
+  const intro = document.find("#intro, .intro").first();
   const image = document
-    .select('.fmimg img, img[src*="img.biquge.tw"], img')
+    .find('.fmimg img, img[src*="img.biquge.tw"], img')
     .first();
   return {
     id: bookId(response.url) ?? "",
@@ -159,7 +159,7 @@ function parseChapters(response) {
   const currentBook = String(response.url).match(/\/book\/(\d+)/)?.[1] ?? "";
   const items = [];
   const seen = new Set();
-  for (const anchor of document.select(
+  for (const anchor of document.find(
     `a[href*="/book/${currentBook}/"][href$=".html"]`,
   )) {
     const ids = chapterIds(anchor.attr("href"));
@@ -176,16 +176,16 @@ function parseParagraphs(response) {
   const body = bodyText(response);
   const document = HTML.parse(body);
   const items = [];
-  const title = text(document.select("h1").first()?.text())
+  const title = text(document.find("h1").first()?.text())
     .replace(/[（(]\s*\d+\s*\/\s*\d+\s*[）)]\s*$/, "")
     .trim();
   if (title) items.push({ type: "title", text: title });
 
   const content = document
-    .select("#content, #chaptercontent, article, .Readarea")
+    .find("#content, #chaptercontent, article, .Readarea")
     .first();
   const paragraphs =
-    content?.select("p").map((node) => text(node.text())) ?? [];
+    content?.find("p").map((node) => text(node.text())) ?? [];
   const blocked = new Set([
     "上一章",
     "上一页",
@@ -204,7 +204,7 @@ function parseParagraphs(response) {
   for (const line of lines) items.push({ type: "text", content: line });
 
   let next_cursor = null;
-  for (const anchor of document.select("a")) {
+  for (const anchor of document.find("a")) {
     if (!text(anchor.text()).includes("下一页")) continue;
     const page = (anchor.attr("href") ?? "").match(/_(\d+)\.html/)?.[1];
     if (page) next_cursor = Number(page);
@@ -214,14 +214,14 @@ function parseParagraphs(response) {
 
 function search(event) {
   if (event.state == null) {
-    const params = { searchkey: event.input.keyword };
-    if (event.cursor != null) params.page = String(event.cursor);
+    const page = event.cursor == null ? "" : `&page=${Number(event.cursor)}`;
     return {
       type: "request",
       request: {
-        url: `${meta.base_url}/search/`,
+        url:
+          `${meta.base_url}/search/?searchkey=` +
+          `${HTML.encodeURIComponent(String(event.input.keyword ?? ""))}${page}`,
         method: "GET",
-        params,
         headers: headers(),
       },
       next_state: { requested: true },

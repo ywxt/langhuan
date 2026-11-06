@@ -1,13 +1,13 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.qidian
 // @name         起點中文網
-// @version      4.2.1
+// @version      4.3.0
 // @author       Langhuan
 // @description  起點中文網書源（m 站），支持登入及已購 VIP 章節，登錄後可讀章評與段評，章節段落附帶評論數角標
 // @base_url     https://m.qidian.com
 // @access_domain m.qidian.com
 // @access_domain *.image.myqcloud.com
-// @schema_version 5
+// @schema_version 6
 // ==/Feed==
 
 import { TextDecoder, Bytes } from "langhuan:encoding";
@@ -15,7 +15,7 @@ import { HTML } from "langhuan:html";
 
 const PAGE_CONTEXT_MARKER = 'id="vite-plugin-ssr_pageContext"';
 
-// schema 5：response.body 是 Uint8Array，需先解碼成字串。
+// schema 6：response.body 是 Uint8Array，需先解碼成字串。
 const DECODER = new TextDecoder("utf-8");
 
 function bodyText(response) {
@@ -81,7 +81,7 @@ function absoluteUrl(value) {
 }
 
 function extractFockUrl(html) {
-  const scripts = HTML.parse(String(html ?? "")).select(
+  const scripts = HTML.parse(String(html ?? "")).find(
     'script[rel="preload"][as="script"][src*="/coco/"][src$=".js"]',
   );
   return scripts.length ? absoluteUrl(scripts.first().attr("src")) : null;
@@ -253,13 +253,11 @@ function completeParagraphs(title, content, event) {
   return {
     type: "request",
     request: {
-      url: `${meta.base_url}/webcommon/chapterreview/reviewsummary4m`,
+      url:
+        `${meta.base_url}/webcommon/chapterreview/reviewsummary4m` +
+        `?bookId=${event.input.bookId}&chapterId=${event.input.chapterId}` +
+        `&_csrfToken=${HTML.encodeURIComponent(csrfToken)}`,
       method: "GET",
-      params: {
-        bookId: String(event.input.bookId),
-        chapterId: String(event.input.chapterId),
-        _csrfToken: csrfToken,
-      },
       headers: {
         ...requestHeaders(),
         Accept: "application/json, text/plain, */*",
@@ -438,9 +436,11 @@ function search(event) {
     return {
       type: "request",
       request: {
-        url: `${meta.base_url}/soushu/${encodeURIComponent(event.input.keyword)}.html`,
+        url:
+          `${meta.base_url}/soushu/` +
+          `${HTML.encodeURIComponent(String(event.input.keyword ?? ""))}.html` +
+          `?pageNum=${safePageNum}`,
         method: "GET",
-        params: { pageNum: String(safePageNum) },
         headers: requestHeaders(),
       },
       next_state: { stage: "page", requestedPageNum: safePageNum },
@@ -545,12 +545,10 @@ function paragraphs(event) {
     return {
       type: "request",
       request: {
-        url: `${meta.base_url}/webcommon/chapter/getMChapterInfo`,
+        url:
+          `${meta.base_url}/webcommon/chapter/getMChapterInfo` +
+          `?bookId=${event.input.bookId}&chapterId=${event.input.chapterId}`,
         method: "GET",
-        params: {
-          bookId: String(event.input.bookId),
-          chapterId: String(event.input.chapterId),
-        },
         headers: {
           ...requestHeaders(),
           Accept: "application/json, text/plain, */*",
@@ -730,15 +728,12 @@ function reviewListStep(event, paragraphId, page, state) {
   return {
     type: "request",
     request: {
-      url: `${meta.base_url}/webcommon/chapterreview/reviewlist4m`,
+      url:
+        `${meta.base_url}/webcommon/chapterreview/reviewlist4m` +
+        `?bookId=${event.input.bookId}&chapterId=${event.input.chapterId}` +
+        `&paragraphId=${paragraphId}&page=${page}` +
+        `&_csrfToken=${HTML.encodeURIComponent(auth.csrfToken)}`,
       method: "GET",
-      params: {
-        bookId: String(event.input.bookId),
-        chapterId: String(event.input.chapterId),
-        paragraphId: String(paragraphId),
-        page: String(page),
-        _csrfToken: auth.csrfToken,
-      },
       headers: {
         ...requestHeaders(),
         Accept: "application/json, text/plain, */*",
@@ -908,7 +903,7 @@ const login = {
     return {
       url:
         "https://passport.qidian.com/?returnurl=" +
-        encodeURIComponent("https://m.qidian.com/"),
+        HTML.encodeURIComponent("https://m.qidian.com/"),
       title: "起點中文網登錄",
       user_agent: USER_AGENT,
     };
@@ -966,8 +961,10 @@ const login = {
       request.url.includes("/webcommon/chapter/getMChapterInfo") &&
       csrfToken
     ) {
-      request.params ??= {};
-      request.params._csrfToken = csrfToken;
+      // 請求 URL 由腳本構造，令牌也由腳本補進查詢串。
+      request.url +=
+        (request.url.includes("?") ? "&" : "?") +
+        `_csrfToken=${HTML.encodeURIComponent(csrfToken)}`;
     }
     return request;
   },

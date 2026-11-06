@@ -705,7 +705,7 @@ mod tests {
 // @id  {id}
 // @name Feed {id}
 // @version {version}
-// @schema_version 5
+// @schema_version 6
 // @base_url http://127.0.0.1:1/
 // @access_domain 127.0.0.1
 // ==/Feed==

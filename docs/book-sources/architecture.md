@@ -122,14 +122,16 @@ A request step is plain data:
 return {
   type: "request",
   request: {
-    url: `${meta.base_url}/api/search`,
+    url: `${meta.base_url}/api/search?q=${HTML.encodeURIComponent(event.input.keyword)}`,
     method: "GET",
-    params: { q: event.input.keyword },
     headers: { Accept: "application/json" },
   },
   next_state: { stage: "results" },
 };
 ```
+
+The script builds the complete URL, query string included; percent-encode
+values with `HTML.encodeURIComponent`.
 
 Before sending it, Rust:
 
