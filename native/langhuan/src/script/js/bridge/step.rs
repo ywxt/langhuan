@@ -146,14 +146,11 @@ impl<'js> FromJs<'js> for HttpRequest {
             .optional_string("method")?
             .unwrap_or_else(|| "GET".to_owned());
         // Requests no longer carry `params`; scripts build the full URL.
-        // Reject the removed field instead of silently dropping it.
+        // Reject the removed field instead of silently dropping it. The
+        // migration hint lives at the schema gate in the engine, not here.
         let leftover = fields.value("params")?;
         if !leftover.is_undefined() && !leftover.is_null() {
-            return Err(fields.error(
-                "params",
-                "is no longer part of a request; build the full URL with \
-                 HTML.encodeURIComponent",
-            ));
+            return Err(fields.error("params", "is not part of a request"));
         }
         let headers = read_headers(&fields)?;
         let body = fields
@@ -400,11 +397,10 @@ mod tests {
     }
 
     #[test]
-    fn requests_reject_leftover_params_with_migration_hint() {
+    fn requests_reject_leftover_params() {
         assert_eq!(
             request_error("({url:'https://example.com', params: {q: 'x'}})"),
-            "invalid patched request: `params` is no longer part of a request; \
-             build the full URL with HTML.encodeURIComponent"
+            "invalid patched request: `params` is not part of a request"
         );
         // Explicitly empty `params` stays accepted, like other optional fields.
         let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
