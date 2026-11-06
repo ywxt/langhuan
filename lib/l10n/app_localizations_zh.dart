@@ -1191,6 +1191,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commentsSortLatest => '最新';
 
   @override
+  String get commentsViewAll => '查看全部';
+
+  @override
   String get listeningTitle => '系統語音聽書';
 
   @override
@@ -1273,10 +1276,37 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get readerShowComments => '顯示段落評論';
+  String get listeningChapterEnd => '本章結束';
 
   @override
-  String get readerHideComments => '隱藏段落評論';
+  String get listeningStopsAfterChapter => '本章結束後停止';
+
+  @override
+  String get listeningCustomTimer => '自訂';
+
+  @override
+  String get listeningCustomTimerTitle => '自訂定時';
+
+  @override
+  String listeningMinutesLabel(int count) {
+    return '$count 分鐘';
+  }
+
+  @override
+  String listeningRemainingTime(String time) {
+    return '剩餘 $time';
+  }
+
+  @override
+  String listeningParagraphProgress(int current, int total) {
+    return '本段 $current/$total';
+  }
+
+  @override
+  String get readerShowComments => '顯示評論';
+
+  @override
+  String get readerHideComments => '隱藏評論';
 
   @override
   String readerCommentCountCompact(String count) {

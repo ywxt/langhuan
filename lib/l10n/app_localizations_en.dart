@@ -1229,6 +1229,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commentsSortLatest => 'Latest';
 
   @override
+  String get commentsViewAll => 'View all';
+
+  @override
   String get listeningTitle => 'System text-to-speech';
 
   @override
@@ -1312,10 +1315,37 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get readerShowComments => 'Show paragraph comments';
+  String get listeningChapterEnd => 'End of chapter';
 
   @override
-  String get readerHideComments => 'Hide paragraph comments';
+  String get listeningStopsAfterChapter => 'Stops after this chapter';
+
+  @override
+  String get listeningCustomTimer => 'Custom';
+
+  @override
+  String get listeningCustomTimerTitle => 'Custom sleep timer';
+
+  @override
+  String listeningMinutesLabel(int count) {
+    return '$count min';
+  }
+
+  @override
+  String listeningRemainingTime(String time) {
+    return 'Stops in $time';
+  }
+
+  @override
+  String listeningParagraphProgress(int current, int total) {
+    return 'Paragraph $current / $total';
+  }
+
+  @override
+  String get readerShowComments => 'Show comments';
+
+  @override
+  String get readerHideComments => 'Hide comments';
 
   @override
   String readerCommentCountCompact(String count) {

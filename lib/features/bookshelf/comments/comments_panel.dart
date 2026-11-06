@@ -1,18 +1,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../src/rust/api/comments.dart';
-import '../widgets/reader_types.dart';
+import 'comment_cards.dart';
 import 'comments_controller.dart';
 
 Future<void> showCommentsPanel(
   BuildContext context,
-  CommentsController controller,
-) async {
+  CommentsController controller, {
+  bool disposeController = true,
+}) async {
   final panel = CommentsPanel(controller: controller);
   try {
     if (MediaQuery.sizeOf(context).width >= 840) {
@@ -39,7 +39,9 @@ Future<void> showCommentsPanel(
       );
     }
   } finally {
-    controller.dispose();
+    // Callers that share the controller with a long-lived surface (the
+    // inline chapter-end section) keep ownership themselves.
+    if (disposeController) controller.dispose();
   }
 }
 
@@ -215,7 +217,7 @@ class _CommentsPanelState extends State<CommentsPanel> {
       children: [
         // Reply threads quote the comment they answer at the top of the
         // same page, so the context is always visible.
-        if (frame.parent != null) _ParentCommentCard(comment: frame.parent!),
+        if (frame.parent != null) ParentCommentCard(comment: frame.parent!),
         // Only the root thread offers ordering: replies read as a
         // conversation and keep the source's order.
         if (frame.parent == null) _SortBar(controller: frame.controller),
@@ -234,9 +236,9 @@ class _CommentsPanelState extends State<CommentsPanel> {
       // The awaiting-start case only occurs on the root frame while the
       // entrance animation is still running; reply frames open long after.
       if (controller.loading || !_initialLoadStarted) {
-        return const _CommentsSkeleton();
+        return const CommentsSkeleton();
       }
-      return const _EmptyComments();
+      return const EmptyComments();
     }
 
     return NotificationListener<ScrollEndNotification>(
@@ -250,15 +252,14 @@ class _CommentsPanelState extends State<CommentsPanel> {
         child: ListView.separated(
           padding: const EdgeInsets.symmetric(vertical: LanghuanTheme.spaceSm),
           itemCount: items.length + 1,
-          separatorBuilder:
-              (_, i) => i < items.length
-                  ? const Divider(height: 1, indent: LanghuanTheme.spaceMd)
-                  : const SizedBox.shrink(),
+          separatorBuilder: (_, i) => i < items.length
+              ? const Divider(height: 1, indent: LanghuanTheme.spaceMd)
+              : const SizedBox.shrink(),
           itemBuilder: (context, index) {
             if (index == items.length) {
               return _buildFooter(context, controller);
             }
-            return _CommentCard(
+            return CommentCard(
               comment: items[index],
               onOpenReplies: _openReplies,
             );
@@ -302,38 +303,11 @@ class _CommentsPanelState extends State<CommentsPanel> {
   }
 
   Widget _buildError(BuildContext context, CommentsController controller) {
-    final l10n = AppLocalizations.of(context);
-    return Padding(
-      padding: const EdgeInsets.all(LanghuanTheme.spaceLg),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            normalizeErrorMessage(controller.error),
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          TextButton(
-            onPressed: controller.loadMore,
-            child: Text(l10n.readerRetry),
-          ),
-          if (isAuthRequiredError(controller.error))
-            TextButton(
-              onPressed: () async {
-                final success = await context.pushNamed<bool>(
-                  'feed-auth',
-                  queryParameters: {'feedId': controller.feedId},
-                );
-                if (success == true && mounted) {
-                  unawaited(controller.refresh());
-                }
-              },
-              child: Text(l10n.feedAuthLogin),
-            ),
-        ],
-      ),
+    return CommentsErrorBlock(
+      error: controller.error,
+      onRetry: controller.loadMore,
+      feedId: controller.feedId,
+      onAuthenticated: controller.refresh,
     );
   }
 }
@@ -383,372 +357,4 @@ class _SortBar extends StatelessWidget {
       ),
     );
   }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Comment cards
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Circular author avatar. Falls back to a default person icon when the
-/// source provides no [url] or the image fails to load.
-class _CommentAvatar extends StatelessWidget {
-  const _CommentAvatar({required this.url});
-
-  final String? url;
-
-  static const double size = 36;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final fallback = Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHigh,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(
-        Icons.person_rounded,
-        size: 20,
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-    );
-    final url = this.url;
-    if (url == null || url.isEmpty) {
-      return SizedBox(width: size, height: size, child: fallback);
-    }
-    // Decode at the physical resolution of a `size`-pixel avatar.
-    final cacheSize = (size * MediaQuery.devicePixelRatioOf(context)).round();
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // The fallback circle stays behind the image so it shows while
-          // the network image loads and again if it errors out.
-          fallback,
-          ClipOval(
-            child: Image.network(
-              url,
-              cacheWidth: cacheSize,
-              cacheHeight: cacheSize,
-              fit: BoxFit.cover,
-              frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                if (wasSynchronouslyLoaded) return child;
-                return AnimatedOpacity(
-                  opacity: frame == null ? 0.0 : 1.0,
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOut,
-                  child: child,
-                );
-              },
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CommentCard extends StatelessWidget {
-  const _CommentCard({required this.comment, required this.onOpenReplies});
-
-  final CommentItem comment;
-  final void Function(CommentItem comment) onOpenReplies;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-    final replyCount = comment.replies?.totalCount;
-    final repliesLabel =
-        '${l10n.commentsReplies}${replyCount == null ? '' : ' ($replyCount)'}';
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: LanghuanTheme.spaceMd,
-        vertical: LanghuanTheme.spaceMdSm,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _CommentAvatar(url: comment.author.avatarUrl),
-          const SizedBox(width: LanghuanTheme.spaceMdSm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        comment.author.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    if (comment.createdAtMs case final timestamp?)
-                      Text(
-                        _formatTimestamp(timestamp),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                _ExpandableText(text: comment.text),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    if (comment.likeCount
-                        case final count? when count > 0) ...[
-                      Icon(
-                        Icons.favorite_border,
-                        size: 14,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '$count',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                    const Spacer(),
-                    if (comment.replies != null)
-                      TextButton.icon(
-                        onPressed: () => onOpenReplies(comment),
-                        icon: const Icon(Icons.chat_bubble_outline, size: 14),
-                        label: Text(repliesLabel),
-                        style: TextButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          foregroundColor: theme.colorScheme.onSurfaceVariant,
-                          textStyle: theme.textTheme.bodySmall,
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The comment a reply thread answers, pinned above the reply list.
-class _ParentCommentCard extends StatelessWidget {
-  const _ParentCommentCard({required this.comment});
-
-  final CommentItem comment;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(
-        LanghuanTheme.spaceMd,
-        LanghuanTheme.spaceSm,
-        LanghuanTheme.spaceMd,
-        0,
-      ),
-      padding: const EdgeInsets.all(LanghuanTheme.spaceMdSm),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(LanghuanTheme.radiusSm),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _CommentAvatar(url: comment.author.avatarUrl),
-          const SizedBox(width: LanghuanTheme.spaceMdSm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  comment.author.name,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                _ExpandableText(text: comment.text),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Comment body text: collapses behind an ellipsis after six lines, with an
-/// expand/collapse toggle when the text actually overflows.
-class _ExpandableText extends StatefulWidget {
-  const _ExpandableText({required this.text});
-
-  final String text;
-
-  @override
-  State<_ExpandableText> createState() => _ExpandableTextState();
-}
-
-class _ExpandableTextState extends State<_ExpandableText> {
-  static const int _maxLines = 6;
-
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context);
-    final style = theme.textTheme.bodyMedium?.copyWith(height: 1.5);
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Measure the full text so the toggle only shows when the body
-        // actually overflows at this width.
-        final painter = TextPainter(
-          text: TextSpan(text: widget.text, style: style),
-          textDirection: Directionality.of(context),
-          textScaler: MediaQuery.textScalerOf(context),
-        )..layout(maxWidth: constraints.maxWidth);
-        final overflows = painter.computeLineMetrics().length > _maxLines;
-        painter.dispose();
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.text,
-              style: style,
-              maxLines: _expanded ? null : _maxLines,
-              overflow:
-                  _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-            ),
-            if (overflows)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: InkWell(
-                  onTap: () => setState(() => _expanded = !_expanded),
-                  borderRadius: BorderRadius.circular(4),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 2,
-                    ),
-                    child: Text(
-                      _expanded ? l10n.commentsCollapse : l10n.commentsExpand,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Loading and empty states
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Placeholder cards shown while the first page loads, so the panel opens
-/// instantly and fills in behind a stable layout.
-class _CommentsSkeleton extends StatelessWidget {
-  const _CommentsSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth - LanghuanTheme.spaceMd * 2;
-        Widget block({required double widthFactor, double height = 12}) =>
-            Container(
-              width: width * widthFactor,
-              height: height,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            );
-
-        return ListView(
-          physics: const NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(LanghuanTheme.spaceMd),
-          children: [
-            for (var i = 0; i < 4; i++) ...[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  block(widthFactor: .3, height: 10),
-                  block(widthFactor: .18, height: 10),
-                ],
-              ),
-              const SizedBox(height: 12),
-              block(widthFactor: 1),
-              const SizedBox(height: 6),
-              block(widthFactor: i % 2 == 0 ? .85 : .95),
-              const SizedBox(height: 6),
-              block(widthFactor: i % 2 == 0 ? .55 : .4),
-              const SizedBox(height: LanghuanTheme.spaceLg),
-            ],
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _EmptyComments extends StatelessWidget {
-  const _EmptyComments();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.forum_outlined,
-            size: 40,
-            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-          ),
-          const SizedBox(height: LanghuanTheme.spaceMdSm),
-          Text(
-            AppLocalizations.of(context).commentsEmpty,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Formatting helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-String _formatTimestamp(int ms) {
-  final dt = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
-  String two(int v) => v.toString().padLeft(2, '0');
-  return '${dt.year}-${two(dt.month)}-${two(dt.day)} '
-      '${two(dt.hour)}:${two(dt.minute)}';
 }

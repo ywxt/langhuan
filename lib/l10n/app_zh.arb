@@ -385,6 +385,7 @@
   "commentsRefresh": "刷新評論",
   "commentsSortHot": "最熱",
   "commentsSortLatest": "最新",
+  "commentsViewAll": "查看全部",
   "listeningTitle": "系統語音聽書",
   "listeningStart": "開始聽書",
   "listeningPause": "暫停",
@@ -425,8 +426,8 @@
       "total": { "type": "int" }
     }
   },
-  "readerShowComments": "顯示段落評論",
-  "readerHideComments": "隱藏段落評論",
+  "readerShowComments": "顯示評論",
+  "readerHideComments": "隱藏評論",
   "readerCommentCountCompact": "{count}萬",
   "@readerCommentCountCompact": { "placeholders": { "count": { "type": "String" } } }
 }

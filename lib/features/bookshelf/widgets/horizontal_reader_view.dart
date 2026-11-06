@@ -25,6 +25,16 @@ class ReaderSlotPage extends ReaderSlot {
   final PageContent page;
 }
 
+/// The chapter's inline comment section, following its last text page.
+/// Rendered live (never snapshot): the section loads and scrolls on its
+/// own while it is on screen.
+class ReaderSlotChapterEnd extends ReaderSlot {
+  const ReaderSlotChapterEnd({required this.chapterId, this.chapterTitle});
+
+  final String chapterId;
+  final String? chapterTitle;
+}
+
 class ReaderSlotLoading extends ReaderSlot {
   const ReaderSlotLoading(this.chapterId, {this.chapterTitle});
 
@@ -80,6 +90,7 @@ class HorizontalReaderView extends StatefulWidget {
     this.selectedParagraphId,
     this.commentBadgeIdsOf,
     this.onParagraphComments,
+    this.chapterEndBuilder,
   });
 
   final ReaderSlot? currentSlot;
@@ -119,6 +130,11 @@ class HorizontalReaderView extends StatefulWidget {
   /// show a badge.
   final void Function(String chapterId, ParagraphContent paragraph)?
   onParagraphComments;
+
+  /// Builds a chapter's inline end-of-chapter comment section; null when
+  /// the reader's comment switch is off (the flat list then carries no
+  /// chapter-end entries at all).
+  final Widget? Function(String chapterId)? chapterEndBuilder;
 
   @override
   State<HorizontalReaderView> createState() => _HorizontalReaderViewState();
@@ -241,7 +257,12 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
   bool get _canGoPrev => _showEndPage || _snapPrev != null || !_snapIsFirst;
   bool get _canGoNext =>
       !_showEndPage &&
-      (_snapNext != null || !_snapIsLast || _snapCurrent is ReaderSlotPage);
+      (_snapNext != null ||
+          !_snapIsLast ||
+          _snapCurrent is ReaderSlotPage ||
+          // The chapter-end section is real content too: from the final
+          // chapter's section, forward still flips to the end-of-book page.
+          _snapCurrent is ReaderSlotChapterEnd);
 
   // ─ Gesture handling ───────────────────────────────────────────────────
 
@@ -487,6 +508,9 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
   Key _slotKey(ReaderSlot? slot, String fallback) {
     return switch (slot) {
       ReaderSlotPage(:final page) => ObjectKey(page),
+      ReaderSlotChapterEnd(:final chapterId) => ValueKey(
+        '$fallback-chapter-end-$chapterId',
+      ),
       ReaderSlotLoading(:final chapterId) => ValueKey(
         '$fallback-loading-$chapterId',
       ),
@@ -563,6 +587,14 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
                 widget.commentBadgeIdsOf?.call(page.chapterId) ?? const {},
             onParagraphComments: widget.onParagraphComments,
           ),
+        );
+      case ReaderSlotChapterEnd(:final chapterId):
+        // Live interactive content: never enters the page-snapshot path.
+        return Padding(
+          padding: widget.contentPadding,
+          child:
+              widget.chapterEndBuilder?.call(chapterId) ??
+              const SizedBox.shrink(),
         );
       case ReaderSlotLoading(:final chapterTitle):
         return Center(

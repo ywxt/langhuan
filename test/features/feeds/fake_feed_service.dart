@@ -1,6 +1,26 @@
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/features/bookshelf/bookshelf_operation.dart';
+import 'package:langhuan/src/rust/api/comments.dart';
 import 'package:langhuan/src/rust/api/types.dart';
+
+/// Immediately-resolving [CommentRequest] stand-in for tests.
+class FakeCommentRequest implements CommentRequest {
+  FakeCommentRequest(this.page);
+
+  final CommentPage page;
+
+  @override
+  Future<void> cancel() async {}
+
+  @override
+  Future<CommentPage> result() async => page;
+
+  @override
+  Future<void> dispose() async {}
+
+  @override
+  bool get isDisposed => false;
+}
 
 /// Hand-rolled [FeedService] fake for notifier unit tests.
 ///
@@ -27,6 +47,7 @@ class FakeFeedService implements FeedService {
     this.getReadingProgressHandler,
     this.setReadingProgressHandler,
     this.bookInfoHandler,
+    this.openCommentsPageHandler,
   });
 
   final Stream<List<SearchResultModel>> Function(String feedId, String keyword)?
@@ -294,6 +315,40 @@ class FakeFeedService implements FeedService {
 
   final Future<BookInfoModel> Function(String feedId, String bookId)?
   bookInfoHandler;
+
+  final Future<CommentPage> Function({
+    required String feedId,
+    required String bookId,
+    required String chapterId,
+    String? paragraphId,
+    String? parentId,
+    String? cursorJson,
+  })?
+  openCommentsPageHandler;
+
+  @override
+  Future<CommentRequest> openCommentsPage({
+    required String feedId,
+    required String bookId,
+    required String chapterId,
+    String? paragraphId,
+    String? parentId,
+    String? cursorJson,
+  }) async {
+    final handler = openCommentsPageHandler;
+    if (handler == null) {
+      throw UnimplementedError('openCommentsPage not configured for this test');
+    }
+    final page = await handler(
+      feedId: feedId,
+      bookId: bookId,
+      chapterId: chapterId,
+      paragraphId: paragraphId,
+      parentId: parentId,
+      cursorJson: cursorJson,
+    );
+    return FakeCommentRequest(page);
+  }
 
   @override
   Future<BookInfoModel> bookInfo({

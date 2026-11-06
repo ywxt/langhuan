@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:langhuan/features/bookshelf/comments/chapter_end_comments.dart';
 import 'package:langhuan/features/bookshelf/reader_settings_provider.dart'
     show ReaderPageMode;
 import 'package:langhuan/features/bookshelf/widgets/chapter_content_manager.dart';
@@ -11,6 +12,7 @@ import 'package:langhuan/features/bookshelf/widgets/horizontal_reader_view.dart'
 import 'package:langhuan/features/bookshelf/widgets/reader_controller.dart';
 import 'package:langhuan/features/bookshelf/widgets/reader_types.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
+import 'package:langhuan/src/rust/api/comments.dart';
 import 'package:langhuan/src/rust/api/types.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
 
@@ -358,6 +360,7 @@ void main() {
     required bool showComments,
     ReaderPageMode pageMode = ReaderPageMode.horizontal,
     double fontScale = 1.0,
+    bool showChapterComments = false,
     bool settle = true,
   }) async {
     final controller = sharedController ??= ReaderController();
@@ -385,6 +388,7 @@ void main() {
             contentPadding: const EdgeInsets.all(16),
             chineseConversion: ChineseConversionMode.none,
             showComments: showComments,
+            showChapterComments: showChapterComments,
             pageProgress: pageProgress,
           ),
         ),
@@ -527,6 +531,112 @@ void main() {
       isEmpty,
       reason: 'badges stopped rendering',
     );
+  });
+
+  group('chapter-end comments', () {
+    /// One comment page per chapter, keyed so assertions can address a
+    /// single chapter's section.
+    CommentPage commentPageOf(String chapterId) => CommentPage(
+      items: [
+        CommentItem(
+          id: '$chapterId-k1',
+          author: CommentAuthor(name: 'Reader'),
+          text: 'Comment for $chapterId',
+          replies: const CommentReplies(totalCount: 1),
+        ),
+      ],
+      nextCursorJson: null,
+      totalCount: 1,
+    );
+
+    FakeFeedService commentsService() => FakeFeedService(
+      paragraphsHandler:
+          (feedId, bookId, chapterId, {forceRefresh = false}) async =>
+              data[chapterId] ?? const [],
+      openCommentsPageHandler:
+          ({
+            required String feedId,
+            required String bookId,
+            required String chapterId,
+            String? paragraphId,
+            String? parentId,
+            String? cursorJson,
+          }) async => commentPageOf(chapterId),
+    );
+
+    testWidgets(
+      'horizontal: the section follows the chapter pages and the switch',
+      (tester) async {
+        final pageProgress = ValueNotifier<ReaderChapterProgress?>(null);
+        addTearDown(pageProgress.dispose);
+        final fake = commentsService();
+        final positions = <ReaderPosition>[];
+
+        await pumpWithSettings(
+          tester,
+          fake: fake,
+          pageProgress: pageProgress,
+          showComments: true,
+          showChapterComments: true,
+        );
+        sharedController!.onPositionChanged = positions.add;
+
+        // Chapter one fits on one page, so its section is the next slot.
+        expect(find.byType(ChapterEndComments), findsOneWidget);
+        expect(find.text('Comment for c1'), findsOneWidget);
+
+        // Turning onto the section anchors progress on the chapter's last
+        // text page, so a restore lands before the comments.
+        await tester.tapAt(const Offset(760, 300));
+        await tester.pumpAndSettle(const Duration(milliseconds: 50));
+        expect(pageProgress.value, isNotNull);
+        expect(pageProgress.value!.chapterId, 'c1');
+        expect(positions.last.chapterId, 'c1');
+        expect(positions.last.paragraphId, isNotEmpty);
+
+        // Hiding the section never re-pages the text.
+        final withSection = pageProgress.value;
+        await pumpWithSettings(
+          tester,
+          fake: fake,
+          pageProgress: pageProgress,
+          showComments: true,
+          showChapterComments: false,
+        );
+        expect(find.byType(ChapterEndComments), findsNothing);
+        expect(pageProgress.value?.unitCount, withSection?.unitCount);
+
+        // Showing it again reuses the cached controller's loaded page.
+        await pumpWithSettings(
+          tester,
+          fake: fake,
+          pageProgress: pageProgress,
+          showComments: true,
+          showChapterComments: true,
+        );
+        expect(find.byType(ChapterEndComments), findsOneWidget);
+        expect(find.text('Comment for c1'), findsOneWidget);
+      },
+    );
+
+    testWidgets('vertical: the section flows after the chapter paragraphs', (
+      tester,
+    ) async {
+      final pageProgress = ValueNotifier<ReaderChapterProgress?>(null);
+      addTearDown(pageProgress.dispose);
+
+      await pumpWithSettings(
+        tester,
+        fake: commentsService(),
+        pageProgress: pageProgress,
+        showComments: true,
+        showChapterComments: true,
+        pageMode: ReaderPageMode.vertical,
+      );
+
+      expect(find.byType(ChapterEndComments), findsWidgets);
+      expect(find.text('Comment for c1'), findsOneWidget);
+    });
   });
 
   group('live typography reflow', () {

@@ -524,6 +524,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                                   ? _listening.paragraphId
                                   : null),
                           showComments: settings.showComments,
+                          showChapterComments:
+                              _chapterComments && settings.showComments,
                           onParagraphComments: _openParagraphComments,
                         ),
                       ),
@@ -569,12 +571,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                           onPressed: () => ref
                               .read(readerSettingsProvider.notifier)
                               .setShowComments(!settings.showComments),
-                        ),
-                      if (_chapterComments)
-                        IconButton(
-                          tooltip: l10n.readerChapterComments,
-                          icon: const Icon(Icons.forum_outlined),
-                          onPressed: () => _openComments(effectiveChapterId),
                         ),
                       IconButton(
                         tooltip: l10n.listeningTitle,

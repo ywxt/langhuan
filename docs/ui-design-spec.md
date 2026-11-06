@@ -433,10 +433,12 @@ It appears on scrolling, remains available for 1.4 seconds after scrolling ends,
 and then fades. Thumb dragging moves through the full directory; it is not an
 extra navigation button.
 
-The reader exposes chapter comments, paragraph comments where source IDs exist,
-and the system TTS playback panel. Use the same theme surfaces and text contrast
-for these panels. Listening highlights the active paragraph; manual reading
-interactions pause playback. See
+The reader exposes chapter comments at each chapter's end and paragraph
+comments where source IDs exist; one reader-level comment switch controls both
+surfaces together. Reply threads and sorting open in the comments panel. Use
+the same theme surfaces and text contrast for these panels. Listening
+highlights the active paragraph; manual reading interactions pause playback.
+See
 [Search, comments, and listening](search-comments-listening.md) for lifecycle and
 progress rules.
 

@@ -2270,6 +2270,12 @@ abstract class AppLocalizations {
   /// **'Latest'**
   String get commentsSortLatest;
 
+  /// No description provided for @commentsViewAll.
+  ///
+  /// In en, this message translates to:
+  /// **'View all'**
+  String get commentsViewAll;
+
   /// No description provided for @listeningTitle.
   ///
   /// In en, this message translates to:
@@ -2423,13 +2429,13 @@ abstract class AppLocalizations {
   /// No description provided for @readerShowComments.
   ///
   /// In en, this message translates to:
-  /// **'Show paragraph comments'**
+  /// **'Show comments'**
   String get readerShowComments;
 
   /// No description provided for @readerHideComments.
   ///
   /// In en, this message translates to:
-  /// **'Hide paragraph comments'**
+  /// **'Hide comments'**
   String get readerHideComments;
 
   /// No description provided for @readerCommentCountCompact.

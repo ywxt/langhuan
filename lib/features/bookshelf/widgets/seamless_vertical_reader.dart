@@ -88,6 +88,7 @@ class SeamlessVerticalReader extends StatefulWidget {
     this.onTargetSettled,
     this.commentBadgeIdsOf,
     this.onParagraphComments,
+    this.chapterEndBuilder,
   });
 
   final ReaderChapterWindow window;
@@ -162,6 +163,11 @@ class SeamlessVerticalReader extends StatefulWidget {
   /// badge — others keep the tap-to-toggle-controls behaviour.
   final void Function(String chapterId, ParagraphContent paragraph)?
   onParagraphComments;
+
+  /// Builds a chapter's inline end-of-chapter comment section; null when
+  /// the reader's comment switch is off. Called once per loaded chapter
+  /// with paragraphs; the result flows below the chapter's last paragraph.
+  final Widget? Function(String chapterId)? chapterEndBuilder;
 
   @override
   State<SeamlessVerticalReader> createState() => _SeamlessVerticalReaderState();
@@ -690,29 +696,12 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
             scrollCacheExtent: ScrollCacheExtent.pixels(
               MediaQuery.sizeOf(context).height * 2,
             ),
-            slivers: [
-              SliverToBoxAdapter(
-                key: _topInsetKey,
-                child: SizedBox(height: widget.contentPadding.top),
-              ),
-              for (final chapterId in chapterIds) ...[
-                if (chapterId == window.anchorChapterId)
-                  SliverToBoxAdapter(
-                    key: _centerKey,
-                    child: SizedBox(height: widget.contentPadding.top),
-                  ),
-                _buildChapterSliver(
-                  chapterId,
-                  showLoading: chapterId == loadingIndicatorChapterId,
-                ),
-              ],
-              if (atBookEnd) const SliverToBoxAdapter(child: _EndOfBookMark()),
-              if (widget.contentPadding.bottom > 0)
-                SliverToBoxAdapter(
-                  key: _bottomInsetKey,
-                  child: SizedBox(height: widget.contentPadding.bottom),
-                ),
-            ],
+            slivers: _buildSlivers(
+              window,
+              chapterIds,
+              loadingIndicatorChapterId,
+              atBookEnd,
+            ),
           ),
         ),
       ),
@@ -721,6 +710,69 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
 
   static const _topInsetKey = ValueKey('vertical-top-inset');
   static const _bottomInsetKey = ValueKey('vertical-bottom-inset');
+
+  /// The scroll view's slivers in reading order: leading inset, per-chapter
+  /// paragraph lists (each optionally followed by its inline comment
+  /// section), the end-of-book mark and the trailing inset.
+  List<Widget> _buildSlivers(
+    ReaderChapterWindow window,
+    List<String> chapterIds,
+    String? loadingIndicatorChapterId,
+    bool atBookEnd,
+  ) {
+    final slivers = <Widget>[
+      SliverToBoxAdapter(
+        key: _topInsetKey,
+        child: SizedBox(height: widget.contentPadding.top),
+      ),
+    ];
+    for (final chapterId in chapterIds) {
+      if (chapterId == window.anchorChapterId) {
+        slivers.add(
+          SliverToBoxAdapter(
+            key: _centerKey,
+            child: SizedBox(height: widget.contentPadding.top),
+          ),
+        );
+      }
+      slivers.add(
+        _buildChapterSliver(
+          chapterId,
+          showLoading: chapterId == loadingIndicatorChapterId,
+        ),
+      );
+      // A chapter's comment section flows after its last paragraph. Like
+      // the paragraph lists it grows in the direction away from the anchor,
+      // so late-arriving comments never shift the reading position.
+      final endBuilder = widget.chapterEndBuilder;
+      if (endBuilder != null) {
+        final state = window.stateOf(chapterId);
+        if (state is ChapterLoaded && state.paragraphs.isNotEmpty) {
+          final endChild = endBuilder(chapterId);
+          if (endChild != null) {
+            slivers.add(
+              SliverToBoxAdapter(
+                key: ValueKey('vertical-chapter-end-$chapterId'),
+                child: endChild,
+              ),
+            );
+          }
+        }
+      }
+    }
+    if (atBookEnd) {
+      slivers.add(const SliverToBoxAdapter(child: _EndOfBookMark()));
+    }
+    if (widget.contentPadding.bottom > 0) {
+      slivers.add(
+        SliverToBoxAdapter(
+          key: _bottomInsetKey,
+          child: SizedBox(height: widget.contentPadding.bottom),
+        ),
+      );
+    }
+    return slivers;
+  }
 
   Widget _buildChapterSliver(String chapterId, {required bool showLoading}) {
     final state = widget.window.stateOf(chapterId);

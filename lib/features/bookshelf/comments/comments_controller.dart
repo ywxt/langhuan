@@ -41,6 +41,10 @@ class CommentsController extends ChangeNotifier {
   String? _cursor;
   bool loading = false, hasMore = true;
   Object? error;
+
+  /// Total size of the collection when the source reports it; the last
+  /// non-null page value wins. Null means unknown.
+  int? totalCount;
   int _generation = 0;
   CommentRequest? _request;
 
@@ -73,6 +77,7 @@ class CommentsController extends ChangeNotifier {
       if (next != null && _cursors.contains(_canonical(jsonDecode(next)))) {
         throw const FormatException('Comment cursor cycle');
       }
+      totalCount = page.totalCount ?? totalCount;
       for (final item in page.items) {
         if (_seen.add(item.id)) {
           _arrival[item.id] = _arrival.length;
@@ -107,6 +112,7 @@ class CommentsController extends ChangeNotifier {
     loading = false;
     hasMore = true;
     error = null;
+    totalCount = null;
     await loadMore();
   }
 
@@ -152,4 +158,54 @@ String _canonical(Object? value) {
   }
   if (value is List) return '[${value.map(_canonical).join(',')}]';
   return jsonEncode(value);
+}
+
+/// Per-chapter [CommentsController] cache behind the reader's inline
+/// chapter-end sections.
+///
+/// Sections appear and disappear as chapters enter and leave the reading
+/// window (page turns in horizontal mode, sliver build/dispose in vertical
+/// mode); keying the controllers here keeps already-loaded pages alive
+/// across those rebuilds instead of refetching them. [retainAll] disposes
+/// controllers for chapters the window has trimmed.
+class ChapterCommentsCache {
+  ChapterCommentsCache({
+    required this.service,
+    required this.feedId,
+    required this.bookId,
+  });
+
+  final FeedService service;
+  final String feedId;
+  final String bookId;
+  final Map<String, CommentsController> _byChapterId = {};
+
+  /// The chapter's controller, created on first access.
+  CommentsController operator [](String chapterId) => _byChapterId.putIfAbsent(
+    chapterId,
+    () => CommentsController(
+      service,
+      feedId: feedId,
+      bookId: bookId,
+      chapterId: chapterId,
+    ),
+  );
+
+  /// Disposes controllers for every chapter outside [chapterIds].
+  void retainAll(Iterable<String> chapterIds) {
+    final alive = chapterIds.toSet();
+    _byChapterId.removeWhere((chapterId, controller) {
+      if (alive.contains(chapterId)) return false;
+      controller.dispose();
+      return true;
+    });
+  }
+
+  /// Disposes every controller (reader teardown, book switch).
+  void clear() {
+    for (final controller in _byChapterId.values) {
+      controller.dispose();
+    }
+    _byChapterId.clear();
+  }
 }

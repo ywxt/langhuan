@@ -1090,6 +1090,7 @@
   "commentsRefresh": "Refresh comments",
   "commentsSortHot": "Hot",
   "commentsSortLatest": "Latest",
+  "commentsViewAll": "View all",
   "listeningTitle": "System text-to-speech",
   "listeningStart": "Start listening",
   "listeningPause": "Pause",
@@ -1130,8 +1131,8 @@
       "total": { "type": "int" }
     }
   },
-  "readerShowComments": "Show paragraph comments",
-  "readerHideComments": "Hide paragraph comments",
+  "readerShowComments": "Show comments",
+  "readerHideComments": "Hide comments",
   "readerCommentCountCompact": "{count}K",
   "@readerCommentCountCompact": { "placeholders": { "count": { "type": "String" } } }
 }

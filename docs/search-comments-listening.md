@@ -188,6 +188,15 @@ appear only when the visible paragraph has an original source ID. Developer tool
 and the Agent API use exactly `comments.chapter` and `comments.paragraph`, with
 explicit input and cursor values.
 
+Chapter comments additionally render inline at the end of their chapter in both
+reader modes: a sliver below the chapter's last paragraph in vertical mode, one
+page after the chapter's last text page in horizontal mode. The inline section
+shows its first loaded pages with a load-more affordance; controllers are cached
+per chapter and pruned with the reading window, so revisiting a chapter keeps
+its loaded pages. The reader's single comment switch controls paragraph badges
+and the inline chapter-end sections together; there is no separate
+chapter-comment action, and toggling it never re-pages text.
+
 ## Listening with the device TTS engine
 
 ### Platform adapters

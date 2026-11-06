@@ -7,6 +7,8 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart';
 import '../../feeds/feed_service.dart';
+import '../comments/chapter_end_comments.dart';
+import '../comments/comments_controller.dart';
 import '../reader_settings_provider.dart' show ReaderPageMode;
 import 'horizontal_reader_view.dart';
 import 'page_breaker.dart';
@@ -53,6 +55,7 @@ class ChapterContentManager extends StatefulWidget {
     this.selectedChapterId,
     this.selectedParagraphId,
     this.showComments = true,
+    this.showChapterComments = false,
     this.onParagraphComments,
     this.pageProgress,
     this.viewportTopInset = 0,
@@ -103,6 +106,13 @@ class ChapterContentManager extends StatefulWidget {
   /// exactly where they were.
   final bool showComments;
 
+  /// Whether each chapter ends with its inline chapter-comment section.
+  /// The reader-level switch; only meaningful for feeds whose script
+  /// exposes chapter comments. Toggling it never re-pages text: pages keep
+  /// their identity and the section appears or disappears after the
+  /// chapter's last page.
+  final bool showChapterComments;
+
   /// Opens a paragraph's comments (badge tap). Null disables badges.
   final void Function(String chapterId, ParagraphContent paragraph)?
   onParagraphComments;
@@ -133,14 +143,19 @@ class _FlatEntry {
     required this.localPageIndex,
     required this.loading,
     this.error,
+    this.chapterEnd = false,
   });
 
   final String chapterId;
 
   /// Index of the page within its chapter, or -1 for a placeholder entry
-  /// (neighbor chapter still loading / failed).
+  /// (neighbor chapter still loading / failed). A [chapterEnd] entry uses
+  /// the page count — one past the last text page.
   final int localPageIndex;
   final bool loading;
+
+  /// True for the chapter-end comments entry following a chapter's pages.
+  final bool chapterEnd;
 
   /// Failure cause when this entry stands in for a failed chapter.
   final Object? error;
@@ -178,6 +193,11 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   /// reloads and conversion changes invalidate it (mirrors
   /// [_pagesByChapter], minus the typography case).
   final Map<String, Set<String>> _badgeIdsByChapter = {};
+
+  /// Chapter-comment controllers for the inline chapter-end sections.
+  /// Created only while [ChapterContentManager.showChapterComments] is on;
+  /// pruned to the reading window so trimmed chapters release their pages.
+  ChapterCommentsCache? _chapterComments;
 
   // Canonical horizontal position.
   String _activeChapterId = '';
@@ -268,6 +288,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     _window?.removeListener(_onWindowChanged);
     _window?.dispose();
     _paginationJobs.clear();
+    _chapterComments?.clear();
     super.dispose();
   }
 
@@ -385,6 +406,8 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     if (widget.pageMode == ReaderPageMode.horizontal) {
       _preloadWindowEdgesForHorizontal();
     }
+    // Trimmed chapters release their loaded comment pages.
+    _chapterComments?.retainAll(_window!.windowChapterIds);
     if (mounted) setState(() {});
   }
 
@@ -745,6 +768,18 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
             _FlatEntry(chapterId: chapterId, localPageIndex: i, loading: false),
           );
         }
+        // The chapter's inline comment section follows its last page; one
+        // extra entry per chapter. Text pages keep their indices either way.
+        if (widget.showChapterComments) {
+          entries.add(
+            _FlatEntry(
+              chapterId: chapterId,
+              localPageIndex: pages.length,
+              loading: false,
+              chapterEnd: true,
+            ),
+          );
+        }
       } else if (state is ChapterLoadError) {
         entries.add(
           _FlatEntry(
@@ -802,6 +837,12 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
 
   ReaderSlot _slotFor(_FlatEntry entry) {
     final chapterTitle = _chapterTitleOf(entry.chapterId);
+    if (entry.chapterEnd) {
+      return ReaderSlotChapterEnd(
+        chapterId: entry.chapterId,
+        chapterTitle: chapterTitle,
+      );
+    }
     if (entry.loading) {
       return ReaderSlotLoading(entry.chapterId, chapterTitle: chapterTitle);
     }
@@ -842,6 +883,39 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       if (chapter.id == chapterId) return chapter.title;
     }
     return null;
+  }
+
+  /// Builds a chapter's inline end-of-chapter comment section, or null while
+  /// the reader-level switch is off. Both reading views call it once per
+  /// loaded chapter; the controller cache keeps pages alive across the
+  /// section's mount/unmount cycles.
+  Widget? _buildChapterEnd(String chapterId) {
+    if (!widget.showChapterComments) return null;
+    final comments = _chapterComments ??= ChapterCommentsCache(
+      service: widget.feedService,
+      feedId: widget.feedId,
+      bookId: widget.bookId,
+    );
+    final section = ChapterEndComments(
+      service: widget.feedService,
+      feedId: widget.feedId,
+      bookId: widget.bookId,
+      chapterId: chapterId,
+      controller: comments[chapterId],
+      scrollable: widget.pageMode == ReaderPageMode.horizontal,
+    );
+    if (widget.pageMode == ReaderPageMode.horizontal) {
+      // The horizontal slot already applies the full content padding.
+      return section;
+    }
+    // Vertical mode pads each paragraph row itself; match its side insets.
+    return Padding(
+      padding: EdgeInsets.only(
+        left: widget.contentPadding.left,
+        right: widget.contentPadding.right,
+      ),
+      child: section,
+    );
   }
 
   // ── Page turns (horizontal) ─────────────────────────────────────────────
@@ -885,6 +959,12 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       final pages = _pagesFor(_activeChapterId);
       if (_activeLocalPageIndex < pages.length) {
         final page = pages[_activeLocalPageIndex];
+        paragraphId = page.firstParagraphId;
+        charOffset = page.firstCharOffset;
+      } else if (pages.isNotEmpty) {
+        // The chapter-end comments entry: anchor progress on the chapter's
+        // last text page so a restore lands right before the section.
+        final page = pages.last;
         paragraphId = page.firstParagraphId;
         charOffset = page.firstCharOffset;
       }
@@ -1027,6 +1107,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       _badgeIdsByChapter.clear();
       _paginationJobs.clear();
       _freshPages.clear();
+      if (!sameBook) _chapterComments?.clear();
       _activeChapterId = anchorId;
       _activeLocalPageIndex = 0;
       if (sameBook && anchorId == _lastReportedChapterId) {
@@ -1184,6 +1265,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
         onTargetSettled: _onVerticalTargetSettled,
         commentBadgeIdsOf: _badgeLookup,
         onParagraphComments: widget.onParagraphComments,
+        chapterEndBuilder: widget.showChapterComments ? _buildChapterEnd : null,
       );
     }
 
@@ -1219,6 +1301,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       onParagraphLongPress: widget.onParagraphLongPress,
       commentBadgeIdsOf: _badgeLookup,
       onParagraphComments: widget.onParagraphComments,
+      chapterEndBuilder: widget.showChapterComments ? _buildChapterEnd : null,
       selectedChapterId: widget.selectedChapterId,
       selectedParagraphId: widget.selectedParagraphId,
     );
