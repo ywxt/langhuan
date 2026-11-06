@@ -100,11 +100,14 @@ function search(event) {
 }
 ```
 
-Requests carry a full URL: build query strings yourself and percent-encode
-values with `HTML.encodeURIComponent`, which follows the browser's
-`encodeURIComponent` and accepts an optional second charset label for
-non-UTF-8 sites — `HTML.encodeURIComponent("天官赐福", "gbk")` encodes to
-GBK bytes.
+Requests carry a full URL: build query strings yourself with
+`HTML.encodeURIComponent`. Given a string it encodes like the browser's
+`encodeURIComponent`; given an array of `[key, value]` pairs it encodes both
+sides and joins them into `k=v&k=v`, so
+`HTML.encodeURIComponent([["kw", keyword], ["page", "2"]])` builds the whole
+query string. An optional second argument — a WHATWG charset label — covers
+non-UTF-8 sites: `HTML.encodeURIComponent("天官赐福", "gbk")` encodes to GBK
+bytes.
 
 For paginated search, read `event.cursor` when constructing the request and
 return `next_cursor` with the completed page:

@@ -86,9 +86,9 @@ void main() {
 import { HTML } from "langhuan:html";
 function comments(event) {
   if (event.state == null) {
-    let query = "?page=" + (event.cursor?.page ?? 1);
-    if (event.input.parentId != null) query += "&parent=" + HTML.encodeURIComponent(String(event.input.parentId));
-    return { type: "request", request: { url: meta.base_url + "/comments" + query, method: "GET" },
+    const query = [["page", String(event.cursor?.page ?? 1)]];
+    if (event.input.parentId != null) query.push(["parent", String(event.input.parentId)]);
+    return { type: "request", request: { url: meta.base_url + "/comments?" + HTML.encodeURIComponent(query), method: "GET" },
       next_state: { requested: true } };
   }
   const page = JSON.parse(DECODER.decode(event.response.body));

@@ -156,12 +156,16 @@ function search(event) {
     if (!raw) {
       return { type: "complete", result: [] };
     }
-    const keyword = HTML.encodeURIComponent(raw, "gbk");
-    const page = event.cursor == null ? "" : `&p=${Number(event.cursor)}`;
+    const query = [
+      ["kw", raw],
+      ["t", "1"],
+    ];
+    if (event.cursor != null) query.push(["p", String(Number(event.cursor))]);
     return {
       type: "request",
       request: {
-        url: `${meta.base_url}/search.php?kw=${keyword}&t=1${page}`,
+        url:
+          `${meta.base_url}/search.php?${HTML.encodeURIComponent(query, "gbk")}`,
         method: "GET",
         headers: requestHeaders(),
       },
@@ -373,7 +377,10 @@ function paragraphs(event) {
     return {
       type: "request",
       request: {
-        url: `${meta.base_url}/onebook.php?novelid=${bookId}&chapterid=${chapterId}`,
+        url: `${meta.base_url}/onebook.php?${HTML.encodeURIComponent([
+          ["novelid", bookId],
+          ["chapterid", chapterId],
+        ])}`,
         method: "GET",
         headers: requestHeaders(),
       },
@@ -418,7 +425,10 @@ function paragraphs(event) {
       request: {
         url:
           `${meta.base_url}/app.jjwxc/Pc/comment/getNovelParagraphCommentNum` +
-          `?novelid=${state.bookId}&chapterid=${state.chapterId}`,
+          `?${HTML.encodeURIComponent([
+            ["novelid", state.bookId],
+            ["chapterid", state.chapterId],
+          ])}`,
         method: "GET",
         headers: requestHeaders(),
       },
@@ -520,9 +530,14 @@ function commentsStart(event, paragraphId) {
       request: {
         url:
           `${meta.base_url}/app.jjwxc/Pc/comment/getReplyList` +
-          `?novelid=${bookId}&chapterid=${chapterId}` +
-          `&commentid=${HTML.encodeURIComponent(String(event.input.parentId))}` +
-          `&offset=${offset}&limit=${COMMENT_PAGE}&formatter=app`,
+          `?${HTML.encodeURIComponent([
+            ["novelid", bookId],
+            ["chapterid", chapterId],
+            ["commentid", String(event.input.parentId)],
+            ["offset", String(offset)],
+            ["limit", String(COMMENT_PAGE)],
+            ["formatter", "app"],
+          ])}`,
         method: "GET",
         headers: requestHeaders(),
       },
@@ -534,9 +549,13 @@ function commentsStart(event, paragraphId) {
     request: {
       url:
         `${meta.base_url}/app.jjwxc/Pc/comment/getCommentList` +
-        `?novelId=${bookId}&chapterId=${chapterId}` +
-        `&paragraph_id=${paragraphId ?? "0"}&offset=${offset}` +
-        `&limit=${COMMENT_PAGE}`,
+        `?${HTML.encodeURIComponent([
+          ["novelId", bookId],
+          ["chapterId", chapterId],
+          ["paragraph_id", paragraphId ?? "0"],
+          ["offset", String(offset)],
+          ["limit", String(COMMENT_PAGE)],
+        ])}`,
       method: "GET",
       headers: requestHeaders(),
     },

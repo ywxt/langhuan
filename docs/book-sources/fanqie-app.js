@@ -249,12 +249,10 @@ function uuid() {
 
 // URLSearchParams 風格的查詢編碼（空格 → +）。請求 URL 與簽名輸入必須
 // 由同一字符串構造：兩者共用這一個編碼函數。
-function formEncode(value) {
-  return HTML.encodeURIComponent(String(value)).replace(/%20/g, "+");
-}
-
 function encodeQuery(params) {
-  return params.map(([key, value]) => `${key}=${formEncode(value)}`).join("&");
+  return HTML.encodeURIComponent(
+    params.map(([key, value]) => [key, String(value)]),
+  ).replaceAll("%20", "+");
 }
 
 function parseQuery(query) {

@@ -255,8 +255,11 @@ function completeParagraphs(title, content, event) {
     request: {
       url:
         `${meta.base_url}/webcommon/chapterreview/reviewsummary4m` +
-        `?bookId=${event.input.bookId}&chapterId=${event.input.chapterId}` +
-        `&_csrfToken=${HTML.encodeURIComponent(csrfToken)}`,
+        `?${HTML.encodeURIComponent([
+          ["bookId", String(event.input.bookId)],
+          ["chapterId", String(event.input.chapterId)],
+          ["_csrfToken", csrfToken],
+        ])}`,
       method: "GET",
       headers: {
         ...requestHeaders(),
@@ -547,7 +550,10 @@ function paragraphs(event) {
       request: {
         url:
           `${meta.base_url}/webcommon/chapter/getMChapterInfo` +
-          `?bookId=${event.input.bookId}&chapterId=${event.input.chapterId}`,
+          `?${HTML.encodeURIComponent([
+            ["bookId", String(event.input.bookId)],
+            ["chapterId", String(event.input.chapterId)],
+          ])}`,
         method: "GET",
         headers: {
           ...requestHeaders(),
@@ -730,9 +736,13 @@ function reviewListStep(event, paragraphId, page, state) {
     request: {
       url:
         `${meta.base_url}/webcommon/chapterreview/reviewlist4m` +
-        `?bookId=${event.input.bookId}&chapterId=${event.input.chapterId}` +
-        `&paragraphId=${paragraphId}&page=${page}` +
-        `&_csrfToken=${HTML.encodeURIComponent(auth.csrfToken)}`,
+        `?${HTML.encodeURIComponent([
+          ["bookId", String(event.input.bookId)],
+          ["chapterId", String(event.input.chapterId)],
+          ["paragraphId", String(paragraphId)],
+          ["page", String(page)],
+          ["_csrfToken", auth.csrfToken],
+        ])}`,
       method: "GET",
       headers: {
         ...requestHeaders(),

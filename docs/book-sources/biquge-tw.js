@@ -214,13 +214,14 @@ function parseParagraphs(response) {
 
 function search(event) {
   if (event.state == null) {
-    const page = event.cursor == null ? "" : `&page=${Number(event.cursor)}`;
+    const query = [["searchkey", String(event.input.keyword ?? "")]];
+    if (event.cursor != null) {
+      query.push(["page", String(Number(event.cursor))]);
+    }
     return {
       type: "request",
       request: {
-        url:
-          `${meta.base_url}/search/?searchkey=` +
-          `${HTML.encodeURIComponent(String(event.input.keyword ?? ""))}${page}`,
+        url: `${meta.base_url}/search/?${HTML.encodeURIComponent(query)}`,
         method: "GET",
         headers: headers(),
       },

@@ -485,15 +485,13 @@ function mergeCookieHeaders(...headersToMerge) {
 }
 
 function searchRequest(keyword, pageIndex) {
-  const query = [
+  const query = HTML.encodeURIComponent([
     ["filter", "127,127,127,127"],
     ["page_count", "10"],
     ["page_index", String(pageIndex)],
     ["query_type", "0"],
     ["query_word", keyword],
-  ]
-    .map(([key, value]) => `${key}=${HTML.encodeURIComponent(value)}`)
-    .join("&");
+  ]);
   const request = {
     url: `${meta.base_url}/api/author/search/search_book/v1?${query}`,
     method: "POST",
