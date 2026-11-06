@@ -62,6 +62,10 @@ The source never receives `fetch`, sockets, or a native HTTP object.
 - [`fanqie-app.js`](fanqie-app.js) demonstrates persistent source storage,
   binary protocols, request signing, compression, and encrypted content. It is
   GPL-3.0-or-later; the other examples are covered by the repository license.
+- [`jjwxc.js`](jjwxc.js) demonstrates a GBK-encoded site: decoding GBK pages,
+  percent-encoding search keywords to GBK with a reverse-built decoder table,
+  paragraph-aligned comments from JSON APIs without login, and VIP chapters
+  failing with an auth-required error.
 
 For a new source, copy the structure—not site-specific tokens, cached script
 URLs, device identifiers, or authentication data.
