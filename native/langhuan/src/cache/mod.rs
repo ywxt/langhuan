@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,6 +10,7 @@ use crate::error::Result;
 use crate::feed::{
     AuthEntry, AuthInfo, AuthPageContext, AuthStatus, Feed, FeedAuthFlow, FeedMeta, FeedStream,
 };
+use crate::http::{FeedClient, HttpRequest, HttpResponse};
 use crate::model::{BookInfo, ChapterInfo, Paragraph};
 
 // ---------------------------------------------------------------------------
@@ -107,22 +107,6 @@ macro_rules! cache_first_stream {
     }};
 }
 
-/// Whether the book is currently shelved — the gate for all cache
-/// participation: books not on the bookshelf are served live, and nothing
-/// about them (info, chapters, paragraphs, covers) is persisted. A failed
-/// lookup fails closed.
-async fn shelved(db: &Db, feed_id: &str, book_id: &str) -> bool {
-    let (fid, bid) = (feed_id.to_owned(), book_id.to_owned());
-    db.call(move |repo| repo.is_shelved(&fid, &bid))
-        .await
-        .unwrap_or(false)
-}
-
-/// Budget for one cover download — connection, redirects, and the whole
-/// body. An elapsed budget surfaces as an ordinary reqwest timeout error and
-/// leaves the claim `pending` for the in-flight window to retry.
-const COVER_TIMEOUT: Duration = Duration::from_secs(30);
-
 /// A proxy feed that wraps any [`Feed`] and adds SQLite-backed caching for
 /// chapter lists, chapter content, and book info.
 ///
@@ -146,9 +130,9 @@ const COVER_TIMEOUT: Duration = Duration::from_secs(30);
 ///
 /// **Covers**: `cover_url` is always the *remote* URL; downloaded bytes live
 /// in the `covers` table and are fetched via `getCover`. Downloads run in
-/// background tasks; [`CacheRepo::claim_cover_download`] is the single
-/// decision point for whether a download is due (single-flight, failure
-/// backoff, drift repair).
+/// background tasks through the feed's own [`FeedClient`];
+/// [`CacheRepo::claim_cover_download`] is the single decision point for
+/// whether a download is due (single-flight, failure backoff, drift repair).
 pub struct CachedFeed<F: Feed> {
     inner: Arc<F>,
     db: Db,
@@ -168,6 +152,19 @@ impl<F: Feed> CachedFeed<F> {
     /// The shared database handle.
     pub fn db(&self) -> &Db {
         &self.db
+    }
+
+    /// Whether the book is currently shelved — the gate for all cache
+    /// participation: books not on the bookshelf are served live, and nothing
+    /// about them (info, chapters, paragraphs, covers) is persisted. A failed
+    /// lookup fails closed.
+    async fn shelved(&self, book_id: &str) -> bool {
+        let feed_id = self.inner.meta().id.clone();
+        let bid = book_id.to_owned();
+        self.db
+            .call(move |repo| repo.is_shelved(&feed_id, &bid))
+            .await
+            .unwrap_or(false)
     }
 
     /// Clear cached content for a specific chapter (force refresh).
@@ -202,7 +199,7 @@ impl<F: Feed> CachedFeed<F> {
         cache_first_stream!(
             feed_id,
             "chapter paragraphs",
-            gate: shelved(&db, &feed_id, &bid),
+            gate: self.shelved(&bid),
             cache_get: {
                 let (db, fid, b, c) = (db.clone(), feed_id.clone(), bid.clone(), cid.clone());
                 db.call(move |repo| {
@@ -245,7 +242,7 @@ impl<F: Feed> CachedFeed<F> {
         cache_first_stream!(
             feed_id,
             "chapter list",
-            gate: shelved(&db, &feed_id, &bid),
+            gate: self.shelved(&bid),
             cache_get: {
                 let (db, fid, b) = (db.clone(), feed_id.clone(), bid.clone());
                 db.call(move |repo| {
@@ -291,7 +288,7 @@ impl<F: Feed> CachedFeed<F> {
     /// Whenever a `cover_url` is known, a background download task is
     /// spawned; whether a download is *due* at all (single-flight, failure
     /// backoff, drift repair) is decided by the claim inside
-    /// [`download_cover`].
+    /// [`CoverDownloader::download`].
     pub async fn book_info_with_options(
         &self,
         book_id: &str,
@@ -304,7 +301,7 @@ impl<F: Feed> CachedFeed<F> {
         // Shelf gate: books not on the bookshelf bypass the cache in both
         // directions — nothing is read, nothing is persisted, and no cover
         // download is spawned.
-        if !shelved(&db, &feed_id, &bid).await {
+        if !self.shelved(&bid).await {
             return self.inner.book_info(&bid).await;
         }
 
@@ -324,7 +321,7 @@ impl<F: Feed> CachedFeed<F> {
                 Ok(Some(row)) => {
                     tracing::info!(feed_id = %feed_id, "book info cache hit");
                     if let Some(url) = row.cover_url.clone() {
-                        spawn_cover_download(db.clone(), feed_id, bid, url);
+                        self.spawn_cover_download(&bid, &url);
                     }
                     return Ok(row.into());
                 }
@@ -354,188 +351,196 @@ impl<F: Feed> CachedFeed<F> {
         }
 
         if let Some(url) = info.cover_url.clone() {
-            spawn_cover_download(db, feed_id, bid, url);
+            self.spawn_cover_download(&bid, &url);
         }
 
         Ok(info)
     }
+
+    /// Spawn a background task that downloads the book's cover through the
+    /// feed's own HTTP client — the same pool and `access_domains` policy as
+    /// its script requests. [`CoverDownloader::download`] claims the
+    /// download slot first and exits early when nothing is due.
+    fn spawn_cover_download(&self, book_id: &str, url: &str) {
+        let downloader = CoverDownloader::new(self.db.clone(), self.inner.http_client().clone());
+        let (feed_id, bid, url) = (
+            self.inner.meta().id.clone(),
+            book_id.to_owned(),
+            url.to_owned(),
+        );
+        tokio::spawn(async move {
+            downloader.download(feed_id, bid, url).await;
+        });
+    }
 }
 
-/// Spawn the cover download task for a book; [`download_cover`] claims the
-/// download slot first and exits early when nothing is due.
-fn spawn_cover_download(db: Db, feed_id: String, book_id: String, url: String) {
-    tokio::spawn(async move {
-        download_cover(db, feed_id, book_id, url).await;
-    });
-}
+// ---------------------------------------------------------------------------
+// CoverDownloader
+// ---------------------------------------------------------------------------
 
-/// Mark a book's cover as failed (7-day backoff before the next attempt).
-async fn mark_cover_failed(db: &Db, feed_id: &str, book_id: &str) {
-    let (fid, bid) = (feed_id.to_owned(), book_id.to_owned());
-    let _ = db
-        .write(move |repo| repo.mark_cover(&fid, &bid, CoverState::Failed, crate::db::now_ms()))
-        .await;
-}
+/// Budget for one cover download — connection, redirects, and the whole
+/// body. An elapsed budget surfaces as an ordinary reqwest timeout error and
+/// leaves the claim `pending` for the in-flight window to retry.
+const COVER_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// The feed's install-time `access_domains`, read from the registry for the
-/// cover gate. A missing feed row yields an empty set — which blocks.
-async fn feed_access_domains(db: &Db, feed_id: &str) -> Result<HashSet<String>> {
-    let fid = feed_id.to_owned();
-    db.call(move |repo| {
-        Ok(repo
-            .get_feed(&fid)?
-            .map(|row| row.access_domains.into_iter().collect())
-            .unwrap_or_default())
-    })
-    .await
-}
-
-/// Download a cover image into the `covers` table.
+/// Downloads cover images into the `covers` table through a feed's
+/// [`FeedClient`] — the same connection pool and `access_domains` policy as
+/// the feed's script requests.
 ///
 /// Guards:
 /// * **Shelf** — covers are only cached for shelved books; anything else
 ///   would persist data about a book the user never kept.
-/// * **Domain** — the feed's install-time `access_domains` gate the cover
-///   URL exactly like script requests, and every redirect hop of the
-///   download is re-checked against them.
+/// * **Domain** — the feed's `access_domains` gate the cover URL exactly
+///   like script requests, and every redirect hop of the download is
+///   re-checked against them.
 /// * **Timeout** — [`COVER_TIMEOUT`] bounds the whole request chain.
 /// * **Single-flight** — claims the download slot first; another task holding
 ///   a fresh `pending` claim (or a completed download) makes this a no-op.
 /// * **Content type** — must be `image/*` when reported.
-/// * **Size** — streams the body and aborts beyond
-///   [`crate::http::MAX_RESPONSE_BYTES`].
+/// * **Size** — [`FeedClient::execute`] caps the body.
 ///
 /// Failure semantics: network/transport errors leave the state `pending`
 /// (retryable after the 10-minute in-flight window); a response that fails
 /// the content checks is marked `failed` (7-day backoff). A blocked domain
 /// or redirect hop is skipped before any state change, so the download
 /// retries by itself once the feed's allowlist covers it.
-pub async fn download_cover(db: Db, feed_id: String, book_id: String, url: String) {
-    if !shelved(&db, &feed_id, &book_id).await {
-        tracing::debug!(feed_id = %feed_id, book_id = %book_id, "cover download skipped: book not shelved");
-        return;
+pub struct CoverDownloader {
+    db: Db,
+    /// The feed's own client — the same pool and `access_domains` policy as
+    /// its script requests.
+    client: FeedClient,
+}
+
+impl CoverDownloader {
+    pub fn new(db: Db, client: FeedClient) -> Self {
+        Self { db, client }
     }
 
-    // Covers follow the same access_domains contract as script requests; the
-    // feed row caches the install-time allowlist.
-    let domains = match feed_access_domains(&db, &feed_id).await {
-        Ok(domains) => domains,
-        Err(error) => {
-            tracing::warn!(feed_id = %feed_id, book_id = %book_id, error = %error, "cover allowlist unavailable");
+    /// Whether the book is currently shelved — covers are only cached for
+    /// shelved books. A failed lookup fails closed.
+    async fn shelved(&self, feed_id: &str, book_id: &str) -> bool {
+        let (fid, bid) = (feed_id.to_owned(), book_id.to_owned());
+        self.db
+            .call(move |repo| repo.is_shelved(&fid, &bid))
+            .await
+            .unwrap_or(false)
+    }
+
+    /// Mark a book's cover as failed (7-day backoff before the next attempt).
+    async fn mark_failed(&self, feed_id: &str, book_id: &str) {
+        let (fid, bid) = (feed_id.to_owned(), book_id.to_owned());
+        let _ = self
+            .db
+            .write(move |repo| repo.mark_cover(&fid, &bid, CoverState::Failed, crate::db::now_ms()))
+            .await;
+    }
+
+    /// Download a cover image into the `covers` table. Consumes `self`:
+    /// one downloader per background task.
+    pub async fn download(self, feed_id: String, book_id: String, url: String) {
+        if !self.shelved(&feed_id, &book_id).await {
+            tracing::debug!(feed_id = %feed_id, book_id = %book_id, "cover download skipped: book not shelved");
             return;
         }
-    };
-    if !crate::http::domain_allowed(&url, &domains) {
-        tracing::warn!(
-            feed_id = %feed_id,
-            book_id = %book_id,
-            url = %url,
-            "cover url outside access_domains; skipping download"
-        );
-        return;
-    }
 
-    let claimed = db
-        .call({
-            let (fid, bid) = (feed_id.clone(), book_id.clone());
-            move |repo| repo.claim_cover_download(&fid, &bid, crate::db::now_ms())
-        })
-        .await
-        .unwrap_or(false);
-    if !claimed {
-        tracing::debug!(feed_id = %feed_id, book_id = %book_id, "cover download already handled");
-        return;
-    }
-
-    // The cover's own feed client: redirect hops are re-checked against the
-    // same allowlist for the duration of the download.
-    let client = crate::http::new_feed_client(&domains);
-    let resp = match client.get(&url).timeout(COVER_TIMEOUT).send().await {
-        Ok(resp) => resp,
-        Err(e) => {
-            // Transient: leave `pending` so the in-flight window retries.
-            tracing::debug!(feed_id = %feed_id, book_id = %book_id, error = %e, "cover fetch failed");
+        // The feed's access_domains gate the cover URL exactly like script
+        // requests — checked before any state depends on the request.
+        if !self.client.allows(&url) {
+            tracing::warn!(
+                feed_id = %feed_id,
+                book_id = %book_id,
+                url = %url,
+                "cover url outside access_domains; skipping download"
+            );
             return;
         }
-    };
 
-    // A followable 3xx means the client's redirect policy stopped the chain
-    // on a hop outside the allowlist. Leave the claim `pending` — the
-    // download retries (and succeeds) once the feed's allowlist covers the
-    // hop.
-    if matches!(resp.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
-        tracing::warn!(
-            feed_id = %feed_id,
-            book_id = %book_id,
-            url = %url,
-            "cover redirect blocked by access_domains"
-        );
-        return;
-    }
+        let claimed = self
+            .db
+            .call({
+                let (fid, bid) = (feed_id.clone(), book_id.clone());
+                move |repo| repo.claim_cover_download(&fid, &bid, crate::db::now_ms())
+            })
+            .await
+            .unwrap_or(false);
+        if !claimed {
+            tracing::debug!(feed_id = %feed_id, book_id = %book_id, "cover download already handled");
+            return;
+        }
 
-    let content_type = resp
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v.split(';').next().unwrap_or(v).trim().to_owned());
-    if let Some(ct) = &content_type
-        && !ct.starts_with("image/")
-    {
-        tracing::debug!(feed_id = %feed_id, book_id = %book_id, content_type = %ct, "cover rejected: not an image");
-        mark_cover_failed(&db, &feed_id, &book_id).await;
-        return;
-    }
-    if let Some(len) = resp.content_length()
-        && len as usize > crate::http::MAX_RESPONSE_BYTES
-    {
-        tracing::debug!(feed_id = %feed_id, book_id = %book_id, length = len, "cover rejected: too large");
-        mark_cover_failed(&db, &feed_id, &book_id).await;
-        return;
-    }
-
-    // Stream the body with a hard cap so a lying server cannot exhaust memory.
-    let mut stream = resp.bytes_stream();
-    let mut buf: Vec<u8> = Vec::new();
-    let mut exceeded = false;
-    while let Some(chunk) = stream.next().await {
-        let chunk = match chunk {
-            Ok(chunk) => chunk,
+        let request = HttpRequest::get(url);
+        let resp = match self.client.execute(&feed_id, &request, COVER_TIMEOUT).await {
+            Ok(resp) => resp,
+            // A blocked initial URL cannot reach here (checked above), so
+            // this is a redirect hop outside the allowlist. Leave the claim
+            // `pending` — the download retries once the feed's allowlist
+            // covers the hop.
+            Err(crate::error::Error::Script(crate::error::ScriptError::DomainNotAllowed {
+                url: blocked,
+                ..
+            })) => {
+                tracing::warn!(
+                    feed_id = %feed_id,
+                    book_id = %book_id,
+                    url = %blocked,
+                    "cover redirect blocked by access_domains"
+                );
+                return;
+            }
+            // Not retryable: a cover that large will not shrink.
+            Err(crate::error::Error::Script(crate::error::ScriptError::ResponseTooLarge {
+                limit,
+            })) => {
+                tracing::debug!(feed_id = %feed_id, book_id = %book_id, limit, "cover rejected: too large");
+                self.mark_failed(&feed_id, &book_id).await;
+                return;
+            }
+            // Transient (timeout, transport): leave `pending` so the
+            // in-flight window retries.
             Err(e) => {
-                tracing::debug!(feed_id = %feed_id, book_id = %book_id, error = %e, "cover body read failed");
+                tracing::debug!(feed_id = %feed_id, book_id = %book_id, url = %request.url, error = %e, "cover fetch failed");
                 return;
             }
         };
-        buf.extend_from_slice(&chunk);
-        if buf.len() > crate::http::MAX_RESPONSE_BYTES {
-            exceeded = true;
-            break;
-        }
-    }
-    if exceeded {
-        tracing::debug!(feed_id = %feed_id, book_id = %book_id, "cover rejected: body exceeds cap");
-        mark_cover_failed(&db, &feed_id, &book_id).await;
-        return;
-    }
-    if buf.is_empty() {
-        tracing::debug!(feed_id = %feed_id, book_id = %book_id, "cover rejected: empty body");
-        mark_cover_failed(&db, &feed_id, &book_id).await;
-        return;
+
+        self.store(feed_id, book_id, resp).await;
     }
 
-    let mime = content_type.unwrap_or_else(|| "application/octet-stream".to_owned());
-    let byte_len = buf.len();
-    let result = db
-        .write({
-            let (fid, bid, mime, bytes) = (feed_id.clone(), book_id.clone(), mime, buf);
-            move |repo| repo.set_cover(&fid, &bid, &mime, &bytes, crate::db::now_ms())
-        })
-        .await;
-    match result {
-        Ok(()) => {
-            tracing::debug!(feed_id = %feed_id, book_id = %book_id, bytes = byte_len, "cover cached");
+    /// Validate the response and store it as the book's cover — the content
+    /// checks that mark the cover `failed` (7-day backoff) rather than
+    /// retryable.
+    async fn store(self, feed_id: String, book_id: String, resp: HttpResponse) {
+        let content_type = resp.content_type();
+        if let Some(ct) = content_type
+            .as_deref()
+            .filter(|ct| !ct.starts_with("image/"))
+        {
+            tracing::debug!(feed_id = %feed_id, book_id = %book_id, content_type = %ct, "cover rejected: not an image");
+            self.mark_failed(&feed_id, &book_id).await;
+            return;
         }
-        Err(e) => {
-            tracing::warn!(feed_id = %feed_id, book_id = %book_id, error = %e, "failed to store cover");
+        if resp.body.is_empty() {
+            tracing::debug!(feed_id = %feed_id, book_id = %book_id, "cover rejected: empty body");
+            self.mark_failed(&feed_id, &book_id).await;
+            return;
+        }
+
+        let mime = content_type.unwrap_or_else(|| "application/octet-stream".to_owned());
+        let byte_len = resp.body.len();
+        let result = self
+            .db
+            .write({
+                let (fid, bid, bytes) = (feed_id.clone(), book_id.clone(), resp.body.0);
+                move |repo| repo.set_cover(&fid, &bid, &mime, &bytes[..], crate::db::now_ms())
+            })
+            .await;
+        match result {
+            Ok(()) => {
+                tracing::debug!(feed_id = %feed_id, book_id = %book_id, bytes = byte_len, "cover cached");
+            }
+            Err(e) => {
+                tracing::warn!(feed_id = %feed_id, book_id = %book_id, error = %e, "failed to store cover");
+            }
         }
     }
 }
@@ -560,6 +565,10 @@ impl<F: Feed> Feed for CachedFeed<F> {
         chapter_id: &'a str,
     ) -> FeedStream<'a, Paragraph> {
         self.cached_paragraphs(book_id, chapter_id)
+    }
+
+    fn http_client(&self) -> &FeedClient {
+        self.inner.http_client()
     }
 
     fn meta(&self) -> &FeedMeta {
@@ -603,11 +612,12 @@ mod tests {
 
     use tokio_stream::StreamExt;
 
-    use super::{CachedFeed, download_cover};
+    use super::{CachedFeed, CoverDownloader};
     use crate::db::Db;
     use crate::db::repo::BookRow;
     use crate::error::Result;
     use crate::feed::{Feed, FeedMeta, FeedStream};
+    use crate::http::FeedClient;
     use crate::model::{BookInfo, ChapterInfo, Paragraph, ParagraphId, SearchResult};
 
     #[test]
@@ -634,6 +644,7 @@ mod tests {
 
     struct FakeFeed {
         meta: FeedMeta,
+        client: FeedClient,
         info_fetches: AtomicUsize,
         chapter_fetches: AtomicUsize,
         paragraph_fetches: AtomicUsize,
@@ -642,6 +653,7 @@ mod tests {
     impl FakeFeed {
         fn new(access_domains: HashSet<String>) -> Self {
             Self {
+                client: FeedClient::new(&access_domains),
                 meta: FeedMeta {
                     id: "fake".to_owned(),
                     name: "Fake".to_owned(),
@@ -702,6 +714,10 @@ mod tests {
 
         fn meta(&self) -> &FeedMeta {
             &self.meta
+        }
+
+        fn http_client(&self) -> &FeedClient {
+            &self.client
         }
     }
 
@@ -810,16 +826,16 @@ mod tests {
             .expect(0)
             .create_async()
             .await;
-        let (db, _inner, _cached) = setup_feed(HashSet::from(["127.0.0.1".to_owned()])).await;
+        let (db, inner, _cached) = setup_feed(HashSet::from(["127.0.0.1".to_owned()])).await;
 
         // Not shelved: skipped before any HTTP request or state change.
-        download_cover(
-            db.clone(),
-            "fake".to_owned(),
-            "b1".to_owned(),
-            format!("{}/cover", server.url()),
-        )
-        .await;
+        CoverDownloader::new(db.clone(), inner.http_client().clone())
+            .download(
+                "fake".to_owned(),
+                "b1".to_owned(),
+                format!("{}/cover", server.url()),
+            )
+            .await;
 
         let stored = db
             .call(|repo| repo.get_cover_bytes("fake", "b1"))
@@ -834,16 +850,16 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let cover = server.mock("GET", "/cover").expect(0).create_async().await;
         // The allowlist deliberately does not cover the mock server's host.
-        let (db, _inner, _cached) = setup_feed(HashSet::from(["allowed.example".to_owned()])).await;
+        let (db, inner, _cached) = setup_feed(HashSet::from(["allowed.example".to_owned()])).await;
         shelve(&db, "b1").await;
 
-        download_cover(
-            db.clone(),
-            "fake".to_owned(),
-            "b1".to_owned(),
-            format!("{}/cover", server.url()),
-        )
-        .await;
+        CoverDownloader::new(db.clone(), inner.http_client().clone())
+            .download(
+                "fake".to_owned(),
+                "b1".to_owned(),
+                format!("{}/cover", server.url()),
+            )
+            .await;
 
         // Skipped before the claim: no bytes, and the download slot stays
         // free for a retry once the allowlist covers the host.
@@ -875,16 +891,16 @@ mod tests {
             .expect(1)
             .create_async()
             .await;
-        let (db, _inner, _cached) = setup_feed(HashSet::from(["127.0.0.1".to_owned()])).await;
+        let (db, inner, _cached) = setup_feed(HashSet::from(["127.0.0.1".to_owned()])).await;
         shelve(&db, "b1").await;
 
-        download_cover(
-            db.clone(),
-            "fake".to_owned(),
-            "b1".to_owned(),
-            format!("{}/cover", server.url()),
-        )
-        .await;
+        CoverDownloader::new(db.clone(), inner.http_client().clone())
+            .download(
+                "fake".to_owned(),
+                "b1".to_owned(),
+                format!("{}/cover", server.url()),
+            )
+            .await;
 
         let (mime, bytes) = db
             .call(|repo| repo.get_cover_bytes("fake", "b1"))
@@ -895,13 +911,13 @@ mod tests {
         assert_eq!(bytes, body);
 
         // Single-flight: a completed download is a no-op, not a re-download.
-        download_cover(
-            db.clone(),
-            "fake".to_owned(),
-            "b1".to_owned(),
-            format!("{}/cover", server.url()),
-        )
-        .await;
+        CoverDownloader::new(db.clone(), inner.http_client().clone())
+            .download(
+                "fake".to_owned(),
+                "b1".to_owned(),
+                format!("{}/cover", server.url()),
+            )
+            .await;
         cover.assert_async().await;
     }
 
@@ -915,16 +931,16 @@ mod tests {
             .expect(1)
             .create_async()
             .await;
-        let (db, _inner, _cached) = setup_feed(HashSet::from(["127.0.0.1".to_owned()])).await;
+        let (db, inner, _cached) = setup_feed(HashSet::from(["127.0.0.1".to_owned()])).await;
         shelve(&db, "b1").await;
 
-        download_cover(
-            db.clone(),
-            "fake".to_owned(),
-            "b1".to_owned(),
-            format!("{}/cover", server.url()),
-        )
-        .await;
+        CoverDownloader::new(db.clone(), inner.http_client().clone())
+            .download(
+                "fake".to_owned(),
+                "b1".to_owned(),
+                format!("{}/cover", server.url()),
+            )
+            .await;
 
         // No bytes stored, and the claim stays pending for the in-flight
         // window — a fresh claim right now must be refused.

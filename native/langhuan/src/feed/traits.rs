@@ -4,6 +4,7 @@ use tokio_stream::Stream;
 
 use super::meta::FeedMeta;
 use crate::error::Result;
+use crate::http::FeedClient;
 use crate::model::{BookInfo, ChapterInfo, Paragraph, SearchResult};
 
 /// A pinned, boxed, `Send`-able stream of `Result<T>`.
@@ -41,6 +42,12 @@ pub trait Feed: Send + Sync {
     /// automatically following pagination.
     fn paragraphs<'a>(&'a self, book_id: &'a str, chapter_id: &'a str)
     -> FeedStream<'a, Paragraph>;
+
+    /// The HTTP client this feed makes requests through — gated by its own
+    /// `access_domains`, redirect hops included. Everything downloading on
+    /// the feed's behalf (script requests, cover downloads) shares this one
+    /// client, so a feed's network behavior is defined in exactly one place.
+    fn http_client(&self) -> &FeedClient;
 
     /// The metadata of this feed (id, name, version, etc.).
     fn meta(&self) -> &FeedMeta;

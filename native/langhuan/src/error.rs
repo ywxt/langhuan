@@ -330,7 +330,7 @@ mod tests {
     /// which should be considered retryable.
     #[tokio::test]
     async fn connect_error_is_retryable() {
-        let result = crate::http::new_client()
+        let result = crate::http::ungated_client()
             .get("http://127.0.0.1:0/")
             .send()
             .await;

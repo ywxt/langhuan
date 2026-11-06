@@ -1,15 +1,17 @@
-//! Utilities for downloading feed scripts from a remote URL.
+//! Downloading feed scripts from remote URLs.
 
 use std::time::Duration;
 
+use reqwest::Client;
+
 use crate::error::{Error, Result};
-use crate::http::new_client;
+use crate::http::ungated_client;
 
 /// Total budget for one script download: connection, request, and body.
 ///
-/// Unlike sandboxed feed requests — where [`crate::http::execute`] takes a
-/// caller-supplied budget — a script download is always user-facing, so the
-/// budget is fixed here.
+/// Unlike sandboxed feed requests — where
+/// [`crate::http::FeedClient::execute`] takes a caller-supplied budget — a
+/// script download is always user-facing, so the budget is fixed here.
 pub const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Upper bound on a downloaded feed script.
@@ -21,56 +23,76 @@ pub const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30);
 /// auditing — an unbounded download would become an unbounded UI payload.
 pub const MAX_SCRIPT_BYTES: usize = 2 * 1024 * 1024;
 
-/// Download a JavaScript feed from `url` and return its content as a string.
+/// Downloads feed scripts from remote URLs.
 ///
-/// Builds a free-following cookie-free client for the download: at this
-/// point no feed is installed yet, so there is no `access_domains` set to
-/// gate the URL or its redirects. The caller is responsible for validating
-/// the returned content by passing it to
-/// [`crate::script::meta::parse_meta`].
-///
-/// # Errors
-/// - [`crate::error::Error::Http`] if the request fails or the server returns
-///   a non-2xx status (including an elapsed [`DOWNLOAD_TIMEOUT`] budget).
-/// - [`Error::Script`] with [`crate::error::ScriptError::TooLarge`] if the
-///   script exceeds [`MAX_SCRIPT_BYTES`].
-pub async fn download_script(url: &str) -> Result<String> {
-    download_script_with_budget(url, DOWNLOAD_TIMEOUT).await
+/// Owns a free-following client: at download time no feed is installed yet,
+/// so there is no `access_domains` set to gate the URL or its redirects —
+/// everything feed-scoped goes through [`crate::http::FeedClient`] instead.
+pub struct ScriptDownloader {
+    client: Client,
 }
 
-/// Budgeted download core (tests pass a tight budget to keep stalls fast).
-async fn download_script_with_budget(url: &str, timeout: Duration) -> Result<String> {
-    tracing::debug!(url = %url, "downloading feed script");
-    let client = new_client();
-    let mut response = client
-        .get(url)
-        .timeout(timeout)
-        .send()
-        .await?
-        .error_for_status()?;
-
-    // A declared length lets oversized scripts be rejected before their
-    // body is read at all.
-    if response
-        .content_length()
-        .is_some_and(|len| len as usize > MAX_SCRIPT_BYTES)
-    {
-        tracing::warn!(url = %url, "feed script exceeds size cap");
-        return Err(Error::script_too_large(MAX_SCRIPT_BYTES));
+impl ScriptDownloader {
+    pub fn new() -> Self {
+        Self {
+            client: ungated_client(),
+        }
     }
 
-    let mut body: Vec<u8> = Vec::new();
-    while let Some(chunk) = response.chunk().await? {
-        if body.len() + chunk.len() > MAX_SCRIPT_BYTES {
-            tracing::warn!(url = %url, "feed script exceeds size cap mid-stream");
+    /// Download a JavaScript feed from `url` and return its content as a
+    /// string. The caller is responsible for validating the returned content
+    /// by passing it to [`crate::script::meta::parse_meta`].
+    ///
+    /// # Errors
+    /// - [`crate::error::Error::Http`] if the request fails or the server
+    ///   returns a non-2xx status (including an elapsed [`DOWNLOAD_TIMEOUT`]
+    ///   budget).
+    /// - [`Error::Script`] with [`crate::error::ScriptError::TooLarge`] if
+    ///   the script exceeds [`MAX_SCRIPT_BYTES`].
+    pub async fn download(&self, url: &str) -> Result<String> {
+        self.download_with_budget(url, DOWNLOAD_TIMEOUT).await
+    }
+
+    /// Budgeted core (tests pass a tight budget to keep stalls fast).
+    async fn download_with_budget(&self, url: &str, timeout: Duration) -> Result<String> {
+        tracing::debug!(url = %url, "downloading feed script");
+        let mut response = self
+            .client
+            .get(url)
+            .timeout(timeout)
+            .send()
+            .await?
+            .error_for_status()?;
+
+        // A declared length lets oversized scripts be rejected before their
+        // body is read at all.
+        if response
+            .content_length()
+            .is_some_and(|len| len as usize > MAX_SCRIPT_BYTES)
+        {
+            tracing::warn!(url = %url, "feed script exceeds size cap");
             return Err(Error::script_too_large(MAX_SCRIPT_BYTES));
         }
-        body.extend_from_slice(&chunk);
-    }
 
-    tracing::info!(url = %url, content_len = body.len(), "feed script downloaded");
-    // Lossy decode matches reqwest's `text()` semantics.
-    Ok(String::from_utf8_lossy(&body).into_owned())
+        let mut body: Vec<u8> = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            if body.len() + chunk.len() > MAX_SCRIPT_BYTES {
+                tracing::warn!(url = %url, "feed script exceeds size cap mid-stream");
+                return Err(Error::script_too_large(MAX_SCRIPT_BYTES));
+            }
+            body.extend_from_slice(&chunk);
+        }
+
+        tracing::info!(url = %url, content_len = body.len(), "feed script downloaded");
+        // Lossy decode matches reqwest's `text()` semantics.
+        Ok(String::from_utf8_lossy(&body).into_owned())
+    }
+}
+
+impl Default for ScriptDownloader {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -107,7 +129,10 @@ mod tests {
     #[tokio::test]
     async fn downloads_a_small_script() {
         let url = serve_once("HTTP/1.1 200 OK\r\n\r\n// ==Feed==\n".to_owned());
-        let content = download_script(&url).await.expect("small script downloads");
+        let content = ScriptDownloader::new()
+            .download(&url)
+            .await
+            .expect("small script downloads");
         assert_eq!(content, "// ==Feed==\n");
     }
 
@@ -117,7 +142,8 @@ mod tests {
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
             10 * MAX_SCRIPT_BYTES
         ));
-        let error = download_script(&url)
+        let error = ScriptDownloader::new()
+            .download(&url)
             .await
             .expect_err("an oversized script must be rejected");
         assert!(
@@ -134,7 +160,8 @@ mod tests {
         // No Content-Length: the cap has to hold while streaming.
         let body = "a".repeat(MAX_SCRIPT_BYTES + 1);
         let url = serve_once(format!("HTTP/1.1 200 OK\r\n\r\n{body}"));
-        let error = download_script(&url)
+        let error = ScriptDownloader::new()
+            .download(&url)
             .await
             .expect_err("a streamed oversize must be rejected");
         assert!(
@@ -158,12 +185,10 @@ mod tests {
         });
 
         let start = Instant::now();
-        let error = download_script_with_budget(
-            &format!("http://{addr}/stall"),
-            Duration::from_millis(300),
-        )
-        .await
-        .expect_err("a stalled server must trip the download budget");
+        let error = ScriptDownloader::new()
+            .download_with_budget(&format!("http://{addr}/stall"), Duration::from_millis(300))
+            .await
+            .expect_err("a stalled server must trip the download budget");
         assert!(
             matches!(error, Error::Http(ref e) if e.is_timeout()),
             "not a timeout error: {error}"

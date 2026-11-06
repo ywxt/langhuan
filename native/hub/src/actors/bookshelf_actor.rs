@@ -1,14 +1,16 @@
 use async_trait::async_trait;
-use langhuan::cache::download_cover;
+use langhuan::cache::CoverDownloader;
 use langhuan::db::Db;
 use langhuan::db::repo::ShelfItem;
-use messages::prelude::{Actor, Context, Handler};
+use langhuan::feed::Feed;
+use messages::prelude::{Actor, Address, Context, Handler};
 
 use crate::api::types::{
     BookshelfAddOutcome, BookshelfListItem, BookshelfRemoveOutcome, BridgeError,
 };
 
 use super::app_data_actor::InitializeAppDataDirectory;
+use super::registry_actor::{GetFeed, RegistryActor};
 
 // ---------------------------------------------------------------------------
 // FRB-facing messages
@@ -48,13 +50,19 @@ pub struct BookshelfMarkSeen {
 
 pub struct BookshelfActor {
     db: Option<Db>,
+    /// Supplies the feed instance a cover download runs through — the feed's
+    /// own HTTP client, not a private one.
+    registry_addr: Address<RegistryActor>,
 }
 
 impl Actor for BookshelfActor {}
 
 impl BookshelfActor {
-    pub fn new() -> Self {
-        Self { db: None }
+    pub fn new(registry_addr: Address<RegistryActor>) -> Self {
+        Self {
+            db: None,
+            registry_addr,
+        }
     }
 
     fn db(&self) -> Result<&Db, BridgeError> {
@@ -91,11 +99,40 @@ impl BookshelfActor {
             })
             .await?;
 
-        // Whether the download actually runs is decided by the claim inside
-        // `download_cover` (single-flight, failure backoff, drift repair) —
-        // spawning here is always safe.
+        // The cover download runs through the book's own feed client — the
+        // same connection pool and `access_domains` policy as its script
+        // requests. The feed is resolved *inside* the spawned task: the
+        // registry's mailbox is bounded, and an add must never queue behind
+        // it (nor hold this actor's mailbox while waiting). When the feed
+        // cannot be resolved right now, the download is deferred, not
+        // failed — the `book_info` drift repair re-spawns it on the next
+        // shelved detail fetch once the feed is healthy again. Whether a
+        // download actually runs is decided by the claim inside
+        // `CoverDownloader::download` (single-flight, failure backoff,
+        // drift repair) — spawning here is always safe.
         if let Some(url) = spawn_url {
-            tokio::spawn(download_cover(db, feed_id, book_id, url));
+            let mut registry_addr = self.registry_addr.clone();
+            tokio::spawn(async move {
+                let client = match registry_addr
+                    .send(GetFeed {
+                        feed_id: feed_id.clone(),
+                    })
+                    .await
+                {
+                    Ok(Ok(feed)) => feed.http_client().clone(),
+                    Ok(Err(e)) => {
+                        tracing::warn!(feed_id = %feed_id, error = %e, "cover download deferred: feed unavailable");
+                        return;
+                    }
+                    Err(e) => {
+                        tracing::warn!(feed_id = %feed_id, error = %e, "cover download deferred: registry unreachable");
+                        return;
+                    }
+                };
+                CoverDownloader::new(db, client)
+                    .download(feed_id, book_id, url)
+                    .await;
+            });
         }
 
         Ok(if added {
@@ -261,7 +298,13 @@ mod tests {
 
         let context: Context<BookshelfActor> = Context::new();
         let _addr = context.address();
-        let mut actor = BookshelfActor::new();
+        // A registry context nobody runs: its mailbox accepts messages but
+        // nothing ever replies, so an add that waited on the registry inline
+        // would hang forever — exactly what the cover test below guards
+        // against. Keeping the context alive (instead of a dropped one)
+        // makes the send block rather than error out.
+        let registry_context: Context<RegistryActor> = Context::new();
+        let mut actor = BookshelfActor::new(registry_context.address());
         actor
             .handle(
                 InitializeAppDataDirectory { db: db.clone() },
@@ -299,13 +342,45 @@ mod tests {
             .map_err(|e| std::io::Error::other(e.message))?;
         assert!(matches!(again, BookshelfAddOutcome::AlreadyExists));
 
+        // A cover URL must not tie the add to the registry: the feed is
+        // resolved inside the spawned download task, and this add (against
+        // a registry that will never reply) must return promptly — under
+        // the inline-round-trip version it hangs.
+        let with_cover = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            actor.add(BookshelfAdd {
+                feed_id: "f1".to_owned(),
+                source_book_id: "b2".to_owned(),
+                title: "Book Two".to_owned(),
+                author: "Author".to_owned(),
+                cover_url: Some("https://example.com/cover".to_owned()),
+                description: None,
+            }),
+        )
+        .await
+        .expect("add must not wait on the registry")
+        .map_err(|e| std::io::Error::other(e.message))?;
+        assert!(matches!(with_cover, BookshelfAddOutcome::Added));
+
         let items = actor
             .list()
             .await
             .map_err(|e| std::io::Error::other(e.message))?;
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].title, "Book One");
-        assert_eq!(items[0].description_snapshot.as_deref(), Some("Newer desc"));
+        assert_eq!(items.len(), 2);
+        // The shelf sorts newest-first; find by id so the assertion does not
+        // depend on the same-millisecond ordering tiebreak.
+        let b1 = items
+            .iter()
+            .find(|i| i.source_book_id == "b1")
+            .expect("b1 shelved");
+        assert_eq!(b1.title, "Book One");
+        assert_eq!(b1.description_snapshot.as_deref(), Some("Newer desc"));
+        let b2 = items
+            .iter()
+            .find(|i| i.source_book_id == "b2")
+            .expect("b2 shelved");
+        assert_eq!(b2.title, "Book Two");
+        assert_eq!(b2.cover_url.as_deref(), Some("https://example.com/cover"));
 
         let removed = actor
             .remove(BookshelfRemove {

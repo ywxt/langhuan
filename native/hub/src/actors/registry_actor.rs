@@ -17,6 +17,7 @@ use langhuan::db::repo::FeedRow;
 use langhuan::feed::FeedMeta;
 use langhuan::script::feed::ScriptFeed;
 use langhuan::script::runtime::ScriptEngine;
+use langhuan::script::source::ScriptDownloader;
 use messages::prelude::{Actor, Address, Context, Handler};
 
 use crate::api::types::{
@@ -152,6 +153,9 @@ struct PendingInstall {
 pub struct RegistryActor {
     engine: ScriptEngine,
     webview_addr: Address<WebviewActor>,
+    /// Downloads feed scripts for URL previews — no feed is installed yet,
+    /// so the client is ungated (see [`ScriptDownloader`]).
+    script_downloader: ScriptDownloader,
     db: Option<Db>,
     /// Successfully compiled feeds, keyed by feed id.
     feeds: HashMap<String, Arc<ScriptFeed>>,
@@ -170,6 +174,7 @@ impl RegistryActor {
         Self {
             engine,
             webview_addr,
+            script_downloader: ScriptDownloader::new(),
             db: None,
             feeds: HashMap::new(),
             load_errors: HashMap::new(),
@@ -261,7 +266,7 @@ impl RegistryActor {
 
     async fn do_preview_from_url(&mut self, url: String) -> Result<FeedPreviewInfo, BridgeError> {
         tracing::debug!(url = %url, "preview feed from url");
-        let content = langhuan::script::source::download_script(&url).await?;
+        let content = self.script_downloader.download(&url).await?;
         self.do_preview(content, Some(url)).await
     }
 

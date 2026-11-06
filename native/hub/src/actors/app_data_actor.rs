@@ -189,7 +189,9 @@ mod tests {
 
         let registry_actor = RegistryActor::new(ScriptEngine::new(), webview_addr);
         let login_actor = LoginActor::new(registry_addr.clone());
-        let bookshelf_actor = BookshelfActor::new();
+        // Tests never resolve a feed through the registry (covers use
+        // `cover_url: None`), so an address nothing runs is enough.
+        let bookshelf_actor = BookshelfActor::new(Context::<RegistryActor>::new().address());
         let reading_progress_actor = ReadingProgressActor::new();
         let bookmark_actor = BookmarkActor::new();
         let app_data_actor = AppDataActor::new(

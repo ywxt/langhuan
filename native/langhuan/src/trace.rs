@@ -1,7 +1,7 @@
 //! HTTP tracing for the developer tools.
 //!
 //! This module is the recording side of the app's debug environment; the
-//! only hook into the production path is [`crate::http::execute`], which
+//! only hook into the production path is [`crate::http::FeedClient::execute`], which
 //! checks [`active`] once per request and, when a recorder is attached,
 //! reports the request's outcome through it. Production code never sets
 //! the task-local, so outside a debug run the hook costs one task-local
@@ -55,7 +55,7 @@ pub struct TraceEntry {
     pub status: Option<u16>,
     /// Request headers as sent, with sensitive values masked.
     pub request_headers: Vec<(String, String)>,
-    /// Time from the start of [`crate::http::execute`] to the recorded
+    /// Time from the start of [`crate::http::FeedClient::execute`] to the recorded
     /// outcome.
     pub elapsed_ms: u64,
     /// Response body size in bytes; `None` when no body was received.
@@ -231,7 +231,7 @@ impl TraceRecorder {
     }
 
     /// Run `fut` with this recorder active for the current task. Every
-    /// [`crate::http::execute`] call made inside it — at any await depth,
+    /// [`crate::http::FeedClient::execute`] call made inside it — at any await depth,
     /// within the same task — is recorded here. Requests made by other
     /// tasks (e.g. the production pipeline) are unaffected.
     pub async fn scope<F: Future>(&self, fut: F) -> F::Output {
@@ -312,7 +312,7 @@ mod tests {
     use super::{
         TRACE_BODY_BUDGET_BYTES, TRACE_ENTRY_LIMIT, TraceEntry, TraceRecorder, mask_request_headers,
     };
-    use crate::http::{HttpRequest, execute, new_client};
+    use crate::http::{FeedClient, HttpRequest};
 
     /// Masking keeps cookie names and auth schemes, hides the secrets.
     #[test]
@@ -357,13 +357,7 @@ mod tests {
         // The request is blocked by `access_domains` before any network I/O,
         // so the budget value never elapses; it just satisfies the signature.
         let result = recorder
-            .scope(execute(
-                &new_client(),
-                "feed",
-                &domains,
-                &req,
-                Duration::from_secs(30),
-            ))
+            .scope(FeedClient::new(&domains).execute("feed", &req, Duration::from_secs(30)))
             .await;
 
         assert!(result.is_err());

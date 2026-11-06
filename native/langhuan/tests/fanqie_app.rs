@@ -20,7 +20,7 @@ use langhuan::feed::{Feed, SharedStorageHandler, StorageHandler};
 use langhuan::script::runtime::ScriptEngine;
 use mockito::ServerGuard;
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write as _;
 use std::sync::{Arc, Mutex};
 use tokio_stream::StreamExt as _;
@@ -1017,19 +1017,30 @@ async fn live_vip_chapter_decrypts_anonymously() {
         .expect("live search yielded an error");
     assert!(!books.is_empty(), "no search results to probe");
 
-    let client = langhuan::http::new_client();
+    // A gated client over the same domain the script itself uses — the probe
+    // goes through the production request path, allowlist included.
+    let client = langhuan::http::FeedClient::new(&HashSet::from(["fanqienovel.com".to_owned()]));
     for book in books.iter().take(5) {
-        let response = client
-            .get(format!(
+        let request = langhuan::http::HttpRequest {
+            url: format!(
                 "https://fanqienovel.com/api/reader/directory/detail?bookId={}",
                 book.id
-            ))
-            .header("User-Agent", BROWSER_UA)
-            .send()
+            ),
+            method: "GET".to_owned(),
+            headers: vec![("User-Agent".to_owned(), BROWSER_UA.to_owned())],
+            body: None,
+        };
+        let response = client
+            .execute(
+                "fanqie-live-probe",
+                &request,
+                std::time::Duration::from_secs(30),
+            )
             .await
             .expect("web directory request");
-        let text = response.text().await.expect("web directory text");
-        let directory: Value = serde_json::from_str(&text).expect("web directory json");
+        let directory: Value =
+            serde_json::from_str(response.body.as_str().expect("web directory text"))
+                .expect("web directory json");
         let volumes = directory["data"]["chapterListWithVolume"]
             .as_array()
             .cloned()
@@ -1063,16 +1074,25 @@ async fn live_vip_chapter_decrypts_anonymously() {
 
         // Confirm the web route really gates this chapter (SVIP wall marker
         // in the server-rendered reader page).
+        let page_request = langhuan::http::HttpRequest {
+            url: format!("https://fanqienovel.com/reader/{chapter_id}"),
+            method: "GET".to_owned(),
+            headers: vec![("User-Agent".to_owned(), BROWSER_UA.to_owned())],
+            body: None,
+        };
         let page = client
-            .get(format!("https://fanqienovel.com/reader/{chapter_id}"))
-            .header("User-Agent", BROWSER_UA)
-            .send()
+            .execute(
+                "fanqie-live-probe",
+                &page_request,
+                std::time::Duration::from_secs(30),
+            )
             .await
-            .expect("web reader page request")
-            .text()
-            .await
-            .expect("web reader page text");
-        let web_gated = page.contains("muye-to-vip-login");
+            .expect("web reader page request");
+        let web_gated = page
+            .body
+            .as_str()
+            .expect("web reader page text")
+            .contains("muye-to-vip-login");
         eprintln!("web reader page gates this chapter: {web_gated}");
         assert!(web_gated, "expected the web route to gate this chapter");
 

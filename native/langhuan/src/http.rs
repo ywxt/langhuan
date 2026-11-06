@@ -1,8 +1,10 @@
 //! HTTP types and execution for Langhuan feed scripts.
 //!
-//! This module owns the [`HttpRequest`], [`HttpResponse`], and [`HttpBody`]
-//! data types as well as the runtime helpers that execute requests and convert
-//! them to/from sandboxed JavaScript values.
+//! This module owns the [`FeedClient`] — the per-feed HTTP client that
+//! enforces a feed's `access_domains` on requests and redirect hops — plus
+//! the [`HttpRequest`], [`HttpResponse`], and [`HttpBody`] data types it
+//! exchanges and the helpers that convert them to/from sandboxed JavaScript
+//! values.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -18,104 +20,333 @@ use tokio_stream::StreamExt;
 use crate::error::Result;
 
 // ---------------------------------------------------------------------------
-// Client construction
-// ---------------------------------------------------------------------------
-
-/// Build a free-following cookie-free HTTP client.
-///
-/// TLS is verified against the Mozilla root set compiled into the binary on
-/// every platform. reqwest's default root source — `rustls-platform-verifier`
-/// — reads the platform trust store instead, which on Android drags in JNI
-/// glue: the crate's `jni` feature, an exported JNI symbol in `hub`, and a
-/// manual initialization call from `MainActivity`. Bundled roots keep the
-/// whole TLS stack pure Rust with zero platform integration. The tradeoff:
-/// user-installed CA certificates (proxy or enterprise) are not trusted.
-///
-/// Redirects are followed without a domain check — this client is for
-/// downloads that have no allowlist yet (feed scripts) and for tests; feed
-/// requests and covers go through [`new_feed_client`] instead.
-pub fn new_client() -> Client {
-    Client::builder()
-        .tls_backend_preconfigured(build_tls_config())
-        .redirect(redirect_policy(None))
-        .build()
-        .expect("failed to build HTTP client")
-}
-
-/// The HTTP client belonging to one feed.
-///
-/// Unlike the free-following [`new_client`], every redirect hop of a request
-/// made through this client is re-checked against the feed's
-/// `access_domains`: a hop outside them stops the chain and surfaces as the
-/// 3xx response, which [`execute`] maps to a domain-not-allowed error. Each
-/// feed owns its client, so no cross-feed state (task-locals, globals) is
-/// involved.
-pub fn new_feed_client(access_domains: &HashSet<String>) -> Client {
-    Client::builder()
-        .tls_backend_preconfigured(build_tls_config())
-        .redirect(redirect_policy(Some(Arc::new(access_domains.clone()))))
-        .build()
-        .expect("failed to build HTTP client")
-}
-
-/// The preconfigured rustls backend shared by every client built here.
-fn build_tls_config() -> rustls::ClientConfig {
-    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
-    let roots = rustls::RootCertStore {
-        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
-    };
-    let mut tls = rustls::ClientConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions()
-        .expect("safe default TLS protocol versions")
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-    // reqwest never touches a preconfigured TLS config, so ALPN must be set
-    // here for HTTP/2 to remain negotiable.
-    tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-    tls
-}
-
-// ---------------------------------------------------------------------------
-// Redirect policy
+// FeedClient
 // ---------------------------------------------------------------------------
 
 /// Redirect hops followed per request — reqwest's `Policy::limited` default,
 /// restated because custom policies do not inherit it.
 const MAX_REDIRECTS: usize = 10;
 
-/// The redirect policy installed on every client built here.
+/// Upper bound for an HTTP response body buffered for a feed script.
 ///
-/// `allowlist` bounds the redirect hops: a hop outside it is stopped and
-/// returned as the 3xx response, which the caller maps to a domain error.
-/// `None` follows hops without a domain check, exactly like the reqwest
-/// default (feed script downloads, tests). The hop cap applies to both, and
-/// sensitive header stripping across hosts is unaffected.
-fn redirect_policy(allowlist: Option<Arc<HashSet<String>>>) -> reqwest::redirect::Policy {
-    reqwest::redirect::Policy::custom(move |attempt| {
-        // Restate the default hop cap custom policies don't inherit.
-        if attempt.previous().len() > MAX_REDIRECTS {
-            return attempt.error("too many redirects");
-        }
-        match &allowlist {
-            Some(allowlist) if !domain_allowed(attempt.url().as_str(), allowlist) => attempt.stop(),
-            _ => attempt.follow(),
-        }
-    })
+/// Script responses are handed to the sandbox as one `Uint8Array`, so a
+/// runaway page (or a lying content-length) must not be buffered in full.
+const MAX_RESPONSE_BYTES: usize = 5 * 1024 * 1024;
+
+/// Why a size-capped body read failed.
+enum BodyReadError {
+    Transport(reqwest::Error),
+    TooLarge,
 }
 
-/// The absolute target of a followable 3xx response — the `Location` header
-/// resolved against the response URL. `None` when the response carries none,
-/// in which case reqwest hands it through as a terminal response.
-fn redirect_target(response: &reqwest::Response) -> Option<String> {
-    let location = response
-        .headers()
-        .get(reqwest::header::LOCATION)?
-        .to_str()
-        .ok()?;
-    let resolved = reqwest::Url::parse(location)
-        .or_else(|_| response.url().join(location))
-        .ok()?;
-    Some(resolved.to_string())
+/// The HTTP client belonging to one feed.
+///
+/// Wraps the transport and the feed's `access_domains` policy in one value:
+/// the initial URL and every redirect hop of each request must stay inside
+/// the allowlist, and response bodies are capped at
+/// [`MAX_RESPONSE_BYTES`]. A hop outside the allowlist stops the chain and
+/// surfaces from [`FeedClient::execute`] as a domain-not-allowed error.
+///
+/// Cloning shares the underlying connection pool. Every consumer of a
+/// feed's network access — script requests, cover downloads — shares one
+/// instance, so a feed's HTTP behavior is defined in exactly one place.
+#[derive(Clone)]
+pub struct FeedClient {
+    client: Client,
+    access_domains: Arc<HashSet<String>>,
+}
+
+impl FeedClient {
+    /// Build the client for a feed with the given `access_domains`.
+    pub fn new(access_domains: &HashSet<String>) -> Self {
+        let access_domains = Arc::new(access_domains.clone());
+        Self {
+            client: Client::builder()
+                .tls_backend_preconfigured(Self::tls_config())
+                .redirect(Self::redirect_policy(Some(Arc::clone(&access_domains))))
+                .build()
+                .expect("failed to build HTTP client"),
+            access_domains,
+        }
+    }
+
+    /// The allowlist this client enforces.
+    pub fn access_domains(&self) -> &HashSet<String> {
+        &self.access_domains
+    }
+
+    /// Whether a URL's host is inside the allowlist — the gate a caller
+    /// applies *before* any state depends on the request.
+    pub fn allows(&self, url: &str) -> bool {
+        domain_allowed(url, &self.access_domains)
+    }
+
+    /// Execute an HTTP request described by an [`HttpRequest`] and return an
+    /// [`HttpResponse`].
+    ///
+    /// `feed_id` labels the request for tracing and errors. The initial URL
+    /// must be inside the feed's `access_domains`, redirect hops are
+    /// re-checked against the same allowlist, and the response body is
+    /// refused beyond [`MAX_RESPONSE_BYTES`].
+    ///
+    /// `timeout` is the total budget for the attempt — connection
+    /// establishment, sending the request, and reading the response body —
+    /// applied as a per-request timeout so an elapsed budget surfaces as an
+    /// ordinary reqwest timeout error. The budget stays a caller parameter
+    /// because feed requests and bulk downloads have different needs. When a
+    /// trace recorder is active for the current task (developer tools only —
+    /// see [`crate::trace`]), the request and its outcome are recorded,
+    /// including requests blocked by the allowlist.
+    pub async fn execute(
+        &self,
+        feed_id: &str,
+        req: &HttpRequest,
+        timeout: Duration,
+    ) -> Result<HttpResponse> {
+        let access_domains = &self.access_domains;
+        let request_started = Instant::now();
+        // Developer tools: while a trace recorder is active for this task,
+        // report this request's outcome to it. Outside a debug run this is one
+        // task-local lookup and nothing else.
+        let trace = crate::trace::active();
+        let start = trace.is_some().then(Instant::now);
+
+        // Enforce access_domains before making any network call.
+        if !domain_allowed(&req.url, access_domains) {
+            tracing::warn!(
+                feed_id = %feed_id,
+                url = %req.url,
+                "blocked request by access_domains"
+            );
+            if let Some(trace) = &trace {
+                trace.record_blocked(req, start);
+            }
+            return Err(crate::error::Error::domain_not_allowed(
+                req.url.clone(),
+                access_domains.as_ref().clone(),
+            ));
+        }
+
+        let method = req
+            .method
+            .parse::<reqwest::Method>()
+            .map_err(|_| crate::error::Error::invalid_feed("invalid HTTP request method"))?;
+        tracing::debug!(
+            feed_id = %feed_id,
+            method = %method,
+            url = %req.url,
+            "sending HTTP request"
+        );
+        let mut builder = self.client.request(method, &req.url).timeout(timeout);
+
+        for (key, value) in &req.headers {
+            builder = builder.header(key.as_str(), value.as_str());
+        }
+
+        if let Some(body) = &req.body {
+            builder = builder.body(body.0.clone());
+        }
+
+        let response = match builder.send().await {
+            Ok(response) => response,
+            Err(e) => {
+                tracing::warn!(
+                    feed_id = %feed_id,
+                    url = %redact_url_secrets(&req.url),
+                    error = %e,
+                    "HTTP request failed"
+                );
+                if let Some(trace) = &trace {
+                    trace.record_send_error(req, start, &e);
+                }
+                return Err(e.into());
+            }
+        };
+
+        let status = response.status().as_u16();
+        let url = response.url().to_string();
+
+        // A followable 3xx can only surface here when the client's redirect
+        // policy stopped the chain: hop targets outside `access_domains`
+        // (the initial URL passed the check above, and allowlisted hops are
+        // followed transparently). Report it like an initial-URL block.
+        if matches!(status, 301 | 302 | 303 | 307 | 308)
+            && let Some(next) = Self::redirect_target(&response)
+        {
+            tracing::warn!(
+                feed_id = %feed_id,
+                url = %redact_url_secrets(&next),
+                "blocked request by access_domains (redirect hop)"
+            );
+            if let Some(trace) = &trace {
+                trace.record_blocked(req, start);
+            }
+            return Err(crate::error::Error::domain_not_allowed(
+                next,
+                access_domains.as_ref().clone(),
+            ));
+        }
+
+        tracing::debug!(
+            feed_id = %feed_id,
+            status,
+            url = %redact_url_secrets(&url),
+            "received HTTP response"
+        );
+
+        // Refuse declared-oversized responses before streaming the body.
+        if let Some(len) = response.content_length()
+            && len as usize > MAX_RESPONSE_BYTES
+        {
+            tracing::warn!(
+                feed_id = %feed_id,
+                status,
+                url = %redact_url_secrets(&url),
+                length = len,
+                "HTTP response exceeds size cap"
+            );
+            return Err(crate::error::Error::response_too_large(MAX_RESPONSE_BYTES));
+        }
+
+        let headers = collect_response_headers(response.headers());
+
+        let body = match Self::read_body(response).await {
+            Ok(body) => body,
+            Err(BodyReadError::TooLarge) => {
+                tracing::warn!(
+                    feed_id = %feed_id,
+                    status,
+                    url = %redact_url_secrets(&url),
+                    "HTTP response exceeds size cap"
+                );
+                return Err(crate::error::Error::response_too_large(MAX_RESPONSE_BYTES));
+            }
+            Err(BodyReadError::Transport(e)) => {
+                tracing::warn!(
+                    feed_id = %feed_id,
+                    status,
+                    url = %redact_url_secrets(&url),
+                    error = %e,
+                    "HTTP response body download failed"
+                );
+                if let Some(trace) = &trace {
+                    trace.record_body_error(req, status, &url, start, &e);
+                }
+                return Err(e.into());
+            }
+        };
+
+        tracing::debug!(
+            feed_id = %feed_id,
+            status,
+            url = %redact_url_secrets(&url),
+            body_len = body.len(),
+            elapsed = ?request_started.elapsed(),
+            "HTTP request complete"
+        );
+
+        if let Some(trace) = &trace {
+            trace.record_response(req, status, &url, &body, start);
+        }
+
+        Ok(HttpResponse {
+            status,
+            headers,
+            body: HttpBody(body),
+            url,
+        })
+    }
+
+    /// The redirect policy installed on this client.
+    ///
+    /// `allowlist` bounds the redirect hops: a hop outside it is stopped and
+    /// returned as the 3xx response, which [`FeedClient::execute`] maps to a
+    /// domain error. Sensitive header stripping across hosts happens while
+    /// following and is unaffected.
+    fn redirect_policy(allowlist: Option<Arc<HashSet<String>>>) -> reqwest::redirect::Policy {
+        reqwest::redirect::Policy::custom(move |attempt| {
+            // Restate the default hop cap custom policies don't inherit.
+            if attempt.previous().len() > MAX_REDIRECTS {
+                return attempt.error("too many redirects");
+            }
+            match &allowlist {
+                Some(allowlist) if !domain_allowed(attempt.url().as_str(), allowlist) => {
+                    attempt.stop()
+                }
+                _ => attempt.follow(),
+            }
+        })
+    }
+
+    /// The preconfigured rustls backend shared by every client built here.
+    ///
+    /// TLS is verified against the Mozilla root set compiled into the binary
+    /// on every platform. reqwest's default root source —
+    /// `rustls-platform-verifier` — reads the platform trust store instead,
+    /// which on Android drags in JNI glue: the crate's `jni` feature, an
+    /// exported JNI symbol in `hub`, and a manual initialization call from
+    /// `MainActivity`. Bundled roots keep the whole TLS stack pure Rust with
+    /// zero platform integration. The tradeoff: user-installed CA
+    /// certificates (proxy or enterprise) are not trusted.
+    fn tls_config() -> rustls::ClientConfig {
+        let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+        let roots = rustls::RootCertStore {
+            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+        };
+        let mut tls = rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .expect("safe default TLS protocol versions")
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        // reqwest never touches a preconfigured TLS config, so ALPN must be
+        // set here for HTTP/2 to remain negotiable.
+        tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+        tls
+    }
+
+    /// The absolute target of a followable 3xx response — the `Location`
+    /// header resolved against the response URL. `None` when the response
+    /// carries none, in which case reqwest hands it through as a terminal
+    /// response.
+    fn redirect_target(response: &reqwest::Response) -> Option<String> {
+        let location = response
+            .headers()
+            .get(reqwest::header::LOCATION)?
+            .to_str()
+            .ok()?;
+        let resolved = reqwest::Url::parse(location)
+            .or_else(|_| response.url().join(location))
+            .ok()?;
+        Some(resolved.to_string())
+    }
+
+    /// Stream the response body into memory, aborting once it would exceed
+    /// [`MAX_RESPONSE_BYTES`] — complementing the content-length pre-check
+    /// for servers that lie about the size.
+    async fn read_body(response: reqwest::Response) -> std::result::Result<Bytes, BodyReadError> {
+        let mut stream = response.bytes_stream();
+        let mut buf: Vec<u8> = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(BodyReadError::Transport)?;
+            if buf.len() + chunk.len() > MAX_RESPONSE_BYTES {
+                return Err(BodyReadError::TooLarge);
+            }
+            buf.extend_from_slice(&chunk);
+        }
+        Ok(Bytes::from(buf))
+    }
+}
+
+/// Build a free-following client for URLs that have no feed allowlist yet —
+/// downloading feed scripts before anything is installed. Redirects are
+/// followed without a domain check; everything feed-scoped goes through
+/// [`FeedClient`] instead.
+pub(crate) fn ungated_client() -> Client {
+    Client::builder()
+        .tls_backend_preconfigured(FeedClient::tls_config())
+        .redirect(FeedClient::redirect_policy(None))
+        .build()
+        .expect("failed to build HTTP client")
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +371,16 @@ impl HttpBody {
     /// Returns an error if the body contains invalid UTF-8.
     pub fn as_str(&self) -> std::result::Result<&str, std::str::Utf8Error> {
         std::str::from_utf8(&self.0)
+    }
+
+    /// The body's length in bytes.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Whether the body is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
@@ -250,6 +491,18 @@ pub struct HttpRequest {
     pub body: Option<HttpBody>,
 }
 
+impl HttpRequest {
+    /// A bare GET for `url` — no headers, no body.
+    pub fn get(url: String) -> Self {
+        Self {
+            url,
+            method: "GET".to_owned(),
+            headers: Vec::new(),
+            body: None,
+        }
+    }
+}
+
 fn default_method() -> String {
     "GET".to_owned()
 }
@@ -302,217 +555,18 @@ pub struct HttpResponse {
     pub url: String,
 }
 
-// ---------------------------------------------------------------------------
-// HTTP execution
-// ---------------------------------------------------------------------------
-
-/// Upper bound for an HTTP response body buffered for a feed script.
-///
-/// Script responses are handed to the sandbox as one `Uint8Array`, so a
-/// runaway page (or a lying content-length) must not be buffered in full.
-/// Cover downloads share the same bound.
-pub(crate) const MAX_RESPONSE_BYTES: usize = 5 * 1024 * 1024;
-
-/// Why a size-capped body read failed.
-enum BodyReadError {
-    Transport(reqwest::Error),
-    TooLarge,
-}
-
-/// Stream the response body into memory, aborting once it would exceed
-/// [`MAX_RESPONSE_BYTES`] — complementing the content-length pre-check for
-/// servers that lie about the size.
-async fn read_response_body(
-    response: reqwest::Response,
-) -> std::result::Result<Bytes, BodyReadError> {
-    let mut stream = response.bytes_stream();
-    let mut buf: Vec<u8> = Vec::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(BodyReadError::Transport)?;
-        if buf.len() + chunk.len() > MAX_RESPONSE_BYTES {
-            return Err(BodyReadError::TooLarge);
-        }
-        buf.extend_from_slice(&chunk);
+impl HttpResponse {
+    /// The `Content-Type` header's MIME type, without parameters, when the
+    /// response reports one — `Some("image/png")` for
+    /// `image/png; charset=utf-8`, for instance.
+    pub fn content_type(&self) -> Option<String> {
+        let value = self
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+            .map(|(_, value)| value)?;
+        Some(value.split(';').next().unwrap_or(value).trim().to_owned())
     }
-    Ok(Bytes::from(buf))
-}
-
-/// Execute an HTTP request described by an [`HttpRequest`] and return an
-/// [`HttpResponse`].
-///
-/// `feed_id` and `access_domains` are used for domain allowlist enforcement
-/// and tracing: the initial URL must be allowed. `client` should come from
-/// [`new_feed_client`] so redirect hops are re-checked against the same
-/// allowlist — a hop outside it stops the chain and surfaces here as a
-/// domain-not-allowed error. The response body is refused beyond
-/// [`MAX_RESPONSE_BYTES`].
-///
-/// `timeout` is the total budget for the attempt — connection
-/// establishment, sending the request, and reading the response body —
-/// applied as a per-request timeout so an elapsed budget surfaces as an
-/// ordinary reqwest timeout error. The budget stays a caller parameter
-/// because feed requests and bulk downloads have different needs. When a
-/// trace recorder is active for the current task (developer tools only — see
-/// [`crate::trace`]), the request and its outcome are recorded, including
-/// requests blocked by the allowlist.
-pub async fn execute(
-    client: &Client,
-    feed_id: &str,
-    access_domains: &HashSet<String>,
-    req: &HttpRequest,
-    timeout: Duration,
-) -> Result<HttpResponse> {
-    let request_started = Instant::now();
-    // Developer tools: while a trace recorder is active for this task,
-    // report this request's outcome to it. Outside a debug run this is one
-    // task-local lookup and nothing else.
-    let trace = crate::trace::active();
-    let start = trace.is_some().then(Instant::now);
-
-    // Enforce access_domains before making any network call.
-    if !domain_allowed(&req.url, access_domains) {
-        tracing::warn!(
-            feed_id = %feed_id,
-            url = %req.url,
-            "blocked request by access_domains"
-        );
-        if let Some(trace) = &trace {
-            trace.record_blocked(req, start);
-        }
-        return Err(crate::error::Error::domain_not_allowed(
-            req.url.clone(),
-            access_domains.clone(),
-        ));
-    }
-
-    let method = req
-        .method
-        .parse::<reqwest::Method>()
-        .map_err(|_| crate::error::Error::invalid_feed("invalid HTTP request method"))?;
-    tracing::debug!(
-        feed_id = %feed_id,
-        method = %method,
-        url = %req.url,
-        "sending HTTP request"
-    );
-    let mut builder = client.request(method, &req.url).timeout(timeout);
-
-    for (key, value) in &req.headers {
-        builder = builder.header(key.as_str(), value.as_str());
-    }
-
-    if let Some(body) = &req.body {
-        builder = builder.body(body.0.clone());
-    }
-
-    let response = match builder.send().await {
-        Ok(response) => response,
-        Err(e) => {
-            tracing::warn!(
-                feed_id = %feed_id,
-                url = %redact_url_secrets(&req.url),
-                error = %e,
-                "HTTP request failed"
-            );
-            if let Some(trace) = &trace {
-                trace.record_send_error(req, start, &e);
-            }
-            return Err(e.into());
-        }
-    };
-
-    let status = response.status().as_u16();
-    let url = response.url().to_string();
-
-    // A followable 3xx can only surface here when the client's redirect
-    // policy stopped the chain: hop targets outside `access_domains` (the
-    // initial URL passed the check above, and allowlisted hops are followed
-    // transparently). Report it like an initial-URL block.
-    if matches!(status, 301 | 302 | 303 | 307 | 308)
-        && let Some(next) = redirect_target(&response)
-    {
-        tracing::warn!(
-            feed_id = %feed_id,
-            url = %redact_url_secrets(&next),
-            "blocked request by access_domains (redirect hop)"
-        );
-        if let Some(trace) = &trace {
-            trace.record_blocked(req, start);
-        }
-        return Err(crate::error::Error::domain_not_allowed(
-            next,
-            access_domains.clone(),
-        ));
-    }
-
-    tracing::debug!(
-        feed_id = %feed_id,
-        status,
-        url = %redact_url_secrets(&url),
-        "received HTTP response"
-    );
-
-    // Refuse declared-oversized responses before streaming the body.
-    if let Some(len) = response.content_length()
-        && len as usize > MAX_RESPONSE_BYTES
-    {
-        tracing::warn!(
-            feed_id = %feed_id,
-            status,
-            url = %redact_url_secrets(&url),
-            length = len,
-            "HTTP response exceeds size cap"
-        );
-        return Err(crate::error::Error::response_too_large(MAX_RESPONSE_BYTES));
-    }
-
-    let headers = collect_response_headers(response.headers());
-
-    let body = match read_response_body(response).await {
-        Ok(body) => body,
-        Err(BodyReadError::TooLarge) => {
-            tracing::warn!(
-                feed_id = %feed_id,
-                status,
-                url = %redact_url_secrets(&url),
-                "HTTP response exceeds size cap"
-            );
-            return Err(crate::error::Error::response_too_large(MAX_RESPONSE_BYTES));
-        }
-        Err(BodyReadError::Transport(e)) => {
-            tracing::warn!(
-                feed_id = %feed_id,
-                status,
-                url = %redact_url_secrets(&url),
-                error = %e,
-                "HTTP response body download failed"
-            );
-            if let Some(trace) = &trace {
-                trace.record_body_error(req, status, &url, start, &e);
-            }
-            return Err(e.into());
-        }
-    };
-
-    tracing::debug!(
-        feed_id = %feed_id,
-        status,
-        url = %redact_url_secrets(&url),
-        body_bytes = body.len(),
-        elapsed_ms = request_started.elapsed().as_millis(),
-        "HTTP request completed"
-    );
-
-    if let Some(trace) = &trace {
-        trace.record_response(req, status, &url, &body, start);
-    }
-
-    Ok(HttpResponse {
-        status,
-        headers,
-        body: HttpBody(body),
-        url,
-    })
 }
 
 /// Preserve every response header value, including repeated headers such as
@@ -606,8 +660,8 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::{
-        HttpBody, HttpRequest, collect_response_headers, domain_allowed, execute, new_client,
-        new_feed_client, redact_url_secrets,
+        FeedClient, HttpBody, HttpRequest, collect_response_headers, domain_allowed,
+        redact_url_secrets,
     };
 
     #[test]
@@ -652,22 +706,13 @@ mod tests {
 
     #[tokio::test]
     async fn execute_rejects_every_request_when_allowlist_is_empty() {
-        let request = HttpRequest {
-            url: "https://example.com/books".to_owned(),
-            method: "GET".to_owned(),
-            headers: Vec::new(),
-            body: None,
-        };
+        let request = HttpRequest::get("https://example.com/books".to_owned());
+        let client = FeedClient::new(&HashSet::new());
 
-        let error = execute(
-            &new_client(),
-            "test",
-            &HashSet::new(),
-            &request,
-            Duration::from_secs(1),
-        )
-        .await
-        .expect_err("an empty allowlist must deny network access");
+        let error = client
+            .execute("test", &request, Duration::from_secs(1))
+            .await
+            .expect_err("an empty allowlist must deny network access");
 
         let crate::error::Error::Script(crate::error::ScriptError::DomainNotAllowed {
             url,
@@ -698,22 +743,12 @@ mod tests {
             std::thread::park();
         });
 
-        let request = HttpRequest {
-            url: format!("http://{addr}/stall"),
-            method: "GET".to_owned(),
-            headers: Vec::new(),
-            body: None,
-        };
+        let request = HttpRequest::get(format!("http://{addr}/stall"));
         let start = Instant::now();
-        let error = execute(
-            &new_client(),
-            "test",
-            &HashSet::from(["127.0.0.1".to_owned()]),
-            &request,
-            Duration::from_millis(300),
-        )
-        .await
-        .expect_err("a stalled server must trip the request budget");
+        let error = FeedClient::new(&HashSet::from(["127.0.0.1".to_owned()]))
+            .execute("test", &request, Duration::from_millis(300))
+            .await
+            .expect_err("a stalled server must trip the request budget");
 
         // An elapsed budget is an ordinary reqwest timeout error: classified
         // transient, so the retry layer sees it and the operation can fail
@@ -758,15 +793,6 @@ mod tests {
         assert_eq!(masked.matches("%3Cmasked%3E").count(), 2);
     }
 
-    fn get_request(url: String) -> HttpRequest {
-        HttpRequest {
-            url,
-            method: "GET".to_owned(),
-            headers: Vec::new(),
-            body: None,
-        }
-    }
-
     fn local_allowlist() -> HashSet<String> {
         HashSet::from(["127.0.0.1".to_owned()])
     }
@@ -781,15 +807,14 @@ mod tests {
             .create_async()
             .await;
 
-        let error = execute(
-            &new_feed_client(&local_allowlist()),
-            "test",
-            &local_allowlist(),
-            &get_request(format!("{}/page", server.url())),
-            Duration::from_secs(5),
-        )
-        .await
-        .expect_err("a redirect hop outside the allowlist must be blocked");
+        let error = FeedClient::new(&local_allowlist())
+            .execute(
+                "test",
+                &HttpRequest::get(format!("{}/page", server.url())),
+                Duration::from_secs(5),
+            )
+            .await
+            .expect_err("a redirect hop outside the allowlist must be blocked");
 
         let crate::error::Error::Script(crate::error::ScriptError::DomainNotAllowed {
             url, ..
@@ -816,15 +841,14 @@ mod tests {
             .create_async()
             .await;
 
-        let response = execute(
-            &new_feed_client(&local_allowlist()),
-            "test",
-            &local_allowlist(),
-            &get_request(format!("{}/hop", server.url())),
-            Duration::from_secs(5),
-        )
-        .await
-        .expect("an allowlisted redirect hop must be followed");
+        let response = FeedClient::new(&local_allowlist())
+            .execute(
+                "test",
+                &HttpRequest::get(format!("{}/hop", server.url())),
+                Duration::from_secs(5),
+            )
+            .await
+            .expect("an allowlisted redirect hop must be followed");
 
         assert_eq!(response.body.as_str(), Ok("landed"));
         assert!(
@@ -845,15 +869,14 @@ mod tests {
             .create_async()
             .await;
 
-        let error = execute(
-            &new_feed_client(&local_allowlist()),
-            "test",
-            &local_allowlist(),
-            &get_request(format!("{}/huge", server.url())),
-            Duration::from_secs(30),
-        )
-        .await
-        .expect_err("an oversized response body must be refused");
+        let error = FeedClient::new(&local_allowlist())
+            .execute(
+                "test",
+                &HttpRequest::get(format!("{}/huge", server.url())),
+                Duration::from_secs(30),
+            )
+            .await
+            .expect_err("an oversized response body must be refused");
 
         let crate::error::Error::Script(crate::error::ScriptError::ResponseTooLarge { limit }) =
             error
@@ -874,15 +897,14 @@ mod tests {
             .create_async()
             .await;
 
-        let error = execute(
-            &new_feed_client(&local_allowlist()),
-            "test",
-            &local_allowlist(),
-            &get_request(format!("{}/loop", server.url())),
-            Duration::from_secs(10),
-        )
-        .await
-        .expect_err("a redirect loop must be stopped by the hop limit");
+        let error = FeedClient::new(&local_allowlist())
+            .execute(
+                "test",
+                &HttpRequest::get(format!("{}/loop", server.url())),
+                Duration::from_secs(10),
+            )
+            .await
+            .expect_err("a redirect loop must be stopped by the hop limit");
 
         assert!(!error.is_retryable());
         assert!(

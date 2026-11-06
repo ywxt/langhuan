@@ -162,7 +162,7 @@ pub async fn create_actors() {
     let feed_actor = FeedActor::new(registry_addr.clone(), conversion_addr.clone());
     spawn(feed_context.run(feed_actor));
 
-    let bookshelf_actor = BookshelfActor::new();
+    let bookshelf_actor = BookshelfActor::new(registry_addr.clone());
     spawn(bookshelf_context.run(bookshelf_actor));
 
     if ACTOR_ADDRESSES

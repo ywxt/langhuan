@@ -22,7 +22,7 @@ use crate::feed::{
     AuthEntry, AuthInfo, AuthPageContext, AuthStatus, Feed, FeedAuthFlow, FeedMeta, FeedStream,
     SharedStorageHandler, SharedWebviewHandler, WebviewRequest,
 };
-use crate::http::{self, HttpRequest, HttpResponse};
+use crate::http::{FeedClient, HttpRequest, HttpResponse, domain_allowed};
 use crate::model::{BookInfo, ChapterInfo, Page, Paragraph, RawParagraph, SearchResult};
 
 const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -208,7 +208,7 @@ impl JsOperation<'_> {
 /// owns every network call and invokes the reducer again with the result.
 pub struct JsFeed {
     meta: FeedMeta,
-    client: reqwest::Client,
+    client: FeedClient,
     has_login: bool,
     has_auth_status: bool,
     comment_support: (bool, bool),
@@ -363,7 +363,7 @@ impl JsFeed {
     pub(crate) fn new(
         source: String,
         meta: FeedMeta,
-        client: reqwest::Client,
+        client: FeedClient,
         storage: Option<SharedStorageHandler>,
     ) -> Result<Self> {
         let meta_json =
@@ -525,14 +525,10 @@ impl JsFeed {
     async fn execute_http_with_retry(&self, request: &HttpRequest) -> Result<HttpResponse> {
         let mut attempt = 0u32;
         loop {
-            match http::execute(
-                &self.client,
-                &self.meta.id,
-                &self.meta.access_domains,
-                request,
-                HTTP_TIMEOUT,
-            )
-            .await
+            match self
+                .client
+                .execute(&self.meta.id, request, HTTP_TIMEOUT)
+                .await
             {
                 Ok(response) => return Ok(response),
                 Err(error) if attempt < MAX_RETRIES && error.is_retryable() => {
@@ -660,7 +656,7 @@ impl JsFeed {
                     next_state,
                 } => {
                     Self::validate_user_agent(&user_agent)?;
-                    if !http::domain_allowed(&url, &self.meta.access_domains) {
+                    if !domain_allowed(&url, &self.meta.access_domains) {
                         return Err(Error::domain_not_allowed(
                             url,
                             self.meta.access_domains.clone(),
@@ -918,6 +914,10 @@ impl Feed for JsFeed {
         self.dedup_stream(indexed, "paragraph", |item: &Paragraph| {
             item.id().to_string()
         })
+    }
+
+    fn http_client(&self) -> &FeedClient {
+        &self.client
     }
 
     fn meta(&self) -> &FeedMeta {

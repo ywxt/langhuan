@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::feed::SharedStorageHandler;
-use crate::http::new_feed_client;
+use crate::http::FeedClient;
 use crate::script::feed::ScriptFeed;
 use crate::script::js::JsFeed;
 use crate::script::meta;
@@ -60,7 +60,7 @@ impl ScriptEngine {
         }
         // The feed's own client: redirect hops are gated by this feed's
         // access_domains for every request it makes.
-        let client = new_feed_client(&feed_meta.access_domains);
+        let client = FeedClient::new(&feed_meta.access_domains);
         JsFeed::new(
             script[body_offset..].to_owned(),
             feed_meta,
