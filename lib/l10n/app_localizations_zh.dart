@@ -21,6 +21,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bookshelfTitle => '書架';
 
   @override
+  String get bookshelfRefresh => '刷新書架並檢查更新';
+
+  @override
   String bookshelfNewChapters(int count) {
     return '$count 個新章節';
   }
@@ -160,6 +163,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get searchRetry => '重試';
+
+  @override
+  String get searchLoadMore => '加載更多';
 
   @override
   String get bookDetailTitle => '書籍詳情';

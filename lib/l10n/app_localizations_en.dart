@@ -21,6 +21,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bookshelfTitle => 'Bookshelf';
 
   @override
+  String get bookshelfRefresh => 'Refresh bookshelf and check for updates';
+
+  @override
   String bookshelfNewChapters(int count) {
     return '$count new chapters';
   }
@@ -162,6 +165,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get searchRetry => 'Retry';
+
+  @override
+  String get searchLoadMore => 'Load more';
 
   @override
   String get bookDetailTitle => 'Book Details';

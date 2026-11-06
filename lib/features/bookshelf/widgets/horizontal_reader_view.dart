@@ -8,6 +8,7 @@ import 'page_breaker.dart';
 import 'reader_page_canvas_painter.dart';
 import 'reader_pixel_aligned.dart';
 import 'reader_end_page.dart';
+import 'reader_desktop_controls.dart';
 
 /// What a page slot of the paged reader shows.
 ///
@@ -345,6 +346,14 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
     }
   }
 
+  void _turnFromDesktop(int direction, double pageWidth) {
+    if (_busy) return;
+    if (direction < 0 ? !_canGoNext : !_canGoPrev) return;
+    widget.onPageTurnStart?.call();
+    _settleDir = direction;
+    _animateTo(direction * pageWidth, pageWidth);
+  }
+
   void _animateTo(double target, double pageWidth) {
     _tweenStart = _offset.value;
     _tweenEnd = target;
@@ -474,26 +483,31 @@ class _HorizontalReaderViewState extends State<HorizontalReaderView>
           ],
         );
 
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onHorizontalDragDown: _onDragDown,
-          onHorizontalDragStart: _onDragStart,
-          onHorizontalDragUpdate: _onDragUpdate,
-          onHorizontalDragEnd: (d) => _onDragEnd(d, pageWidth),
-          onHorizontalDragCancel: () => _onDragCancel(pageWidth),
-          onTapUp: (d) => _onTapUp(d, pageWidth),
-          child: ClipRect(
-            child: ValueListenableBuilder<double>(
-              valueListenable: _offset,
-              child: pageStrip,
-              builder: (context, offset, child) {
-                return Transform.translate(
-                  key: const ValueKey('horizontal-reader-page-strip'),
-                  offset: Offset(offset, 0),
-                  transformHitTests: false,
-                  child: ReaderPixelAligned(child: child!),
-                );
-              },
+        return ReaderDesktopControls(
+          onPrevious: () => _turnFromDesktop(1, pageWidth),
+          onNext: () => _turnFromDesktop(-1, pageWidth),
+          scrollToTurn: true,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragDown: _onDragDown,
+            onHorizontalDragStart: _onDragStart,
+            onHorizontalDragUpdate: _onDragUpdate,
+            onHorizontalDragEnd: (d) => _onDragEnd(d, pageWidth),
+            onHorizontalDragCancel: () => _onDragCancel(pageWidth),
+            onTapUp: (d) => _onTapUp(d, pageWidth),
+            child: ClipRect(
+              child: ValueListenableBuilder<double>(
+                valueListenable: _offset,
+                child: pageStrip,
+                builder: (context, offset, child) {
+                  return Transform.translate(
+                    key: const ValueKey('horizontal-reader-page-strip'),
+                    offset: Offset(offset, 0),
+                    transformHitTests: false,
+                    child: ReaderPixelAligned(child: child!),
+                  );
+                },
+              ),
             ),
           ),
         );

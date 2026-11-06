@@ -10,6 +10,7 @@ import '../../feeds/feed_service.dart'
     show ChapterInfoModel, ParagraphIdStringExt;
 import 'chapter_status_block.dart';
 import 'paragraph_view.dart';
+import 'reader_desktop_controls.dart';
 import 'reader_chapter_window.dart';
 import 'reader_pixel_aligned.dart';
 import 'reader_types.dart';
@@ -80,6 +81,7 @@ class SeamlessVerticalReader extends StatefulWidget {
     required this.lineHeight,
     required this.onPositionChanged,
     required this.onToggleControls,
+    this.onPageTurnStart,
     this.onParagraphLongPress,
     this.selectedChapterId,
     this.selectedParagraphId,
@@ -123,6 +125,7 @@ class SeamlessVerticalReader extends StatefulWidget {
   final void Function(String chapterId, String paragraphId, double offset)
   onPositionChanged;
   final VoidCallback onToggleControls;
+  final VoidCallback? onPageTurnStart;
 
   final void Function(
     String chapterId,
@@ -639,6 +642,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   void _page(int direction) {
     final controller = _controller;
     if (controller == null || !controller.hasClients) return;
+    widget.onPageTurnStart?.call();
     _maybeExpandWindow();
     final position = controller.position;
     final delta = position.viewportDimension * _tapPageOverlap * direction;
@@ -677,30 +681,34 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
       loadingIndicatorChapterId = chapterIds.first;
     }
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapUp: _onTapUp,
-      child: NotificationListener<ScrollNotification>(
-        onNotification: _onScrollNotification,
-        child: Padding(
-          padding: EdgeInsets.only(
-            top: widget.viewportTopInset,
-            bottom: widget.viewportBottomInset,
-          ),
-          child: CustomScrollView(
-            controller: _controller,
-            center: _centerKey,
-            // The default 250 logical-pixel cache may not cover even one large
-            // paragraph. Lay out two viewports ahead to reduce layout work as
-            // paragraphs enter the screen during a drag.
-            scrollCacheExtent: ScrollCacheExtent.pixels(
-              MediaQuery.sizeOf(context).height * 2,
+    return ReaderDesktopControls(
+      onPrevious: () => _page(-1),
+      onNext: () => _page(1),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapUp: _onTapUp,
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _onScrollNotification,
+          child: Padding(
+            padding: EdgeInsets.only(
+              top: widget.viewportTopInset,
+              bottom: widget.viewportBottomInset,
             ),
-            slivers: _buildSlivers(
-              window,
-              chapterIds,
-              loadingIndicatorChapterId,
-              atBookEnd,
+            child: CustomScrollView(
+              controller: _controller,
+              center: _centerKey,
+              // The default 250 logical-pixel cache may not cover even one large
+              // paragraph. Lay out two viewports ahead to reduce layout work as
+              // paragraphs enter the screen during a drag.
+              scrollCacheExtent: ScrollCacheExtent.pixels(
+                MediaQuery.sizeOf(context).height * 2,
+              ),
+              slivers: _buildSlivers(
+                window,
+                chapterIds,
+                loadingIndicatorChapterId,
+                atBookEnd,
+              ),
             ),
           ),
         ),

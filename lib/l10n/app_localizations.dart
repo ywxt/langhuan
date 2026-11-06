@@ -122,6 +122,12 @@ abstract class AppLocalizations {
   /// **'Bookshelf'**
   String get bookshelfTitle;
 
+  /// Bookshelf refresh button tooltip
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh bookshelf and check for updates'**
+  String get bookshelfRefresh;
+
   /// Semantics label for a book's update badge
   ///
   /// In en, this message translates to:
@@ -367,6 +373,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Retry'**
   String get searchRetry;
+
+  /// Load another page of search results when idle
+  ///
+  /// In en, this message translates to:
+  /// **'Load more'**
+  String get searchLoadMore;
 
   /// Book detail page title
   ///

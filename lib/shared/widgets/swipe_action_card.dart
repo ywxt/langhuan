@@ -12,6 +12,7 @@ class SwipeActionCard extends StatelessWidget {
     required this.dismissKey,
     required this.child,
     required this.confirmDismiss,
+    required this.deleteTooltip,
     this.enabled = true,
     this.borderRadius = LanghuanTheme.borderRadiusMd,
   });
@@ -19,12 +20,19 @@ class SwipeActionCard extends StatelessWidget {
   final Key dismissKey;
   final Widget child;
   final ConfirmDismissCallback confirmDismiss;
+  final String deleteTooltip;
   final bool enabled;
   final BorderRadius borderRadius;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final desktop = switch (Theme.of(context).platform) {
+      TargetPlatform.linux ||
+      TargetPlatform.macOS ||
+      TargetPlatform.windows => true,
+      _ => false,
+    };
     return ClipRRect(
       borderRadius: borderRadius,
       child: Dismissible(
@@ -45,7 +53,25 @@ class SwipeActionCard extends StatelessWidget {
           ),
         ),
         confirmDismiss: confirmDismiss,
-        child: child,
+        child: desktop
+            ? Material(
+                color: colors.surfaceContainer,
+                child: Row(
+                  children: [
+                    Expanded(child: child),
+                    IconButton(
+                      tooltip: deleteTooltip,
+                      color: colors.error,
+                      onPressed: enabled
+                          ? () => confirmDismiss(DismissDirection.endToStart)
+                          : null,
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                    const SizedBox(width: LanghuanTheme.spaceXs),
+                  ],
+                ),
+              )
+            : child,
       ),
     );
   }

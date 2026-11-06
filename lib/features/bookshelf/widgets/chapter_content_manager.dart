@@ -1257,6 +1257,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
         lineHeight: widget.lineHeight,
         onPositionChanged: _reportPosition,
         onToggleControls: widget.onToggleControls,
+        onPageTurnStart: widget.onPageTurnStart,
         onParagraphLongPress: widget.onParagraphLongPress,
         selectedChapterId: widget.selectedChapterId,
         selectedParagraphId: widget.selectedParagraphId,

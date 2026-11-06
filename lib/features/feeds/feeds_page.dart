@@ -347,6 +347,7 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
             padding: const EdgeInsets.only(bottom: LanghuanTheme.spaceSm),
             child: SwipeActionCard(
               dismissKey: ValueKey('feed-${feed.id}'),
+              deleteTooltip: l10n.feedDeleteConfirm,
               enabled: !isBusy,
               confirmDismiss: (_) async {
                 await _confirmAndDelete(feed, l10n);

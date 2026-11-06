@@ -12,6 +12,8 @@
 
   "bookshelfTitle": "Bookshelf",
   "@bookshelfTitle": { "description": "Bookshelf page title" },
+  "bookshelfRefresh": "Refresh bookshelf and check for updates",
+  "@bookshelfRefresh": { "description": "Bookshelf refresh button tooltip" },
 
 
   "bookshelfNewChapters": "{count} new chapters",
@@ -140,6 +142,9 @@
 
   "searchRetry": "Retry",
   "@searchRetry": { "description": "Retry button label" },
+
+  "searchLoadMore": "Load more",
+  "@searchLoadMore": { "description": "Load another page of search results when idle" },
 
   "bookDetailTitle": "Book Details",
   "@bookDetailTitle": { "description": "Book detail page title" },

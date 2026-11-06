@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:langhuan/rust_init.dart';
@@ -325,17 +326,26 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
-        if (notification is ScrollStartNotification &&
+        if (notification.depth != 0) return false;
+        if (ModalRoute.of(context)?.isCurrent == false) {
+          _userScrollActive = false;
+          return false;
+        }
+        // Wheel and trackpad scrolling have no dragDetails. User direction
+        // notifications identify those gestures without treating route or
+        // layout restoration as a request for another page.
+        if (notification is UserScrollNotification &&
+            notification.direction != ScrollDirection.idle) {
+          _userScrollActive = true;
+        } else if (notification is ScrollStartNotification &&
             notification.dragDetails != null) {
           _userScrollActive = true;
         } else if (notification is ScrollEndNotification) {
           final userScrollEnded = _userScrollActive;
           _userScrollActive = false;
-          if (userScrollEnded &&
-              notification.metrics.extentAfter < 200 &&
-              !searchState.isLoadingMore &&
-              searchState.hasMore) {
-            ref.read(searchProvider.notifier).loadMore();
+          if (userScrollEnded && notification.metrics.extentAfter < 200) {
+            // The notifier checks the current loading/exhaustion state.
+            unawaited(ref.read(searchProvider.notifier).loadMore());
           }
         }
         return false;
@@ -348,10 +358,19 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         itemCount: rows.length + (searchState.hasMore ? 1 : 0),
         itemBuilder: (context, index) {
           if (index >= rows.length) {
-            // Loading indicator at the bottom
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: LanghuanTheme.spaceLg),
-              child: Center(child: LanghuanSpinner()),
+            return Padding(
+              padding: const EdgeInsets.symmetric(
+                vertical: LanghuanTheme.spaceLg,
+              ),
+              child: Center(
+                child: searchState.isLoadingMore
+                    ? const LanghuanSpinner()
+                    : TextButton(
+                        onPressed: () =>
+                            ref.read(searchProvider.notifier).loadMore(),
+                        child: Text(l10n.searchLoadMore),
+                      ),
+              ),
             );
           }
           return Padding(

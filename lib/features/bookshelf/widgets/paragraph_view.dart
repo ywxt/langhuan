@@ -140,6 +140,7 @@ class ParagraphView extends StatelessWidget {
     if (onLongPress != null) {
       return GestureDetector(
         onLongPress: () => _reportLongPress(context, onLongPress!),
+        onSecondaryTapUp: (_) => _reportLongPress(context, onLongPress!),
         child: result,
       );
     }

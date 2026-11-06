@@ -119,21 +119,20 @@ class PageContentView extends StatelessWidget {
       // the whole-page render object, which would place the selection
       // overlay at the page top instead of next to the pressed paragraph.
       return Builder(
-        builder: (itemContext) => GestureDetector(
-          onLongPress: onParagraphLongPress == null
-              ? null
-              : () {
-                  final box = itemContext.findRenderObject() as RenderBox?;
-                  if (box == null || !box.hasSize) return;
-                  final topLeft = box.localToGlobal(Offset.zero);
-                  onParagraphLongPress!(
-                    item.paragraphId,
-                    source,
-                    topLeft & box.size,
-                  );
-                },
-          child: child,
-        ),
+        builder: (itemContext) {
+          void selectParagraph() {
+            final box = itemContext.findRenderObject() as RenderBox?;
+            if (box == null || !box.hasSize) return;
+            final topLeft = box.localToGlobal(Offset.zero);
+            onParagraphLongPress!(item.paragraphId, source, topLeft & box.size);
+          }
+
+          return GestureDetector(
+            onLongPress: selectParagraph,
+            onSecondaryTapUp: (_) => selectParagraph(),
+            child: child,
+          );
+        },
       );
     }
     return child;

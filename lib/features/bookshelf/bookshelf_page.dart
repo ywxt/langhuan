@@ -29,6 +29,20 @@ class BookshelfPage extends ConsumerStatefulWidget {
 
 class _BookshelfPageState extends ConsumerState<BookshelfPage> {
   final Set<String> _pendingDeleteIds = <String>{};
+  bool _refreshing = false;
+
+  Future<void> _refresh() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    try {
+      await Future.wait([
+        ref.read(bookshelfProvider.notifier).load(),
+        ref.read(bookshelfUpdatesProvider.notifier).check(),
+      ]);
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,9 +82,25 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                 LanghuanTheme.spaceLg,
                 LanghuanTheme.spaceMd,
               ),
-              child: Text(
-                l10n.bookshelfTitle,
-                style: theme.textTheme.headlineLarge,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      l10n.bookshelfTitle,
+                      style: theme.textTheme.headlineLarge,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: l10n.bookshelfRefresh,
+                    onPressed:
+                        _refreshing || updates.isChecking || state.isLoading
+                        ? null
+                        : _refresh,
+                    icon: _refreshing || updates.isChecking
+                        ? const LanghuanSpinner(size: 20)
+                        : const Icon(Icons.refresh),
+                  ),
+                ],
               ),
             ),
 
@@ -99,12 +129,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
             // one-shot snackbar above provide the feedback.
             Expanded(
               child: RefreshIndicator(
-                onRefresh: () async {
-                  await Future.wait([
-                    ref.read(bookshelfProvider.notifier).load(),
-                    ref.read(bookshelfUpdatesProvider.notifier).check(),
-                  ]);
-                },
+                onRefresh: _refresh,
                 child: CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(
                     parent: BouncingScrollPhysics(),
@@ -142,6 +167,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                           itemBuilder: (context, index) {
                             final item = visibleItems[index];
                             return SwipeActionCard(
+                              deleteTooltip: l10n.bookshelfDeleteConfirm,
                               dismissKey: ValueKey(
                                 'bookshelf-${item.stableId}',
                               ),
