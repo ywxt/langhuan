@@ -8,7 +8,7 @@
 //! ancestor-or-self). Results merged from several roots are deduplicated
 //! and ordered like jQuery's `uniqueSort`. `encodeURIComponent` provides
 //! the browser's component encoding with an optional non-UTF-8 charset,
-//! and an array form that encodes `[key, value]` pairs into a
+//! and `encodeURIComponents` encodes `[key, value]` pairs into a
 //! `key=value&key=value` query string.
 
 use std::collections::{HashMap, HashSet};
@@ -18,7 +18,7 @@ use ego_tree::{NodeId, NodeRef};
 use encoding_rs::Encoding;
 use rquickjs::function::{Args, Opt, This};
 use rquickjs::module::{Declarations, Exports, ModuleDef};
-use rquickjs::{Array, Ctx, Exception, FromJs, Function, Object, Result as JsResult, Value};
+use rquickjs::{Array, Ctx, Exception, Function, Object, Result as JsResult, Value};
 use scraper::{ElementRef, Html, Node, Selector};
 
 use super::module::{Namespace, declare_module, set_function};
@@ -666,7 +666,7 @@ fn html<'js>(ctx: &Ctx<'js>) -> JsResult<Object<'js>> {
         })?
         .function(
             "encodeURIComponent",
-            |ctx: Ctx<'js>, value: Value<'js>, charset: Opt<String>| -> JsResult<String> {
+            |ctx: Ctx<'js>, value: String, charset: Opt<String>| -> JsResult<String> {
                 let label = charset.0.unwrap_or_else(|| "utf-8".to_owned());
                 let Some(encoding) = Encoding::for_label(label.as_bytes()) else {
                     return js_error(
@@ -674,34 +674,41 @@ fn html<'js>(ctx: &Ctx<'js>) -> JsResult<Object<'js>> {
                         format!("HTML.encodeURIComponent: unknown encoding label {label:?}"),
                     );
                 };
+                let (bytes, _encoding, _had_errors) = encoding.encode(&value);
+                Ok(percent_encode_component(&bytes))
+            },
+        )?
+        .function(
+            "encodeURIComponents",
+            |ctx: Ctx<'js>, pairs: Array<'js>, charset: Opt<String>| -> JsResult<String> {
+                let label = charset.0.unwrap_or_else(|| "utf-8".to_owned());
+                let Some(encoding) = Encoding::for_label(label.as_bytes()) else {
+                    return js_error(
+                        &ctx,
+                        format!("HTML.encodeURIComponents: unknown encoding label {label:?}"),
+                    );
+                };
                 let encode = |text: &str| {
                     let (bytes, _encoding, _had_errors) = encoding.encode(text);
                     percent_encode_component(&bytes)
                 };
-                // The array form builds a query string: every entry is a
-                // [key, value] pair of strings, both sides encoded as
-                // components and joined with `&`.
-                if let Some(pairs) = value.as_array() {
-                    let mut parts = Vec::with_capacity(pairs.len());
-                    for index in 0..pairs.len() {
-                        let entry = pairs.get::<Value>(index)?;
-                        let Some(pair) = entry.as_array().filter(|pair| pair.len() == 2)
-                        else {
-                            return js_error(
-                                &ctx,
-                                "HTML.encodeURIComponent: each query pair must be a \
-                                 [key, value] array",
-                            );
-                        };
-                        let key = pair.get::<String>(0)?;
-                        let item = pair.get::<String>(1)?;
-                        parts.push(format!("{}={}", encode(&key), encode(&item)));
-                    }
-                    Ok(parts.join("&"))
-                } else {
-                    let text = String::from_js(&ctx, value)?;
-                    Ok(encode(&text))
+                // Every entry is a [key, value] pair of strings; both sides
+                // are encoded as components and the pairs joined with `&`.
+                let mut parts = Vec::with_capacity(pairs.len());
+                for index in 0..pairs.len() {
+                    let entry = pairs.get::<Value>(index)?;
+                    let Some(pair) = entry.as_array().filter(|pair| pair.len() == 2) else {
+                        return js_error(
+                            &ctx,
+                            "HTML.encodeURIComponents: each query pair must be a \
+                             [key, value] array",
+                        );
+                    };
+                    let key = pair.get::<String>(0)?;
+                    let item = pair.get::<String>(1)?;
+                    parts.push(format!("{}={}", encode(&key), encode(&item)));
                 }
+                Ok(parts.join("&"))
             },
         )?
         .object())
@@ -884,13 +891,13 @@ mod tests {
     }
 
     #[test]
-    fn encode_uri_component_builds_query_strings_from_pairs() {
+    fn encode_uri_components_builds_query_strings() {
         let result = evaluate(
             r#"export default JSON.stringify([
-                HTML.encodeURIComponent([["q", "a b"], ["page", "2"]]),
-                HTML.encodeURIComponent([]),
-                HTML.encodeURIComponent([["kw", "你好"]], "gbk"),
-                HTML.encodeURIComponent([["empty", ""], ["sym", "-_.!~*'()"]]),
+                HTML.encodeURIComponents([["q", "a b"], ["page", "2"]]),
+                HTML.encodeURIComponents([]),
+                HTML.encodeURIComponents([["kw", "你好"]], "gbk"),
+                HTML.encodeURIComponents([["empty", ""], ["sym", "-_.!~*'()"]]),
               ]);"#,
         );
         assert_eq!(
@@ -900,7 +907,20 @@ mod tests {
     }
 
     #[test]
-    fn encode_uri_component_rejects_malformed_pairs() {
+    fn encode_uri_component_stays_a_single_string_function() {
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let error = sandbox
+            .eval_module_json(
+                r#"import { HTML } from "langhuan:html";
+                   export default HTML.encodeURIComponent([["q", "a"]]);"#,
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("into type 'string'"), "{error}");
+    }
+
+    #[test]
+    fn encode_uri_components_rejects_malformed_pairs() {
         for argument in [
             r#"[["q", "a"], "page"]"#,
             r#"[["q"]]"#,
@@ -911,7 +931,7 @@ mod tests {
             let error = sandbox
                 .eval_module_json(&format!(
                     r#"import {{ HTML }} from "langhuan:html";
-                       export default HTML.encodeURIComponent({argument});"#
+                       export default HTML.encodeURIComponents({argument});"#
                 ))
                 .unwrap_err()
                 .to_string();
@@ -923,16 +943,46 @@ mod tests {
     }
 
     #[test]
-    fn encode_uri_component_pairs_keep_keys_and_values_strings() {
+    fn encode_uri_components_rejects_non_array_input() {
         let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
         let error = sandbox
             .eval_module_json(
                 r#"import { HTML } from "langhuan:html";
-                   export default HTML.encodeURIComponent([["page", 2]]);"#,
+                   export default HTML.encodeURIComponents("page=1");"#,
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("into type 'array'"), "{error}");
+    }
+
+    #[test]
+    fn encode_uri_components_keep_keys_and_values_strings() {
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let error = sandbox
+            .eval_module_json(
+                r#"import { HTML } from "langhuan:html";
+                   export default HTML.encodeURIComponents([["page", 2]]);"#,
             )
             .unwrap_err()
             .to_string();
         assert!(error.contains("into type 'string'"), "{error}");
+    }
+
+    #[test]
+    fn encode_uri_components_rejects_unknown_charsets() {
+        let mut sandbox = Sandbox::new(Duration::from_secs(5)).unwrap();
+        let error = sandbox
+            .eval_module_json(
+                r#"import { HTML } from "langhuan:html";
+                   export default HTML.encodeURIComponents(
+                     [["x", "y"]], "no-such-charset");"#,
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("HTML.encodeURIComponents: unknown encoding label"),
+            "{error}"
+        );
     }
 
     #[test]

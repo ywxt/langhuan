@@ -142,7 +142,7 @@ function absoluteUrl(value) {
 
 // ── GBK 關鍵字編碼 ─────────────────────────────────────────────────────────────
 // 搜尋 kw 必須是 GBK 字節的百分號編碼：UTF-8 字節會被站點按 GBK 誤解成亂碼
-// 關鍵字（「天官赐福」被搜成「澶…」）。HTML.encodeURIComponent 的可選
+// 關鍵字（「天官赐福」被搜成「澶…」）。HTML.encodeURIComponents 的可選
 // charset 參數直接輸出 GBK 字節的百分號編碼，無需自建碼表。
 
 // ── 搜尋 ─────────────────────────────────────────────────────────────────────
@@ -165,7 +165,7 @@ function search(event) {
       type: "request",
       request: {
         url:
-          `${meta.base_url}/search.php?${HTML.encodeURIComponent(query, "gbk")}`,
+          `${meta.base_url}/search.php?${HTML.encodeURIComponents(query, "gbk")}`,
         method: "GET",
         headers: requestHeaders(),
       },
@@ -377,7 +377,7 @@ function paragraphs(event) {
     return {
       type: "request",
       request: {
-        url: `${meta.base_url}/onebook.php?${HTML.encodeURIComponent([
+        url: `${meta.base_url}/onebook.php?${HTML.encodeURIComponents([
           ["novelid", bookId],
           ["chapterid", chapterId],
         ])}`,
@@ -425,7 +425,7 @@ function paragraphs(event) {
       request: {
         url:
           `${meta.base_url}/app.jjwxc/Pc/comment/getNovelParagraphCommentNum` +
-          `?${HTML.encodeURIComponent([
+          `?${HTML.encodeURIComponents([
             ["novelid", state.bookId],
             ["chapterid", state.chapterId],
           ])}`,
@@ -530,7 +530,7 @@ function commentsStart(event, paragraphId) {
       request: {
         url:
           `${meta.base_url}/app.jjwxc/Pc/comment/getReplyList` +
-          `?${HTML.encodeURIComponent([
+          `?${HTML.encodeURIComponents([
             ["novelid", bookId],
             ["chapterid", chapterId],
             ["commentid", String(event.input.parentId)],
@@ -549,7 +549,7 @@ function commentsStart(event, paragraphId) {
     request: {
       url:
         `${meta.base_url}/app.jjwxc/Pc/comment/getCommentList` +
-        `?${HTML.encodeURIComponent([
+        `?${HTML.encodeURIComponents([
           ["novelId", bookId],
           ["chapterId", chapterId],
           ["paragraph_id", paragraphId ?? "0"],

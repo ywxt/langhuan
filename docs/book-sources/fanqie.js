@@ -485,7 +485,7 @@ function mergeCookieHeaders(...headersToMerge) {
 }
 
 function searchRequest(keyword, pageIndex) {
-  const query = HTML.encodeURIComponent([
+  const query = HTML.encodeURIComponents([
     ["filter", "127,127,127,127"],
     ["page_count", "10"],
     ["page_index", String(pageIndex)],

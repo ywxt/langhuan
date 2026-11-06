@@ -220,7 +220,7 @@ response cache. Only status-200 responses up to 1 MiB are stored.
 | Field | Required | Value and behaviour |
 | --- | :---: | --- |
 | `type` | Yes | Must be the exact string `"request"`. |
-| `request.url` | Yes | Absolute URL including its query string. The script builds the complete URL itself; encode it with [`HTML.encodeURIComponent`](#namespace-functions) — the array form turns `[key, value]` pairs into a `k=v&k=v` query string. The native host validates the hostname against `access_domain` after auth patching and before network access. A `params` field is rejected — query strings belong in the URL. |
+| `request.url` | Yes | Absolute URL including its query string. The script builds the complete URL itself; encode it with [`HTML.encodeURIComponents`](#namespace-functions), which turns `[key, value]` pairs into a `k=v&k=v` query string. The native host validates the hostname against `access_domain` after auth patching and before network access. A `params` field is rejected — query strings belong in the URL. |
 | `request.method` | No | HTTP method string; defaults to `GET` when omitted. Invalid method syntax is rejected before the request is sent. |
 | `request.headers` | No | String-to-string map. Arrays and non-string values are rejected. Response header pairs are a separate representation that preserves repeated Set-Cookie fields. |
 | `request.body` | No | `Uint8Array` is sent byte-for-byte. Encode text explicitly with `TextEncoder.encode(text)`. Strings and other values are rejected. Omission means no body. |
@@ -782,7 +782,8 @@ import { HTML } from "langhuan:html";
 ```ts
 HTML.parse(input: string): Document;
 HTML.decodeEntities(input: string): string;
-HTML.encodeURIComponent(value: string | [string, string][], charset?: string): string;
+HTML.encodeURIComponent(value: string, charset?: string): string;
+HTML.encodeURIComponents(pairs: [string, string][], charset?: string): string;
 
 document.find(selector: string): Selection;
 
@@ -828,7 +829,8 @@ backed by Rust `scraper`; none of these objects can modify the document.
 | --- | --- | --- |
 | `HTML.parse` | `input: string` | Parses one HTML document and returns a `Document`. Empty/blank input, non-string input, or input larger than 4 MiB throws. |
 | `HTML.decodeEntities` | `input: string` | Parses the input as an HTML fragment and returns its text, decoding entities. Input larger than 4 MiB throws. |
-| `HTML.encodeURIComponent` | `value: string \| [string, string][]`, `charset?: string` | Percent-encodes `value` like the browser's `encodeURIComponent`: alphanumeric characters and `-_.!~*'()` stay unescaped. The optional `charset` selects the byte encoding via WHATWG labels (`"gbk"`, `"big5"`, …) and defaults to UTF-8 — `HTML.encodeURIComponent("你好", "gbk")` returns `"%C4%E3%BA%C3"`. Use it to build query strings, since requests carry full URLs. An unknown label throws. The array form builds a whole query string: each entry is a `[key, value]` pair of strings, both sides encoded as components and joined with `&` — `HTML.encodeURIComponent([["q", "a b"], ["page", "2"]])` returns `"q=a%20b&page=2"` and the empty array returns `""`. Keys and values must be strings; anything else throws. |
+| `HTML.encodeURIComponent` | `value: string`, `charset?: string` | Percent-encodes `value` exactly like the browser's `encodeURIComponent`: alphanumeric characters and `-_.!~*'()` stay unescaped. The optional `charset` selects the byte encoding via WHATWG labels (`"gbk"`, `"big5"`, …) and defaults to UTF-8 — `HTML.encodeURIComponent("你好", "gbk")` returns `"%C4%E3%BA%C3"`. An unknown label throws. |
+| `HTML.encodeURIComponents` | `pairs: [string, string][]`, `charset?: string` | Builds a whole query string from `[key, value]` pairs: both sides are percent-encoded like components and the pairs joined with `&` — `HTML.encodeURIComponents([["q", "a b"], ["page", "2"]])` returns `"q=a%20b&page=2"` and the empty array returns `""`. The optional `charset` behaves as in `HTML.encodeURIComponent`. Use it to build query strings, since requests carry full URLs. Keys and values must be strings; anything else throws. |
 
 ### Document methods
 

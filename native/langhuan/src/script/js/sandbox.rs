@@ -864,6 +864,7 @@ mod tests {
                        html: typeof HTML,
                        parse: typeof HTML.parse,
                        encode: typeof HTML.encodeURIComponent,
+                       encodes: typeof HTML.encodeURIComponents,
                        decodeEntities: typeof HTML.decodeEntities,
                        find: typeof HTML.parse("<div><p>x</p></div>").find,
                    });"#,
@@ -871,7 +872,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             result,
-            r#"{"html":"object","parse":"function","encode":"function","decodeEntities":"function","find":"function"}"#
+            r#"{"html":"object","parse":"function","encode":"function","encodes":"function","decodeEntities":"function","find":"function"}"#
         );
     }
 

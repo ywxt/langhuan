@@ -221,7 +221,7 @@ function search(event) {
     return {
       type: "request",
       request: {
-        url: `${meta.base_url}/search/?${HTML.encodeURIComponent(query)}`,
+        url: `${meta.base_url}/search/?${HTML.encodeURIComponents(query)}`,
         method: "GET",
         headers: headers(),
       },

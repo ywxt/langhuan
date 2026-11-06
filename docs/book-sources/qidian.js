@@ -255,7 +255,7 @@ function completeParagraphs(title, content, event) {
     request: {
       url:
         `${meta.base_url}/webcommon/chapterreview/reviewsummary4m` +
-        `?${HTML.encodeURIComponent([
+        `?${HTML.encodeURIComponents([
           ["bookId", String(event.input.bookId)],
           ["chapterId", String(event.input.chapterId)],
           ["_csrfToken", csrfToken],
@@ -550,7 +550,7 @@ function paragraphs(event) {
       request: {
         url:
           `${meta.base_url}/webcommon/chapter/getMChapterInfo` +
-          `?${HTML.encodeURIComponent([
+          `?${HTML.encodeURIComponents([
             ["bookId", String(event.input.bookId)],
             ["chapterId", String(event.input.chapterId)],
           ])}`,
@@ -736,7 +736,7 @@ function reviewListStep(event, paragraphId, page, state) {
     request: {
       url:
         `${meta.base_url}/webcommon/chapterreview/reviewlist4m` +
-        `?${HTML.encodeURIComponent([
+        `?${HTML.encodeURIComponents([
           ["bookId", String(event.input.bookId)],
           ["chapterId", String(event.input.chapterId)],
           ["paragraphId", String(paragraphId)],

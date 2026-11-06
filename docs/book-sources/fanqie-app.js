@@ -250,7 +250,7 @@ function uuid() {
 // URLSearchParams 風格的查詢編碼（空格 → +）。請求 URL 與簽名輸入必須
 // 由同一字符串構造：兩者共用這一個編碼函數。
 function encodeQuery(params) {
-  return HTML.encodeURIComponent(
+  return HTML.encodeURIComponents(
     params.map(([key, value]) => [key, String(value)]),
   ).replaceAll("%20", "+");
 }

@@ -63,7 +63,7 @@ impl ScriptEngine {
             return Err(crate::error::Error::invalid_feed(format!(
                 "JavaScript feeds require schema_version {}; schema {} must migrate: \
                  requests carry a full URL instead of `params` (encode query strings \
-                 with HTML.encodeURIComponent), and the HTML module follows the \
+                 with HTML.encodeURIComponents), and the HTML module follows the \
                  jQuery and DOM interface (find, parent(), children())",
                 crate::feed::meta::FEED_SCHEMA_VERSION,
                 feed_meta.schema_version,
