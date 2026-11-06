@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use crate::error::{Error, Result};
-use crate::http::shared_client;
+use crate::http::new_client;
 
 /// Total budget for one script download: connection, request, and body.
 ///
@@ -23,8 +23,10 @@ pub const MAX_SCRIPT_BYTES: usize = 2 * 1024 * 1024;
 
 /// Download a JavaScript feed from `url` and return its content as a string.
 ///
-/// Uses the shared cookie-free client from [`shared_client`].  The caller is
-/// responsible for validating the returned content by passing it to
+/// Builds a free-following cookie-free client for the download: at this
+/// point no feed is installed yet, so there is no `access_domains` set to
+/// gate the URL or its redirects. The caller is responsible for validating
+/// the returned content by passing it to
 /// [`crate::script::meta::parse_meta`].
 ///
 /// # Errors
@@ -39,7 +41,7 @@ pub async fn download_script(url: &str) -> Result<String> {
 /// Budgeted download core (tests pass a tight budget to keep stalls fast).
 async fn download_script_with_budget(url: &str, timeout: Duration) -> Result<String> {
     tracing::debug!(url = %url, "downloading feed script");
-    let client = shared_client();
+    let client = new_client();
     let mut response = client
         .get(url)
         .timeout(timeout)

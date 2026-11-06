@@ -44,6 +44,9 @@ error.file_read:
 error.script_too_large:
   en: "Feed script exceeds the %{limit} size limit"
   zh: "書源腳本超過 %{limit} 大小上限"
+error.response_too_large:
+  en: "HTTP response exceeds the %{limit} size limit"
+  zh: "HTTP 回應超過 %{limit} 大小上限"
 error.no_pending_preview:
   en: "No pending preview for this request"
   zh: "找不到對應的預覽記錄"

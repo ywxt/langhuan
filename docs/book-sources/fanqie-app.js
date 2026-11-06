@@ -1,7 +1,7 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.fanqie_app
 // @name         番茄小說（APP 直連）
-// @version      2.2.3
+// @version      2.2.4
 // @author       Langhuan
 // @description  番茄小說 APP 網關書源（reading.snssdk.com）：匿名設備註冊後經 x-argus/x-ladon 簽名直連閱讀 API，VIP 章節全文解密，無需帳號；支持正文段落評論，章節段落附帶評論數角標。需要宿主提供存儲後端（langhuan:storage）
 // @base_url     https://reading.snssdk.com
@@ -9,6 +9,7 @@
 // @access_domain i.snssdk.com
 // @access_domain fanqienovel.com
 // @access_domain api5-normal-sinfonlineb.fqnovel.com
+// @access_domain *.fqnovelpic.com
 // @schema_version 6
 // ==/Feed==
 //

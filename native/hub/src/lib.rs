@@ -38,6 +38,9 @@ pub(crate) fn localize_error(e: &langhuan::error::Error) -> String {
             ScriptError::TooLarge { limit } => {
                 t!("error.script_too_large", limit = size_label(*limit)).to_string()
             }
+            ScriptError::ResponseTooLarge { limit } => {
+                t!("error.response_too_large", limit = size_label(*limit)).to_string()
+            }
             ScriptError::Parse { line, message } => {
                 t!("error.script_parse", line = line, message = message).to_string()
             }

@@ -1,34 +1,23 @@
-use std::sync::Arc;
-
-use reqwest::Client;
-
 use crate::error::Result;
 use crate::feed::SharedStorageHandler;
-use crate::http::new_client;
+use crate::http::new_feed_client;
 use crate::script::feed::ScriptFeed;
 use crate::script::js::JsFeed;
 use crate::script::meta;
 
 /// Loads JavaScript feeds into the native QuickJS sandbox runtime.
+///
+/// Every feed owns its HTTP client — built from the feed's own
+/// `access_domains` so its redirect hops are gated — so the engine itself
+/// holds no client state.
 #[derive(Clone)]
 pub struct ScriptEngine {
-    client: Arc<Client>,
     storage: Option<SharedStorageHandler>,
 }
 
 impl ScriptEngine {
     pub fn new() -> Self {
-        Self {
-            client: Arc::new(new_client()),
-            storage: None,
-        }
-    }
-
-    pub fn with_client(client: Client) -> Self {
-        Self {
-            client: Arc::new(client),
-            storage: None,
-        }
+        Self { storage: None }
     }
 
     /// Install a per-feed storage backend for the feeds this engine loads;
@@ -69,10 +58,13 @@ impl ScriptEngine {
                 feed_meta.schema_version,
             )));
         }
+        // The feed's own client: redirect hops are gated by this feed's
+        // access_domains for every request it makes.
+        let client = new_feed_client(&feed_meta.access_domains);
         JsFeed::new(
             script[body_offset..].to_owned(),
             feed_meta,
-            (*self.client).clone(),
+            client,
             self.storage.clone(),
         )
     }
@@ -87,6 +79,7 @@ impl Default for ScriptEngine {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::sync::Arc;
     use std::sync::Mutex;
 
     use serde_json::Value;

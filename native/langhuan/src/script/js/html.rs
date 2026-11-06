@@ -182,22 +182,13 @@ impl Document {
     /// Attribute value of one element: `Some("")` for an empty attribute
     /// and `None` only when absent, matching the browser's `getAttribute`
     /// modulo its use of `null`.
-    fn attr<'js>(
-        &self,
-        ctx: &Ctx<'js>,
-        node_id: NodeId,
-        name: &str,
-    ) -> JsResult<Option<String>> {
+    fn attr<'js>(&self, ctx: &Ctx<'js>, node_id: NodeId, name: &str) -> JsResult<Option<String>> {
         let dom = self.lock(ctx)?;
         Ok(Self::element(&dom, node_id).and_then(|node| node.attr(name).map(str::to_owned)))
     }
 
     /// Every attribute of one element as name/value pairs.
-    fn attrs<'js>(
-        &self,
-        ctx: &Ctx<'js>,
-        node_id: NodeId,
-    ) -> JsResult<Vec<(String, String)>> {
+    fn attrs<'js>(&self, ctx: &Ctx<'js>, node_id: NodeId) -> JsResult<Vec<(String, String)>> {
         let dom = self.lock(ctx)?;
         Ok(Self::element(&dom, node_id)
             .map(|node| {
@@ -210,17 +201,14 @@ impl Document {
     }
 
     /// Serialized HTML of one element: outer when `outer`, inner otherwise.
-    fn html<'js>(
-        &self,
-        ctx: &Ctx<'js>,
-        node_id: NodeId,
-        outer: bool,
-    ) -> JsResult<Option<String>> {
+    fn html<'js>(&self, ctx: &Ctx<'js>, node_id: NodeId, outer: bool) -> JsResult<Option<String>> {
         let dom = self.lock(ctx)?;
-        Ok(Self::element(&dom, node_id).map(|node| if outer {
-            node.html()
-        } else {
-            node.inner_html()
+        Ok(Self::element(&dom, node_id).map(|node| {
+            if outer {
+                node.html()
+            } else {
+                node.inner_html()
+            }
         }))
     }
 
@@ -495,8 +483,7 @@ fn build_selection<'js>(
         selection_object,
         "parent",
         move |ctx: Ctx<'js>, filter: Opt<String>| {
-            let selected =
-                parent_document.parent_ids(&ctx, &parent_nodes, filter.0.as_deref())?;
+            let selected = parent_document.parent_ids(&ctx, &parent_nodes, filter.0.as_deref())?;
             build_selection(&ctx, parent_document.clone(), selected)
         },
     )?;
@@ -624,18 +611,22 @@ fn build_node<'js>(
 fn build_document<'js>(ctx: &Ctx<'js>, document: SharedDocument) -> JsResult<Object<'js>> {
     let object = Object::new(ctx.clone())?;
     let find_document = document;
-    set_function(ctx, &object, "find", move |ctx: Ctx<'js>, selector: String| {
-        // The lock must be released before building the selection: nodes
-        // lock the document again when they read their `tagName`.
-        let selected = {
-            let selector = Document::parse_selector(&ctx, &selector)?;
-            let dom = find_document.lock(&ctx)?;
-            let selected: Vec<NodeId> =
-                dom.select(&selector).map(|found| found.id()).collect();
-            find_document.unique_sorted(&dom, selected)
-        };
-        build_selection(&ctx, find_document.clone(), selected)
-    })?;
+    set_function(
+        ctx,
+        &object,
+        "find",
+        move |ctx: Ctx<'js>, selector: String| {
+            // The lock must be released before building the selection: nodes
+            // lock the document again when they read their `tagName`.
+            let selected = {
+                let selector = Document::parse_selector(&ctx, &selector)?;
+                let dom = find_document.lock(&ctx)?;
+                let selected: Vec<NodeId> = dom.select(&selector).map(|found| found.id()).collect();
+                find_document.unique_sorted(&dom, selected)
+            };
+            build_selection(&ctx, find_document.clone(), selected)
+        },
+    )?;
 
     Ok(object)
 }
@@ -871,9 +862,7 @@ mod tests {
 
     #[test]
     fn encode_uri_component_supports_other_charsets() {
-        let result = evaluate(
-            r#"export default HTML.encodeURIComponent("你好", "gbk");"#,
-        );
+        let result = evaluate(r#"export default HTML.encodeURIComponent("你好", "gbk");"#);
         assert_eq!(result, r#"%C4%E3%BA%C3"#);
     }
 

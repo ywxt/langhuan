@@ -1,4 +1,6 @@
+use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_stream::stream;
 use tokio_stream::StreamExt;
@@ -28,6 +30,7 @@ macro_rules! cache_first_stream {
     (
         $feed_id:expr,
         $label:expr,
+        gate: $gate:expr,
         cache_get: $cache_get:expr,
         cache_clear: $cache_clear:expr,
         inner_stream: $inner_stream:expr,
@@ -36,6 +39,16 @@ macro_rules! cache_first_stream {
         Box::pin(stream! {
             let feed_id = &$feed_id;
             let label = $label;
+
+            // 0. Shelf gate: books not on the bookshelf never touch the
+            // cache — no reads, no writes. The inner stream is served live.
+            if !$gate.await {
+                let mut stream = $inner_stream;
+                while let Some(result) = stream.next().await {
+                    yield result;
+                }
+                return;
+            }
 
             // 1. Try cache
             match $cache_get {
@@ -94,11 +107,30 @@ macro_rules! cache_first_stream {
     }};
 }
 
-/// Upper bound for a downloaded cover image.
-const MAX_COVER_BYTES: usize = 5 * 1024 * 1024;
+/// Whether the book is currently shelved — the gate for all cache
+/// participation: books not on the bookshelf are served live, and nothing
+/// about them (info, chapters, paragraphs, covers) is persisted. A failed
+/// lookup fails closed.
+async fn shelved(db: &Db, feed_id: &str, book_id: &str) -> bool {
+    let (fid, bid) = (feed_id.to_owned(), book_id.to_owned());
+    db.call(move |repo| repo.is_shelved(&fid, &bid))
+        .await
+        .unwrap_or(false)
+}
+
+/// Budget for one cover download — connection, redirects, and the whole
+/// body. An elapsed budget surfaces as an ordinary reqwest timeout error and
+/// leaves the claim `pending` for the in-flight window to retry.
+const COVER_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A proxy feed that wraps any [`Feed`] and adds SQLite-backed caching for
 /// chapter lists, chapter content, and book info.
+///
+/// **Shelf gate**: every cache below participates only for shelved books.
+/// A book not on the bookshelf is served live end-to-end — search results,
+/// detail pages, reading — and nothing about it is persisted. The gate
+/// applies in both directions: no cache reads and no writes, so un-shelved
+/// browsing leaves no trace beyond user data (progress, bookmarks).
 ///
 /// **Chapter content** (`paragraphs`): cache-first; cached content never
 /// expires on its own (it is immutable) and is only removed by stale cleanup
@@ -170,6 +202,7 @@ impl<F: Feed> CachedFeed<F> {
         cache_first_stream!(
             feed_id,
             "chapter paragraphs",
+            gate: shelved(&db, &feed_id, &bid),
             cache_get: {
                 let (db, fid, b, c) = (db.clone(), feed_id.clone(), bid.clone(), cid.clone());
                 db.call(move |repo| {
@@ -212,6 +245,7 @@ impl<F: Feed> CachedFeed<F> {
         cache_first_stream!(
             feed_id,
             "chapter list",
+            gate: shelved(&db, &feed_id, &bid),
             cache_get: {
                 let (db, fid, b) = (db.clone(), feed_id.clone(), bid.clone());
                 db.call(move |repo| {
@@ -244,7 +278,9 @@ impl<F: Feed> CachedFeed<F> {
         )
     }
 
-    /// Cache-first book info with an optional forced refresh.
+    /// Cache-first book info with an optional forced refresh — for shelved
+    /// books only; books not on the bookshelf are fetched live and never
+    /// touch the database.
     ///
     /// - **Cache hit** (a row that was truly fetched, not a search-result
     ///   placeholder): serve it. The returned `cover_url` is always the
@@ -264,6 +300,13 @@ impl<F: Feed> CachedFeed<F> {
         let feed_id = self.inner.meta().id.clone();
         let bid = book_id.to_owned();
         let db = self.db.clone();
+
+        // Shelf gate: books not on the bookshelf bypass the cache in both
+        // directions — nothing is read, nothing is persisted, and no cover
+        // download is spawned.
+        if !shelved(&db, &feed_id, &bid).await {
+            return self.inner.book_info(&bid).await;
+        }
 
         if !force_refresh {
             let hit = db
@@ -334,18 +377,64 @@ async fn mark_cover_failed(db: &Db, feed_id: &str, book_id: &str) {
         .await;
 }
 
+/// The feed's install-time `access_domains`, read from the registry for the
+/// cover gate. A missing feed row yields an empty set — which blocks.
+async fn feed_access_domains(db: &Db, feed_id: &str) -> Result<HashSet<String>> {
+    let fid = feed_id.to_owned();
+    db.call(move |repo| {
+        Ok(repo
+            .get_feed(&fid)?
+            .map(|row| row.access_domains.into_iter().collect())
+            .unwrap_or_default())
+    })
+    .await
+}
+
 /// Download a cover image into the `covers` table.
 ///
 /// Guards:
+/// * **Shelf** — covers are only cached for shelved books; anything else
+///   would persist data about a book the user never kept.
+/// * **Domain** — the feed's install-time `access_domains` gate the cover
+///   URL exactly like script requests, and every redirect hop of the
+///   download is re-checked against them.
+/// * **Timeout** — [`COVER_TIMEOUT`] bounds the whole request chain.
 /// * **Single-flight** — claims the download slot first; another task holding
 ///   a fresh `pending` claim (or a completed download) makes this a no-op.
 /// * **Content type** — must be `image/*` when reported.
-/// * **Size** — streams the body and aborts beyond [`MAX_COVER_BYTES`].
+/// * **Size** — streams the body and aborts beyond
+///   [`crate::http::MAX_RESPONSE_BYTES`].
 ///
 /// Failure semantics: network/transport errors leave the state `pending`
 /// (retryable after the 10-minute in-flight window); a response that fails
-/// the content checks is marked `failed` (7-day backoff).
+/// the content checks is marked `failed` (7-day backoff). A blocked domain
+/// or redirect hop is skipped before any state change, so the download
+/// retries by itself once the feed's allowlist covers it.
 pub async fn download_cover(db: Db, feed_id: String, book_id: String, url: String) {
+    if !shelved(&db, &feed_id, &book_id).await {
+        tracing::debug!(feed_id = %feed_id, book_id = %book_id, "cover download skipped: book not shelved");
+        return;
+    }
+
+    // Covers follow the same access_domains contract as script requests; the
+    // feed row caches the install-time allowlist.
+    let domains = match feed_access_domains(&db, &feed_id).await {
+        Ok(domains) => domains,
+        Err(error) => {
+            tracing::warn!(feed_id = %feed_id, book_id = %book_id, error = %error, "cover allowlist unavailable");
+            return;
+        }
+    };
+    if !crate::http::domain_allowed(&url, &domains) {
+        tracing::warn!(
+            feed_id = %feed_id,
+            book_id = %book_id,
+            url = %url,
+            "cover url outside access_domains; skipping download"
+        );
+        return;
+    }
+
     let claimed = db
         .call({
             let (fid, bid) = (feed_id.clone(), book_id.clone());
@@ -358,7 +447,10 @@ pub async fn download_cover(db: Db, feed_id: String, book_id: String, url: Strin
         return;
     }
 
-    let resp = match crate::http::shared_client().get(&url).send().await {
+    // The cover's own feed client: redirect hops are re-checked against the
+    // same allowlist for the duration of the download.
+    let client = crate::http::new_feed_client(&domains);
+    let resp = match client.get(&url).timeout(COVER_TIMEOUT).send().await {
         Ok(resp) => resp,
         Err(e) => {
             // Transient: leave `pending` so the in-flight window retries.
@@ -366,6 +458,20 @@ pub async fn download_cover(db: Db, feed_id: String, book_id: String, url: Strin
             return;
         }
     };
+
+    // A followable 3xx means the client's redirect policy stopped the chain
+    // on a hop outside the allowlist. Leave the claim `pending` — the
+    // download retries (and succeeds) once the feed's allowlist covers the
+    // hop.
+    if matches!(resp.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
+        tracing::warn!(
+            feed_id = %feed_id,
+            book_id = %book_id,
+            url = %url,
+            "cover redirect blocked by access_domains"
+        );
+        return;
+    }
 
     let content_type = resp
         .headers()
@@ -380,7 +486,7 @@ pub async fn download_cover(db: Db, feed_id: String, book_id: String, url: Strin
         return;
     }
     if let Some(len) = resp.content_length()
-        && len as usize > MAX_COVER_BYTES
+        && len as usize > crate::http::MAX_RESPONSE_BYTES
     {
         tracing::debug!(feed_id = %feed_id, book_id = %book_id, length = len, "cover rejected: too large");
         mark_cover_failed(&db, &feed_id, &book_id).await;
@@ -400,7 +506,7 @@ pub async fn download_cover(db: Db, feed_id: String, book_id: String, url: Strin
             }
         };
         buf.extend_from_slice(&chunk);
-        if buf.len() > MAX_COVER_BYTES {
+        if buf.len() > crate::http::MAX_RESPONSE_BYTES {
             exceeded = true;
             break;
         }
@@ -491,8 +597,18 @@ impl<F: Feed + FeedAuthFlow> FeedAuthFlow for CachedFeed<F> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use tokio_stream::StreamExt;
+
+    use super::{CachedFeed, download_cover};
+    use crate::db::Db;
     use crate::db::repo::BookRow;
-    use crate::model::BookInfo;
+    use crate::error::Result;
+    use crate::feed::{Feed, FeedMeta, FeedStream};
+    use crate::model::{BookInfo, ChapterInfo, Paragraph, ParagraphId, SearchResult};
 
     #[test]
     fn book_row_maps_to_book_info() {
@@ -509,5 +625,322 @@ mod tests {
         assert_eq!(info.id, "b1");
         assert_eq!(info.title, "T");
         assert_eq!(info.cover_url.as_deref(), Some("https://cover"));
+    }
+
+    // -----------------------------------------------------------------------
+    // FakeFeed — a minimal in-memory feed that counts inner-fetch calls so
+    // tests can prove which requests were served live versus from the cache.
+    // -----------------------------------------------------------------------
+
+    struct FakeFeed {
+        meta: FeedMeta,
+        info_fetches: AtomicUsize,
+        chapter_fetches: AtomicUsize,
+        paragraph_fetches: AtomicUsize,
+    }
+
+    impl FakeFeed {
+        fn new(access_domains: HashSet<String>) -> Self {
+            Self {
+                meta: FeedMeta {
+                    id: "fake".to_owned(),
+                    name: "Fake".to_owned(),
+                    version: "1.0.0".to_owned(),
+                    author: None,
+                    description: None,
+                    base_url: "https://fake.example".to_owned(),
+                    access_domains,
+                    schema_version: 6,
+                },
+                info_fetches: AtomicUsize::new(0),
+                chapter_fetches: AtomicUsize::new(0),
+                paragraph_fetches: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl Feed for FakeFeed {
+        fn search<'a>(&'a self, _keyword: &'a str) -> FeedStream<'a, SearchResult> {
+            Box::pin(tokio_stream::iter(Vec::<Result<SearchResult>>::new()))
+        }
+
+        async fn book_info(&self, id: &str) -> Result<BookInfo> {
+            self.info_fetches.fetch_add(1, Ordering::SeqCst);
+            Ok(BookInfo {
+                id: id.to_owned(),
+                title: "Title".to_owned(),
+                author: "Author".to_owned(),
+                cover_url: None,
+                description: None,
+            })
+        }
+
+        fn chapters<'a>(&'a self, book_id: &'a str) -> FeedStream<'a, ChapterInfo> {
+            self.chapter_fetches.fetch_add(1, Ordering::SeqCst);
+            Box::pin(tokio_stream::iter((0..2).map(move |i| {
+                Ok(ChapterInfo {
+                    id: format!("{book_id}-c{i}"),
+                    title: format!("Chapter {i}"),
+                })
+            })))
+        }
+
+        fn paragraphs<'a>(
+            &'a self,
+            book_id: &'a str,
+            chapter_id: &'a str,
+        ) -> FeedStream<'a, Paragraph> {
+            self.paragraph_fetches.fetch_add(1, Ordering::SeqCst);
+            Box::pin(tokio_stream::iter((0..2).map(move |i| {
+                Ok(Paragraph::Text {
+                    id: ParagraphId::generated(i),
+                    content: format!("{book_id}/{chapter_id}/{i}"),
+                    comment_count: None,
+                })
+            })))
+        }
+
+        fn meta(&self) -> &FeedMeta {
+            &self.meta
+        }
+    }
+
+    /// Open an in-memory database, register the fake feed with the given
+    /// access domains, and wrap both in a [`CachedFeed`].
+    async fn setup_feed(
+        access_domains: HashSet<String>,
+    ) -> (Db, Arc<FakeFeed>, CachedFeed<FakeFeed>) {
+        let feed = FakeFeed::new(access_domains);
+        let db = Db::open_in_memory().await.expect("open in-memory db");
+        let meta = feed.meta.clone();
+        db.write(move |repo| repo.upsert_feed(&meta, None, "test-hash", crate::db::now_ms()))
+            .await
+            .expect("seed feed row");
+        let inner = Arc::new(feed);
+        (db.clone(), inner.clone(), CachedFeed::new(inner, db))
+    }
+
+    /// Shelve a book like a real shelf-add does: the snapshot carries a
+    /// `cover_url`, which the claim SQL requires before a download may run.
+    async fn shelve(db: &Db, book_id: &str) {
+        let bid = book_id.to_owned();
+        db.write(move |repo| {
+            repo.add_book(
+                "fake",
+                &bid,
+                "Title",
+                "Author",
+                None,
+                Some("https://fake.example/cover"),
+                crate::db::now_ms(),
+            )
+        })
+        .await
+        .expect("shelve book");
+    }
+
+    async fn collect_ok<T>(mut stream: FeedStream<'_, T>) -> Vec<T> {
+        let mut items = Vec::new();
+        while let Some(result) = stream.next().await {
+            items.push(result.expect("stream item"));
+        }
+        items
+    }
+
+    #[tokio::test]
+    async fn shelved_books_are_served_from_the_cache() {
+        let (db, inner, cached) = setup_feed(HashSet::new()).await;
+        shelve(&db, "b1").await;
+
+        for expected in [2usize, 2, 2] {
+            let chapters = collect_ok(cached.chapters("b1")).await;
+            let paragraphs = collect_ok(cached.paragraphs("b1", "b1-c0")).await;
+            assert_eq!(chapters.len(), expected);
+            assert_eq!(paragraphs.len(), expected);
+        }
+
+        // The inner feed saw exactly one round of fetches; the rest were
+        // cache hits.
+        assert_eq!(inner.chapter_fetches.load(Ordering::SeqCst), 1);
+        assert_eq!(inner.paragraph_fetches.load(Ordering::SeqCst), 1);
+
+        let info = cached.book_info("b1").await.expect("book info");
+        assert_eq!(info.title, "Title");
+        assert_eq!(inner.info_fetches.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn unshelved_books_bypass_the_cache_entirely() {
+        let (db, inner, cached) = setup_feed(HashSet::new()).await;
+
+        // No shelf-add: every call must go to the inner feed, twice.
+        for _ in 0..2 {
+            let chapters = collect_ok(cached.chapters("b1")).await;
+            let paragraphs = collect_ok(cached.paragraphs("b1", "b1-c0")).await;
+            let info = cached.book_info("b1").await.expect("book info");
+            assert_eq!(chapters.len(), 2);
+            assert_eq!(paragraphs.len(), 2);
+            assert_eq!(info.title, "Title");
+        }
+        assert_eq!(inner.chapter_fetches.load(Ordering::SeqCst), 2);
+        assert_eq!(inner.paragraph_fetches.load(Ordering::SeqCst), 2);
+        assert_eq!(inner.info_fetches.load(Ordering::SeqCst), 2);
+
+        // Nothing about the unshelved book was persisted.
+        let row = db
+            .call(|repo| repo.get_book_and_touch("fake", "b1", crate::db::now_ms()))
+            .await
+            .expect("read books table");
+        assert!(row.is_none(), "unshelved browsing must leave no books row");
+        let covers = db
+            .call(|repo| repo.get_cover_bytes("fake", "b1"))
+            .await
+            .expect("read covers table");
+        assert!(covers.is_none());
+    }
+
+    #[tokio::test]
+    async fn cover_downloads_skip_unshelved_books() {
+        let mut server = mockito::Server::new_async().await;
+        let cover = server
+            .mock("GET", "/cover")
+            .with_status(200)
+            .with_header("content-type", "image/png")
+            .with_body("png")
+            .expect(0)
+            .create_async()
+            .await;
+        let (db, _inner, _cached) = setup_feed(HashSet::from(["127.0.0.1".to_owned()])).await;
+
+        // Not shelved: skipped before any HTTP request or state change.
+        download_cover(
+            db.clone(),
+            "fake".to_owned(),
+            "b1".to_owned(),
+            format!("{}/cover", server.url()),
+        )
+        .await;
+
+        let stored = db
+            .call(|repo| repo.get_cover_bytes("fake", "b1"))
+            .await
+            .expect("read covers table");
+        assert!(stored.is_none());
+        cover.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn cover_downloads_require_an_allowed_domain() {
+        let mut server = mockito::Server::new_async().await;
+        let cover = server.mock("GET", "/cover").expect(0).create_async().await;
+        // The allowlist deliberately does not cover the mock server's host.
+        let (db, _inner, _cached) = setup_feed(HashSet::from(["allowed.example".to_owned()])).await;
+        shelve(&db, "b1").await;
+
+        download_cover(
+            db.clone(),
+            "fake".to_owned(),
+            "b1".to_owned(),
+            format!("{}/cover", server.url()),
+        )
+        .await;
+
+        // Skipped before the claim: no bytes, and the download slot stays
+        // free for a retry once the allowlist covers the host.
+        let stored = db
+            .call(|repo| repo.get_cover_bytes("fake", "b1"))
+            .await
+            .expect("read covers table");
+        assert!(stored.is_none());
+        let claimed = db
+            .call(|repo| repo.claim_cover_download("fake", "b1", crate::db::now_ms()))
+            .await
+            .expect("claim check");
+        assert!(
+            claimed,
+            "a domain-blocked skip must not leave a pending claim"
+        );
+        cover.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn cover_download_happy_path_stores_bytes() {
+        let mut server = mockito::Server::new_async().await;
+        let body = b"\x89PNG-not-really".to_vec();
+        let cover = server
+            .mock("GET", "/cover")
+            .with_status(200)
+            .with_header("content-type", "image/png")
+            .with_body(body.clone())
+            .expect(1)
+            .create_async()
+            .await;
+        let (db, _inner, _cached) = setup_feed(HashSet::from(["127.0.0.1".to_owned()])).await;
+        shelve(&db, "b1").await;
+
+        download_cover(
+            db.clone(),
+            "fake".to_owned(),
+            "b1".to_owned(),
+            format!("{}/cover", server.url()),
+        )
+        .await;
+
+        let (mime, bytes) = db
+            .call(|repo| repo.get_cover_bytes("fake", "b1"))
+            .await
+            .expect("read covers table")
+            .expect("cover stored");
+        assert_eq!(mime, "image/png");
+        assert_eq!(bytes, body);
+
+        // Single-flight: a completed download is a no-op, not a re-download.
+        download_cover(
+            db.clone(),
+            "fake".to_owned(),
+            "b1".to_owned(),
+            format!("{}/cover", server.url()),
+        )
+        .await;
+        cover.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn cover_downloads_block_disallowed_redirect_hops() {
+        let mut server = mockito::Server::new_async().await;
+        let redirect = server
+            .mock("GET", "/cover")
+            .with_status(302)
+            .with_header("location", "https://evil.example/land")
+            .expect(1)
+            .create_async()
+            .await;
+        let (db, _inner, _cached) = setup_feed(HashSet::from(["127.0.0.1".to_owned()])).await;
+        shelve(&db, "b1").await;
+
+        download_cover(
+            db.clone(),
+            "fake".to_owned(),
+            "b1".to_owned(),
+            format!("{}/cover", server.url()),
+        )
+        .await;
+
+        // No bytes stored, and the claim stays pending for the in-flight
+        // window — a fresh claim right now must be refused.
+        let stored = db
+            .call(|repo| repo.get_cover_bytes("fake", "b1"))
+            .await
+            .expect("read covers table");
+        assert!(stored.is_none());
+        let claimed = db
+            .call(|repo| repo.claim_cover_download("fake", "b1", crate::db::now_ms()))
+            .await
+            .expect("claim check");
+        assert!(
+            !claimed,
+            "a blocked redirect hop must leave the claim pending"
+        );
+        redirect.assert_async().await;
     }
 }

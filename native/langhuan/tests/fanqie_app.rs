@@ -1017,7 +1017,7 @@ async fn live_vip_chapter_decrypts_anonymously() {
         .expect("live search yielded an error");
     assert!(!books.is_empty(), "no search results to probe");
 
-    let client = langhuan::http::shared_client();
+    let client = langhuan::http::new_client();
     for book in books.iter().take(5) {
         let response = client
             .get(format!(

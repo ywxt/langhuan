@@ -59,6 +59,12 @@ pub enum ScriptError {
     #[error("feed script exceeds {limit} bytes")]
     TooLarge { limit: usize },
 
+    /// An HTTP response body exceeded the maximum accepted size. Refused
+    /// before it is buffered in full, so a runaway page (or a lying
+    /// content-length) cannot exhaust memory.
+    #[error("HTTP response exceeds {limit} bytes")]
+    ResponseTooLarge { limit: usize },
+
     /// An error occurred while parsing the feed script header.
     #[error("script parse error at line {line}: {message}")]
     Parse { line: usize, message: String },
@@ -218,6 +224,11 @@ impl Error {
     #[inline]
     pub fn script_too_large(limit: usize) -> Self {
         ScriptError::TooLarge { limit }.into()
+    }
+
+    #[inline]
+    pub fn response_too_large(limit: usize) -> Self {
+        ScriptError::ResponseTooLarge { limit }.into()
     }
 
     #[inline]

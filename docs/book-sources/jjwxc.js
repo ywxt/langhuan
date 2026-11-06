@@ -1,11 +1,12 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.jjwxc
 // @name         晉江文學城
-// @version      1.1.0
+// @version      1.1.1
 // @author       Langhuan
 // @description  適配晉江文學城（www.jjwxc.net）的書源：搜尋、詳情、目錄、正文（含作話），章評、段評及回覆免登入讀取；VIP 章節需站方帳號，本源暫不支持登入
 // @base_url     https://www.jjwxc.net
 // @access_domain www.jjwxc.net
+// @access_domain i9-static.jjwxc.net
 // @schema_version 6
 // ==/Feed==
 
@@ -148,7 +149,16 @@ function absoluteUrl(value) {
 // ── 搜尋 ─────────────────────────────────────────────────────────────────────
 // search.php?kw=<GBK 編碼>&t=1（按作品）。#search_result 內每個結果塊爲
 // h3.title + div.intro + div.info；分頁欄 .page 的「下一页」鏈接帶 &p=N，
-// 站點約在第 10 頁後截斷，空頁無下一頁自然終止。結果無封面。
+// 站點約在第 10 頁後截斷，空頁無下一頁自然終止。結果頁無封面圖，封面由
+// novelid 構造 CDN URL（見 coverUrl），前端直接顯示、入架後統一下載。
+
+// ── 封面 CDN ─────────────────────────────────────────────────────────────────
+// 搜索頁無封面圖，但 CDN 的 novelimage.php 僅憑 novelid 即返回該書當前封面
+// （image/*，實測 400×560）；詳情頁 img.noveldefaultimage 的自定義 src 同樣
+// 落在該主機（@access_domain 已放行，封面下載需過域名校驗）。
+function coverUrl(novelId) {
+  return `https://i9-static.jjwxc.net/novelimage.php?novelid=${novelId}`;
+}
 
 function search(event) {
   if (event.state == null) {
@@ -192,7 +202,7 @@ function search(event) {
       id,
       title,
       author,
-      cover_url: null,
+      cover_url: coverUrl(id),
       description: richText(block?.find("div.intro").first()?.text()) || null,
     });
     seen.add(id);

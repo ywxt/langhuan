@@ -312,7 +312,7 @@ mod tests {
     use super::{
         TRACE_BODY_BUDGET_BYTES, TRACE_ENTRY_LIMIT, TraceEntry, TraceRecorder, mask_request_headers,
     };
-    use crate::http::{HttpRequest, execute, shared_client};
+    use crate::http::{HttpRequest, execute, new_client};
 
     /// Masking keeps cookie names and auth schemes, hides the secrets.
     #[test]
@@ -358,7 +358,7 @@ mod tests {
         // so the budget value never elapses; it just satisfies the signature.
         let result = recorder
             .scope(execute(
-                shared_client(),
+                &new_client(),
                 "feed",
                 &domains,
                 &req,
