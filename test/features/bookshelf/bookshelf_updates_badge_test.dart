@@ -242,7 +242,7 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('checking state renders no action, only pull-to-refresh', (
+  testWidgets('checking state disables refresh and swaps in a spinner', (
     tester,
   ) async {
     final router = _router();
@@ -253,11 +253,19 @@ void main() {
     await tester.pumpWidget(_testApp(router, updates));
     await tester.pump();
 
-    // The title row carries neither a refresh button nor a spinner; the
-    // RefreshIndicator owns the checking feedback while the gesture is
-    // active.
-    expect(find.byTooltip('Check for updates'), findsNothing);
-    expect(find.byType(LanghuanSpinner), findsNothing);
+    // The title row's refresh button carries the checking feedback itself:
+    // disabled, with its icon swapped for an inline spinner until the check
+    // finishes. Pull-to-refresh stays available through the
+    // RefreshIndicator for the duration.
+    final refreshButton = find.byWidgetPredicate(
+      (widget) =>
+          widget is IconButton &&
+          widget.tooltip == 'Refresh bookshelf and check for updates',
+    );
+    expect(refreshButton, findsOneWidget);
+    expect(tester.widget<IconButton>(refreshButton).onPressed, isNull);
+    expect(find.byType(LanghuanSpinner), findsOneWidget);
+    expect(find.byIcon(Icons.refresh), findsNothing);
     expect(find.byType(RefreshIndicator), findsOneWidget);
   });
 
