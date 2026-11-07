@@ -19,6 +19,7 @@ import 'comments/comments_controller.dart';
 import 'comments/comments_panel.dart';
 import 'bookshelf_provider.dart';
 import 'listening/listening_controller.dart';
+import 'listening/listening_providers.dart';
 import 'listening/listening_panel.dart';
 import 'reader_screen_controller.dart';
 import 'reader_settings_provider.dart';

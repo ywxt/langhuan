@@ -5,10 +5,10 @@ source contract, parameter types, and module limits, use the
 [API Reference](book-sources/api-reference.md). For isolated source execution and
 HTTP automation, use [Developer tools](feed-debug-tools.md).
 
-Aggregate search, read-only comments, typed paragraph identities, and foreground
+Aggregate search, read-only comments, typed paragraph identities, and system TTS
 listening are implemented. Sources must export comment handlers to expose those
-actions. Listening uses the device's installed TTS engine; background playback,
-lock-screen controls, and next-chapter prefetch are not implemented.
+actions. Listening uses the device's installed TTS engine, prefetches one chapter,
+and integrates mobile background playback and system media controls.
 
 ## Aggregate search
 
@@ -222,8 +222,11 @@ isolates callbacks from superseded playback sessions.
 The controller speaks titles and text, skipping images and empty paragraphs.
 Utterances contain at most 240 UTF-16 code units, prefer punctuation boundaries,
 and never split a surrogate pair. These chunks are engine inputs, not saved
-positions. The next chapter loads on demand; no audio for the entire book is
-pre-generated. Chapter failures stop playback and expose an error. Finishing the
+positions. The next chapter is prefetched while the current chapter plays; no
+audio for the entire book is pre-generated. Failed prefetches are retried when
+needed. Changing effective Transformer rules discards both retained and
+prefetched transformed paragraphs; paused sessions reload on resume and active
+sessions restart the current paragraph with the new rules. Chapter failures stop playback and expose an error. Finishing the
 last chapter enters `completed`.
 
 ### Paragraph-level progress
@@ -247,16 +250,32 @@ reading progress. Ordinary reading retains its existing character offsets;
 only speech updates use paragraph boundaries. While speech is active, its
 controller writes progress and the reader follows without competing scroll
 writes. Manual reading interactions pause speech before taking over progress.
-Voice and rate selection currently last for the application session.
+Voice and rate selection are persisted in SharedPreferences. Concurrent setting
+changes preserve playback intent, while an explicit pause or stop cancels any
+pending automatic restart.
 
-### Lifecycle and remaining work
+### Background playback and system controls
 
-Playback pauses when the application is hidden or backgrounded. A sleep timer
-stores a deadline that is checked again before playback advances. The current
-implementation does not provide continuous background or lock-screen playback.
-Android background playback needs a media session and the appropriate service;
-Apple platforms need an audio session and background configuration. Media keys,
-interruptions, and next-chapter prefetch remain separate work.
+Hiding the application or locking the screen does not pause speech.
+`ListeningBackgroundPlayback` prepares an `audio_service` handler and a speech
+`audio_session` before the first utterance. Android declares a media-playback
+foreground service and wake-lock permission; iOS enables the audio background
+mode. Windows and Linux retain their desktop playback adapters without a mobile
+service. Mobile notification and lock-screen commands delegate to the same
+`ListeningController`, including pause/resume, stop, paragraph navigation, and
+rate changes. There is no separate background player or progress record.
+
+Audio interruptions and disconnected headphones pause playback without
+silently restarting it. A paused Android session retains its foreground service
+so it can resume from the lock screen; stop, failure, or completion publishes an
+idle OS state to release the service. The application UI retains its completed
+or error state. Removing the Android task stops playback. Force-stop and process
+death do not automatically restart speech.
+
+Sleep timers continue in the background. Deadline checks also run before each
+chapter. Resume restarts the current paragraph and uses the shared reading
+progress. The system session owns audio focus across utterances rather than
+requesting and abandoning focus for every chunk.
 
 ## Validation
 
@@ -277,8 +296,16 @@ flutter test integration_test/reader_comments_listening_test.dart -d linux
 flutter test integration_test/listening_test.dart -d linux
 flutter test integration_test/listening_reader_test.dart -d linux
 flutter test integration_test/system_tts_test.dart -d DEVICE_ID --no-uninstall
+python3 dev/test_background_listening.py --device DEVICE_ID
 ```
 
 Use an unlocked device for the system-engine test. It plays a short utterance.
 Run device tests with `--no-uninstall` to preserve installed application data;
 fixtures use their own data directory.
+
+The background listening device test uses an offline book fixture and the real
+installed TTS engine. The host script waits for `BACKGROUND_TTS_READY`, sends HOME, switches the
+screen off during the 35-second window, and checks the foreground service. The
+test also requires an actual background lifecycle event. It verifies paragraph progress
+continues, then exercises the registered media handler's pause/resume/stop
+commands. It requires a working system voice and does not skip synthesis.

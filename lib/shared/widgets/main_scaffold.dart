@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../l10n/app_localizations.dart';
-import '../../features/bookshelf/listening/listening_controller.dart';
+import '../../features/bookshelf/listening/listening_providers.dart';
 import '../../features/bookshelf/listening/listening_panel.dart';
 import '../cache_stats_provider.dart';
 

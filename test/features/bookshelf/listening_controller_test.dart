@@ -1,6 +1,13 @@
 import 'dart:async';
+import 'package:audio_service/audio_service.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/widgets.dart';
+import 'package:langhuan/features/bookshelf/listening/listening_audio_handler.dart';
+import 'package:langhuan/features/feeds/feed_providers.dart';
+import 'package:langhuan/features/transformers/transformer_settings.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:langhuan/features/bookshelf/listening/listening_controller.dart';
+import 'package:langhuan/features/bookshelf/listening/listening_providers.dart';
 import 'package:langhuan/features/bookshelf/listening/local_speech_engine.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/src/rust/api/types.dart';
@@ -114,6 +121,162 @@ class _Engine implements SpeechEngine {
 Future<void> _flush() => Future<void>.delayed(Duration.zero);
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'rapid configuration keeps playback running with the last rate',
+    () async {
+      final engine = _Engine();
+      final controller = ListeningController(_Service(), engine);
+      addTearDown(controller.dispose);
+      await controller.start(feedId: 'f', bookId: 'b', chapterId: 'c1');
+      await _flush();
+      final first = controller.configure(rate: 1.25);
+      final second = controller.configure(rate: 1.5);
+      await Future.wait([first, second]);
+      await _flush();
+      expect(controller.status, ListeningStatus.playing);
+      expect(controller.rate, 1.5);
+      expect(engine.spoken, hasLength(2));
+    },
+  );
+
+  test('stop cancels an in-flight configuration without restarting', () async {
+    final engine = _Engine();
+    final controller = ListeningController(_Service(), engine);
+    addTearDown(controller.dispose);
+    await controller.start(feedId: 'f', bookId: 'b', chapterId: 'c1');
+    await _flush();
+    final update = controller.configure(rate: 1.5);
+    await controller.stop();
+    await update;
+    await _flush();
+    expect(controller.status, ListeningStatus.idle);
+    expect(engine.spoken, hasLength(1));
+  });
+
+  test('completed playback keeps the chapter progress at one', () async {
+    final engine = _Engine();
+    final controller = ListeningController(_Service(), engine);
+    addTearDown(controller.dispose);
+    await controller.start(feedId: 'f', bookId: 'b', chapterId: 'c1');
+    await _flush();
+    engine.finish();
+    await _flush();
+    engine.finish();
+    await _flush();
+    expect(controller.status, ListeningStatus.completed);
+    expect(controller.chapterProgress, 1);
+  });
+
+  for (final playing in [false, true]) {
+    test(
+      'content invalidation reloads current and prefetched chapters, playing=$playing',
+      () async {
+        final service = _Service();
+        final engine = _Engine();
+        final controller = ListeningController(service, engine);
+        addTearDown(controller.dispose);
+        await controller.start(feedId: 'f', bookId: 'b', chapterId: 'c1');
+        await _flush();
+        if (!playing) await controller.pause();
+        service.firstText = '新的正文。';
+        await controller.invalidateContent();
+        if (!playing) {
+          expect(controller.status, ListeningStatus.paused);
+          expect(engine.spoken, hasLength(1));
+          await controller.resume();
+        }
+        await _flush();
+        expect(engine.spoken.last, '新的正文。');
+        expect(service.chapterCalls, hasLength(1));
+        expect(service.paragraphCalls, ['c1', 'c2', 'c1', 'c2']);
+        expect(service.restore!.paragraphId, controller.paragraphId);
+      },
+    );
+  }
+
+  testWidgets(
+    'background lifecycle does not pause and transformer updates reload speech',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final service = _Service();
+      final engine = _Engine();
+      final settings = _TransformerSettings();
+      final container = ProviderContainer(
+        overrides: [
+          feedServiceProvider.overrideWithValue(service),
+          listeningBackgroundPlaybackProvider.overrideWithValue(_Background()),
+          speechEngineProvider.overrideWithValue(engine),
+          transformerSettingsProvider.overrideWith(() => settings),
+        ],
+      );
+      addTearDown(container.dispose);
+      final controller = container.read(listeningControllerProvider);
+      await container.read(transformerSettingsProvider.future);
+      await controller.start(feedId: 'f', bookId: 'b', chapterId: 'c1');
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      expect(controller.status, ListeningStatus.playing);
+      service.firstText = '新配置正文。';
+      settings.changeRules();
+      await tester.pump();
+      await tester.pump();
+      expect(engine.spoken.last, '新配置正文。');
+      expect(controller.status, ListeningStatus.playing);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await controller.stop();
+      await tester.pump();
+    },
+  );
+
+  test(
+    'system media controls share the UI controller and paragraph progress',
+    () async {
+      final service = _Service();
+      final engine = _Engine();
+      final controller = ListeningController(service, engine);
+      addTearDown(controller.dispose);
+      final handler = ListeningAudioHandler(controller);
+      addTearDown(handler.dispose);
+      await controller.start(
+        feedId: 'f',
+        bookId: 'b',
+        chapterId: 'c1',
+        bookTitle: 'Book',
+      );
+      await _flush();
+      expect(handler.mediaItem.value!.title, 'One');
+      expect(handler.playbackState.value.playing, isTrue);
+      await handler.pause();
+      expect(controller.status, ListeningStatus.paused);
+      expect(handler.playbackState.value.playing, isFalse);
+      await handler.play();
+      await _flush();
+      expect(controller.status, ListeningStatus.playing);
+      engine.finish();
+      await _flush();
+      expect(handler.mediaItem.value!.title, 'Two');
+      expect(service.restore!.chapterId, 'c2');
+      engine.finish();
+      await _flush();
+      expect(
+        handler.playbackState.value.processingState,
+        AudioProcessingState.idle,
+      );
+      expect(handler.playbackState.value.playing, isFalse);
+      await handler.stop();
+      expect(controller.status, ListeningStatus.idle);
+      expect(
+        handler.playbackState.value.processingState,
+        AudioProcessingState.idle,
+      );
+    },
+  );
+
   test(
     'voices can be selected before playback without reading or speaking',
     () async {
@@ -426,4 +589,23 @@ Future<void> _drain() async {
   for (var i = 0; i < 8; i++) {
     await Future<void>.delayed(Duration.zero);
   }
+}
+
+class _TransformerSettings extends TransformerSettingsNotifier {
+  @override
+  Future<TransformerSettings> build() async => TransformerSettings();
+  void changeRules() {
+    state = AsyncData(
+      TransformerSettings(
+        application: [
+          const TransformerEntry(kind: TransformerKind.paragraphIndent),
+        ],
+      ),
+    );
+  }
+}
+
+class _Background extends ListeningBackgroundPlayback {
+  @override
+  Future<void> prepare(ListeningController controller) async {}
 }

@@ -1,39 +1,22 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../src/rust/api/types.dart';
-import '../../feeds/feed_providers.dart';
 import '../../feeds/feed_service.dart';
 import 'local_speech_engine.dart';
 
 enum ListeningStatus { idle, loading, playing, paused, completed, error }
 
-final speechEngineProvider = Provider<SpeechEngine>(
-  (ref) => LocalSpeechEngine(),
-);
-final listeningControllerProvider = Provider<ListeningController>((ref) {
-  final controller = ListeningController(
-    ref.watch(feedServiceProvider),
-    ref.watch(speechEngineProvider),
-  );
-  final lifecycle = AppLifecycleListener(
-    onPause: () => unawaited(controller.pause()),
-    onHide: () => unawaited(controller.pause()),
-  );
-  ref.onDispose(lifecycle.dispose);
-  ref.onDispose(controller.dispose);
-  return controller;
-});
-
 class ListeningController extends ChangeNotifier {
-  ListeningController(this._service, this._engine) {
+  ListeningController(this._service, this._engine, {this.preparePlayback}) {
     _restoreSettings();
   }
   final FeedService _service;
   final SpeechEngine _engine;
+  final Future<void> Function()? preparePlayback;
+  bool _resumeAfterConfiguration = false;
   int _generation = 0;
   int _configuration = 0;
   bool _disposed = false;
@@ -87,7 +70,9 @@ class ListeningController extends ChangeNotifier {
   int get paragraphTotal => _paragraphs.length;
 
   /// Fraction of the current chapter's paragraphs already spoken.
-  double get chapterProgress => _paragraphs.isEmpty
+  double get chapterProgress => status == ListeningStatus.completed
+      ? 1
+      : _paragraphs.isEmpty
       ? 0
       : (_paragraphIndex / _paragraphs.length).clamp(0.0, 1.0);
 
@@ -128,6 +113,8 @@ class ListeningController extends ChangeNotifier {
     String paragraphId = '',
     String bookTitle = '',
   }) async {
+    ++_configuration;
+    _resumeAfterConfiguration = false;
     final generation = ++_generation;
     try {
       await _engine.stop();
@@ -148,6 +135,8 @@ class ListeningController extends ChangeNotifier {
       }
       if (generation != _generation) return;
       if (voicesError case final failure?) throw failure;
+      await preparePlayback?.call();
+      if (generation != _generation) return;
       // Reading progress and the chapter list are independent — fetch both
       // in parallel so first sound only waits for the slower of the two.
       final (saved, chapters) = await (
@@ -245,7 +234,13 @@ class ListeningController extends ChangeNotifier {
     }
   }
 
-  Future<void> pause() async {
+  Future<void> pause() {
+    ++_configuration;
+    _resumeAfterConfiguration = false;
+    return _pausePlayback();
+  }
+
+  Future<void> _pausePlayback() async {
     if (!active) return;
     final generation = ++_generation;
     // Keep _chapters/_paragraphs/indices: a later resume() re-enters
@@ -270,7 +265,11 @@ class ListeningController extends ChangeNotifier {
         _chapters.isNotEmpty &&
         chapterId.isNotEmpty) {
       final generation = ++_generation;
+      status = ListeningStatus.loading;
+      notifyListeners();
       try {
+        await preparePlayback?.call();
+        if (generation != _generation) return;
         final saved = await _service.getReadingProgress(
           feedId: feedId,
           bookId: bookId,
@@ -304,6 +303,8 @@ class ListeningController extends ChangeNotifier {
   }
 
   Future<void> stop() async {
+    ++_configuration;
+    _resumeAfterConfiguration = false;
     final generation = ++_generation;
     status = ListeningStatus.idle;
     _sleepTimer?.cancel();
@@ -336,8 +337,8 @@ class ListeningController extends ChangeNotifier {
 
   Future<void> configure({LocalVoice? voice, double? rate}) async {
     final configuration = ++_configuration;
-    final playing = active;
-    await pause();
+    _resumeAfterConfiguration = active || _resumeAfterConfiguration;
+    await _pausePlayback();
     if (configuration != _configuration) return;
     if (voice != null) {
       this.voice = voice;
@@ -346,7 +347,22 @@ class ListeningController extends ChangeNotifier {
     if (rate != null) this.rate = rate.clamp(0.5, 2.0);
     _persistSettings();
     notifyListeners();
-    if (playing) resume();
+    final shouldResume = _resumeAfterConfiguration;
+    _resumeAfterConfiguration = false;
+    if (shouldResume) await resume();
+  }
+
+  /// Discard transformed content while retaining the shared paragraph position.
+  Future<void> invalidateContent() async {
+    final wasPlaying = active;
+    final pendingPause = pause();
+    final generation = _generation;
+    await pendingPause;
+    if (_disposed || generation != _generation) return;
+    _paragraphs = [];
+    _clearPrefetch();
+    notifyListeners();
+    if (wasPlaying) await resume();
   }
 
   void previewRate(double value) {
@@ -497,6 +513,8 @@ class ListeningController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    ++_configuration;
+    _resumeAfterConfiguration = false;
     ++_generation;
     _sleepTimer?.cancel();
     unawaited(_engine.stop().catchError((Object _) {}));

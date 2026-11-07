@@ -26,9 +26,12 @@ abstract class SpeechEngine {
 /// Uses the device's TTS engine rather than a separate synthesis service.
 /// Network use and voice data are managed by the engine itself.
 class LocalSpeechEngine implements SpeechEngine {
-  LocalSpeechEngine({TargetPlatform? platform})
-    : _platform = platform ?? defaultTargetPlatform;
+  LocalSpeechEngine({
+    TargetPlatform? platform,
+    this.managedAudioSession = false,
+  }) : _platform = platform ?? defaultTargetPlatform;
   final TargetPlatform _platform;
+  final bool managedAudioSession;
   FlutterTts? _plugin;
   Process? _process;
   int _generation = 0;
@@ -40,6 +43,10 @@ class LocalSpeechEngine implements SpeechEngine {
       final result = await Process.run('espeak-ng', ['--version']);
       if (result.exitCode != 0) throw StateError('espeak-ng unavailable');
       return const [LocalVoice('cmn', 'eSpeak NG 中文', 'zh-CN')];
+    }
+    if (managedAudioSession && _platform == TargetPlatform.iOS) {
+      // audio_session owns activation across utterances and chapter boundaries.
+      await _tts.autoStopSharedSession(false);
     }
     final values = await _tts.getVoices as List;
     final voicesByKey = <LocalVoiceKey, LocalVoice>{};
@@ -107,7 +114,7 @@ class LocalSpeechEngine implements SpeechEngine {
     final selected = await _tts.setVoice(selection);
     if (selected != 1) throw StateError('local voice unavailable');
     if (generation != _generation) return;
-    final result = await _tts.speak(text, focus: true);
+    final result = await _tts.speak(text, focus: !managedAudioSession);
     if (generation == _generation && result != 1) {
       throw StateError('local speech failed');
     }

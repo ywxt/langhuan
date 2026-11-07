@@ -5,6 +5,40 @@ import 'package:langhuan/features/bookshelf/listening/local_speech_engine.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
+    'managed iOS playback keeps the session active between utterances',
+    () async {
+      const channel = MethodChannel('flutter_tts');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            if (call.method == 'getVoices') {
+              return [
+                {'name': 'zh', 'locale': 'zh-CN'},
+              ];
+            }
+            return 1;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final ios = LocalSpeechEngine(
+        platform: TargetPlatform.iOS,
+        managedAudioSession: true,
+      );
+      await ios.voices();
+      expect(
+        calls
+            .where((c) => c.method == 'autoStopSharedSession')
+            .single
+            .arguments,
+        isFalse,
+      );
+      await ios.stop();
+    },
+  );
+  test(
     'voice names can repeat across locales without duplicate selections',
     () async {
       const channel = MethodChannel('flutter_tts');
