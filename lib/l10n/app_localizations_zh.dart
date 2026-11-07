@@ -1413,6 +1413,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get transformEmptyReplacement => '（空文字）';
 
   @override
+  String transformDeleteQueued(String name) {
+    return '「$name」將被刪除';
+  }
+
+  @override
+  String get transformUndo => '撤銷';
+
+  @override
   String get transformRemoveTitle => '刪除轉換器？';
 
   @override

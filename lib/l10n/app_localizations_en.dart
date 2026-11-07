@@ -1460,6 +1460,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get transformEmptyReplacement => '(empty text)';
 
   @override
+  String transformDeleteQueued(String name) {
+    return '\"$name\" will be deleted';
+  }
+
+  @override
+  String get transformUndo => 'Undo';
+
+  @override
   String get transformRemoveTitle => 'Delete transformer?';
 
   @override

@@ -472,6 +472,8 @@
   "transformEnabled": "已啓用",
   "transformDisabled": "已停用",
   "transformEmptyReplacement": "（空文字）",
+  "transformDeleteQueued": "「{name}」將被刪除",
+  "transformUndo": "撤銷",
   "transformRemoveTitle": "刪除轉換器？",
   "transformRemoveMessage": "要從組合中移除此轉換器嗎？",
   "transformApplicationEditHint": "這是應用級規則。修改會影響所有繼承它的書籍。",

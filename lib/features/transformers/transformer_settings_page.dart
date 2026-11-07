@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../shared/constants.dart';
+import '../../shared/utils/delete_with_undo.dart';
+import '../../shared/widgets/confirm_dialog.dart';
+import '../../shared/widgets/swipe_action_card.dart';
 import '../../src/rust/api/types.dart';
 import 'transformer_rule_card.dart';
 import 'transformer_rule_editor_sheet.dart';
@@ -30,6 +34,8 @@ class _TransformerSettingsPageState
     extends ConsumerState<TransformerSettingsPage> {
   bool _saving = false;
   String? _error;
+  ({TransformerEntry rule, bool application})? _pendingDelete;
+  bool get _busy => _saving || _pendingDelete != null;
   bool get _book => widget.feedId != null;
 
   List<TransformerEntry> _rules(
@@ -68,7 +74,7 @@ class _TransformerSettingsPageState
   }
 
   Future<void> _reorder(int from, int to, {bool application = false}) async {
-    if (_saving || from == to) return;
+    if (_busy || from == to) return;
     setState(() {
       _saving = true;
       _error = null;
@@ -102,33 +108,113 @@ class _TransformerSettingsPageState
     }
   }
 
-  Widget _ruleList(List<TransformerEntry> rules, {bool application = false}) =>
-      ReorderableListView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        buildDefaultDragHandles: false,
-        itemCount: rules.length,
-        onReorderItem: (from, to) =>
-            _reorder(from, to, application: application),
-        itemBuilder: (context, index) => TransformerRuleCard(
-          key: ObjectKey(rules[index]),
-          rule: rules[index],
-          onTap: _saving
-              ? null
-              : () => _edit(index: index, application: application),
-          dragHandle: ReorderableDragStartListener(
-            index: index,
-            enabled: !_saving,
-            child: MouseRegion(
-              cursor: SystemMouseCursors.grab,
-              child: Tooltip(
-                message: AppLocalizations.of(context).transformReorder,
-                child: const Icon(Icons.drag_handle),
+  Future<void> _delete(
+    TransformerEntry rule, {
+    required bool application,
+  }) async {
+    if (_busy) return;
+    final l = AppLocalizations.of(context);
+    final confirmed = await showConfirmDialog(
+      context,
+      title: l.transformRemoveTitle,
+      message: l.transformRemoveMessage,
+      note: _book && application ? l.transformApplicationEditHint : null,
+      confirmLabel: l.bookshelfDeleteConfirm,
+      cancelLabel: l.bookshelfDeleteCancel,
+    );
+    if (!confirmed || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() {
+      _pendingDelete = (rule: rule, application: application);
+      _error = null;
+    });
+    try {
+      final undone = await deleteWithUndo(
+        messenger: messenger,
+        message: l.transformDeleteQueued(
+          rule.name.trim().isEmpty
+              ? transformerLabel(l, rule.kind)
+              : rule.name.trim(),
+        ),
+        undoLabel: l.transformUndo,
+        duration: AppConstants.undoDuration,
+      );
+      if (undone || !mounted) return;
+      final current = await ref.read(transformerSettingsProvider.future);
+      final index = _rules(current, application: application).indexOf(rule);
+      // The list may have been refreshed while undo was available. Never
+      // delete a different rule at the previously captured index.
+      if (index < 0) return;
+      await _saveRule(
+        rule,
+        TransformerEditAction.delete,
+        index: index,
+        application: application,
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () =>
+              _error = error is BridgeError ? error.message : error.toString(),
+        );
+      }
+    } finally {
+      messenger.clearSnackBars();
+      if (mounted) setState(() => _pendingDelete = null);
+    }
+  }
+
+  Widget _ruleList(List<TransformerEntry> rules, {bool application = false}) {
+    final visible = rules.indexed
+        .where(
+          (entry) =>
+              _pendingDelete?.application != application ||
+              !identical(_pendingDelete?.rule, entry.$2),
+        )
+        .toList();
+    return ReorderableListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      itemCount: visible.length,
+      onReorderItem: (from, to) => _reorder(from, to, application: application),
+      itemBuilder: (context, index) {
+        final (originalIndex, rule) = visible[index];
+        return Padding(
+          key: ObjectKey(rule),
+          padding: const EdgeInsets.only(bottom: 12),
+          child: SwipeActionCard(
+            dismissKey: ObjectKey(rule),
+            deleteTooltip: AppLocalizations.of(context).bookshelfDeleteConfirm,
+            enabled: !_busy,
+            confirmDismiss: (_) async {
+              await _delete(rule, application: application);
+              return false;
+            },
+            child: TransformerRuleCard(
+              rule: rule,
+              margin: EdgeInsets.zero,
+              borderRadius: BorderRadius.zero,
+              onTap: _busy
+                  ? null
+                  : () => _edit(index: originalIndex, application: application),
+              dragHandle: ReorderableDragStartListener(
+                index: index,
+                enabled: !_busy,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.grab,
+                  child: Tooltip(
+                    message: AppLocalizations.of(context).transformReorder,
+                    child: const Icon(Icons.drag_handle),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-      );
+        );
+      },
+    );
+  }
 
   Future<void> _edit({
     int? index,
@@ -235,7 +321,7 @@ class _TransformerSettingsPageState
       ),
       floatingActionButton: FloatingActionButton(
         tooltip: l.transformAdd,
-        onPressed: settings.hasValue && !_saving ? _add : null,
+        onPressed: settings.hasValue && !_busy ? _add : null,
         child: const Icon(Icons.add),
       ),
       body: settings.when(
@@ -267,7 +353,7 @@ class _TransformerSettingsPageState
                       value: value
                           .book(widget.feedId!, widget.bookId!)
                           .inheritApplication,
-                      onChanged: _saving ? null : _setInheritance,
+                      onChanged: _busy ? null : _setInheritance,
                     ),
                   ),
                   if (value

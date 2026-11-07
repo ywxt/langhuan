@@ -45,23 +45,29 @@ String transformerSummary(
   TransformerKind.regexDelete => rule.pattern,
 };
 
-/// Read-only list row. All changes are made in the dedicated editor.
+/// Read-only summary. The owning list supplies sorting and deletion actions.
 class TransformerRuleCard extends StatelessWidget {
   const TransformerRuleCard({
     super.key,
     required this.rule,
     this.onTap,
     this.dragHandle,
+    this.margin = const EdgeInsets.only(bottom: 12),
+    this.borderRadius,
   });
   final TransformerEntry rule;
   final VoidCallback? onTap;
   final Widget? dragHandle;
+  final EdgeInsetsGeometry margin;
+  final BorderRadius? borderRadius;
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
     final type = transformerLabel(l, rule.kind);
     final summary = transformerSummary(l, rule);
     return ConfigurationListCard(
+      margin: margin,
+      borderRadius: borderRadius,
       leading: dragHandle ?? Icon(transformerIcon(rule.kind)),
       title: rule.name.isEmpty ? type : rule.name,
       subtitle: rule.name.isEmpty ? summary : '$type · $summary',

@@ -319,9 +319,11 @@ Wise mobile scale adapted:
 - Feeds and Transformers share the same summary card: leading icon, title,
   two-line summary, status label, and detail chevron. Feed authentication status
   appears in the summary; load errors use the error colour for the status label.
-- Feed list rows support swipe-to-delete with confirmation and undo. The swipe
+- Feed and Transformer list rows support swipe-to-delete with confirmation and
+  undo. Deleting an inherited application Transformer warns that other books
+  are affected. Sorting is disabled while a deletion is pending. The swipe
   background and card share one rounded outline; desktop also exposes a delete
-  button. Tap the summary to open the detail sheet for enabled state,
+  button. Feed summaries open the detail sheet for enabled state,
   authentication, metadata, and the same delete flow.
 - Individual Transformer settings also open in a bottom sheet. The form scrolls
   above fixed Save/Delete actions and clears the keyboard inset. Closing without

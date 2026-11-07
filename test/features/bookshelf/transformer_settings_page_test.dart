@@ -6,6 +6,8 @@ import 'package:langhuan/features/transformers/transformer_rule_editor_sheet.dar
 import 'package:langhuan/features/transformers/transformer_settings.dart';
 import 'package:langhuan/features/transformers/transformer_settings_page.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
+import 'package:langhuan/shared/constants.dart';
+import 'package:langhuan/shared/widgets/swipe_action_card.dart';
 
 class _Settings extends TransformerSettingsNotifier {
   _Settings(this.initial);
@@ -51,11 +53,13 @@ Future<void> _open(
   _Settings settings, {
   bool book = false,
   double textScale = 1,
+  TargetPlatform? platform,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [transformerSettingsProvider.overrideWith(() => settings)],
       child: MaterialApp(
+        theme: platform == null ? null : ThemeData(platform: platform),
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
             context,
@@ -91,7 +95,168 @@ Future<void> _reorderLastBeforeFirst(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> _swipeRule(WidgetTester tester, TransformerKind kind) async {
+  await tester.drag(
+    find.ancestor(of: _card(kind), matching: find.byType(Dismissible)),
+    const Offset(-600, 0),
+  );
+  await tester.pumpAndSettle();
+}
+
 void main() {
+  testWidgets('swipe delete confirms, supports undo, and preserves ordering', (
+    tester,
+  ) async {
+    final settings = _Settings(
+      TransformerSettings(
+        application: const [
+          TransformerEntry(
+            kind: TransformerKind.paragraphIndent,
+            name: 'Indent',
+          ),
+          TransformerEntry(
+            kind: TransformerKind.regexDelete,
+            pattern: 'advertisement',
+          ),
+        ],
+      ),
+    );
+    await _open(tester, settings);
+    expect(find.byType(SwipeActionCard), findsNWidgets(2));
+    await _swipeRule(tester, TransformerKind.paragraphIndent);
+    expect(find.byType(AlertDialog), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pumpAndSettle();
+    expect(settings.saved, isNull);
+    expect(_card(TransformerKind.paragraphIndent), findsOneWidget);
+    await _swipeRule(tester, TransformerKind.paragraphIndent);
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(_card(TransformerKind.paragraphIndent), findsNothing);
+    expect(settings.saved, isNull);
+    expect(
+      tester
+          .widget<ReorderableDragStartListener>(
+            find.byType(ReorderableDragStartListener),
+          )
+          .enabled,
+      isFalse,
+    );
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(settings.saved, isNull);
+    expect(_card(TransformerKind.paragraphIndent), findsOneWidget);
+    await _reorderLastBeforeFirst(tester);
+    expect(settings.saved!.map((r) => r.kind), [
+      TransformerKind.regexDelete,
+      TransformerKind.paragraphIndent,
+    ]);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final inherited in [false, true]) {
+    testWidgets(
+      'swipe delete saves the correct book/application scope, inherited=$inherited',
+      (tester) async {
+        final settings = _Settings(
+          TransformerSettings(
+            application: const [
+              TransformerEntry(kind: TransformerKind.paragraphIndent),
+            ],
+            books: {
+              TransformerSettings.bookKey('feed', 'book'): BookTransformers(
+                rules: const [
+                  TransformerEntry(
+                    kind: TransformerKind.regexDelete,
+                    pattern: 'ad',
+                  ),
+                ],
+              ),
+            },
+          ),
+        );
+        await _open(tester, settings, book: true);
+        final kind = inherited
+            ? TransformerKind.paragraphIndent
+            : TransformerKind.regexDelete;
+        await _swipeRule(tester, kind);
+        if (inherited) {
+          expect(
+            find.descendant(
+              of: find.byType(AlertDialog),
+              matching: find.text(
+                'This is an application rule. Changes affect every book that inherits it.',
+              ),
+            ),
+            findsOneWidget,
+          );
+        }
+        await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+        await tester.pumpAndSettle();
+        expect(settings.saved, isNull);
+        await tester.pump(AppConstants.undoDuration);
+        await tester.pumpAndSettle();
+        expect(settings.saved, isEmpty);
+        expect(settings.savedFeed, inherited ? isNull : 'feed');
+        expect(_card(kind), findsNothing);
+        expect(
+          _card(
+            inherited
+                ? TransformerKind.regexDelete
+                : TransformerKind.paragraphIndent,
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'a failed swipe deletion restores the rule and reports the error',
+    (tester) async {
+      final settings = _Settings(
+        TransformerSettings(
+          application: const [
+            TransformerEntry(kind: TransformerKind.paragraphIndent),
+          ],
+        ),
+      )..failNext = true;
+      await _open(tester, settings);
+      await _swipeRule(tester, TransformerKind.paragraphIndent);
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+      await tester.pumpAndSettle();
+      await tester.pump(AppConstants.undoDuration);
+      await tester.pumpAndSettle();
+      expect(settings.saved, isNull);
+      expect(_card(TransformerKind.paragraphIndent), findsOneWidget);
+      expect(find.textContaining('Save failed'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('desktop delete button uses the same confirmation and undo', (
+    tester,
+  ) async {
+    final settings = _Settings(
+      TransformerSettings(
+        application: const [
+          TransformerEntry(kind: TransformerKind.paragraphIndent),
+        ],
+      ),
+    );
+    await _open(tester, settings, platform: TargetPlatform.linux);
+    await tester.tap(find.byTooltip('Delete'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(settings.saved, isNull);
+    expect(_card(TransformerKind.paragraphIndent), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'list is read-only and opens a keyboard-safe configuration sheet',
     (tester) async {
@@ -380,26 +545,23 @@ void main() {
     expect(settings.saved!.single.name, 'Retried');
   });
 
-  testWidgets(
-    'delete is available only in the editor and requires confirmation',
-    (tester) async {
-      final settings = _Settings(
-        TransformerSettings(
-          application: const [
-            TransformerEntry(kind: TransformerKind.paragraphIndent),
-          ],
-        ),
-      );
-      await _open(tester, settings);
-      await tester.tap(_card(TransformerKind.paragraphIndent));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(OutlinedButton, 'Delete'));
-      await tester.pumpAndSettle();
-      expect(settings.saved, isNull);
-      await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
-      await tester.pumpAndSettle();
-      expect(settings.saved, isEmpty);
-      expect(find.byType(TransformerRuleCard), findsNothing);
-    },
-  );
+  testWidgets('editor deletion requires confirmation', (tester) async {
+    final settings = _Settings(
+      TransformerSettings(
+        application: const [
+          TransformerEntry(kind: TransformerKind.paragraphIndent),
+        ],
+      ),
+    );
+    await _open(tester, settings);
+    await tester.tap(_card(TransformerKind.paragraphIndent));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(settings.saved, isNull);
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(settings.saved, isEmpty);
+    expect(find.byType(TransformerRuleCard), findsNothing);
+  });
 }

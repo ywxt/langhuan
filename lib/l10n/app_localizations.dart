@@ -2690,6 +2690,18 @@ abstract class AppLocalizations {
   /// **'(empty text)'**
   String get transformEmptyReplacement;
 
+  /// Snackbar before deleting a transformer
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\" will be deleted'**
+  String transformDeleteQueued(String name);
+
+  /// No description provided for @transformUndo.
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get transformUndo;
+
   /// No description provided for @transformRemoveTitle.
   ///
   /// In en, this message translates to:
