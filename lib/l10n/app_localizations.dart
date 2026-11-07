@@ -674,6 +674,36 @@ abstract class AppLocalizations {
   /// **'Script error'**
   String get errorCategoryScriptError;
 
+  /// No description provided for @errorCategoryNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Network error'**
+  String get errorCategoryNetwork;
+
+  /// No description provided for @errorCategoryScriptRuntime.
+  ///
+  /// In en, this message translates to:
+  /// **'Script runtime error'**
+  String get errorCategoryScriptRuntime;
+
+  /// No description provided for @errorCategoryScriptConfig.
+  ///
+  /// In en, this message translates to:
+  /// **'Script configuration error'**
+  String get errorCategoryScriptConfig;
+
+  /// No description provided for @errorCategoryStorage.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage error'**
+  String get errorCategoryStorage;
+
+  /// No description provided for @errorCategoryRegistry.
+  ///
+  /// In en, this message translates to:
+  /// **'Feed not found'**
+  String get errorCategoryRegistry;
+
   /// Reader bottom bar button: table of contents
   ///
   /// In en, this message translates to:

@@ -333,6 +333,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get errorCategoryScriptError => '腳本錯誤';
 
   @override
+  String get errorCategoryNetwork => '網絡錯誤';
+
+  @override
+  String get errorCategoryScriptRuntime => '腳本運行錯誤';
+
+  @override
+  String get errorCategoryScriptConfig => '腳本配置錯誤';
+
+  @override
+  String get errorCategoryStorage => '存儲錯誤';
+
+  @override
+  String get errorCategoryRegistry => '找不到書源';
+
+  @override
   String get readerToc => '目錄';
 
   @override

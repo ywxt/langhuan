@@ -36,10 +36,12 @@ String normalizeErrorMessage(Object? error) {
 
 /// Describes [error] for a surface whose generic title is [genericTitle].
 ///
-/// An anticipated script error ([`ErrorKind_ScriptExpected`]) leads with its
-/// classification and reports only the message the script itself provided;
-/// every other error keeps the surface's generic title and carries the full
-/// localized message.
+/// Every classified bridge error leads with its classification: an
+/// anticipated script error ([`ErrorKind_ScriptExpected`]) reports the
+/// script's own message as the detail, while the other kinds carry the
+/// full localized message. Only unclassified errors —
+/// [`ErrorKind_Internal`], non-bridge exceptions, and null — keep the
+/// surface's generic title.
 ErrorPresentation describeError(
   Object? error,
   AppLocalizations l10n, {
@@ -56,6 +58,15 @@ ErrorPresentation describeError(
           ? detail
           : normalizeErrorMessage(error),
     );
+  }
+  if (error is BridgeError) {
+    final category = _kindLabel(error.kind, l10n);
+    if (category != null) {
+      return ErrorPresentation(
+        title: category,
+        detail: normalizeErrorMessage(error),
+      );
+    }
   }
   return ErrorPresentation(
     title: genericTitle,
@@ -76,3 +87,17 @@ String _categoryLabel(ScriptExpectedReason reason, AppLocalizations l10n) =>
         l10n.errorCategorySourceUnavailable,
       ScriptExpectedReason_Other() => l10n.errorCategoryScriptError,
     };
+
+/// Localized label for a bridge error kind, or null when the kind carries
+/// no user-facing classification — [`ErrorKind_Internal`] is the app's
+/// own unclassified bucket and keeps the surface's generic title.
+/// [`ErrorKind_ScriptExpected`] is resolved by [_categoryLabel] instead.
+String? _kindLabel(ErrorKind kind, AppLocalizations l10n) => switch (kind) {
+  ErrorKind_Internal() => null,
+  ErrorKind_Network() => l10n.errorCategoryNetwork,
+  ErrorKind_ScriptRuntime() => l10n.errorCategoryScriptRuntime,
+  ErrorKind_ScriptConfig() => l10n.errorCategoryScriptConfig,
+  ErrorKind_Storage() => l10n.errorCategoryStorage,
+  ErrorKind_Registry() => l10n.errorCategoryRegistry,
+  ErrorKind_ScriptExpected() => null,
+};

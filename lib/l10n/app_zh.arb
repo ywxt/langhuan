@@ -106,6 +106,11 @@
   "errorCategoryContentNotFound": "找不到內容",
   "errorCategorySourceUnavailable": "書源暫時不可用",
   "errorCategoryScriptError": "腳本錯誤",
+  "errorCategoryNetwork": "網絡錯誤",
+  "errorCategoryScriptRuntime": "腳本運行錯誤",
+  "errorCategoryScriptConfig": "腳本配置錯誤",
+  "errorCategoryStorage": "存儲錯誤",
+  "errorCategoryRegistry": "找不到書源",
 
   "readerToc": "目錄",
   "readerInterface": "界面",

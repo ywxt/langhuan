@@ -336,6 +336,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errorCategoryScriptError => 'Script error';
 
   @override
+  String get errorCategoryNetwork => 'Network error';
+
+  @override
+  String get errorCategoryScriptRuntime => 'Script runtime error';
+
+  @override
+  String get errorCategoryScriptConfig => 'Script configuration error';
+
+  @override
+  String get errorCategoryStorage => 'Storage error';
+
+  @override
+  String get errorCategoryRegistry => 'Feed not found';
+
+  @override
   String get readerToc => 'TOC';
 
   @override
