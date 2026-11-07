@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/app_localizations.dart';
 import '../../src/rust/api/types.dart';
 import 'transformer_rule_card.dart';
-import 'transformer_rule_editor_page.dart';
+import 'transformer_rule_editor_sheet.dart';
 import 'transformer_settings.dart';
 
 Future<void> openTransformerSettings(
@@ -145,15 +145,17 @@ class _TransformerSettingsPageState
                 : ChineseConversionMode.none,
           )
         : rules[index];
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => TransformerRuleEditorPage(
-          initial: initial,
-          existing: index != null,
-          applicationFromBook: _book && application,
-          onSave: (rule, action) =>
-              _saveRule(rule, action, index: index, application: application),
-        ),
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (_) => TransformerRuleEditorSheet(
+        initial: initial,
+        existing: index != null,
+        applicationFromBook: _book && application,
+        onSave: (rule, action) =>
+            _saveRule(rule, action, index: index, application: application),
       ),
     );
   }

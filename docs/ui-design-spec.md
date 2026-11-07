@@ -294,14 +294,14 @@ Wise mobile scale adapted:
 │  └─────────────────────┘    │
 │                             │
 │  ┌─────────────────────────┐│
-│  │ [A] Feed Name           ││  ← Feed card with avatar initial
+│  │ ◇ Feed Name  Enabled › ││  ← Read-only configuration summary
 │  │     v1.0 · Author      ││
-│  │                    ⓘ   ││
+│  │                         ││
 │  └─────────────────────────┘│
 │                             │
 │  ┌─────────────────────────┐│
-│  │ [B] Feed Name           ││
-│  │     v2.1 · Author   ⚠  ││  ← Error indicator
+│  │ ◇ Feed Name   Paused › ││
+│  │     v2.1 · Author       ││
 │  └─────────────────────────┘│
 │                             │
 │              ┌──────┐       │
@@ -313,9 +313,15 @@ Wise mobile scale adapted:
 **Key Design Decisions**:
 - No AppBar — large left-aligned title
 - Feed items: Card style with `background.neutral`, 16px radius
-- Avatar: 40px circle, `interactive.accent` bg with initial letter
-- Error feeds: Avatar uses `sentiment.negative` bg
-- Swipe to delete: Red background slides in from right
+- Feeds and Transformers share the same summary card: leading icon, title,
+  two-line summary, status label, and detail chevron. Feed authentication status
+  appears in the summary; load errors use the error colour for the status label.
+- Feed list rows contain no toggles or delete gestures. Tap to open the existing
+  detail sheet for enabled state, authentication, metadata, and confirmed deletion
+  with undo.
+- Individual Transformer settings also open in a bottom sheet. The form scrolls
+  above fixed Save/Delete actions and clears the keyboard inset. Closing without
+  saving discards edits; sorting stays in the Transformer list.
 - FAB: `interactive.accent` bg, `interactive.control` icon, **circular** shape
 
 ### 4.4 Add feed flow

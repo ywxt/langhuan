@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../shared/widgets/configuration_list_card.dart';
 import '../bookshelf/widgets/chinese_conversion_picker.dart';
 import 'transformer_settings.dart';
 
@@ -60,39 +61,21 @@ class TransformerRuleCard extends StatelessWidget {
     final l = AppLocalizations.of(context);
     final type = transformerLabel(l, rule.kind);
     final summary = transformerSummary(l, rule);
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: dragHandle ?? Icon(transformerIcon(rule.kind)),
-        title: Text(
-          rule.name.isEmpty ? type : rule.name,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+    return ConfigurationListCard(
+      leading: dragHandle ?? Icon(transformerIcon(rule.kind)),
+      title: rule.name.isEmpty ? type : rule.name,
+      subtitle: rule.name.isEmpty ? summary : '$type · $summary',
+      status: Text(
+        rule.enabled ? l.transformEnabled : l.transformDisabled,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: rule.enabled
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.onSurfaceVariant,
         ),
-        subtitle: Text(
-          rule.name.isEmpty ? summary : '$type · $summary',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              rule.enabled ? l.transformEnabled : l.transformDisabled,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: rule.enabled
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right),
-          ],
-        ),
-        onTap: onTap,
       ),
+      onTap: onTap,
     );
   }
 }

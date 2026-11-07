@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:langhuan/features/transformers/transformer_rule_card.dart';
-import 'package:langhuan/features/transformers/transformer_rule_editor_page.dart';
+import 'package:langhuan/features/transformers/transformer_rule_editor_sheet.dart';
 import 'package:langhuan/features/transformers/transformer_settings.dart';
 import 'package:langhuan/features/transformers/transformer_settings_page.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
@@ -93,7 +93,7 @@ Future<void> _reorderLastBeforeFirst(WidgetTester tester) async {
 
 void main() {
   testWidgets(
-    'list is read-only on narrow screens and details contain configuration',
+    'list is read-only and opens a keyboard-safe configuration sheet',
     (tester) async {
       tester.view.physicalSize = const Size(360, 760);
       tester.view.devicePixelRatio = 1;
@@ -119,8 +119,16 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(_card(TransformerKind.paragraphIndent));
       await tester.pumpAndSettle();
-      expect(find.byType(TransformerRuleEditorPage), findsOneWidget);
+      expect(find.byType(TransformerRuleEditorSheet), findsOneWidget);
       expect(find.byType(Slider), findsOneWidget);
+      expect(find.byType(BottomSheet), findsOneWidget);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      expect(
+        tester.getBottomRight(find.widgetWithText(FilledButton, 'Save')).dy,
+        lessThanOrEqualTo(460),
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -136,7 +144,7 @@ void main() {
       expect(find.text('Regex replacement'), findsOneWidget);
       await tester.tap(find.text('Paragraph indentation'));
       await tester.pumpAndSettle();
-      expect(find.byType(TransformerRuleEditorPage), findsOneWidget);
+      expect(find.byType(TransformerRuleEditorSheet), findsOneWidget);
       tester.widget<Slider>(find.byType(Slider)).onChanged!(4);
       await tester.pump();
       await tester.enterText(find.byType(TextFormField).first, '  My indent  ');
@@ -144,7 +152,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(settings.saved!.single.indentSpaces, 4);
       expect(settings.saved!.single.name, 'My indent');
-      expect(find.byType(TransformerRuleEditorPage), findsNothing);
+      expect(find.byType(TransformerRuleEditorSheet), findsNothing);
       expect(find.text('My indent'), findsOneWidget);
       expect(find.byType(TextFormField), findsNothing);
       expect(find.byType(Slider), findsNothing);
@@ -172,7 +180,7 @@ void main() {
     await tester.tap(find.text('Original'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, 'Discard');
-    await tester.pageBack();
+    await tester.tap(find.byType(CloseButton));
     await tester.pumpAndSettle();
     expect(find.text('Original'), findsOneWidget);
     expect(settings.saved, isNull);
@@ -180,7 +188,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Regex replacement'));
     await tester.pumpAndSettle();
-    await tester.pageBack();
+    await tester.tap(find.byType(CloseButton));
     await tester.pumpAndSettle();
     expect(find.byType(TransformerRuleCard), findsOneWidget);
     expect(settings.saved, isNull);
@@ -205,8 +213,11 @@ void main() {
       await tester.tap(_card(TransformerKind.paragraphIndent));
       await tester.pumpAndSettle();
       expect(
-        find.text(
-          'This is an application rule. Changes affect every book that inherits it.',
+        find.descendant(
+          of: find.byType(TransformerRuleEditorSheet),
+          matching: find.text(
+            'This is an application rule. Changes affect every book that inherits it.',
+          ),
         ),
         findsOneWidget,
       );
@@ -251,7 +262,7 @@ void main() {
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       await _reorderLastBeforeFirst(tester);
-      expect(find.byType(TransformerRuleEditorPage), findsNothing);
+      expect(find.byType(TransformerRuleEditorSheet), findsNothing);
       final cards = tester
           .widgetList<TransformerRuleCard>(find.byType(TransformerRuleCard))
           .map((c) => c.rule)
@@ -259,8 +270,6 @@ void main() {
       expect(cards.map((c) => c.pattern), ['second', 'first']);
       expect(settings.saved!.last.replacement, 'after');
       await tester.tap(_card(TransformerKind.regexDelete));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byType(PopupMenuButton<TransformerEditAction>));
       await tester.pumpAndSettle();
       expect(find.text('Move up'), findsNothing);
       expect(find.text('Move down'), findsNothing);
@@ -313,11 +322,11 @@ void main() {
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Save failed'), findsOneWidget);
-    expect(find.byType(TransformerRuleEditorPage), findsOneWidget);
+    expect(find.byType(TransformerRuleEditorSheet), findsOneWidget);
     expect(settings.saved, isNull);
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
-    expect(find.byType(TransformerRuleEditorPage), findsNothing);
+    expect(find.byType(TransformerRuleEditorSheet), findsNothing);
     expect(settings.saved!.single.name, 'Retried');
   });
 
@@ -334,9 +343,7 @@ void main() {
       await _open(tester, settings);
       await tester.tap(_card(TransformerKind.paragraphIndent));
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(PopupMenuButton<TransformerEditAction>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Delete'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Delete'));
       await tester.pumpAndSettle();
       expect(settings.saved, isNull);
       await tester.tap(find.widgetWithText(FilledButton, 'Delete'));

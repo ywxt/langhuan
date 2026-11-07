@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:langhuan/features/feeds/feed_providers.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/features/feeds/widgets/feed_card.dart';
+import 'package:langhuan/shared/widgets/configuration_list_card.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
 import 'package:langhuan/rust_init.dart';
 import 'package:langhuan/src/rust/api/types.dart';
@@ -54,6 +55,45 @@ Widget _testApp(Widget child) {
 }
 
 void main() {
+  testWidgets('long source summaries and error states fit narrow screens', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 760);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: _testApp(
+          Builder(
+            builder: (context) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(1.5)),
+              child: const FeedCard(
+                feed: FeedMetaItem(
+                  id: 'broken',
+                  name:
+                      'A long source title that must wrap without overflowing',
+                  version: '1.0.0',
+                  enabled: false,
+                  author: 'An unusually long author name',
+                  accessDomains: [],
+                  error: 'Invalid script',
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(ConfigurationListCard), findsOneWidget);
+    expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+    expect(find.byType(Switch), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   test('an invalid feed skips auth capability and status checks', () async {
     final container = ProviderContainer(
       overrides: [
@@ -71,12 +111,13 @@ void main() {
     expect(status, isNull);
   });
 
-  testWidgets('the status button pauses a feed through the notifier', (
+  testWidgets('list is read-only and the detail sheet pauses a feed', (
     tester,
   ) async {
     final toggled = <(String, bool)>[];
     final service = FakeFeedService(
       listFeedsHandler: () async => [_feedA],
+      listBookshelfHandler: () async => [],
       setFeedEnabledHandler: (feedId, enabled) async {
         toggled.add((feedId, enabled));
       },
@@ -86,6 +127,7 @@ void main() {
       ProviderScope(
         overrides: [
           feedServiceProvider.overrideWithValue(service),
+          feedAuthStatusProvider.overrideWith((ref, feedId) => null),
           appDataDirectorySetProvider.overrideWith(
             (ref) async => const AppDataDirectoryResult(feedCount: 1),
           ),
@@ -112,22 +154,23 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('Pause feed'), findsOneWidget);
-    expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+    expect(find.byType(ConfigurationListCard), findsOneWidget);
+    expect(find.text('Enabled'), findsOneWidget);
+    expect(find.byType(Switch), findsNothing);
+    expect(find.byType(IconButton), findsNothing);
+    expect(toggled, isEmpty);
 
-    await tester.tap(find.byTooltip('Pause feed'));
+    await tester.tap(find.text('Source A'));
     await tester.pumpAndSettle();
-
-    // The service was asked to pause, and the rebuilt card reflects it:
-    // The action changes to resume and the content is dimmed.
+    expect(find.byType(BottomSheet), findsOneWidget);
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
     expect(toggled, [('feed-a', false)]);
-    expect(find.byTooltip('Resume feed'), findsOneWidget);
-    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
-    expect(
-      find.byWidgetPredicate((w) => w is Opacity && w.opacity == 0.55),
-      findsNWidgets(2),
-      reason: 'avatar and text column dim while paused',
-    );
+    expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Paused'), findsOneWidget);
+    expect(find.byType(Switch), findsNothing);
   });
 
   testWidgets('a paused feed shows the paused badge', (tester) async {
