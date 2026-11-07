@@ -820,6 +820,12 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     }
 
     if (sameChapterFirst >= 0) {
+      // The active position is a loading placeholder that has since
+      // materialized — the reader turned into the chapter while it was
+      // still fetching, so it lands on the chapter's first page. The
+      // shrink-clamp below would park it on the chapter's last entry
+      // instead, which with the chapter-end section on is the comments.
+      if (_activeLocalPageIndex < 0) return sameChapterFirst;
       // Page count shrank (reload) — clamp to the chapter's last page.
       var last = sameChapterFirst;
       for (
