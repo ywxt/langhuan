@@ -60,6 +60,26 @@ CommentsController _controller(_Service service, {String? parent}) =>
     );
 
 void main() {
+  test('hasLoadedPage flips once the first page settles', () async {
+    final service = _Service()
+      ..pages.add(
+        Future.value(
+          const CommentPage(items: [], nextCursorJson: null, totalCount: 0),
+        ),
+      );
+    final controller = _controller(service);
+    addTearDown(controller.dispose);
+    // Nothing fetched yet: the content is unknown, not empty.
+    expect(controller.hasLoadedPage, isFalse);
+    await controller.loadMore();
+    expect(controller.hasLoadedPage, isTrue);
+
+    // A refresh keeps the known-content guarantee through its reload.
+    service.pages.add(Future.value(CommentPage(items: [_item('1')])));
+    await controller.refresh();
+    expect(controller.hasLoadedPage, isTrue);
+  });
+
   test('overlap is deduplicated and each next cursor is forwarded', () async {
     final service = _Service()
       ..pages.addAll([

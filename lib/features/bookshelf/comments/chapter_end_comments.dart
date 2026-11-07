@@ -55,9 +55,9 @@ class _ChapterEndCommentsState extends State<ChapterEndComments> {
       if (!mounted || _loadStarted) return;
       // A remount (sliver recycle, page rebuild) lands here on an
       // already-settled controller — loadMore then returns without
-      // notifying, so the flag flip must carry its own rebuild or the
-      // section keeps rendering the skeleton.
-      setState(() => _loadStarted = true);
+      // notifying, and the body no longer gates on this flag, so no
+      // rebuild is needed.
+      _loadStarted = true;
       unawaited(widget.controller.loadMore());
     });
   }
@@ -171,7 +171,11 @@ class _ChapterEndCommentsState extends State<ChapterEndComments> {
       if (controller.error != null) {
         return [_buildError(context)];
       }
-      if (!_loadStarted || controller.loading) {
+      // Skeleton only while the content is unknown: a first fetch in
+      // flight or not yet completed. A recycled section on a settled
+      // controller shows the empty state on its very first frame
+      // instead of flashing the skeleton.
+      if (!controller.hasLoadedPage || controller.loading) {
         return [const CommentsSkeleton(cards: 2)];
       }
       return [const EmptyComments()];

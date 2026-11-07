@@ -45,6 +45,14 @@ class CommentsController extends ChangeNotifier {
   /// Total size of the collection when the source reports it; the last
   /// non-null page value wins. Null means unknown.
   int? totalCount;
+
+  /// Whether a page load has completed for the current generation: the
+  /// thread's outcome (items, empty, or error) is known rather than
+  /// merely not-yet-fetched. A surface that mounts on a settled
+  /// controller — the panel reopened from the inline chapter-end
+  /// section, or a recycled section — can show the real state on its
+  /// first frame instead of flashing the skeleton.
+  bool hasLoadedPage = false;
   int _generation = 0;
   CommentRequest? _request;
 
@@ -95,6 +103,7 @@ class CommentsController extends ChangeNotifier {
       if (generation == _generation) {
         _request = null;
         loading = false;
+        hasLoadedPage = true;
         notifyListeners();
       }
     }

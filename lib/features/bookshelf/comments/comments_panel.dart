@@ -97,11 +97,9 @@ class _CommentsPanelState extends State<CommentsPanel> {
     if (status != AnimationStatus.completed) return;
     _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
     _routeAnimation = null;
-    // The panel can open on an already-settled controller (shared with the
-    // inline section) — loadMore then returns without notifying, so the
-    // flag flip must carry its own rebuild or the skeleton outlives the
-    // entrance animation.
-    setState(_startInitialLoad);
+    // The body no longer gates on this flag, and loadMore notifies on its
+    // own when it actually fetches, so no rebuild is needed here.
+    _startInitialLoad();
   }
 
   void _startInitialLoad() {
@@ -237,9 +235,13 @@ class _CommentsPanelState extends State<CommentsPanel> {
       if (controller.error != null) {
         return Center(child: _buildError(context, controller));
       }
-      // The awaiting-start case only occurs on the root frame while the
-      // entrance animation is still running; reply frames open long after.
-      if (controller.loading || !_initialLoadStarted) {
+      // The skeleton belongs only to genuinely unknown content: a load in
+      // flight, or a frame whose first fetch has not completed. A
+      // settled controller shared with the inline chapter-end section
+      // already knows the thread is empty, so the empty state shows from
+      // the panel's first frame — no skeleton flash under the entrance
+      // animation.
+      if (controller.loading || !controller.hasLoadedPage) {
         return const CommentsSkeleton();
       }
       return const EmptyComments();

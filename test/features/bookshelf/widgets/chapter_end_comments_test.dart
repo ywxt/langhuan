@@ -79,14 +79,16 @@ void main() {
     expect(find.byType(EmptyComments), findsOneWidget);
 
     // Scroll away and back: the reading views recycle the section's State
-    // while ChapterCommentsCache keeps the settled controller. The remounted
-    // section must leave the skeleton on its own — before the fix it waited
-    // for an unrelated rebuild (a tap, a route change) to show the state.
+    // while ChapterCommentsCache keeps the settled controller. The
+    // remounted section must show the real state on its first frame —
+    // before the fix a skeleton flashed there until an unrelated rebuild
+    // (a tap, a route change) showed the state.
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(_wrap(_section(controller)));
-    await tester.pumpAndSettle();
-
     expect(find.byType(EmptyComments), findsOneWidget);
     expect(find.byType(CommentsSkeleton), findsNothing);
+
+    await tester.pumpAndSettle();
+    expect(find.byType(EmptyComments), findsOneWidget);
   });
 }
