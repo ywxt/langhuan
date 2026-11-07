@@ -16,6 +16,7 @@ import 'comment_badge.dart';
 import 'reader_chapter_window.dart';
 import 'reader_controller.dart';
 import 'reader_glyph_warmup.dart';
+import 'reader_typography.dart';
 import 'reader_types.dart';
 import 'seamless_vertical_reader.dart';
 
@@ -336,24 +337,20 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       if (family == null) return;
       final width =
           MediaQuery.sizeOf(context).width - widget.contentPadding.horizontal;
+      // The warmed glyphs must come from the same recipe the views paint
+      // with, or the atlas warms variants the renderer never uses.
+      final typo = ReaderTypography(
+        textTheme: theme.textTheme,
+        fontScale: widget.fontScale,
+        fontFamily: family,
+        letterSpacing: widget.letterSpacing,
+        lineHeight: widget.lineHeight,
+      );
       _glyphWarmup.schedule(
         chapterId: chapterId,
         paragraphs: paragraphs,
-        bodyStyle: (theme.textTheme.bodyLarge ?? const TextStyle()).copyWith(
-          fontSize:
-              (theme.textTheme.bodyLarge?.fontSize ?? 16) * widget.fontScale,
-          fontFamily: family,
-          letterSpacing: widget.letterSpacing,
-          height: widget.lineHeight,
-        ),
-        titleStyle: (theme.textTheme.headlineSmall ?? const TextStyle())
-            .copyWith(
-              fontSize:
-                  (theme.textTheme.headlineSmall?.fontSize ?? 24) *
-                  widget.fontScale,
-              fontFamily: family,
-              letterSpacing: widget.letterSpacing,
-            ),
+        bodyStyle: typo.body,
+        titleStyle: typo.title,
         width: width,
         devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
         textDirection: Directionality.of(context),
@@ -519,17 +516,12 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
 
   PageBreaker _createBreaker(BuildContext context) {
     final theme = Theme.of(context);
-    final bodyLarge = theme.textTheme.bodyLarge?.copyWith(
-      fontSize: (theme.textTheme.bodyLarge?.fontSize ?? 16) * widget.fontScale,
+    final typo = ReaderTypography(
+      textTheme: theme.textTheme,
+      fontScale: widget.fontScale,
       fontFamily: widget.fontFamily,
       letterSpacing: widget.letterSpacing,
-      height: widget.lineHeight,
-    );
-    final headlineSmall = theme.textTheme.headlineSmall?.copyWith(
-      fontSize:
-          (theme.textTheme.headlineSmall?.fontSize ?? 24) * widget.fontScale,
-      fontFamily: widget.fontFamily,
-      letterSpacing: widget.letterSpacing,
+      lineHeight: widget.lineHeight,
     );
     final size = MediaQuery.sizeOf(context);
     final pageSize = Size(
@@ -538,8 +530,8 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     );
     return PageBreaker(
       pageSize: pageSize,
-      textStyle: bodyLarge ?? const TextStyle(),
-      titleStyle: headlineSmall ?? const TextStyle(),
+      textStyle: typo.body,
+      titleStyle: typo.title,
       paragraphSpacing: widget.paragraphSpacing,
       imageHeight: pageSize.width * 9 / 16,
       textDirection: Directionality.of(context),

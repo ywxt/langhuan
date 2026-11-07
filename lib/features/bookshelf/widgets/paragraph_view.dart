@@ -4,6 +4,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart';
 import 'comment_badge.dart';
+import 'reader_typography.dart';
 
 /// Renders a single [ParagraphContent] item (title, text, or image).
 class ParagraphView extends StatelessWidget {
@@ -42,28 +43,26 @@ class ParagraphView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final typo = ReaderTypography(
+      textTheme: theme.textTheme,
+      fontScale: fontScale,
+      fontFamily: fontFamily,
+      letterSpacing: letterSpacing,
+      lineHeight: lineHeight,
+    );
     final showBadge = commentCount != null && commentCount! > 0;
 
     final child = switch (paragraph) {
       ParagraphContent_Title(:final text) => BadgedText(
         text: text,
-        style: theme.textTheme.headlineSmall?.copyWith(
-          fontSize: (theme.textTheme.headlineSmall?.fontSize ?? 24) * fontScale,
-          fontFamily: fontFamily,
-          letterSpacing: letterSpacing,
-        ),
+        style: typo.title,
         textAlign: TextAlign.center,
         commentCount: commentCount,
         onCommentTap: onCommentTap,
       ),
       ParagraphContent_Text(:final content) => BadgedText(
         text: content,
-        style: theme.textTheme.bodyLarge?.copyWith(
-          fontSize: (theme.textTheme.bodyLarge?.fontSize ?? 16) * fontScale,
-          fontFamily: fontFamily,
-          letterSpacing: letterSpacing,
-          height: lineHeight,
-        ),
+        style: typo.body,
         commentCount: commentCount,
         onCommentTap: onCommentTap,
       ),

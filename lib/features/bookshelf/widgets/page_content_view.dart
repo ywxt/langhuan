@@ -5,6 +5,7 @@ import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart';
 import 'comment_badge.dart';
 import 'page_breaker.dart';
+import 'reader_typography.dart';
 
 /// Renders a single computed [PageContent] — a list of [PageItem]s that
 /// together fill one page of the horizontal-paging reader.
@@ -146,14 +147,18 @@ class PageContentView extends StatelessWidget {
     int? badgeCount,
     VoidCallback? badgeTap,
   ) {
+    final typo = ReaderTypography(
+      textTheme: theme.textTheme,
+      fontScale: fontScale,
+      fontFamily: fontFamily,
+      letterSpacing: letterSpacing,
+      lineHeight: lineHeight,
+    );
     if (source is ParagraphContent_Title) {
       return BadgedText(
         text: item.isPartial ? item.visibleText : source.text,
-        style: theme.textTheme.headlineSmall?.copyWith(
-          fontSize: (theme.textTheme.headlineSmall?.fontSize ?? 24) * fontScale,
-          fontFamily: fontFamily,
-          letterSpacing: item.letterSpacing ?? letterSpacing,
-        ),
+        // A null per-item spacing inherits the recipe's spacing.
+        style: typo.title.copyWith(letterSpacing: item.letterSpacing),
         textAlign: TextAlign.center,
         commentCount: badgeCount,
         badgeGap: item.badgeGap,
@@ -165,12 +170,7 @@ class PageContentView extends StatelessWidget {
     if (source is ParagraphContent_Text) {
       return BadgedText(
         text: item.isPartial ? item.visibleText : source.content,
-        style: theme.textTheme.bodyLarge?.copyWith(
-          fontSize: (theme.textTheme.bodyLarge?.fontSize ?? 16) * fontScale,
-          fontFamily: fontFamily,
-          letterSpacing: item.letterSpacing ?? letterSpacing,
-          height: lineHeight,
-        ),
+        style: typo.body.copyWith(letterSpacing: item.letterSpacing),
         commentCount: badgeCount,
         badgeGap: item.badgeGap,
         badgeCompact: item.badgeCompact,
