@@ -313,6 +313,9 @@ Wise mobile scale adapted:
 **Key Design Decisions**:
 - No AppBar — large left-aligned title
 - Feed items: Card style with `background.neutral`, 16px radius
+- Feed icons retain the source initial in a 40px circle, with a subtle tonal
+  gradient and fine outline. Paused sources use neutral tones; load errors use
+  error tones. The detail sheet uses the same avatar at a larger size.
 - Feeds and Transformers share the same summary card: leading icon, title,
   two-line summary, status label, and detail chevron. Feed authentication status
   appears in the summary; load errors use the error colour for the status label.

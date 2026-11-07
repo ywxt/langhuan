@@ -8,6 +8,7 @@ import 'package:langhuan/features/feeds/feeds_page.dart';
 import 'package:langhuan/shared/widgets/swipe_action_card.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/features/feeds/widgets/feed_card.dart';
+import 'package:langhuan/features/feeds/widgets/feed_visuals.dart';
 import 'package:langhuan/shared/widgets/configuration_list_card.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
 import 'package:langhuan/rust_init.dart';
@@ -137,6 +138,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(ConfigurationListCard), findsOneWidget);
+    expect(find.byType(FeedAvatar), findsOneWidget);
     expect(find.byIcon(Icons.chevron_right), findsOneWidget);
     expect(find.byType(Switch), findsNothing);
     expect(tester.takeException(), isNull);

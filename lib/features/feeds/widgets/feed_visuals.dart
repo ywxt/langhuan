@@ -4,10 +4,8 @@ import '../../../l10n/app_localizations.dart';
 import '../../../src/rust/api/types.dart';
 import '../feed_service.dart';
 
-/// Circular avatar with the feed's initial, tinted by its health.
-///
-/// 40px circle per the Wise design spec §4.3; pass [size] to scale it up
-/// in larger contexts such as the detail sheet header.
+/// Source initial shared by the list and detail sheet, with a subtle tonal
+/// gradient. Paused sources use neutral colours; load failures use error tones.
 class FeedAvatar extends StatelessWidget {
   const FeedAvatar({super.key, required this.feed, this.size = 40});
 
@@ -16,29 +14,57 @@ class FeedAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final colors = Theme.of(context).colorScheme;
     final hasError = feed.error != null;
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: hasError
-            ? theme.colorScheme.errorContainer
-            : theme.colorScheme.primaryContainer,
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        feed.name.isNotEmpty ? feed.name[0].toUpperCase() : '?',
-        style:
-            (size >= 48
-                    ? theme.textTheme.titleLarge
-                    : theme.textTheme.titleMedium)
-                ?.copyWith(
-                  color: hasError
-                      ? theme.colorScheme.onErrorContainer
-                      : theme.colorScheme.onPrimaryContainer,
-                ),
+    final (background, highlight, foreground, outline) = hasError
+        ? (
+            colors.errorContainer,
+            colors.errorContainer,
+            colors.onErrorContainer,
+            colors.error,
+          )
+        : feed.enabled
+        ? (
+            colors.primaryContainer,
+            colors.secondaryContainer,
+            colors.onPrimaryContainer,
+            colors.primary,
+          )
+        : (
+            colors.surfaceContainerHighest,
+            colors.surfaceContainerHigh,
+            colors.onSurfaceVariant,
+            colors.outline,
+          );
+    final name = feed.name.trim();
+    return ExcludeSemantics(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [background, Color.lerp(background, highlight, .35)!],
+          ),
+          shape: BoxShape.circle,
+          border: Border.all(color: outline.withAlpha(40)),
+        ),
+        alignment: Alignment.center,
+        padding: EdgeInsets.all(size * .18),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            name.isEmpty ? '?' : name.characters.first.toUpperCase(),
+            textScaler: TextScaler.noScaling,
+            style: TextStyle(
+              color: foreground,
+              fontSize: size * .44,
+              fontWeight: FontWeight.w700,
+              height: 1,
+            ),
+          ),
+        ),
       ),
     );
   }

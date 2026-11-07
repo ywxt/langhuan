@@ -8,6 +8,7 @@ import '../../../src/rust/api/types.dart';
 import '../feed_providers.dart';
 import '../feed_service.dart';
 import 'feed_detail_sheet.dart';
+import 'feed_visuals.dart';
 
 /// Read-only identity and status summary, matching Transformer list rows.
 /// Management actions are available in the detail sheet.
@@ -51,7 +52,7 @@ class FeedCard extends ConsumerWidget {
     return ConfigurationListCard(
       margin: margin,
       borderRadius: borderRadius,
-      leading: Icon(Icons.extension_outlined),
+      leading: FeedAvatar(feed: feed),
       title: feed.name,
       subtitle: summary,
       status: isDeleting
