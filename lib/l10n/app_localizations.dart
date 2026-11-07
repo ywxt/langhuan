@@ -1574,6 +1574,12 @@ abstract class AppLocalizations {
   /// **'Install'**
   String get addFeedInstall;
 
+  /// Generic title for add-feed errors that carry no classification
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to add feed'**
+  String get addFeedError;
+
   /// Snackbar message on successful install
   ///
   /// In en, this message translates to:

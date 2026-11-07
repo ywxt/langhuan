@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/utils/errors.dart';
 import '../../../shared/widgets/loading.dart';
 import '../../../src/rust/api/types.dart' show VersionChange;
 import '../feed_service.dart';
@@ -299,20 +300,22 @@ class _VersionChangeBanner extends StatelessWidget {
 // Error display
 // ---------------------------------------------------------------------------
 
-/// Error message shown when feed preview or install fails.
+/// Error box shown when feed preview or install fails: the shared
+/// title-plus-detail form on the dialog's compact error surface.
 class FeedErrorContent extends StatelessWidget {
   const FeedErrorContent({
     super.key,
-    required this.message,
+    required this.presentation,
     required this.colorScheme,
   });
 
-  final String message;
+  final ErrorPresentation presentation;
   final ColorScheme colorScheme;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final hasDetail = presentation.detail.isNotEmpty;
 
     return Container(
       width: 300,
@@ -327,11 +330,26 @@ class FeedErrorContent extends StatelessWidget {
           Icon(Icons.error_outline, color: colorScheme.onErrorContainer),
           const SizedBox(width: LanghuanTheme.spaceSm),
           Expanded(
-            child: Text(
-              message,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onErrorContainer,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  presentation.title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: colorScheme.onErrorContainer,
+                  ),
+                ),
+                if (hasDetail) ...[
+                  const SizedBox(height: LanghuanTheme.spaceXs),
+                  Text(
+                    presentation.detail,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onErrorContainer,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],

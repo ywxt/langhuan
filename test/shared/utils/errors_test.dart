@@ -81,6 +81,41 @@ void main() {
     expect(display.detail, 'slow down');
   });
 
+  test('singleLine joins title and detail for one-line surfaces', () {
+    // Classified: the category leads, the message follows — the form the
+    // import/export snackbars show.
+    final classified = describeError(
+      const BridgeError(
+        kind: ErrorKind_ScriptConfig(),
+        message: 'Script parse error at line 1: missing ==Feed== header',
+      ),
+      en,
+      genericTitle: 'Failed to import feeds',
+    );
+    expect(
+      classified.singleLine,
+      'Script configuration error: '
+      'Script parse error at line 1: missing ==Feed== header',
+    );
+
+    // Unclassified: the surface's generic title carries the message.
+    final internal = describeError(
+      const BridgeError(
+        kind: ErrorKind_Internal(),
+        message: 'not a feed export: trailing characters',
+      ),
+      en,
+      genericTitle: 'Failed to import feeds',
+    );
+    expect(
+      internal.singleLine,
+      'Failed to import feeds: not a feed export: trailing characters',
+    );
+
+    // No detail at all: the title stands alone.
+    expect(describeError(null, en, genericTitle: 'Failed').singleLine, 'Failed');
+  });
+
   test('zh labels carry the Traditional Chinese wording', () async {
     final zh = await AppLocalizations.delegate.load(const Locale('zh'));
     for (final (kind, label) in [

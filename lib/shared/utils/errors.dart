@@ -11,6 +11,11 @@ class ErrorPresentation {
 
   final String title;
   final String detail;
+
+  /// Title and detail joined for one-line surfaces such as snackbars:
+  /// the classification leads, the detail follows.
+  String get singleLine =>
+      detail.isEmpty ? title : '$title: $detail';
 }
 
 /// Strips common exception prefixes (e.g. `BridgeError: …`) from an error so

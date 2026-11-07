@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../shared/utils/errors.dart';
 import 'feed_providers.dart';
 import 'feed_service.dart';
 
@@ -34,8 +33,11 @@ class AddFeedSuccess extends AddFeedState {
 }
 
 class AddFeedError extends AddFeedState {
-  const AddFeedError({required this.message});
-  final String message;
+  const AddFeedError({required this.error});
+
+  /// The raw failure; the surface classifies it via [describeError] so
+  /// every add-feed error renders with the shared title-plus-detail form.
+  final Object? error;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,8 +51,8 @@ class AddFeedNotifier extends Notifier<AddFeedState> {
   /// Preview a feed script from a remote [url].
   ///
   /// Any failure — an unreachable URL, an oversized or non-script
-  /// response, a script that fails to parse — lands in [AddFeedError];
-  /// nothing may escape, or the dialog sticks on its loading state,
+  /// response, a script that fails to parse — lands in [AddFeedError]
+  /// raw; nothing may escape, or the dialog sticks on its loading state,
   /// which also blocks dismissing it.
   Future<void> previewFromUrl(String url) async {
     state = const AddFeedLoading();
@@ -58,13 +60,13 @@ class AddFeedNotifier extends Notifier<AddFeedState> {
       final preview = await ref.read(feedServiceProvider).previewFromUrl(url);
       state = AddFeedPreview(preview: preview);
     } catch (e) {
-      state = AddFeedError(message: normalizeErrorMessage(e));
+      state = AddFeedError(error: e);
     }
   }
 
   /// Preview a feed script from a local file [path] (Rust reads the file).
   ///
-  /// Failures land in [AddFeedError] for the same reason as
+  /// Failures land in [AddFeedError] raw for the same reason as
   /// [previewFromUrl]: an escaped error would strand the dialog in its
   /// loading state.
   Future<void> previewFromFile(String path) async {
@@ -73,7 +75,7 @@ class AddFeedNotifier extends Notifier<AddFeedState> {
       final preview = await ref.read(feedServiceProvider).previewFromFile(path);
       state = AddFeedPreview(preview: preview);
     } catch (e) {
-      state = AddFeedError(message: normalizeErrorMessage(e));
+      state = AddFeedError(error: e);
     }
   }
 
@@ -95,7 +97,7 @@ class AddFeedNotifier extends Notifier<AddFeedState> {
       ref.read(feedListProvider.notifier).load();
       state = const AddFeedSuccess();
     } catch (e) {
-      state = AddFeedError(message: normalizeErrorMessage(e));
+      state = AddFeedError(error: e);
     }
   }
 

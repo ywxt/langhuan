@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/app_localizations.dart';
+import '../../../shared/utils/errors.dart';
 import '../../../shared/utils/snackbars.dart';
 import '../add_feed_provider.dart';
 import 'feed_preview_content.dart';
@@ -122,8 +123,11 @@ class _AddFeedDialogState extends ConsumerState<AddFeedDialog> {
       colorScheme: colorScheme,
       l10n: l10n,
     ),
-    AddFeedError(:final message) => FeedErrorContent(
-      message: message,
+    // The same classified title-plus-detail form every error surface uses:
+    // a classification leads when the error carries one, otherwise the
+    // generic add-feed title stands in.
+    AddFeedError(:final error) => FeedErrorContent(
+      presentation: describeError(error, l10n, genericTitle: l10n.addFeedError),
       colorScheme: colorScheme,
     ),
   };

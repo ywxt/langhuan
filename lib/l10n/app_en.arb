@@ -761,6 +761,9 @@
   "addFeedInstall": "Install",
   "@addFeedInstall": { "description": "Button label: confirm feed installation" },
 
+  "addFeedError": "Failed to add feed",
+  "@addFeedError": { "description": "Generic title for add-feed errors that carry no classification" },
+
   "addFeedSuccess": "Feed installed successfully",
   "@addFeedSuccess": { "description": "Snackbar message on successful install" },
 

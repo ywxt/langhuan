@@ -85,7 +85,7 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
       if (!mounted) return;
       showErrorSnack(
         ScaffoldMessenger.of(context),
-        '${l10n.feedsExportError}: ${normalizeErrorMessage(e)}',
+        describeError(e, l10n, genericTitle: l10n.feedsExportError).singleLine,
       );
     } finally {
       if (mounted) setState(() => _transferring = false);
@@ -141,7 +141,7 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
       if (!mounted) return;
       showErrorSnack(
         ScaffoldMessenger.of(context),
-        '${l10n.feedsImportError}: ${normalizeErrorMessage(e)}',
+        describeError(e, l10n, genericTitle: l10n.feedsImportError).singleLine,
       );
     } finally {
       if (mounted) setState(() => _transferring = false);

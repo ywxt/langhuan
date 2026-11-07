@@ -74,6 +74,9 @@ void main() {
     // loading spinner — and that state even blocks dismissing it.
     expect(tester.takeException(), isNull);
     expect(find.byType(LoadingContent), findsNothing);
+    // The classified title-plus-detail form every error surface uses:
+    // ScriptConfig leads with its category, the parse message follows.
+    expect(find.text('Script configuration error'), findsOneWidget);
     expect(find.text(_parseError.message), findsOneWidget);
 
     // The dialog stays operable: backing out returns to the URL input.
@@ -101,6 +104,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.byType(LoadingContent), findsNothing);
+    expect(find.text('Script configuration error'), findsOneWidget);
     expect(find.text(_parseError.message), findsOneWidget);
   });
 }

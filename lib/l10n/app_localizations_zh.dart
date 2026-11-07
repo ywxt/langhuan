@@ -811,6 +811,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addFeedInstall => '安裝';
 
   @override
+  String get addFeedError => '添加書源失敗';
+
+  @override
   String get addFeedSuccess => '書源安裝成功';
 
   @override

@@ -80,3 +80,18 @@ error.expected.source_unavailable:
 error.expected.unknown:
   en: "Script error [%{code}]: %{message}"
   zh: "腳本錯誤 [%{code}]：%{message}"
+error.export_serialization_failed:
+  en: "Feed export serialization failed: %{error}"
+  zh: "書源導出序列化失敗：%{error}"
+error.not_a_feed_export:
+  en: "Not a feed export: %{error}"
+  zh: "不是書源導出文件：%{error}"
+error.unknown_export_format:
+  en: "Unknown feed export format: expected langhuan-feeds"
+  zh: "未知的書源導出格式：應為 langhuan-feeds"
+error.malformed_feed_export:
+  en: "Malformed feed export: %{error}"
+  zh: "書源導出文件格式錯誤：%{error}"
+error.empty_feed_export:
+  en: "Feed export contains no feeds"
+  zh: "書源導出文件不含任何書源"

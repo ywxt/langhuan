@@ -834,6 +834,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addFeedInstall => 'Install';
 
   @override
+  String get addFeedError => 'Failed to add feed';
+
+  @override
   String get addFeedSuccess => 'Feed installed successfully';
 
   @override

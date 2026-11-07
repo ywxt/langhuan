@@ -140,6 +140,60 @@ impl BridgeError {
             detail: None,
         }
     }
+
+    /// Serializing the feed-export document failed — an invariant of the
+    /// export writer, never a user-input problem.
+    pub fn export_serialization_failed(error: impl std::fmt::Display) -> Self {
+        Self {
+            kind: ErrorKind::Internal,
+            message: t!(
+                "error.export_serialization_failed",
+                error = error.to_string()
+            )
+            .to_string(),
+            detail: None,
+        }
+    }
+
+    /// The picked import file is not valid JSON, so it cannot be a feed
+    /// export. Script-config: user-supplied content failed to load —
+    /// the same classification a non-script URL gets in the add-feed
+    /// preview flow.
+    pub fn not_a_feed_export(error: impl std::fmt::Display) -> Self {
+        Self {
+            kind: ErrorKind::ScriptConfig,
+            message: t!("error.not_a_feed_export", error = error.to_string()).to_string(),
+            detail: None,
+        }
+    }
+
+    /// The document is JSON but its format marker is not `langhuan-feeds`.
+    pub fn unknown_export_format() -> Self {
+        Self {
+            kind: ErrorKind::ScriptConfig,
+            message: t!("error.unknown_export_format").to_string(),
+            detail: None,
+        }
+    }
+
+    /// The export document parsed but its entries do not match the
+    /// export schema.
+    pub fn malformed_feed_export(error: impl std::fmt::Display) -> Self {
+        Self {
+            kind: ErrorKind::ScriptConfig,
+            message: t!("error.malformed_feed_export", error = error.to_string()).to_string(),
+            detail: None,
+        }
+    }
+
+    /// The export document parsed but contains no feeds.
+    pub fn empty_feed_export() -> Self {
+        Self {
+            kind: ErrorKind::ScriptConfig,
+            message: t!("error.empty_feed_export").to_string(),
+            detail: None,
+        }
+    }
 }
 
 impl From<String> for BridgeError {
