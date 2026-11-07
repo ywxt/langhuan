@@ -39,12 +39,14 @@ class _VisibleProbe {
     required this.activeParagraphId,
     required this.activeParagraphOffset,
     required this.visibleChapterIds,
+    required this.visibleParagraphs,
   });
 
   final String activeChapterId;
   final String activeParagraphId;
   final double activeParagraphOffset;
   final Set<String> visibleChapterIds;
+  final Set<(String, String)> visibleParagraphs;
 }
 
 /// Seamless vertical reader.
@@ -173,10 +175,10 @@ class SeamlessVerticalReader extends StatefulWidget {
   final Widget? Function(String chapterId)? chapterEndBuilder;
 
   @override
-  State<SeamlessVerticalReader> createState() => _SeamlessVerticalReaderState();
+  State<SeamlessVerticalReader> createState() => SeamlessVerticalReaderState();
 }
 
-class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
+class SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
   ScrollController? _controller;
   late Map<String, int> _chapterIndices;
   late Map<String, String> _chapterTitles;
@@ -244,6 +246,18 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
       }
       _controller = ScrollController(initialScrollOffset: initial);
     }
+  }
+
+  bool isParagraphVisible(String chapterId, String paragraphId) =>
+      _probeVisibleParagraphs()?.visibleParagraphs.any(
+        (position) => position.$1 == chapterId && position.$2 == paragraphId,
+      ) ??
+      false;
+
+  void cancelPendingNavigation() {
+    _pendingTarget = null;
+    _activeTargetParagraphId = null;
+    _targetAttempts = 0;
   }
 
   @override
@@ -532,6 +546,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
     var activeOffset = 0.0;
     var activeTop = double.infinity;
     final visible = <String>{};
+    final visibleParagraphs = <(String, String)>{};
 
     for (final chapterId in widget.window.windowChapterIds) {
       final paragraphs = widget.window.paragraphsOf(chapterId);
@@ -550,6 +565,18 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
             bottom > viewportTop + 1.0 && top < viewportBottom - 1.0;
         if (intersectsViewport) {
           visible.add(chapterId);
+          final itemIndex = sliverObject.indexOf(child);
+          final paragraphIndex = beforeAnchor
+              ? paragraphs.length - 1 - itemIndex
+              : itemIndex;
+          if (itemIndex >= 0 &&
+              paragraphIndex >= 0 &&
+              paragraphIndex < paragraphs.length) {
+            visibleParagraphs.add((
+              chapterId,
+              paragraphs[paragraphIndex].id.toStringValue(),
+            ));
+          }
           // Reverse-growth slivers enumerate children from the visual bottom
           // upward, so iteration order cannot identify the first visible
           // paragraph. Compare screen coordinates instead.
@@ -576,6 +603,7 @@ class _SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
       activeParagraphId: activeParagraph,
       activeParagraphOffset: activeOffset,
       visibleChapterIds: visible,
+      visibleParagraphs: visibleParagraphs,
     );
   }
 

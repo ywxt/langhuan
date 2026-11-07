@@ -401,67 +401,79 @@ Future<void> showReaderBookmarkSheet({
       .load(feedId: feedId, bookId: bookId);
   if (!context.mounted) return;
 
-  await showModalBottomSheet<void>(
+  ModalRoute<dynamic>? sheetRoute;
+  final selected = await showModalBottomSheet<(String, String)>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (context) => _FilterableSheet(
-      hintText: l10n.readerSearchBookmarksHint,
-      child: Consumer(
-        builder: (context, ref, _) {
-          final bookmarks = ref.watch(bookmarkProvider).items;
-          if (bookmarks.isEmpty) {
-            return _SheetMessage(message: l10n.readerNoBookmarks);
-          }
+    builder: (context) {
+      sheetRoute = ModalRoute.of(context);
+      return _FilterableSheet(
+        hintText: l10n.readerSearchBookmarksHint,
+        child: Consumer(
+          builder: (context, ref, _) {
+            final bookmarks = ref.watch(bookmarkProvider).items;
+            if (bookmarks.isEmpty) {
+              return _SheetMessage(message: l10n.readerNoBookmarks);
+            }
 
-          return Builder(
-            builder: (context) {
-              final query = _FilterableSheet.queryOf(context);
-              final filtered = _filterBookmarks(bookmarks, chapters, query);
-              if (filtered.isEmpty) {
-                return _SheetMessage(message: l10n.readerSearchNoMatch(query));
-              }
-
-              return ListView.builder(
-                itemCount: filtered.length,
-                itemBuilder: (context, index) {
-                  final item = filtered[index];
-                  final chapterIndex = chapters.indexWhere(
-                    (c) => c.id == item.chapterId,
+            return Builder(
+              builder: (context) {
+                final query = _FilterableSheet.queryOf(context);
+                final filtered = _filterBookmarks(bookmarks, chapters, query);
+                if (filtered.isEmpty) {
+                  return _SheetMessage(
+                    message: l10n.readerSearchNoMatch(query),
                   );
-                  final chapterTitle = chapterIndex >= 0
-                      ? chapters[chapterIndex].title
-                      : item.chapterId;
-                  return ListTile(
-                    title: Text(chapterTitle),
-                    subtitle: Text(
-                      item.paragraphName.trim().isEmpty
-                          ? item.paragraphId
-                          : item.paragraphName,
-                    ),
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onJumpToParagraph(item.chapterId, item.paragraphId);
-                    },
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () async {
-                        await ref
-                            .read(bookmarkProvider.notifier)
-                            .remove(item.id);
-                        if (!context.mounted) return;
-                        onBookmarkRemoved();
+                }
+
+                return ListView.builder(
+                  itemCount: filtered.length,
+                  itemBuilder: (context, index) {
+                    final item = filtered[index];
+                    final chapterIndex = chapters.indexWhere(
+                      (c) => c.id == item.chapterId,
+                    );
+                    final chapterTitle = chapterIndex >= 0
+                        ? chapters[chapterIndex].title
+                        : item.chapterId;
+                    return ListTile(
+                      title: Text(chapterTitle),
+                      subtitle: Text(
+                        item.paragraphName.trim().isEmpty
+                            ? item.paragraphId
+                            : item.paragraphName,
+                      ),
+                      onTap: () {
+                        Navigator.of(
+                          context,
+                        ).pop((item.chapterId, item.paragraphId));
                       },
-                    ),
-                  );
-                },
-              );
-            },
-          );
-        },
-      ),
-    ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () async {
+                          await ref
+                              .read(bookmarkProvider.notifier)
+                              .remove(item.id);
+                          if (!context.mounted) return;
+                          onBookmarkRemoved();
+                        },
+                      ),
+                    );
+                  },
+                );
+              },
+            );
+          },
+        ),
+      );
+    },
   );
+  // Wait for removal, not just pop: the reader may replace/reorder slivers.
+  await sheetRoute?.completed;
+  if (selected != null && context.mounted) {
+    onJumpToParagraph(selected.$1, selected.$2);
+  }
 }
 
 /// Bookmarks whose chapter title, paragraph name or preview matches
@@ -500,72 +512,81 @@ Future<void> showReaderTocSheet({
     initialScrollOffset: activeIdx > 0 ? activeIdx * 72.0 : 0,
   );
 
-  await showModalBottomSheet<void>(
+  ModalRoute<dynamic>? sheetRoute;
+  final selected = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (context) => _FilterableSheet(
-      hintText: l10n.readerSearchTocHint,
-      child: Consumer(
-        builder: (context, ref, _) {
-          final reading = ref.watch(readingProgressProvider);
-          final currentActiveId = reading.activeChapterId;
-          final cachedIds = ref
-              .watch(cachedChapterIdsProvider((feedId: feedId, bookId: bookId)))
-              .asData
-              ?.value;
+    builder: (context) {
+      sheetRoute = ModalRoute.of(context);
+      return _FilterableSheet(
+        hintText: l10n.readerSearchTocHint,
+        child: Consumer(
+          builder: (context, ref, _) {
+            final reading = ref.watch(readingProgressProvider);
+            final currentActiveId = reading.activeChapterId;
+            final cachedIds = ref
+                .watch(
+                  cachedChapterIdsProvider((feedId: feedId, bookId: bookId)),
+                )
+                .asData
+                ?.value;
 
-          return Builder(
-            builder: (context) {
-              final query = _FilterableSheet.queryOf(context);
-              final filtered = _filterChapters(chapters, query);
+            return Builder(
+              builder: (context) {
+                final query = _FilterableSheet.queryOf(context);
+                final filtered = _filterChapters(chapters, query);
 
-              if (filtered.isEmpty) {
-                return _SheetMessage(message: l10n.readerSearchNoMatch(query));
-              }
+                if (filtered.isEmpty) {
+                  return _SheetMessage(
+                    message: l10n.readerSearchNoMatch(query),
+                  );
+                }
 
-              return ChapterScrollbar(
-                controller: scrollController,
-                child: ListView.builder(
+                return ChapterScrollbar(
                   controller: scrollController,
-                  itemCount: filtered.length,
-                  itemExtent: 72.0,
-                  itemBuilder: (context, index) {
-                    final (chapterNo, chapter) = filtered[index];
-                    final isActive = chapter.id == currentActiveId;
-                    return ListTile(
-                      leading: Text('$chapterNo'),
-                      title: Text(
-                        chapter.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: isActive
-                            ? TextStyle(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontWeight: FontWeight.bold,
-                              )
-                            : null,
-                      ),
-                      selected: isActive,
-                      trailing: ChapterCacheIndicator(
-                        cached: cachedIds?.contains(chapter.id),
-                      ),
-                      onTap: () {
-                        Navigator.of(context).pop();
-                        onJumpToChapter(chapter.id);
-                      },
-                    );
-                  },
-                ),
-              );
-            },
-          );
-        },
-      ),
-    ),
+                  child: ListView.builder(
+                    controller: scrollController,
+                    itemCount: filtered.length,
+                    itemExtent: 72.0,
+                    itemBuilder: (context, index) {
+                      final (chapterNo, chapter) = filtered[index];
+                      final isActive = chapter.id == currentActiveId;
+                      return ListTile(
+                        leading: Text('$chapterNo'),
+                        title: Text(
+                          chapter.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: isActive
+                              ? TextStyle(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontWeight: FontWeight.bold,
+                                )
+                              : null,
+                        ),
+                        selected: isActive,
+                        trailing: ChapterCacheIndicator(
+                          cached: cachedIds?.contains(chapter.id),
+                        ),
+                        onTap: () {
+                          Navigator.of(context).pop(chapter.id);
+                        },
+                      );
+                    },
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      );
+    },
   );
+  await sheetRoute?.completed;
 
   scrollController.dispose();
+  if (selected != null && context.mounted) onJumpToChapter(selected);
 }
 
 /// Chapters whose title matches [query], paired with their original

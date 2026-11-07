@@ -1216,6 +1216,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commentsViewAll => '查看全部';
 
   @override
+  String get listeningReturnToPosition => '回到朗讀位置';
+
+  @override
+  String get listeningFromHere => '從這裏聽';
+
+  @override
   String get listeningTitle => '系統語音聽書';
 
   @override

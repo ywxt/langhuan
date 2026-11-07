@@ -275,6 +275,8 @@ void main() {
       await tester.enterText(find.byType(TextField), 'dark');
       await tester.pumpAndSettle();
       await tester.tap(find.text('A Dark Road'));
+      await tester.pump();
+      expect(jumps, isEmpty);
       await tester.pumpAndSettle();
 
       expect(jumps, ['c2']);
@@ -286,6 +288,7 @@ void main() {
     testWidgets('filters across chapter title, name and preview', (
       tester,
     ) async {
+      final jumps = <(String, String)>[];
       final service = FakeFeedService(
         listBookmarksHandler: (feedId, bookId) async => [
           const BookmarkModel(
@@ -325,7 +328,7 @@ void main() {
                   feedId: 'f1',
                   bookId: 'b1',
                   chapters: chapters,
-                  onJumpToParagraph: (_, _) {},
+                  onJumpToParagraph: (c, p) => jumps.add((c, p)),
                   onBookmarkRemoved: () {},
                 );
               }),
@@ -356,6 +359,13 @@ void main() {
       await tester.enterText(find.byType(TextField), 'zzz');
       await tester.pumpAndSettle();
       expect(find.text('Nothing matching "zzz"'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'fallen');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('the fallen star'));
+      await tester.pump();
+      expect(jumps, isEmpty);
+      await tester.pumpAndSettle();
+      expect(jumps, [('c2', 'p9')]);
     });
 
     testWidgets('empty bookmarks still shows the dedicated empty state', (

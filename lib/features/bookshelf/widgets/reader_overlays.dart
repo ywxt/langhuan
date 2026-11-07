@@ -14,6 +14,7 @@ class ReaderSelectionOverlay extends StatelessWidget {
     required this.l10n,
     required this.onAddBookmark,
     this.onComments,
+    this.onListenFromHere,
   });
 
   final ParagraphSelection selection;
@@ -21,54 +22,45 @@ class ReaderSelectionOverlay extends StatelessWidget {
   final AppLocalizations l10n;
   final VoidCallback onAddBookmark;
   final VoidCallback? onComments;
+  final VoidCallback? onListenFromHere;
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.sizeOf(context).width;
-
-    const toolbarHeight = 40.0;
-    const toolbarPadding = 8.0;
-    final top = selection.rect.top - toolbarHeight - toolbarPadding;
-    final safeTop = top < MediaQuery.of(context).padding.top + 4
-        ? selection.rect.bottom + toolbarPadding
-        : top;
-
-    return Positioned(
-      top: safeTop,
-      left: 0,
-      right: 0,
-      child: Center(
+    final media = MediaQuery.of(context);
+    return Positioned.fill(
+      child: CustomSingleChildLayout(
+        delegate: _SelectionToolbarLayout(selection.rect, media.padding),
         child: Material(
           elevation: 4,
           borderRadius: BorderRadius.circular(8),
           color: theme.colorScheme.surfaceContainer,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: screenWidth * 0.7),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap: onAddBookmark,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.bookmark_add_outlined, size: 18),
-                    const SizedBox(width: 4),
-                    Text(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  TextButton.icon(
+                    onPressed: onAddBookmark,
+                    icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                    label: Text(
                       l10n.readerAddBookmark,
                       style: const TextStyle(fontSize: 13),
                     ),
-                    if (onComments != null)
-                      IconButton(
-                        tooltip: l10n.readerParagraphComments,
-                        icon: const Icon(Icons.comment_outlined, size: 18),
-                        onPressed: onComments,
-                      ),
-                  ],
-                ),
+                  ),
+                  if (onListenFromHere != null)
+                    IconButton(
+                      tooltip: l10n.listeningFromHere,
+                      icon: const Icon(Icons.headphones, size: 18),
+                      onPressed: onListenFromHere,
+                    ),
+                  if (onComments != null)
+                    IconButton(
+                      tooltip: l10n.readerParagraphComments,
+                      icon: const Icon(Icons.comment_outlined, size: 18),
+                      onPressed: onComments,
+                    ),
+                ],
               ),
             ),
           ),
@@ -76,6 +68,43 @@ class ReaderSelectionOverlay extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Positions the toolbar using its actual size after wrapping or text scaling.
+class _SelectionToolbarLayout extends SingleChildLayoutDelegate {
+  _SelectionToolbarLayout(this.selection, this.safeArea);
+
+  final Rect selection;
+  final EdgeInsets safeArea;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      BoxConstraints(
+        maxWidth: (constraints.maxWidth - 32).clamp(0, double.infinity),
+        maxHeight: (constraints.maxHeight - safeArea.vertical - 8).clamp(
+          0,
+          double.infinity,
+        ),
+      );
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final minTop = safeArea.top + 4;
+    final maxTop = (size.height - safeArea.bottom - childSize.height - 4).clamp(
+      minTop,
+      double.infinity,
+    );
+    final above = selection.top - childSize.height - 8;
+    final preferred = above < minTop ? selection.bottom + 8 : above;
+    return Offset(
+      (size.width - childSize.width) / 2,
+      preferred.clamp(minTop, maxTop),
+    );
+  }
+
+  @override
+  bool shouldRelayout(_SelectionToolbarLayout oldDelegate) =>
+      oldDelegate.selection != selection || oldDelegate.safeArea != safeArea;
 }
 
 class ReaderTopOverlay extends StatelessWidget {

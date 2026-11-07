@@ -146,6 +146,66 @@ void main() {
     });
   }
 
+  for (final mode in ReaderPageMode.values) {
+    testWidgets(
+      'narration visibility distinguishes transformed siblings in $mode',
+      (tester) async {
+        ParagraphId id(int index) => ParagraphId(
+          original: const OriginalParagraphId.source('shared'),
+          path: [ParagraphPathIndex(index: index)],
+        );
+        final reader = await pumpManager(
+          tester,
+          pageMode: mode,
+          service: FakeFeedService(
+            paragraphsHandler: (f, b, c, {forceRefresh = false}) async => [
+              for (var i = 0; i < 40; i++)
+                ParagraphContent.text(
+                  id: id(i),
+                  content: 'Transformed paragraph $i. ' * 4,
+                ),
+            ],
+          ),
+        );
+        expect(reader.isParagraphVisible!('c1', id(0).toStringValue()), isTrue);
+        expect(
+          reader.isParagraphVisible!('c1', id(39).toStringValue()),
+          isFalse,
+        );
+        reader.jumpTo(chapterId: 'c1', paragraphId: id(39).toStringValue());
+        await tester.pumpAndSettle();
+        expect(
+          reader.isParagraphVisible!('c1', id(39).toStringValue()),
+          isTrue,
+        );
+      },
+    );
+
+    testWidgets('narration visibility tracks the displayed chapter in $mode', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      final reader = await pumpManager(
+        tester,
+        pageMode: mode,
+        service: service(calls: []),
+      );
+      final first = data['c1']![1].id.toStringValue();
+      final second = data['c2']![1].id.toStringValue();
+      expect(reader.isParagraphVisible!('c1', first), isTrue);
+      expect(reader.isParagraphVisible!('c2', first), isFalse);
+      reader.jumpTo(chapterId: 'c2', paragraphId: second);
+      await tester.pumpAndSettle();
+      expect(reader.isParagraphVisible!('c2', second), isTrue);
+      reader.cancelPendingNavigation();
+      expect(reader.pendingChapterId, isNull);
+      await tester.pumpWidget(const SizedBox());
+      expect(reader.isParagraphVisible, isNull);
+      expect(reader.onCancelPendingNavigation, isNull);
+      semantics.dispose();
+    });
+  }
+
   testWidgets('loads the anchor chapter through the injected service', (
     tester,
   ) async {

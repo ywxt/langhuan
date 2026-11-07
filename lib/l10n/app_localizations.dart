@@ -2336,6 +2336,18 @@ abstract class AppLocalizations {
   /// **'View all'**
   String get commentsViewAll;
 
+  /// No description provided for @listeningReturnToPosition.
+  ///
+  /// In en, this message translates to:
+  /// **'Return to narration'**
+  String get listeningReturnToPosition;
+
+  /// No description provided for @listeningFromHere.
+  ///
+  /// In en, this message translates to:
+  /// **'Listen from here'**
+  String get listeningFromHere;
+
   /// No description provided for @listeningTitle.
   ///
   /// In en, this message translates to:

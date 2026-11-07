@@ -30,6 +30,7 @@ Future<void> showListeningPanel(
   BuildContext context,
   ListeningController controller, {
   required VoidCallback onStart,
+  VoidCallback? onStartFromHere,
 }) {
   unawaited(controller.loadVoices());
   return showModalBottomSheet<void>(
@@ -61,6 +62,18 @@ Future<void> showListeningPanel(
                 ),
                 Text(l10n.listeningLocalHint),
                 const SizedBox(height: LanghuanTheme.spaceMd),
+                if (onStartFromHere != null) ...[
+                  OutlinedButton.icon(
+                    key: const ValueKey('listening-start-from-here'),
+                    onPressed: () {
+                      onStartFromHere();
+                      Navigator.of(context).pop();
+                    },
+                    icon: const Icon(Icons.headphones),
+                    label: Text(l10n.listeningFromHere),
+                  ),
+                  const SizedBox(height: LanghuanTheme.spaceSm),
+                ],
                 if (controller.status == ListeningStatus.error ||
                     controller.voicesError != null) ...[
                   Text(

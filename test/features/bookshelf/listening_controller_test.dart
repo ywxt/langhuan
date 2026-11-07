@@ -84,6 +84,21 @@ class _Service extends FakeFeedService {
   }
 }
 
+class _DelayedChapterService extends _Service {
+  final firstChapters = Completer<List<ChapterInfoModel>>();
+  var reads = 0;
+
+  @override
+  Future<List<ChapterInfoModel>> chapters({
+    required String feedId,
+    required String bookId,
+    bool forceRefresh = false,
+  }) {
+    if (++reads == 1) return firstChapters.future;
+    return super.chapters(feedId: feedId, bookId: bookId);
+  }
+}
+
 class _Engine implements SpeechEngine {
   final spoken = <String>[];
   LocalVoice? spokenVoice;
@@ -334,37 +349,34 @@ void main() {
       expect(engine.spoken, isEmpty);
     },
   );
-  test(
-    'resume uses manual reading progress and stop does not overwrite it',
-    () async {
-      final service = _Service();
-      final engine = _Engine();
-      final controller = ListeningController(service, engine);
-      addTearDown(controller.dispose);
-      await controller.start(feedId: 'f', bookId: 'b', chapterId: 'c1');
-      await _flush();
-      await controller.pause();
-      await service.setReadingProgress(
-        feedId: 'f',
-        bookId: 'b',
-        chapterId: 'c2',
-        paragraphId: service.saved.last.paragraphId,
-        paragraphCharOffset: 12,
-        updatedAtMs: 2,
-      );
-      final count = service.saved.length;
-      await controller.stop();
-      expect(service.saved, hasLength(count));
-      expect(service.restore!.chapterId, 'c2');
-      expect(service.restore!.paragraphCharOffset, 12);
-      controller.resume();
-      await _flush();
-      expect(controller.chapterId, 'c2');
-      expect(engine.spoken.last, '下一章。');
-      expect(service.saved.last.paragraphCharOffset, 0);
-      await controller.stop();
-    },
-  );
+  test('a new session after stop uses persisted reading progress', () async {
+    final service = _Service();
+    final engine = _Engine();
+    final controller = ListeningController(service, engine);
+    addTearDown(controller.dispose);
+    await controller.start(feedId: 'f', bookId: 'b', chapterId: 'c1');
+    await _flush();
+    await controller.pause();
+    await service.setReadingProgress(
+      feedId: 'f',
+      bookId: 'b',
+      chapterId: 'c2',
+      paragraphId: service.saved.last.paragraphId,
+      paragraphCharOffset: 12,
+      updatedAtMs: 2,
+    );
+    final count = service.saved.length;
+    await controller.stop();
+    expect(service.saved, hasLength(count));
+    expect(service.restore!.chapterId, 'c2');
+    expect(service.restore!.paragraphCharOffset, 12);
+    controller.resume();
+    await _flush();
+    expect(controller.chapterId, 'c2');
+    expect(engine.spoken.last, '下一章。');
+    expect(service.saved.last.paragraphCharOffset, 0);
+    await controller.stop();
+  });
   test(
     'reloading voices preserves the selected locale for a shared name',
     () async {
@@ -503,29 +515,93 @@ void main() {
     expect(engine.spoken, ['第一句。第二句。', '第一句。第二句。']);
     await controller.stop();
   });
-  test('resume follows manual reading within the same chapter', () async {
+  test(
+    'resume retains its paragraph after manual reading while paused',
+    () async {
+      final service = _MultiParagraphService();
+      final engine = _Engine();
+      final controller = ListeningController(service, engine);
+      addTearDown(controller.dispose);
+      await controller.start(feedId: 'f', bookId: 'b', chapterId: 'c1');
+      await _flush();
+      expect(engine.spoken, ['第一段。']);
+      await controller.pause();
+      await service.setReadingProgress(
+        feedId: 'f',
+        bookId: 'b',
+        chapterId: 'c1',
+        paragraphId: const ParagraphId(
+          original: OriginalParagraphId.source('840'),
+          path: [],
+        ).toStringValue(),
+        updatedAtMs: 2,
+      );
+      controller.resume();
+      await _flush();
+      expect(engine.spoken, ['第一段。', '第一段。']);
+      await controller.stop();
+    },
+  );
+  test('resume during chapter loading retains the same session', () async {
+    final service = _DelayedChapterService();
+    final engine = _Engine();
+    final controller = ListeningController(service, engine);
+    addTearDown(controller.dispose);
+    final starting = controller.start(
+      feedId: 'f',
+      bookId: 'b',
+      chapterId: 'c1',
+    );
+    await _flush();
+    expect(service.reads, 1);
+    final revision = controller.sessionRevision;
+    await controller.pause();
+    await controller.resume();
+    await _flush();
+    expect(controller.sessionRevision, revision);
+    expect(controller.status, ListeningStatus.playing);
+    expect(engine.spoken, ['第一句。第二句。']);
+    service.firstChapters.complete(const [
+      ChapterInfoModel(id: 'old', title: 'Stale chapter'),
+    ]);
+    await starting;
+    expect(controller.chapterId, 'c1');
+    await controller.stop();
+  });
+
+  test('only an explicit start creates a new narration session', () async {
     final service = _MultiParagraphService();
     final engine = _Engine();
     final controller = ListeningController(service, engine);
     addTearDown(controller.dispose);
     await controller.start(feedId: 'f', bookId: 'b', chapterId: 'c1');
     await _flush();
-    expect(engine.spoken, ['第一段。']);
+    final revision = controller.sessionRevision;
+    expect(controller.hasSessionForBook('f', 'b'), isTrue);
+    expect(controller.hasSessionForBook('f', 'other'), isFalse);
     await controller.pause();
-    await service.setReadingProgress(
+    expect(controller.hasSessionForBook('f', 'b'), isTrue);
+    await controller.resume();
+    await _flush();
+    await controller.configure(rate: 1.25);
+    await _flush();
+    expect(controller.sessionRevision, revision);
+    final selected = const ParagraphId(
+      original: OriginalParagraphId.source('840'),
+      path: [],
+    ).toStringValue();
+    await controller.start(
       feedId: 'f',
       bookId: 'b',
       chapterId: 'c1',
-      paragraphId: const ParagraphId(
-        original: OriginalParagraphId.source('840'),
-        path: [],
-      ).toStringValue(),
-      updatedAtMs: 2,
+      paragraphId: selected,
     );
-    controller.resume();
     await _flush();
-    expect(engine.spoken, ['第一段。', '第二段。']);
+    expect(controller.sessionRevision, greaterThan(revision));
+    expect(controller.paragraphId, selected);
+    expect(engine.spoken.last, '第二段。');
     await controller.stop();
+    expect(controller.hasSessionForBook('f', 'b'), isFalse);
   });
   test('sleep at chapter end pauses instead of advancing', () async {
     final service = _Service();

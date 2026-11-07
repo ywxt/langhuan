@@ -203,6 +203,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   // Canonical horizontal position.
   String _activeChapterId = '';
   int _activeLocalPageIndex = 0;
+  final _verticalReaderKey = GlobalKey<SeamlessVerticalReaderState>();
   String _pendingJumpParagraphId = '';
   int _pendingJumpCharOffset = 0;
 
@@ -235,6 +236,8 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     final pendingCharOffset = widget.controller.pendingCharOffset;
     widget.controller.consumeJump();
     widget.controller.addListener(_onControllerCommand);
+    widget.controller.isParagraphVisible = _isParagraphVisible;
+    widget.controller.onCancelPendingNavigation = _cancelPendingNavigation;
 
     _activeChapterId = startId;
     _pendingJumpParagraphId = pendingParagraphId;
@@ -285,6 +288,8 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
 
   @override
   void dispose() {
+    widget.controller.isParagraphVisible = null;
+    widget.controller.onCancelPendingNavigation = null;
     widget.controller.removeListener(_onControllerCommand);
     _window?.removeListener(_onWindowChanged);
     _window?.dispose();
@@ -359,6 +364,32 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   }
 
   // ── Controller commands ─────────────────────────────────────────────────
+
+  bool _isParagraphVisible(String chapterId, String paragraphId) {
+    if (widget.pageMode == ReaderPageMode.vertical) {
+      return _verticalReaderKey.currentState?.isParagraphVisible(
+            chapterId,
+            paragraphId,
+          ) ??
+          false;
+    }
+    if (_activeChapterId != chapterId) return false;
+    final pages = _pagesFor(chapterId);
+    if (_activeLocalPageIndex < 0 || _activeLocalPageIndex >= pages.length) {
+      return false;
+    }
+    return pages[_activeLocalPageIndex].items.any(
+      (item) => item.paragraphId == paragraphId,
+    );
+  }
+
+  void _cancelPendingNavigation() {
+    _pendingJumpParagraphId = '';
+    _pendingJumpCharOffset = 0;
+    _verticalEstimatePending = false;
+    _verticalTarget = null;
+    _verticalReaderKey.currentState?.cancelPendingNavigation();
+  }
 
   void _onControllerCommand() {
     final reloadId = widget.controller.consumeChapterReload();
@@ -1243,6 +1274,7 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       // initState expects it by its post-frame callback).
       _ensureBreaker();
       return SeamlessVerticalReader(
+        key: _verticalReaderKey,
         window: window,
         chapters: widget.chapters,
         contentPadding: widget.contentPadding,

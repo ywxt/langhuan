@@ -18,6 +18,8 @@ class ListeningController extends ChangeNotifier {
   final Future<void> Function()? preparePlayback;
   bool _resumeAfterConfiguration = false;
   int _generation = 0;
+  int _sessionRevision = 0;
+  int get sessionRevision => _sessionRevision;
   int _configuration = 0;
   bool _disposed = false;
   Future<void>? _voiceLoad;
@@ -58,6 +60,10 @@ class ListeningController extends ChangeNotifier {
       status == ListeningStatus.playing || status == ListeningStatus.loading;
   bool ownsBook(String feed, String book) =>
       active && feedId == feed && bookId == book;
+  bool hasSessionForBook(String feed, String book) =>
+      feedId == feed &&
+      bookId == book &&
+      (active || status == ListeningStatus.paused);
 
   /// Display title of the current chapter, '' while chapters are loading.
   String get chapterTitle =>
@@ -112,8 +118,25 @@ class ListeningController extends ChangeNotifier {
     String chapterId = '',
     String paragraphId = '',
     String bookTitle = '',
+  }) => _start(
+    feedId: feedId,
+    bookId: bookId,
+    chapterId: chapterId,
+    paragraphId: paragraphId,
+    bookTitle: bookTitle,
+    newSession: true,
+  );
+
+  Future<void> _start({
+    required String feedId,
+    required String bookId,
+    required String chapterId,
+    required String paragraphId,
+    required String bookTitle,
+    required bool newSession,
   }) async {
     ++_configuration;
+    if (newSession) ++_sessionRevision;
     _resumeAfterConfiguration = false;
     final generation = ++_generation;
     try {
@@ -257,10 +280,8 @@ class ListeningController extends ChangeNotifier {
 
   Future<void> resume() async {
     if (active || feedId.isEmpty) return;
-    // Fast path: the paused session is still in memory. Reading progress is
-    // the resume position — including manual reading done while paused — so
-    // coordinate with one cheap database read, relocate in memory, and
-    // re-enter playback without re-fetching chapters or paragraphs.
+    // The paused session retains its audio position. Browsing and ordinary
+    // reading can update shared progress without silently seeking this session.
     if (status == ListeningStatus.paused &&
         _chapters.isNotEmpty &&
         chapterId.isNotEmpty) {
@@ -270,36 +291,21 @@ class ListeningController extends ChangeNotifier {
       try {
         await preparePlayback?.call();
         if (generation != _generation) return;
-        final saved = await _service.getReadingProgress(
-          feedId: feedId,
-          bookId: bookId,
-        );
-        if (generation != _generation) return;
-        if (saved != null && saved.chapterId != chapterId) {
-          final savedIndex = _chapters.indexWhere(
-            (c) => c.id == saved.chapterId,
-          );
-          if (savedIndex < 0) {
-            // Chapter not in the retained list — full restart.
-            await start(feedId: feedId, bookId: bookId, bookTitle: bookTitle);
-            return;
-          }
-          _chapterIndex = savedIndex;
-          _paragraphs = [];
-          chapterId = saved.chapterId;
-          paragraphId = saved.paragraphId;
-        } else if (saved != null && saved.paragraphId != paragraphId) {
-          paragraphId = saved.paragraphId;
-          _syncParagraphIndex();
-        }
         _resumeFromMemory(generation);
-        return;
       } catch (e) {
         if (generation == _generation) _fail(e);
-        return;
       }
+      return;
     }
-    await start(feedId: feedId, bookId: bookId, bookTitle: bookTitle);
+    final paused = status == ListeningStatus.paused;
+    await _start(
+      feedId: feedId,
+      bookId: bookId,
+      bookTitle: bookTitle,
+      chapterId: paused ? chapterId : '',
+      paragraphId: paused ? paragraphId : '',
+      newSession: !paused,
+    );
   }
 
   Future<void> stop() async {

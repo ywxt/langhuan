@@ -1106,6 +1106,8 @@
   "commentsSortHot": "Hot",
   "commentsSortLatest": "Latest",
   "commentsViewAll": "View all",
+  "listeningReturnToPosition": "Return to narration",
+  "listeningFromHere": "Listen from here",
   "listeningTitle": "System text-to-speech",
   "listeningStart": "Start listening",
   "listeningPause": "Pause",

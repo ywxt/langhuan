@@ -458,7 +458,12 @@ The reader exposes chapter comments at each chapter's end and paragraph
 comments where source IDs exist; one reader-level comment switch controls both
 surfaces together. Reply threads and sorting open in the comments panel. Use
 the same theme surfaces and text contrast for these panels. Listening
-highlights the active paragraph; manual reading interactions pause playback.
+highlights the spoken paragraph and follows it only when it leaves the viewport.
+Manual reading interactions detach following while playback continues. A floating
+**Return to narration** action restores following; **Listen from here** explicitly
+changes the playback position. Pause/resume keeps the session's spoken paragraph.
+Catalogue and bookmark navigation waits until the panel has fully closed before
+repositioning the reader, keeping its accessibility tree stable during dismissal.
 See
 [Search, comments, and listening](search-comments-listening.md) for lifecycle and
 progress rules.

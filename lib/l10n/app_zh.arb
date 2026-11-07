@@ -392,6 +392,8 @@
   "commentsSortHot": "最熱",
   "commentsSortLatest": "最新",
   "commentsViewAll": "查看全部",
+  "listeningReturnToPosition": "回到朗讀位置",
+  "listeningFromHere": "從這裏聽",
   "listeningTitle": "系統語音聽書",
   "listeningStart": "開始聽書",
   "listeningPause": "暫停",

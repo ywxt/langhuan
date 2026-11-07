@@ -61,6 +61,15 @@ class ReaderController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Rendering adapters expose visibility and cancel deferred positioning.
+  bool Function(String chapterId, String paragraphId)? isParagraphVisible;
+  VoidCallback? onCancelPendingNavigation;
+
+  void cancelPendingNavigation() {
+    consumeJump();
+    onCancelPendingNavigation?.call();
+  }
+
   void consumeJump() {
     _pendingChapterId = null;
     _pendingParagraphId = '';

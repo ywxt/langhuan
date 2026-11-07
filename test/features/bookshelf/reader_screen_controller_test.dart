@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:langhuan/features/bookshelf/reader_screen_controller.dart';
+import 'package:langhuan/features/bookshelf/reading_progress_provider.dart';
 import 'package:langhuan/features/bookshelf/widgets/reader_controller.dart';
 import 'package:langhuan/features/feeds/feed_providers.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
@@ -29,6 +30,7 @@ void main() {
     required FakeFeedService service,
     String initialChapterId = '',
     String initialParagraphId = '',
+    bool Function()? shouldSaveProgress,
   }) async {
     final container = ProviderContainer(
       overrides: [feedServiceProvider.overrideWithValue(service)],
@@ -49,6 +51,7 @@ void main() {
                 bookId: 'b1',
                 initialChapterId: initialChapterId,
                 initialParagraphId: initialParagraphId,
+                shouldSaveProgress: shouldSaveProgress,
               );
               return const SizedBox.shrink();
             },
@@ -92,6 +95,43 @@ void main() {
       paragraphsHandler: paragraphs,
     );
   }
+
+  testWidgets('audio owns persisted progress while browsing stays current', (
+    tester,
+  ) async {
+    var maySave = false;
+    final saves = <(String, String, String, String, int)>[];
+    final (controller, container, _) = await pumpHost(
+      tester,
+      service: baseService(
+        onProgressSaved: (f, b, c, p, offset) =>
+            saves.add((f, b, c, p, offset)),
+      ),
+      shouldSaveProgress: () => maySave,
+    );
+    await controller.initialize();
+    controller.onPositionChanged(
+      const ReaderPosition(chapterId: 'c2', paragraphId: 'p2'),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(saves, isEmpty);
+    expect(container.read(readingProgressProvider).activeChapterId, 'c2');
+
+    maySave = true;
+    controller.onPositionChanged(
+      const ReaderPosition(chapterId: 'c3', paragraphId: 'p3'),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(saves.single.$3, 'c3');
+
+    // A write queued before speech starts must not overwrite its position.
+    controller.onPositionChanged(
+      const ReaderPosition(chapterId: 'c1', paragraphId: 'p1'),
+    );
+    maySave = false;
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(saves, hasLength(1));
+  });
 
   group('initialize', () {
     testWidgets('loads chapters, marks them seen, restores saved progress', (

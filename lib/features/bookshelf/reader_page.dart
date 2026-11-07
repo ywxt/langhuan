@@ -58,6 +58,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   bool _chapterComments = false, _paragraphComments = false;
   late final ListeningController _listening;
   String _followingParagraph = '';
+  bool _followListening = true;
+  int _listeningSessionRevision = -1;
 
   /// Live page progress of the active chapter, fed by the content manager
   /// and rendered by the bottom status bar.
@@ -78,28 +80,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       bookId: widget.bookId,
       initialChapterId: widget.chapterId,
       initialParagraphId: widget.paragraphId,
+      shouldSaveProgress: () =>
+          !_listening.ownsBook(widget.feedId, widget.bookId),
     );
     _screenController.addListener(_onScreenControllerChanged);
-    _readerController.onPositionChanged = (position) {
-      if (!_listening.ownsBook(widget.feedId, widget.bookId)) {
-        _screenController.onPositionChanged(position);
-      } else {
-        // Keep the visible position current without competing with TTS's
-        // atomic listening/reading progress writes.
-        ref
-            .read(readingProgressProvider.notifier)
-            .setActivePosition(
-              chapterId: position.chapterId,
-              paragraphId: position.paragraphId,
-              paragraphOffset: position.paragraphOffset,
-              paragraphCharOffset: position.charOffset,
-            );
-      }
-    };
+    _readerController.onPositionChanged = _screenController.onPositionChanged;
     _loadCommentSupport();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      _screenController.initialize();
+      await _screenController.initialize();
+      if (mounted) _onListeningChanged();
     });
   }
 
@@ -161,7 +151,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     ParagraphContent paragraph,
     Rect globalRect,
   ) {
-    _pauseForManualReading();
+    _detachListeningFollow();
     _screenController.setSelection(
       chapterId: chapterId,
       paragraphId: paragraphId,
@@ -190,42 +180,94 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     }
   }
 
+  bool get _hasListeningSession =>
+      _listening.hasSessionForBook(widget.feedId, widget.bookId);
+
   void _onListeningChanged() {
     if (!mounted) return;
-    if (_listening.ownsBook(widget.feedId, widget.bookId) &&
-        _listening.paragraphId.isNotEmpty) {
-      _screenController.suspendProgressSaving();
-      final key = '${_listening.chapterId}:${_listening.paragraphId}';
-      if (_followingParagraph != key) {
-        _followingParagraph = key;
-        _readerController.jumpTo(
-          chapterId: _listening.chapterId,
-          paragraphId: _listening.paragraphId,
-        );
+    if (_hasListeningSession) {
+      if (_listeningSessionRevision != _listening.sessionRevision) {
+        _listeningSessionRevision = _listening.sessionRevision;
+        _followListening = true;
+        _followingParagraph = '';
       }
+      if (_listening.ownsBook(widget.feedId, widget.bookId)) {
+        _screenController.suspendProgressSaving();
+      }
+      if (_followListening) _followCurrentParagraph();
     } else {
       _followingParagraph = '';
+      _followListening = true;
     }
     setState(() {});
   }
 
-  void _pauseForManualReading() {
-    if (_listening.ownsBook(widget.feedId, widget.bookId)) _listening.pause();
+  void _followCurrentParagraph({bool force = false}) {
+    if (_screenController.isInitializing ||
+        _screenController.chapters.isEmpty ||
+        _listening.chapterId.isEmpty ||
+        _listening.paragraphId.isEmpty) {
+      return;
+    }
+    final key = '${_listening.chapterId}:${_listening.paragraphId}';
+    if (!force && _followingParagraph == key) return;
+    _followingParagraph = key;
+    final visible =
+        _readerController.isParagraphVisible?.call(
+          _listening.chapterId,
+          _listening.paragraphId,
+        ) ??
+        false;
+    if (force || !visible) {
+      _readerController.jumpTo(
+        chapterId: _listening.chapterId,
+        paragraphId: _listening.paragraphId,
+      );
+    }
+  }
+
+  void _detachListeningFollow() {
+    if (!_hasListeningSession || !_followListening) return;
+    _readerController.cancelPendingNavigation();
+    setState(() {
+      _followListening = false;
+      _followingParagraph = '';
+    });
+  }
+
+  void _returnToListening() {
+    if (!_hasListeningSession) return;
+    _clearSelection();
+    setState(() => _followListening = true);
+    _followCurrentParagraph(force: true);
+  }
+
+  void _startListeningHere({String? chapterId, String? paragraphId}) {
+    final progress = ref.read(readingProgressProvider);
+    _clearSelection();
+    _screenController.suspendProgressSaving();
+    _listening.start(
+      feedId: widget.feedId,
+      bookId: widget.bookId,
+      bookTitle: _bookTitle,
+      chapterId: chapterId ?? progress.activeChapterId,
+      paragraphId: paragraphId ?? progress.activeParagraphId,
+    );
   }
 
   Widget _observeReadingGestures(Widget child) => Listener(
     onPointerSignal: (_) {
-      _pauseForManualReading();
+      _detachListeningFollow();
       _screenController.hideControls();
     },
     onPointerPanZoomStart: (_) {
-      _pauseForManualReading();
+      _detachListeningFollow();
       _screenController.hideControls();
     },
     child: NotificationListener<ScrollStartNotification>(
       onNotification: (notification) {
         if (notification.dragDetails != null) {
-          _pauseForManualReading();
+          _detachListeningFollow();
           _screenController.hideControls();
         }
         return false;
@@ -235,6 +277,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   );
 
   Future<void> _openComments(String chapterId, {String? paragraphId}) {
+    _detachListeningFollow();
     // Clearing the paragraph selection rebuilds the reader; deferring that
     // by one frame keeps the tap frame free for the panel's entrance
     // animation instead of hitching it.
@@ -280,22 +323,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   Future<void> _openListening() => showListeningPanel(
     context,
     _listening,
-    onStart: () {
-      final progress = ref.read(readingProgressProvider);
-      _listening.start(
-        feedId: widget.feedId,
-        bookId: widget.bookId,
-        chapterId: progress.activeChapterId,
-        paragraphId: progress.activeParagraphId,
-        bookTitle: _bookTitle,
-      );
-    },
+    onStart: _startListeningHere,
+    onStartFromHere:
+        _listening.status != ListeningStatus.idle &&
+            (!_hasListeningSession || !_followListening)
+        ? _startListeningHere
+        : null,
   );
 
   // ── Sheet and navigation actions (formerly ReaderPageActions) ────────────
 
   void _jumpToChapter(String chapterId, {String paragraphId = ''}) {
-    if (_listening.ownsBook(widget.feedId, widget.bookId)) _listening.pause();
+    _detachListeningFollow();
     _screenController.jumpToChapter(chapterId, paragraphId: paragraphId);
   }
 
@@ -434,9 +473,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       );
     }
 
-    final visibleChapterId = _listening.ownsBook(widget.feedId, widget.bookId)
-        ? _listening.chapterId
-        : activeChapterId;
+    final visibleChapterId = activeChapterId;
     final effectiveChapterId = visibleChapterId.isEmpty
         ? _screenController.chapters.first.id
         : visibleChapterId;
@@ -500,14 +537,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                           onPageTurnStart: () {
                             _clearSelection();
                             _screenController.hideControls();
-                            if (_listening.ownsBook(
-                              widget.feedId,
-                              widget.bookId,
-                            )) {
-                              _listening.pause();
-                            }
+                            _detachListeningFollow();
                           },
-                          onRefreshBook: _screenController.refreshChapters,
+                          onRefreshBook: () {
+                            _detachListeningFollow();
+                            return _screenController.refreshChapters();
+                          },
                           fontScale: settings.fontScale,
                           fontFamily: settings.fontFamily,
                           prewarmCustomFont:
@@ -581,9 +616,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                     onBack: () => Navigator.of(context).pop(),
                     onOpenBookmarks: _openBookmarkSheet,
                     onRefresh: () {
-                      if (_listening.ownsBook(widget.feedId, widget.bookId)) {
-                        _listening.pause();
-                      }
+                      _detachListeningFollow();
                       _screenController.refreshCurrentChapter(
                         effectiveChapterId,
                       );
@@ -633,6 +666,21 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                     onOpenInterface: _openInterfaceSheet,
                     onOpenSettings: _openSettingsSheet,
                   ),
+                  if (_hasListeningSession &&
+                      !_followListening &&
+                      _screenController.selection == null)
+                    Positioned(
+                      top:
+                          topPadding +
+                          (_screenController.showControls ? 72 : 12),
+                      right: 16,
+                      child: FilledButton.tonalIcon(
+                        key: const ValueKey('reader-return-to-listening'),
+                        onPressed: _returnToListening,
+                        icon: const Icon(Icons.my_location, size: 18),
+                        label: Text(l10n.listeningReturnToPosition),
+                      ),
+                    ),
                   if (_screenController.selection != null)
                     ReaderSelectionOverlay(
                       selection: _screenController.selection!,
@@ -644,6 +692,17 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                         _addBookmark(sel);
                         _clearSelection();
                       },
+                      onListenFromHere:
+                          _screenController.selection!.paragraph
+                              is ParagraphContent_Image
+                          ? null
+                          : () {
+                              final selection = _screenController.selection!;
+                              _startListeningHere(
+                                chapterId: selection.chapterId,
+                                paragraphId: selection.paragraphId,
+                              );
+                            },
                       onComments:
                           _paragraphComments &&
                               paragraphIdFromString(

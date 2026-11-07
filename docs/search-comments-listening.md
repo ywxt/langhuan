@@ -233,8 +233,8 @@ last chapter enters `completed`.
 
 Listening and reading share one reading-progress record per source and book.
 There is no separate listening-position model, API, or database table. Starting
-from the reader uses its currently visible chapter and paragraph; resuming or
-starting outside the reader loads the same persisted reading progress.
+from the reader uses its currently visible chapter and paragraph. Starting a new
+session outside the reader loads the same persisted reading progress.
 
 Playback records the target chapter before loading its first paragraph, so a
 failed chapter remains the retry position. Entering each spoken paragraph
@@ -244,12 +244,30 @@ turning pages or scrolling as needed. Individual speech chunks do not write
 progress. Pause and stop do not write an older speech position over newer manual
 reading progress.
 
-Pause/resume and voice/rate changes restart the current paragraph. If the user
-has moved through the book while speech was paused, resuming uses the updated
-reading progress. Ordinary reading retains its existing character offsets;
-only speech updates use paragraph boundaries. While speech is active, its
-controller writes progress and the reader follows without competing scroll
-writes. Manual reading interactions pause speech before taking over progress.
+Pause/resume and voice/rate changes restart the retained spoken paragraph,
+independently of manual browsing during the same session. A new session loads
+persisted reading progress unless the reader supplies an explicit position.
+Ordinary reading retains its character offsets; speech writes paragraph boundaries.
+
+Playback and the viewport have independent positions during a live session:
+
+- By default, the reader follows and highlights narration, moving only when the
+  spoken paragraph is outside the current viewport.
+- Swiping, scrolling, using the mouse wheel, selecting text, or navigating through
+  the catalogue or bookmarks detaches the viewport without pausing speech.
+- **Return to narration** restores following and reveals the spoken paragraph.
+- **Listen from here**, available from a selected text paragraph or the listening
+  panel after browsing, explicitly starts narration at that position.
+
+While same-book speech is playing or loading, only its controller persists
+progress. Viewport changes still update the reader's in-memory position, so its
+chapter indicator, catalogue selection and navigation reflect what is on screen.
+Pausing or stopping allows ordinary reading to persist progress again. A paused
+session retains its own paragraph for resume; this position is runtime state,
+not a second database record. Closing the application discards that session.
+Queued viewport saves and deferred follow jumps are cancelled when necessary to
+prevent either position from unexpectedly overwriting or moving the other.
+
 Voice and rate selection are persisted in SharedPreferences. Concurrent setting
 changes preserve playback intent, while an explicit pause or stop cancels any
 pending automatic restart.

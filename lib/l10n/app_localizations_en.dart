@@ -1254,6 +1254,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commentsViewAll => 'View all';
 
   @override
+  String get listeningReturnToPosition => 'Return to narration';
+
+  @override
+  String get listeningFromHere => 'Listen from here';
+
+  @override
   String get listeningTitle => 'System text-to-speech';
 
   @override

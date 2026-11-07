@@ -22,6 +22,7 @@ class ReaderScreenController extends ChangeNotifier {
     required this.bookId,
     required this.initialChapterId,
     required this.initialParagraphId,
+    this.shouldSaveProgress,
   }) : _ref = ref,
        _readerController = readerController;
 
@@ -35,6 +36,7 @@ class ReaderScreenController extends ChangeNotifier {
   final String bookId;
   final String initialChapterId;
   final String initialParagraphId;
+  final bool Function()? shouldSaveProgress;
 
   bool _isInitializing = false;
   Object? _initError;
@@ -190,6 +192,11 @@ class ReaderScreenController extends ChangeNotifier {
       paragraphCharOffset: pos.charOffset,
     );
 
+    if (!(shouldSaveProgress?.call() ?? true)) {
+      suspendProgressSaving();
+      return;
+    }
+
     final pending = _PendingProgress(
       chapterId: pos.chapterId,
       paragraphId: pos.paragraphId,
@@ -205,7 +212,7 @@ class ReaderScreenController extends ChangeNotifier {
   }
 
   /// Listening owns persistent progress while it is active. Drop pending
-  /// scroll saves as well as ignoring new position reports in ReaderPage.
+  /// scroll saves while keeping viewport position reports in memory.
   void suspendProgressSaving() {
     _progressSaveTimer?.cancel();
     _pendingProgress = null;
@@ -380,6 +387,10 @@ class ReaderScreenController extends ChangeNotifier {
   void _flushPendingProgress() {
     final pending = _pendingProgress;
     if (pending == null) return;
+    if (!(shouldSaveProgress?.call() ?? true)) {
+      suspendProgressSaving();
+      return;
+    }
     if (_lastSavedProgress?.isNear(pending, _offsetEpsilon) ?? false) return;
 
     _lastSavedProgress = pending;
