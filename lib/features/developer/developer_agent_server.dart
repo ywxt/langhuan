@@ -27,8 +27,7 @@ abstract final class DeveloperAgentRoutes {
   static const reloadScript = '/v1/reload';
 
   /// Copy-ready curl that asks [operations] for the catalogue first; the
-  /// response's `run_endpoint` and `script_endpoints` then point at
-  /// [runOperation], [loadScript], and [reloadScript].
+  /// response documents every endpoint's request and response shape.
   static String curlExample(Uri baseUri, String token) =>
       "curl -s '${baseUri.resolve(operations)}' "
       "-H 'Authorization: Bearer $token'";
@@ -111,48 +110,7 @@ class DeveloperAgentServer {
 
       if (request.method == 'GET' &&
           request.uri.path == DeveloperAgentRoutes.operations) {
-        return _json(request.response, HttpStatus.ok, {
-          'modes': {
-            'pipeline': 'default; follows next_cursor until complete',
-            'single_page':
-                'runs one reducer operation with explicit input and cursor',
-          },
-          'operations': [
-            {
-              'name': 'search',
-              'input': {'keyword': 'string'},
-            },
-            {
-              'name': 'bookInfo',
-              'input': {'bookId': 'string'},
-            },
-            {
-              'name': 'chapters',
-              'input': {'bookId': 'string'},
-            },
-            {
-              'name': 'paragraphs',
-              'input': {'bookId': 'string', 'chapterId': 'string'},
-            },
-            {'name': 'login.status', 'input': <String, String>{}},
-            for (final kind in ['chapter', 'paragraph'])
-              {
-                'name': 'comments.$kind',
-                'mode': 'single_page',
-                'input': {
-                  'bookId': 'string',
-                  'chapterId': 'string',
-                  if (kind == 'paragraph') 'paragraphId': 'string',
-                  'parentId': 'string|null',
-                },
-              },
-          ],
-          'run_endpoint': DeveloperAgentRoutes.runOperation,
-          'script_endpoints': {
-            'load': DeveloperAgentRoutes.loadScript,
-            'reload': DeveloperAgentRoutes.reloadScript,
-          },
-        });
+        return _json(request.response, HttpStatus.ok, _catalogue());
       }
 
       if (request.method == 'POST' &&
@@ -244,6 +202,134 @@ class DeveloperAgentServer {
       });
     }
   }
+
+  /// The discovery catalogue served at [DeveloperAgentRoutes.operations].
+  ///
+  /// Self-sufficient for an agent: authentication, every endpoint's
+  /// request and response shape, a runnable example, pagination, limits,
+  /// and the failure modes.
+  Map<String, Object?> _catalogue() => {
+    'service': 'langhuan-feed-debug',
+    'api_version': 1,
+    'auth': {
+      'header': 'Authorization',
+      'scheme': 'Bearer <token>',
+      'token':
+          'random per server start, shown in the developer tools '
+          'Agent API dialog',
+      'unauthenticated_paths': [DeveloperAgentRoutes.health],
+    },
+    'endpoints': {
+      'run': {
+        'method': 'POST',
+        'path': DeveloperAgentRoutes.runOperation,
+        'body': {
+          'operation': 'required string; one of operations[]',
+          'input': 'required object; fields per operation',
+          'mode':
+              'optional: pipeline (default) or single_page; '
+              'comments.* are always single_page',
+          'cursor':
+              'single_page only; the next_cursor from a previous '
+              'response, null restarts',
+          'script':
+              'optional inline JavaScript; overrides the editor '
+              'script for this run',
+          'feed_id': 'optional installed feed id; runs its script',
+        },
+        'response': {
+          'ok': 'false exactly when error is present',
+          'script':
+              'script metadata ({id, name, version, base_url}) when '
+              'the run had one',
+          'auth': 'authentication state of the run',
+          'output':
+              'operation payload; single_page wraps it as '
+              '{type: single_page, result, next_cursor}',
+          'error': '{kind, message, detail} on failure, else null',
+          'steps': 'executed pipeline steps: {operation, round, kind, summary}',
+          'dropped_steps': 'steps omitted from steps to bound memory',
+          'http':
+              'executed requests: {method, url, final_url, status, '
+              'request_headers, elapsed_ms, response_size, '
+              'body_preview, error}',
+          'dropped_http_entries':
+              'trace entries omitted from http to bound memory',
+          'duration_ms': 'run wall time in milliseconds',
+        },
+        'example': {
+          'operation': 'search',
+          'input': {'keyword': 'test'},
+        },
+      },
+      'load': {
+        'method': 'POST',
+        'path': DeveloperAgentRoutes.loadScript,
+        'body':
+            'exactly one non-empty string: script (inline '
+            'JavaScript), path (absolute UTF-8 file on this machine, '
+            'max 2 MiB), or feed_id (installed feed)',
+      },
+      'reload': {
+        'method': 'POST',
+        'path': DeveloperAgentRoutes.reloadScript,
+        'body': 'empty; re-reads the source of the last successful load',
+      },
+    },
+    'modes': {
+      'pipeline': 'default; follows next_cursor until complete',
+      'single_page':
+          'runs one reducer operation with explicit input and cursor',
+    },
+    'operations': [
+      {
+        'name': 'search',
+        'input': {'keyword': 'string'},
+      },
+      {
+        'name': 'bookInfo',
+        'input': {'bookId': 'string'},
+      },
+      {
+        'name': 'chapters',
+        'input': {'bookId': 'string'},
+      },
+      {
+        'name': 'paragraphs',
+        'input': {'bookId': 'string', 'chapterId': 'string'},
+      },
+      {'name': 'login.status', 'input': <String, String>{}},
+      for (final kind in ['chapter', 'paragraph'])
+        {
+          'name': 'comments.$kind',
+          'mode': 'single_page',
+          'input': {
+            'bookId': 'string',
+            'chapterId': 'string',
+            if (kind == 'paragraph') 'paragraphId': 'string',
+            'parentId': 'string|null',
+          },
+        },
+    ],
+    'pagination':
+        'single_page responses carry output.next_cursor; pass it back '
+        'as the run body cursor until it is null to enumerate every '
+        'page',
+    'limits': {
+      'max_request_bytes': _maxRequestBytes,
+      'concurrency': 'one run or load at a time; others get 409',
+    },
+    'errors': {
+      '400':
+          'malformed body, unknown operation or mode, or unusable '
+          'script source',
+      '401': 'missing or invalid bearer token',
+      '404': 'unknown route',
+      '409': 'another run or load is active, or the debug workspace is busy',
+      '413': 'body or script exceeds 2 MiB',
+      '500': 'the run failed; inspect the error field',
+    },
+  };
 
   bool _authorized(HttpRequest request) {
     final expected = _token;

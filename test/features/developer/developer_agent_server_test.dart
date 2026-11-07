@@ -26,11 +26,49 @@ void main() {
         jsonDecode(await utf8.decoder.bind(response).join())
             as Map<String, dynamic>;
     expect(response.statusCode, HttpStatus.ok);
-    expect(body['run_endpoint'], '/v1/run');
-    expect(body['script_endpoints'], {
-      'load': '/v1/load',
-      'reload': '/v1/reload',
-    });
+
+    // Every endpoint carries its method, path, and body guidance.
+    final endpoints = body['endpoints'] as Map<String, dynamic>;
+    expect(endpoints.keys, unorderedEquals(['run', 'load', 'reload']));
+    for (final name in endpoints.keys) {
+      final endpoint = endpoints[name] as Map<String, dynamic>;
+      expect(endpoint['method'], 'POST');
+      expect(endpoint['path'], startsWith('/v1/'));
+      expect(endpoint['body'], isNotEmpty);
+    }
+    expect(endpoints['run']!['path'], '/v1/run');
+    expect(
+      (endpoints['run']!['body'] as Map).keys,
+      unorderedEquals([
+        'operation',
+        'input',
+        'mode',
+        'cursor',
+        'script',
+        'feed_id',
+      ]),
+    );
+
+    // The example is a runnable body: its operation is in the catalogue.
+    final example = endpoints['run']!['example'] as Map<String, dynamic>;
+    final names = [
+      for (final operation in body['operations'] as List)
+        (operation as Map<String, dynamic>)['name'] as String,
+    ];
+    expect(example['operation'], isIn(names));
+    expect(example['input'], isA<Map<String, dynamic>>());
+
+    // Auth guidance covers every route except health.
+    expect((body['auth'] as Map<String, dynamic>)['unauthenticated_paths'], [
+      '/v1/health',
+    ]);
+
+    // Failure modes are documented as status codes.
+    expect(
+      (body['errors'] as Map).keys,
+      unorderedEquals(['400', '401', '404', '409', '413', '500']),
+    );
+
     expect(
       (body['modes'] as Map).keys,
       unorderedEquals(['pipeline', 'single_page']),

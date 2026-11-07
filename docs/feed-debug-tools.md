@@ -117,8 +117,9 @@ HTTP control fields, mode names, and output type tags use `snake_case`, such as
 `feed_id`, `single_page`, and `bookInfo`. The `operation` name and keys inside
 `input` follow the feed/debugger protocol unchanged (`bookInfo`, `bookId`,
 `chapterId`, `login.status`); single-page debugging passes raw input and cursors
-through without renaming script-defined fields. The operation catalogue also
-advertises `run_endpoint` and `script_endpoints`.
+through without renaming script-defined fields. The `/v1/operations` catalogue is
+self-describing: authentication, every endpoint's method, path, request and
+response shape, a runnable example, pagination, limits, and error codes.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
