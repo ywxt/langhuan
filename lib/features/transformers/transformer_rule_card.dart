@@ -102,27 +102,14 @@ class TransformerRuleForm extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Icon(transformerIcon(rule.kind)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    transformerLabel(l, rule.kind),
-                    style: theme.textTheme.titleMedium,
-                  ),
-                ),
-                Switch.adaptive(
-                  value: rule.enabled,
-                  onChanged: editable
-                      ? (v) => onChanged!(rule.withEnabled(v))
-                      : null,
-                ),
-              ],
-            ),
-            Text(
-              transformerDescription(l, rule.kind),
-              style: theme.textTheme.bodySmall,
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: Text(l.transformEnabled),
+              subtitle: Text(transformerDescription(l, rule.kind)),
+              value: rule.enabled,
+              onChanged: editable
+                  ? (v) => onChanged!(rule.withEnabled(v))
+                  : null,
             ),
             const SizedBox(height: 16),
             TextFormField(

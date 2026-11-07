@@ -120,6 +120,13 @@ void main() {
       await tester.tap(_card(TransformerKind.paragraphIndent));
       await tester.pumpAndSettle();
       expect(find.byType(TransformerRuleEditorSheet), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(TransformerRuleEditorSheet),
+          matching: find.text('Paragraph indentation'),
+        ),
+        findsOneWidget,
+      );
       expect(find.byType(Slider), findsOneWidget);
       expect(find.byType(BottomSheet), findsOneWidget);
       tester.view.viewInsets = const FakeViewPadding(bottom: 300);
@@ -148,6 +155,15 @@ void main() {
       tester.widget<Slider>(find.byType(Slider)).onChanged!(4);
       await tester.pump();
       await tester.enterText(find.byType(TextFormField).first, '  My indent  ');
+      await tester.pump();
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('transformer-editor-title')),
+            )
+            .data,
+        'My indent',
+      );
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(settings.saved!.single.indentSpaces, 4);
@@ -159,6 +175,24 @@ void main() {
       await tester.tap(find.text('My indent'));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(TextFormField, 'My indent'), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('transformer-editor-title')),
+            )
+            .data,
+        'My indent',
+      );
+      await tester.enterText(find.byType(TextFormField).first, '   ');
+      await tester.pump();
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('transformer-editor-title')),
+            )
+            .data,
+        'Paragraph indentation',
+      );
       expect(find.text('First-line indent: 4 characters'), findsOneWidget);
     },
   );

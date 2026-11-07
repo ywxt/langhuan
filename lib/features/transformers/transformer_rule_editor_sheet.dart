@@ -93,7 +93,10 @@ class _TransformerRuleEditorSheetState
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        transformerLabel(l, _rule.kind),
+                        _rule.name.trim().isEmpty
+                            ? transformerLabel(l, _rule.kind)
+                            : _rule.name.trim(),
+                        key: const ValueKey('transformer-editor-title'),
                         style: Theme.of(context).textTheme.titleLarge,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
