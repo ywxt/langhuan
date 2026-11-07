@@ -150,6 +150,13 @@ class BookTransformers {
   }) : rules = List.unmodifiable(rules);
   final bool inheritApplication;
   final List<TransformerEntry> rules;
+  BookTransformerConfiguration toStored(String feedId, String bookId) =>
+      BookTransformerConfiguration(
+        feedId: feedId,
+        bookId: bookId,
+        inheritApplication: inheritApplication,
+        rules: rules.map((r) => r.toStored()).toList(),
+      );
   Map<String, Object?> toJson() => {
     'inheritApplication': inheritApplication,
     'rules': rules.map((r) => r.toJson()).toList(),
@@ -196,12 +203,7 @@ class TransformerSettings {
     application: application.map((r) => r.toStored()).toList(),
     books: books.entries.map((entry) {
       final key = jsonDecode(entry.key) as List;
-      return BookTransformerConfiguration(
-        feedId: key[0] as String,
-        bookId: key[1] as String,
-        inheritApplication: entry.value.inheritApplication,
-        rules: entry.value.rules.map((r) => r.toStored()).toList(),
-      );
+      return entry.value.toStored(key[0] as String, key[1] as String);
     }).toList(),
   );
   factory TransformerSettings.fromStored(TransformerConfiguration value) =>
@@ -239,7 +241,13 @@ class TransformerSettings {
 abstract interface class TransformerSettingsStore {
   Future<TransformerSettings?> read();
   Future<TransformerSettings> initialize(TransformerSettings? imported);
-  Future<void> save(TransformerSettings settings);
+  Future<void> saveApplication(List<TransformerEntry> rules);
+  Future<void> saveBook({
+    required String feedId,
+    required String bookId,
+    required BookTransformers configuration,
+  });
+  Future<void> deleteBook({required String feedId, required String bookId});
 }
 
 class _DatabaseTransformerSettingsStore implements TransformerSettingsStore {
@@ -258,8 +266,21 @@ class _DatabaseTransformerSettingsStore implements TransformerSettingsStore {
         ),
       );
   @override
-  Future<void> save(TransformerSettings settings) =>
-      native.saveTransformerConfiguration(configuration: settings.toStored());
+  Future<void> saveApplication(List<TransformerEntry> rules) =>
+      native.saveApplicationTransformers(
+        rules: rules.map((r) => r.toStored()).toList(),
+      );
+  @override
+  Future<void> saveBook({
+    required String feedId,
+    required String bookId,
+    required BookTransformers configuration,
+  }) => native.saveBookTransformers(
+    configuration: configuration.toStored(feedId, bookId),
+  );
+  @override
+  Future<void> deleteBook({required String feedId, required String bookId}) =>
+      native.deleteBookTransformers(feedId: feedId, bookId: bookId);
 }
 
 /// SQLite is authoritative. Preferences are consulted only before the first
@@ -306,8 +327,25 @@ class TransformerSettingsRepository {
     return result;
   }
 
-  Future<void> save(TransformerSettings settings) => _store.save(settings);
+  Future<void> saveApplication(List<TransformerEntry> rules) =>
+      _store.saveApplication(rules);
+  Future<void> saveBook({
+    required String feedId,
+    required String bookId,
+    required BookTransformers configuration,
+  }) => _store.saveBook(
+    feedId: feedId,
+    bookId: bookId,
+    configuration: configuration,
+  );
+  Future<void> deleteBook({required String feedId, required String bookId}) =>
+      _store.deleteBook(feedId: feedId, bookId: bookId);
 }
+
+final transformerSettingsRepositoryProvider =
+    Provider<TransformerSettingsRepository>(
+      (ref) => TransformerSettingsRepository.instance,
+    );
 
 final transformerSettingsProvider =
     AsyncNotifierProvider<TransformerSettingsNotifier, TransformerSettings>(
@@ -317,8 +355,9 @@ final transformerSettingsProvider =
 class TransformerSettingsNotifier extends AsyncNotifier<TransformerSettings> {
   @override
   Future<TransformerSettings> build() async {
+    final repository = ref.watch(transformerSettingsRepositoryProvider);
     await ref.watch(appDataDirectorySetProvider.future);
-    return TransformerSettingsRepository.instance.load();
+    return repository.load();
   }
 
   Future<void> save({
@@ -327,20 +366,56 @@ class TransformerSettingsNotifier extends AsyncNotifier<TransformerSettings> {
     String? bookId,
     bool inheritApplication = true,
   }) async {
-    final current = await future;
-    final next = feedId == null || bookId == null
-        ? TransformerSettings(application: rules, books: current.books)
-        : TransformerSettings(
-            application: current.application,
-            books: {
-              ...current.books,
-              TransformerSettings.bookKey(feedId, bookId): BookTransformers(
-                inheritApplication: inheritApplication,
-                rules: rules,
-              ),
-            },
-          );
-    await TransformerSettingsRepository.instance.save(next);
-    state = AsyncData(next);
+    if ((feedId == null) != (bookId == null)) {
+      throw ArgumentError('feedId and bookId must be supplied together');
+    }
+    final entries = List<TransformerEntry>.unmodifiable(rules);
+    await future;
+    final repository = ref.read(transformerSettingsRepositoryProvider);
+    final book = BookTransformers(
+      inheritApplication: inheritApplication,
+      rules: entries,
+    );
+    if (feedId == null) {
+      await repository.saveApplication(entries);
+    } else {
+      await repository.saveBook(
+        feedId: feedId,
+        bookId: bookId!,
+        configuration: book,
+      );
+    }
+    if (!ref.mounted) return;
+    // Merge the completed scope into the latest state, so another scope's
+    // concurrently completed write is not replaced with an earlier snapshot.
+    final current = state.requireValue;
+    state = AsyncData(
+      feedId == null
+          ? TransformerSettings(application: entries, books: current.books)
+          : TransformerSettings(
+              application: current.application,
+              books: {
+                ...current.books,
+                TransformerSettings.bookKey(feedId, bookId!): book,
+              },
+            ),
+    );
+  }
+
+  Future<void> resetBook({
+    required String feedId,
+    required String bookId,
+  }) async {
+    await future;
+    await ref
+        .read(transformerSettingsRepositoryProvider)
+        .deleteBook(feedId: feedId, bookId: bookId);
+    if (!ref.mounted) return;
+    final current = state.requireValue;
+    final books = Map.of(current.books)
+      ..remove(TransformerSettings.bookKey(feedId, bookId));
+    state = AsyncData(
+      TransformerSettings(application: current.application, books: books),
+    );
   }
 }

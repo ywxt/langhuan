@@ -1,4 +1,8 @@
 import 'dart:convert';
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:langhuan/rust_init.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:langhuan/features/transformers/transformer_settings.dart';
@@ -11,24 +15,63 @@ class _Store implements TransformerSettingsStore {
   int initializations = 0;
   @override
   Future<TransformerSettings?> read() async => data;
-  @override
-  Future<void> save(TransformerSettings settings) async {
+  Future<void>? applicationGate;
+  final bookGates = <String, Future<void>>{};
+  final writes = <String>[];
+
+  void _checkWrite() {
     if (failWrites) throw StateError('Database write failed');
-    data = TransformerSettings.fromStored(settings.toStored());
+  }
+
+  @override
+  Future<void> saveApplication(List<TransformerEntry> rules) async {
+    writes.add('application');
+    await applicationGate;
+    _checkWrite();
+    data = TransformerSettings(application: rules, books: data!.books);
+  }
+
+  @override
+  Future<void> saveBook({
+    required String feedId,
+    required String bookId,
+    required BookTransformers configuration,
+  }) async {
+    final key = TransformerSettings.bookKey(feedId, bookId);
+    writes.add(key);
+    await bookGates[key];
+    _checkWrite();
+    data = TransformerSettings(
+      application: data!.application,
+      books: {...data!.books, key: configuration},
+    );
+  }
+
+  @override
+  Future<void> deleteBook({
+    required String feedId,
+    required String bookId,
+  }) async {
+    _checkWrite();
+    final books = Map.of(data!.books)
+      ..remove(TransformerSettings.bookKey(feedId, bookId));
+    data = TransformerSettings(application: data!.application, books: books);
   }
 
   @override
   Future<TransformerSettings> initialize(TransformerSettings? imported) async {
     if (data != null) return data!;
+    _checkWrite();
     initializations++;
-    await save(
-      imported ??
-          TransformerSettings(
-            application: const [
-              TransformerEntry(kind: TransformerKind.deduplicateTitles),
-              TransformerEntry(kind: TransformerKind.paragraphIndent),
-            ],
-          ),
+    data = TransformerSettings.fromStored(
+      (imported ??
+              TransformerSettings(
+                application: const [
+                  TransformerEntry(kind: TransformerKind.deduplicateTitles),
+                  TransformerEntry(kind: TransformerKind.paragraphIndent),
+                ],
+              ))
+          .toStored(),
     );
     return data!;
   }
@@ -54,6 +97,111 @@ void main() {
   const delete = TransformerEntry(
     kind: TransformerKind.regexDelete,
     pattern: '廣告',
+  );
+
+  ProviderContainer containerForStore() => ProviderContainer(
+    overrides: [
+      transformerSettingsRepositoryProvider.overrideWithValue(
+        TransformerSettingsRepository(store: store),
+      ),
+      appDataDirectorySetProvider.overrideWith(
+        (ref) async => const AppDataDirectoryResult(feedCount: 0),
+      ),
+    ],
+  );
+
+  test(
+    'concurrent writes merge only their completed scope into the latest state',
+    () async {
+      final container = containerForStore();
+      addTearDown(container.dispose);
+      await container.read(transformerSettingsProvider.future);
+      final notifier = container.read(transformerSettingsProvider.notifier);
+      final application = Completer<void>();
+      final bookA = Completer<void>();
+      final bookB = Completer<void>();
+      store.applicationGate = application.future;
+      store.bookGates[TransformerSettings.bookKey('f', 'a')] = bookA.future;
+      store.bookGates[TransformerSettings.bookKey('f', 'b')] = bookB.future;
+      final appWrite = notifier.save(rules: [conversion]);
+      final firstWrite = notifier.save(
+        feedId: 'f',
+        bookId: 'a',
+        inheritApplication: false,
+        rules: [replace],
+      );
+      final secondWrite = notifier.save(
+        feedId: 'f',
+        bookId: 'b',
+        rules: [delete],
+      );
+      bookA.complete();
+      await firstWrite;
+      application.complete();
+      await appWrite;
+      expect(
+        container
+            .read(transformerSettingsProvider)
+            .requireValue
+            .book('f', 'a')
+            .rules,
+        [replace],
+      );
+      bookB.complete();
+      await secondWrite;
+      final saved = container.read(transformerSettingsProvider).requireValue;
+      expect(saved.application, [conversion]);
+      expect(saved.book('f', 'a').inheritApplication, isFalse);
+      expect(saved.book('f', 'a').rules, [replace]);
+      expect(saved.book('f', 'b').rules, [delete]);
+      expect(saved.toJson(), store.data!.toJson());
+      expect(store.writes, hasLength(3));
+    },
+  );
+
+  test(
+    'failed scoped writes preserve state and resetting one book preserves other scopes',
+    () async {
+      store.data = TransformerSettings(
+        application: [conversion],
+        books: {
+          TransformerSettings.bookKey('f', 'a'): BookTransformers(
+            rules: [replace],
+          ),
+          TransformerSettings.bookKey('f', 'b'): BookTransformers(
+            rules: [delete],
+          ),
+        },
+      );
+      final container = containerForStore();
+      addTearDown(container.dispose);
+      final original = await container.read(transformerSettingsProvider.future);
+      final notifier = container.read(transformerSettingsProvider.notifier);
+      store.failWrites = true;
+      await expectLater(
+        notifier.save(feedId: 'f', bookId: 'a', rules: []),
+        throwsStateError,
+      );
+      expect(
+        container.read(transformerSettingsProvider).requireValue.toJson(),
+        original.toJson(),
+      );
+      store.failWrites = false;
+      await notifier.resetBook(feedId: 'f', bookId: 'a');
+      final reset = container.read(transformerSettingsProvider).requireValue;
+      expect(reset.application, [conversion]);
+      expect(
+        reset.books.containsKey(TransformerSettings.bookKey('f', 'a')),
+        isFalse,
+      );
+      expect(reset.book('f', 'a').inheritApplication, isTrue);
+      expect(reset.book('f', 'b').rules, [delete]);
+      expect(reset.toJson(), store.data!.toJson());
+      await expectLater(
+        notifier.save(feedId: 'f', rules: []),
+        throwsArgumentError,
+      );
+    },
   );
 
   test(
@@ -137,7 +285,17 @@ void main() {
           ),
         },
       );
-      await TransformerSettingsRepository(store: store).save(original);
+      final repository = TransformerSettingsRepository(store: store);
+      await repository.load();
+      await repository.saveApplication(original.application);
+      for (final entry in original.books.entries) {
+        final key = jsonDecode(entry.key) as List;
+        await repository.saveBook(
+          feedId: key[0] as String,
+          bookId: key[1] as String,
+          configuration: entry.value,
+        );
+      }
       final restored = await TransformerSettingsRepository(store: store).load();
       expect(restored.toJson(), original.toJson());
       expect(
@@ -165,7 +323,7 @@ void main() {
             .mode,
         ChineseConversionMode.s2Hk,
       );
-      await repository.save(TransformerSettings());
+      await repository.saveApplication([]);
       expect(
         (await TransformerSettingsRepository(store: store).load()).application,
         isEmpty,

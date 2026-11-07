@@ -53,12 +53,28 @@ pub async fn initialize_transformer_configuration(
         .await
 }
 
-/// Validate and commit the entire application/book configuration in one transaction.
-pub async fn save_transformer_configuration(
-    configuration: TransformerConfiguration,
+/// Update only the application chain; book scopes remain unchanged.
+pub async fn save_application_transformers(
+    rules: Vec<TransformerConfigurationEntry>,
 ) -> Result<(), BridgeError> {
     TransformerConfigurationStore::new(hub_db()?)
-        .save(configuration)
+        .save_application(rules)
+        .await
+}
+
+/// Update only one book's ordered rules and inheritance setting.
+pub async fn save_book_transformers(
+    configuration: BookTransformerConfiguration,
+) -> Result<(), BridgeError> {
+    TransformerConfigurationStore::new(hub_db()?)
+        .save_book(configuration)
+        .await
+}
+
+/// Remove one book override, restoring application inheritance.
+pub async fn delete_book_transformers(feed_id: String, book_id: String) -> Result<(), BridgeError> {
+    TransformerConfigurationStore::new(hub_db()?)
+        .delete_book(feed_id, book_id)
         .await
 }
 
@@ -95,7 +111,10 @@ impl TransformerConfigurationStore {
                 if let Some(existing) = TransformerConfiguration::from_repository(repo)? {
                     return Ok(existing);
                 }
-                repo.replace_transformer_configuration(&application, &books)?;
+                repo.set_application_transformers(&application)?;
+                for book in &books {
+                    repo.set_book_transformers(book)?;
+                }
                 TransformerConfiguration::from_repository(repo)?.ok_or_else(|| {
                     Error::database(
                         "transformer initialization did not persist application settings",
@@ -105,16 +124,76 @@ impl TransformerConfigurationStore {
             .await?)
     }
 
-    pub(crate) async fn save(
+    pub(crate) async fn save_application(
         &self,
-        configuration: TransformerConfiguration,
+        rules: Vec<TransformerConfigurationEntry>,
     ) -> Result<(), BridgeError> {
-        configuration.validate()?;
-        let (application, books) = configuration.encoded_rows()?;
-        Ok(self
-            .db
-            .write(move |repo| repo.replace_transformer_configuration(&application, &books))
-            .await?)
+        let json = TransformerConfiguration::encode_rules(&rules)?;
+        self.db
+            .write(move |repo| {
+                // Validate inherited effective chains against this exact transaction
+                // snapshot. Independent book chains are unaffected by an app edit.
+                let books = repo
+                    .list_book_transformers()?
+                    .into_iter()
+                    .filter(|book| book.inherit_application)
+                    .map(BookTransformerConfiguration::try_from)
+                    .collect::<langhuan::error::Result<Vec<_>>>()?;
+                let configuration = TransformerConfiguration {
+                    application: rules,
+                    books,
+                };
+                if let Err(error) = configuration.validate() {
+                    return Ok(Err(error));
+                }
+                repo.set_application_transformers(&json)?;
+                Ok(Ok(()))
+            })
+            .await?
+    }
+
+    pub(crate) async fn save_book(
+        &self,
+        book: BookTransformerConfiguration,
+    ) -> Result<(), BridgeError> {
+        let row = book.encoded_row()?;
+        self.db
+            .write(move |repo| {
+                let application = repo.get_application_transformers()?;
+                let rules = application
+                    .as_deref()
+                    .map(TransformerConfiguration::decode_rules)
+                    .transpose()?
+                    .unwrap_or_else(|| TransformerConfiguration::default().application);
+                let configuration = TransformerConfiguration {
+                    application: rules,
+                    books: vec![book],
+                };
+                if let Err(error) = configuration.validate() {
+                    return Ok(Err(error));
+                }
+                if !repo.set_book_transformers(&row)? {
+                    return Err(Error::feed_not_found(row.feed_id));
+                }
+                if application.is_none() {
+                    repo.set_application_transformers(&TransformerConfiguration::encode_rules(
+                        &configuration.application,
+                    )?)?;
+                }
+                Ok(Ok(()))
+            })
+            .await?
+    }
+
+    pub(crate) async fn delete_book(
+        &self,
+        feed_id: String,
+        book_id: String,
+    ) -> Result<(), BridgeError> {
+        self.db
+            .write(move |repo| repo.delete_book_transformers(&feed_id, &book_id))
+            .await?;
+        Ok(())
     }
 
     /// Only the application and requested book scopes are read for a chapter.
@@ -159,6 +238,17 @@ impl TryFrom<BookTransformerRow> for BookTransformerConfiguration {
     }
 }
 
+impl BookTransformerConfiguration {
+    fn encoded_row(&self) -> langhuan::error::Result<BookTransformerRow> {
+        Ok(BookTransformerRow {
+            feed_id: self.feed_id.clone(),
+            book_id: self.book_id.clone(),
+            inherit_application: self.inherit_application,
+            rules_json: TransformerConfiguration::encode_rules(&self.rules)?,
+        })
+    }
+}
+
 impl TransformerConfigurationEntry {
     fn active_rule(&self) -> Option<TransformerRule> {
         self.enabled.then(|| self.rule.clone())
@@ -185,23 +275,19 @@ impl TransformerConfiguration {
         }))
     }
 
+    fn encode_rules(rules: &[TransformerConfigurationEntry]) -> langhuan::error::Result<String> {
+        serde_json::to_string(rules)
+            .map_err(|error| Error::database(format!("serialize transformer rules: {error}")))
+    }
+
     fn encoded_rows(&self) -> Result<(String, Vec<BookTransformerRow>), BridgeError> {
-        let application = serde_json::to_string(&self.application)
-            .map_err(|e| BridgeError::from(e.to_string()))?;
-        let books = self
-            .books
-            .iter()
-            .map(|book| {
-                Ok(BookTransformerRow {
-                    feed_id: book.feed_id.clone(),
-                    book_id: book.book_id.clone(),
-                    inherit_application: book.inherit_application,
-                    rules_json: serde_json::to_string(&book.rules)
-                        .map_err(|e| BridgeError::from(e.to_string()))?,
-                })
-            })
-            .collect::<Result<_, BridgeError>>()?;
-        Ok((application, books))
+        Ok((
+            Self::encode_rules(&self.application)?,
+            self.books
+                .iter()
+                .map(BookTransformerConfiguration::encoded_row)
+                .collect::<langhuan::error::Result<_>>()?,
+        ))
     }
 
     fn effective_rules(&self, book: Option<&BookTransformerConfiguration>) -> Vec<TransformerRule> {
@@ -378,7 +464,7 @@ mod tests {
         seed_scope_feeds(&db).await;
         let store = TransformerConfigurationStore::new(db.clone());
         let expected = configuration();
-        store.save(expected.clone()).await.unwrap();
+        store.initialize(expected.clone()).await.unwrap();
         langhuan::db::maintenance::clear_cache(&db).await.unwrap();
         let backup_path = backup.to_str().unwrap().to_owned();
         db.call(move |repo| repo.vacuum_into(&backup_path))
@@ -439,7 +525,7 @@ mod tests {
         let initial = store.initialize(configuration()).await.unwrap();
         let mut invalid = initial.clone();
         invalid.books[1].rules[0].rule = TransformerRule::ParagraphIndent { spaces: 9 };
-        assert!(store.save(invalid).await.is_err());
+        assert!(store.save_book(invalid.books.remove(1)).await.is_err());
         assert_eq!(store.load().await.unwrap(), Some(initial));
     }
 
@@ -458,14 +544,146 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn scoped_updates_never_rewrite_other_books_and_delete_resets_one_override() {
+        let db = Db::open_in_memory().await.unwrap();
+        seed_scope_feeds(&db).await;
+        let store = TransformerConfigurationStore::new(db.clone());
+        let initial = store.initialize(configuration()).await.unwrap();
+        db.write(|repo| {
+            repo.conn().execute_batch("CREATE TRIGGER protect_other_update BEFORE UPDATE ON transformer_configurations WHEN OLD.feed_id = 'feed-b' BEGIN SELECT RAISE(ABORT, 'unrelated book updated'); END; CREATE TRIGGER protect_other_delete BEFORE DELETE ON transformer_configurations WHEN OLD.feed_id = 'feed-b' BEGIN SELECT RAISE(ABORT, 'unrelated book deleted'); END;")?;
+            Ok(())
+        }).await.unwrap();
+        let mut book = initial.books[0].clone();
+        book.inherit_application = false;
+        book.rules.clear();
+        store.save_book(book.clone()).await.unwrap();
+        store.save_application(vec![]).await.unwrap();
+        let saved = store.load().await.unwrap().unwrap();
+        assert!(saved.application.is_empty());
+        assert_eq!(saved.books, vec![book, initial.books[1].clone()]);
+        store
+            .save_application(initial.application.clone())
+            .await
+            .unwrap();
+        store
+            .delete_book("feed-a".into(), "book".into())
+            .await
+            .unwrap();
+        let reset = store.load().await.unwrap().unwrap();
+        assert_eq!(reset.books, vec![initial.books[1].clone()]);
+        assert_eq!(
+            store.rules_for_book("feed-a", "book").await.unwrap(),
+            vec![TransformerRule::ChineseConversion {
+                mode: ChineseConversionMode::S2t
+            }]
+        );
+        let removed = BookTransformerConfiguration {
+            feed_id: "removed".into(),
+            book_id: "book".into(),
+            inherit_application: true,
+            rules: vec![],
+        };
+        assert!(store.save_book(removed).await.is_err());
+        assert_eq!(store.load().await.unwrap(), Some(reset));
+    }
+
+    #[tokio::test]
+    async fn first_book_edit_initializes_defaults_only_after_a_valid_write() {
+        let db = Db::open_in_memory().await.unwrap();
+        seed_scope_feeds(&db).await;
+        let store = TransformerConfigurationStore::new(db.clone());
+        let mut book = configuration().books.remove(0);
+        book.rules = vec![TransformerConfigurationEntry {
+            name: String::new(),
+            enabled: true,
+            rule: TransformerRule::ParagraphIndent { spaces: 9 },
+        }];
+        assert!(store.save_book(book.clone()).await.is_err());
+        assert!(store.load().await.unwrap().is_none());
+        book.rules.clear();
+        store.save_book(book.clone()).await.unwrap();
+        let saved = store.load().await.unwrap().unwrap();
+        assert_eq!(
+            saved.application,
+            TransformerConfiguration::default().application
+        );
+        assert_eq!(saved.books, vec![book]);
+        assert_eq!(store.initialize(configuration()).await.unwrap(), saved);
+        let invalid_app = vec![TransformerConfigurationEntry {
+            name: String::new(),
+            enabled: true,
+            rule: TransformerRule::RegexDelete {
+                pattern: "[".into(),
+                include_titles: false,
+            },
+        }];
+        assert!(store.save_application(invalid_app).await.is_err());
+        assert_eq!(store.load().await.unwrap(), Some(saved));
+    }
+
+    #[tokio::test]
+    async fn concurrent_scoped_writes_preserve_all_completed_updates() {
+        let db = Db::open_in_memory().await.unwrap();
+        seed_scope_feeds(&db).await;
+        let store = TransformerConfigurationStore::new(db.clone());
+        let mut expected = store.initialize(configuration()).await.unwrap();
+        expected.application.clear();
+        expected.books[0].inherit_application = false;
+        expected.books[0].rules.clear();
+        expected.books[1].rules[0].name = "Updated book".into();
+        let (application, first, second) = tokio::join!(
+            store.save_application(expected.application.clone()),
+            store.save_book(expected.books[0].clone()),
+            store.save_book(expected.books[1].clone()),
+        );
+        application.unwrap();
+        first.unwrap();
+        second.unwrap();
+        assert_eq!(store.load().await.unwrap(), Some(expected));
+    }
+
+    #[tokio::test]
+    async fn concurrent_scope_validation_enforces_the_combined_chain_limit() {
+        let db = Db::open_in_memory().await.unwrap();
+        seed_scope_feeds(&db).await;
+        let store = TransformerConfigurationStore::new(db.clone());
+        store
+            .initialize(TransformerConfiguration {
+                application: vec![],
+                books: vec![],
+            })
+            .await
+            .unwrap();
+        let rule = TransformerConfigurationEntry {
+            name: String::new(),
+            enabled: true,
+            rule: TransformerRule::DeduplicateTitles,
+        };
+        let book = BookTransformerConfiguration {
+            feed_id: "feed-a".into(),
+            book_id: "book".into(),
+            inherit_application: true,
+            rules: vec![rule.clone()],
+        };
+        let (application, book) = tokio::join!(
+            store.save_application(vec![rule; 64]),
+            store.save_book(book)
+        );
+        assert_ne!(application.is_ok(), book.is_ok());
+        let stored = store.load().await.unwrap().unwrap();
+        stored.validate().unwrap();
+        assert!(store.rules_for_book("feed-a", "book").await.unwrap().len() <= 64);
+    }
+
+    #[tokio::test]
     async fn scoped_rule_reads_do_not_decode_unrelated_books() {
         let db = Db::open_in_memory().await.unwrap();
         seed_scope_feeds(&db).await;
         let store = TransformerConfigurationStore::new(db.clone());
-        store.save(configuration()).await.unwrap();
+        store.initialize(configuration()).await.unwrap();
         db.write(|repo| {
             repo.conn().execute(
-                "UPDATE book_transformers SET rules_json = '[{}]' WHERE feed_id = 'feed-b'",
+                "UPDATE transformer_configurations SET rules_json = '[{}]' WHERE feed_id = 'feed-b'",
                 [],
             )?;
             Ok(())

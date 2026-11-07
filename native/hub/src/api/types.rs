@@ -650,7 +650,7 @@ pub struct BookTransformerConfiguration {
     pub rules: Vec<TransformerConfigurationEntry>,
 }
 
-/// Complete user configuration, persisted atomically in the application database.
+/// Complete settings snapshot for reads and one-time initialization/import.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TransformerConfiguration {
     pub application: Vec<TransformerConfigurationEntry>,

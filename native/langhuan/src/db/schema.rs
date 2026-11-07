@@ -272,10 +272,36 @@ const MIGRATIONS: &[Migration] = &[
         DELETE FROM meta WHERE key = 'reader.transformers';
         "#,
     },
+    Migration {
+        version: 11,
+        sql: r#"
+        CREATE TABLE transformer_configurations (
+            id INTEGER PRIMARY KEY,
+            feed_id TEXT REFERENCES feeds(id) ON DELETE CASCADE,
+            book_id TEXT,
+            inherit_application INTEGER NOT NULL CHECK (inherit_application IN (0, 1)),
+            rules_json TEXT NOT NULL CHECK (json_valid(rules_json) AND json_type(rules_json) = 'array'),
+            CHECK (
+                (feed_id IS NULL AND book_id IS NULL AND inherit_application = 0)
+                OR (feed_id IS NOT NULL AND length(feed_id) > 0 AND book_id IS NOT NULL AND length(book_id) > 0)
+            )
+        );
+        CREATE UNIQUE INDEX idx_transformers_application
+            ON transformer_configurations ((1)) WHERE feed_id IS NULL;
+        CREATE UNIQUE INDEX idx_transformers_book
+            ON transformer_configurations (feed_id, book_id) WHERE feed_id IS NOT NULL;
+        INSERT INTO transformer_configurations (feed_id, book_id, inherit_application, rules_json)
+            SELECT NULL, NULL, 0, rules_json FROM application_transformers;
+        INSERT INTO transformer_configurations (feed_id, book_id, inherit_application, rules_json)
+            SELECT feed_id, book_id, inherit_application, rules_json FROM book_transformers;
+        DROP TABLE book_transformers;
+        DROP TABLE application_transformers;
+        "#,
+    },
 ];
 
 /// The schema version this build understands (the last migration's version).
-pub(crate) const CURRENT_VERSION: i64 = 10;
+pub(crate) const CURRENT_VERSION: i64 = 11;
 
 /// Apply all pending migrations in order.
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
@@ -298,6 +324,62 @@ pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unified_transformer_migration_preserves_both_scopes_exactly() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        for migration in MIGRATIONS.iter().filter(|m| m.version <= 10) {
+            conn.execute_batch(migration.sql).unwrap();
+        }
+        conn.execute_batch("PRAGMA user_version = 10; INSERT INTO feeds (id,name,version,content_hash,installed_at_ms,updated_at_ms) VALUES ('f','Feed','1','hash',1,1),('g','Other','1','hash',1,1);").unwrap();
+        let application = r#"[{"name":"中文轉換", "enabled":false, "rule":{"ChineseConversion":{"mode":"S2t"}}},{"name":"Indent","enabled":true,"rule":{"ParagraphIndent":{"spaces":4}}}]"#;
+        let book = r#"[{"name":"廣告", "enabled":false,"rule":{"RegexDelete":{"pattern":"ad","include_titles":false}}}]"#;
+        conn.execute(
+            "INSERT INTO application_transformers VALUES (1, ?1)",
+            [application],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO book_transformers VALUES ('f','same-book',0,?1)",
+            [book],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO book_transformers VALUES ('g','same-book',1,'[]')",
+            [],
+        )
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        let repo = crate::db::repo::Repo::new(&conn);
+        assert_eq!(
+            repo.get_application_transformers().unwrap().as_deref(),
+            Some(application)
+        );
+        let first = repo
+            .get_book_transformers("f", "same-book")
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.rules_json, book);
+        assert!(!first.inherit_application);
+        assert!(
+            repo.get_book_transformers("g", "same-book")
+                .unwrap()
+                .unwrap()
+                .inherit_application
+        );
+        assert_eq!(repo.list_book_transformers().unwrap().len(), 2);
+        let old_tables: i64 = conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('application_transformers','book_transformers')", [], |r| r.get(0)).unwrap();
+        assert_eq!(old_tables, 0);
+        migrate(&mut conn).unwrap();
+        assert_eq!(
+            crate::db::repo::Repo::new(&conn)
+                .list_book_transformers()
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
     #[test]
     fn transformer_migration_moves_scopes_out_of_meta_without_touching_other_metadata() {
         let mut conn = Connection::open_in_memory().unwrap();

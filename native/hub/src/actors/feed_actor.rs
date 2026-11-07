@@ -935,7 +935,10 @@ export default (() => {
                 configuration.application = vec![replace("Fixture", "NEW")];
                 configuration.books[0].rules.clear();
             }
-            store.save(configuration.clone()).await?;
+            store
+                .save_application(configuration.application.clone())
+                .await?;
+            store.save_book(configuration.books[0].clone()).await?;
             let task = actor
                 .send(GetParagraphs {
                     feed_id: "fixture".into(),

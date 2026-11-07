@@ -251,13 +251,25 @@ Rules run after the raw cache, so edits reprocess cached content without
 downloading it again or modifying the source data. Kept paragraphs retain
 their IDs and comment counts. Each request captures the effective chain for
 its book; there is no shared native conversion mode between books. Settings
-are persisted atomically in dedicated SQLite tables: `application_transformers`
-stores the application chain, and `book_transformers` stores each book scope's
-inheritance flag and ordered rules. Book settings reference their feed, not a
-cached book row: cache cleanup preserves them, while removing a feed cascades
-its settings. Full database backups include both tables. The database migration
-moves the previous `meta.reader.transformers` payload into these tables and
-removes only that metadata key.
+are stored in `transformer_configurations`: one application row with null
+`feed_id`/`book_id`, and one row per book with its inheritance flag and ordered
+rules. Partial unique indexes enforce a single application scope and unique
+book scopes; a check constraint rejects incomplete scope keys. Book settings
+reference their feed, not a cached book row: cache cleanup preserves them,
+while removing a feed cascades its settings. Full database backups include
+this table. Migration 11 combines the former application/book Transformer
+tables without re-encoding their JSON or changing rule order, names, enabled
+flags, or inheritance.
+
+Normal edits use separate application-save, book-save, and book-reset APIs.
+Each transaction changes only its target scope; saving application rules also
+validates the effective inherited chains, and saving a book validates it against
+the application rules in the same transaction. Concurrent writes to different
+scopes therefore cannot overwrite each other or bypass the combined rule limit.
+Resetting a book deletes just that override and restores application inheritance.
+A complete snapshot is accepted only for one-time initialization/import.
+Flutter merges completed scope writes into its latest state rather than
+replacing it with a snapshot captured before the write.
 
 `FeedActor` receives its database handle during application bootstrap. It reads
 the application and requested book scopes when handling `GetParagraphs`, then

@@ -26,7 +26,7 @@ impl Repo<'_> {
     pub fn get_application_transformers(&self) -> Result<Option<String>> {
         super::maybe_row(
             self.conn,
-            "SELECT rules_json FROM application_transformers WHERE id = 1",
+            "SELECT rules_json FROM transformer_configurations WHERE feed_id IS NULL",
             &[],
             |row| row.get(0),
         )
@@ -39,38 +39,42 @@ impl Repo<'_> {
     ) -> Result<Option<BookTransformerRow>> {
         super::maybe_row(
             self.conn,
-            "SELECT feed_id, book_id, inherit_application, rules_json FROM book_transformers WHERE feed_id = ?1 AND book_id = ?2",
+            "SELECT feed_id, book_id, inherit_application, rules_json FROM transformer_configurations WHERE feed_id = ?1 AND book_id = ?2",
             &[&feed_id, &book_id],
             BookTransformerRow::from_row,
         )
     }
 
     pub fn list_book_transformers(&self) -> Result<Vec<BookTransformerRow>> {
-        let mut query = self.conn.prepare_cached("SELECT feed_id, book_id, inherit_application, rules_json FROM book_transformers ORDER BY feed_id, book_id")?;
+        let mut query = self.conn.prepare_cached("SELECT feed_id, book_id, inherit_application, rules_json FROM transformer_configurations WHERE feed_id IS NOT NULL ORDER BY feed_id, book_id")?;
         Ok(query
             .query_map([], BookTransformerRow::from_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
-    /// Called within `Db::write`: commit the complete snapshot atomically.
-    /// Ignore stale scopes of removed feeds; a settings snapshot must never
-    /// recreate preferences that were deleted with their source.
-    pub fn replace_transformer_configuration(
-        &self,
-        application: &str,
-        books: &[BookTransformerRow],
-    ) -> Result<()> {
-        self.conn.execute("INSERT INTO application_transformers (id, rules_json) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET rules_json = excluded.rules_json", [application])?;
-        self.conn.execute("DELETE FROM book_transformers", [])?;
-        let mut insert = self.conn.prepare_cached("INSERT INTO book_transformers (feed_id, book_id, inherit_application, rules_json) SELECT ?1, ?2, ?3, ?4 WHERE EXISTS (SELECT 1 FROM feeds WHERE id = ?1)")?;
-        for book in books {
-            insert.execute(params![
-                book.feed_id,
-                book.book_id,
-                book.inherit_application,
-                book.rules_json
-            ])?;
-        }
+    pub fn set_application_transformers(&self, rules_json: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO transformer_configurations (feed_id, book_id, inherit_application, rules_json) VALUES (NULL, NULL, 0, ?1) ON CONFLICT DO UPDATE SET rules_json = excluded.rules_json",
+            [rules_json],
+        )?;
+        Ok(())
+    }
+
+    /// Returns false if the source no longer exists. Never restores a deleted
+    /// source's settings from an old import or an in-flight editor.
+    pub fn set_book_transformers(&self, book: &BookTransformerRow) -> Result<bool> {
+        let changed = self.conn.execute(
+            "INSERT INTO transformer_configurations (feed_id, book_id, inherit_application, rules_json) SELECT ?1, ?2, ?3, ?4 WHERE EXISTS (SELECT 1 FROM feeds WHERE id = ?1) ON CONFLICT(feed_id, book_id) WHERE feed_id IS NOT NULL DO UPDATE SET inherit_application = excluded.inherit_application, rules_json = excluded.rules_json",
+            params![book.feed_id, book.book_id, book.inherit_application, book.rules_json],
+        )?;
+        Ok(changed != 0)
+    }
+
+    pub fn delete_book_transformers(&self, feed_id: &str, book_id: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM transformer_configurations WHERE feed_id = ?1 AND book_id = ?2",
+            params![feed_id, book_id],
+        )?;
         Ok(())
     }
 }
@@ -79,6 +83,47 @@ impl Repo<'_> {
 mod tests {
     use super::*;
     use crate::db::repo::test_support::TestDb;
+
+    #[test]
+    fn unified_scope_constraints_reject_duplicates_and_malformed_rows() {
+        let db = TestDb::new();
+        db.conn().execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        db.seed_feed("f");
+        let insert = "INSERT INTO transformer_configurations (feed_id, book_id, inherit_application, rules_json) VALUES (?1, ?2, ?3, ?4)";
+        db.conn()
+            .execute(insert, params![None::<String>, None::<String>, 0, "[]"])
+            .unwrap();
+        assert!(
+            db.conn()
+                .execute(insert, params![None::<String>, None::<String>, 0, "[]"])
+                .is_err()
+        );
+        db.conn()
+            .execute(insert, params!["f", "b", 1, "[]"])
+            .unwrap();
+        assert!(
+            db.conn()
+                .execute(insert, params!["f", "b", 0, "[]"])
+                .is_err()
+        );
+        for (feed, book, inherit, rules) in [
+            (Some("f"), None, 0, "[]"),
+            (None, Some("b"), 0, "[]"),
+            (None, None, 1, "[]"),
+            (Some(""), Some("b"), 0, "[]"),
+            (Some("f"), Some(""), 0, "[]"),
+            (Some("f"), Some("other"), 2, "[]"),
+            (Some("f"), Some("other"), 0, "{}"),
+            (Some("f"), Some("other"), 0, "broken"),
+            (Some("missing"), Some("b"), 0, "[]"),
+        ] {
+            assert!(
+                db.conn()
+                    .execute(insert, params![feed, book, inherit, rules])
+                    .is_err()
+            );
+        }
+    }
 
     #[test]
     fn book_scopes_survive_cache_cleanup_but_cascade_with_their_feed() {
@@ -92,8 +137,10 @@ mod tests {
             inherit_application: false,
             rules_json: "[]".into(),
         }];
-        repo.replace_transformer_configuration("[]", &books)
-            .unwrap();
+        repo.set_application_transformers("[]").unwrap();
+        for book in &books {
+            repo.set_book_transformers(book).unwrap();
+        }
         repo.clear_cache().unwrap();
         assert!(
             !repo
@@ -108,8 +155,10 @@ mod tests {
             repo.get_application_transformers().unwrap().as_deref(),
             Some("[]")
         );
-        repo.replace_transformer_configuration("[]", &books)
-            .unwrap();
+        repo.set_application_transformers("[]").unwrap();
+        for book in &books {
+            repo.set_book_transformers(book).unwrap();
+        }
         assert!(repo.list_book_transformers().unwrap().is_empty());
     }
 }
