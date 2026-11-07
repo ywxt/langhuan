@@ -8,6 +8,7 @@ use crate::api::types::BridgeError;
 
 use super::bookmark_actor::BookmarkActor;
 use super::bookshelf_actor::BookshelfActor;
+use super::feed_actor::FeedActor;
 use super::login_actor::LoginActor;
 use super::reading_progress_actor::ReadingProgressActor;
 use super::registry_actor::{ListFeeds, RegistryActor};
@@ -29,6 +30,7 @@ pub struct AppDataActor {
     bookshelf_addr: Address<BookshelfActor>,
     reading_progress_addr: Address<ReadingProgressActor>,
     bookmark_addr: Address<BookmarkActor>,
+    feed_addr: Address<FeedActor>,
     app_data_dir: Option<String>,
 }
 
@@ -41,6 +43,7 @@ impl AppDataActor {
         bookshelf_addr: Address<BookshelfActor>,
         reading_progress_addr: Address<ReadingProgressActor>,
         bookmark_addr: Address<BookmarkActor>,
+        feed_addr: Address<FeedActor>,
     ) -> Self {
         Self {
             registry_addr,
@@ -48,6 +51,7 @@ impl AppDataActor {
             bookshelf_addr,
             reading_progress_addr,
             bookmark_addr,
+            feed_addr,
             app_data_dir: None,
         }
     }
@@ -99,6 +103,10 @@ impl AppDataActor {
             .await??;
 
         self.bookmark_addr
+            .send(InitializeAppDataDirectory { db: db.clone() })
+            .await??;
+
+        self.feed_addr
             .send(InitializeAppDataDirectory { db: db.clone() })
             .await??;
 
@@ -187,6 +195,9 @@ mod tests {
         let webview_context: Context<WebviewActor> = Context::new();
         let webview_addr = webview_context.address();
 
+        let feed_context = Context::<FeedActor>::new();
+        let feed_addr = feed_context.address();
+        let feed_actor = FeedActor::new(registry_addr.clone());
         let registry_actor = RegistryActor::new(ScriptEngine::new(), webview_addr);
         let login_actor = LoginActor::new(registry_addr.clone());
         // Tests never resolve a feed through the registry (covers use
@@ -200,8 +211,10 @@ mod tests {
             bookshelf_addr,
             reading_progress_addr,
             bookmark_addr,
+            feed_addr,
         );
 
+        spawn(feed_context.run(feed_actor));
         spawn(registry_context.run(registry_actor));
         spawn(webview_context.run(WebviewActor::new()));
         spawn(login_context.run(login_actor));

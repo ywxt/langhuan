@@ -188,7 +188,7 @@ impl Repo<'_> {
     }
 
     /// Delete a feed. Everything attached to it (scripts, cached books,
-    /// covers, bookshelf entries, progress, bookmarks, auth) cascades.
+    /// covers, bookshelf entries, progress, bookmarks, auth, book transformers) cascades.
     ///
     /// Returns `false` when the feed id is unknown.
     pub fn delete_feed(&self, feed_id: &str) -> Result<bool> {

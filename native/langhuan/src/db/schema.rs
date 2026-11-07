@@ -245,10 +245,37 @@ const MIGRATIONS: &[Migration] = &[
         version: 9,
         sql: "DROP TABLE listening_progress;",
     },
+    Migration {
+        version: 10,
+        sql: r#"
+        CREATE TABLE application_transformers (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            rules_json TEXT NOT NULL CHECK (json_valid(rules_json) AND json_type(rules_json) = 'array')
+        );
+        -- User preferences outlive cached book rows, but belong to their feed.
+        CREATE TABLE book_transformers (
+            feed_id TEXT NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+            book_id TEXT NOT NULL CHECK (length(book_id) > 0),
+            inherit_application INTEGER NOT NULL CHECK (inherit_application IN (0, 1)),
+            rules_json TEXT NOT NULL CHECK (json_valid(rules_json) AND json_type(rules_json) = 'array'),
+            PRIMARY KEY (feed_id, book_id)
+        ) WITHOUT ROWID;
+
+        INSERT INTO application_transformers (id, rules_json)
+            SELECT 1, json_extract(value, '$.application') FROM meta WHERE key = 'reader.transformers';
+        INSERT INTO book_transformers (feed_id, book_id, inherit_application, rules_json)
+            SELECT json_extract(book.value, '$.feed_id'), json_extract(book.value, '$.book_id'),
+                   json_extract(book.value, '$.inherit_application'), json_extract(book.value, '$.rules')
+            FROM meta, json_each(meta.value, '$.books') AS book
+            WHERE meta.key = 'reader.transformers'
+              AND EXISTS (SELECT 1 FROM feeds WHERE feeds.id = json_extract(book.value, '$.feed_id'));
+        DELETE FROM meta WHERE key = 'reader.transformers';
+        "#,
+    },
 ];
 
 /// The schema version this build understands (the last migration's version).
-pub(crate) const CURRENT_VERSION: i64 = 9;
+pub(crate) const CURRENT_VERSION: i64 = 10;
 
 /// Apply all pending migrations in order.
 pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
@@ -271,6 +298,41 @@ pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn transformer_migration_moves_scopes_out_of_meta_without_touching_other_metadata() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for migration in MIGRATIONS.iter().filter(|m| m.version <= 9) {
+            conn.execute_batch(migration.sql).unwrap();
+        }
+        conn.execute_batch("PRAGMA user_version = 9; INSERT INTO feeds (id,name,version,content_hash,installed_at_ms,updated_at_ms) VALUES ('f','Feed','1','hash',1,1);").unwrap();
+        let legacy = serde_json::json!({
+            "application": [{"name":"Indent", "enabled":true, "rule":{"ParagraphIndent":{"spaces":4}}}],
+            "books": [
+                {"feed_id":"f", "book_id":"b", "inherit_application":false, "rules":[]},
+                {"feed_id":"removed", "book_id":"b", "inherit_application":true, "rules":[]}
+            ]
+        });
+        conn.execute(
+            "INSERT INTO meta VALUES ('reader.transformers', ?1)",
+            [legacy.to_string()],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO meta VALUES ('other', 'not-json')", [])
+            .unwrap();
+        migrate(&mut conn).unwrap();
+        let repo = crate::db::repo::Repo::new(&conn);
+        let application: serde_json::Value =
+            serde_json::from_str(&repo.get_application_transformers().unwrap().unwrap()).unwrap();
+        assert_eq!(application, legacy["application"]);
+        let books = repo.list_book_transformers().unwrap();
+        assert_eq!(books.len(), 1);
+        assert_eq!(books[0].feed_id, "f");
+        assert!(!books[0].inherit_application);
+        assert!(repo.get_meta("reader.transformers").unwrap().is_none());
+        assert_eq!(repo.get_meta("other").unwrap().as_deref(), Some("not-json"));
+        migrate(&mut conn).unwrap();
+    }
+
     #[test]
     fn removing_listening_storage_preserves_reading_progress() {
         let mut conn = Connection::open_in_memory().unwrap();

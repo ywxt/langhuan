@@ -30,6 +30,7 @@ pub mod progress;
 pub mod storage;
 #[cfg(test)]
 pub(crate) mod test_support;
+pub mod transformers;
 
 pub use bookmarks::BookmarkRow;
 pub use bookshelf::ShelfItem;
@@ -38,6 +39,7 @@ pub use feeds::{FeedRow, ScriptRow};
 pub use maintenance::{CacheStats, RemovalReport};
 pub use progress::ProgressRow;
 pub use storage::FeedStorageEntry;
+pub use transformers::BookTransformerRow;
 
 use tokio_rusqlite::rusqlite::Connection;
 

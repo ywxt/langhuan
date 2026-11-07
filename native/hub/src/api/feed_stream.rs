@@ -1,9 +1,8 @@
-use super::transformers::TransformerConfigurationStore;
+use crate::actors::addresses;
 use crate::actors::feed_actor::{
     GetBookInfo, GetChapters, GetParagraphs, OpenAggregatedSearchStream, OpenSearchStream,
     PullStream,
 };
-use crate::actors::{addresses, hub_db};
 
 use super::types::BookInfo;
 pub use super::types::{
@@ -109,9 +108,6 @@ pub async fn paragraphs(
     chapter_id: String,
     force_refresh: bool,
 ) -> Result<Vec<ParagraphContent>, BridgeError> {
-    let transformers = TransformerConfigurationStore::new(hub_db()?)
-        .rules_for_book(&feed_id, &book_id)
-        .await?;
     let task = addresses()?
         .feed
         .clone()
@@ -120,7 +116,6 @@ pub async fn paragraphs(
             book_id,
             chapter_id,
             force_refresh,
-            transformers,
         })
         .await??;
     task.resolve().await

@@ -25,8 +25,9 @@ use crate::api::types::{
     SearchResultItem,
 };
 
+use super::app_data_actor::InitializeAppDataDirectory;
 use super::registry_actor::{GetFeed, ListFeeds, RegistryActor};
-use crate::api::transformers::build_transform_chain;
+use crate::api::transformers::{TransformerConfigurationStore, build_transform_chain};
 
 // ---------------------------------------------------------------------------
 // Generic pull-based stream
@@ -241,7 +242,6 @@ pub struct GetParagraphs {
     pub book_id: String,
     pub chapter_id: String,
     pub force_refresh: bool,
-    pub transformers: Vec<crate::api::types::TransformerRule>,
 }
 
 // ---------------------------------------------------------------------------
@@ -257,6 +257,7 @@ const MAX_CONCURRENT_FEED_SEARCHES: usize = 4;
 pub struct FeedActor {
     registry_addr: Address<RegistryActor>,
     search_permits: Arc<Semaphore>,
+    transformer_store: Option<TransformerConfigurationStore>,
 }
 
 impl Actor for FeedActor {}
@@ -278,6 +279,7 @@ impl FeedActor {
         Self {
             registry_addr,
             search_permits,
+            transformer_store: None,
         }
     }
 
@@ -303,6 +305,15 @@ impl FeedActor {
 // ---------------------------------------------------------------------------
 // Handler impls
 // ---------------------------------------------------------------------------
+
+#[async_trait]
+impl Handler<InitializeAppDataDirectory> for FeedActor {
+    type Result = Result<(), BridgeError>;
+    async fn handle(&mut self, msg: InitializeAppDataDirectory, _: &Context<Self>) -> Self::Result {
+        self.transformer_store = Some(TransformerConfigurationStore::new(msg.db));
+        Ok(())
+    }
+}
 
 #[async_trait]
 impl Handler<GetBookInfo> for FeedActor {
@@ -514,13 +525,17 @@ impl Handler<GetParagraphs> for FeedActor {
             "get paragraphs"
         );
         let feed = self.resolve_feed(&msg.feed_id).await?;
+        let rules = self
+            .transformer_store
+            .as_ref()
+            .ok_or_else(BridgeError::not_initialized)?
+            .rules_for_book(&msg.feed_id, &msg.book_id)
+            .await?;
+        let mut transform_chain = build_transform_chain(rules)?;
         if msg.force_refresh {
             feed.clear_chapter_cache(&msg.book_id, &msg.chapter_id)
                 .await?;
         }
-
-        // Capture this request's rules; no shared mutable conversion state.
-        let mut transform_chain = build_transform_chain(msg.transformers)?;
 
         let feed_id = msg.feed_id;
         let book_id = msg.book_id;
@@ -721,7 +736,6 @@ mod tests {
     use tokio::spawn;
 
     use super::*;
-    use crate::actors::app_data_actor::InitializeAppDataDirectory;
     use crate::actors::webview_actor::WebviewActor;
 
     type TestResult = Result<(), Box<dyn Error>>;
@@ -842,14 +856,15 @@ export default (() => {
         spawn(webview_context.run(WebviewActor::new()));
 
         registry_addr
-            .send(InitializeAppDataDirectory { db })
+            .send(InitializeAppDataDirectory { db: db.clone() })
             .await
             .map_err(|e| format!("messaging: {e}"))?
             .map_err(|e| format!("init: {e}"))?;
 
         let feed_context = Context::new();
-        let feed_addr = feed_context.address();
+        let mut feed_addr = feed_context.address();
         spawn(feed_context.run(FeedActor::with_search_permits(registry_addr, permits)));
+        feed_addr.send(InitializeAppDataDirectory { db }).await??;
         Ok(feed_addr)
     }
 
@@ -861,6 +876,81 @@ export default (() => {
             events.extend(batch);
         }
         Ok(events)
+    }
+
+    #[tokio::test]
+    async fn paragraph_actor_resolves_current_scoped_rules_and_preserves_raw_cache() -> TestResult {
+        use crate::api::types::{
+            BookTransformerConfiguration, TransformerConfiguration, TransformerConfigurationEntry,
+            TransformerRule,
+        };
+        let db = Db::open_in_memory().await?;
+        let mut server = mockito::Server::new_async().await;
+        let request = server
+            .mock("GET", "/paragraphs/book/chapter")
+            .with_body("ok")
+            .expect(1)
+            .create_async()
+            .await;
+        seed_feed(
+            &db,
+            "fixture",
+            "Fixture",
+            &server.url(),
+            fixture_script("fixture", "Fixture", &server.url()),
+        )
+        .await?;
+        db.write(|repo| {
+            repo.add_book("fixture", "book", "Book", "Author", None, None, 1)?;
+            Ok(())
+        })
+        .await?;
+        let replace = |pattern: &str, replacement: &str| TransformerConfigurationEntry {
+            name: String::new(),
+            enabled: true,
+            rule: TransformerRule::RegexReplace {
+                pattern: pattern.into(),
+                replacement: replacement.into(),
+                include_titles: false,
+            },
+        };
+        let mut configuration = TransformerConfiguration {
+            application: vec![replace("Fixture", "GLOBAL")],
+            books: vec![BookTransformerConfiguration {
+                feed_id: "fixture".into(),
+                book_id: "book".into(),
+                inherit_application: true,
+                rules: vec![replace("GLOBAL", "BOOK")],
+            }],
+        };
+        let store = TransformerConfigurationStore::new(db.clone());
+        let mut actor = spawn_feed_actor(db).await?;
+        for (inherit, change_global, expected) in [
+            (true, false, "BOOK paragraph."),
+            (false, false, "Fixture paragraph."),
+            (true, true, "NEW paragraph."),
+        ] {
+            configuration.books[0].inherit_application = inherit;
+            if change_global {
+                configuration.application = vec![replace("Fixture", "NEW")];
+                configuration.books[0].rules.clear();
+            }
+            store.save(configuration.clone()).await?;
+            let task = actor
+                .send(GetParagraphs {
+                    feed_id: "fixture".into(),
+                    book_id: "book".into(),
+                    chapter_id: "chapter".into(),
+                    force_refresh: false,
+                })
+                .await??;
+            let items = task.resolve().await?;
+            assert!(
+                matches!(&items[..], [ParagraphContent::Text {content, ..}] if content == expected)
+            );
+        }
+        request.assert_async().await;
+        Ok(())
     }
 
     #[tokio::test]

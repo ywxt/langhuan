@@ -10,10 +10,14 @@ use langhuan::transform::{
     regex::RegexTransform,
     text_indent::TextIndentTransform,
 };
-use langhuan::{db::Db, error::Error};
+use langhuan::{
+    db::{
+        Db,
+        repo::{BookTransformerRow, Repo},
+    },
+    error::Error,
+};
 use std::collections::HashSet;
-
-const CONFIGURATION_KEY: &str = "reader.transformers";
 
 impl Default for TransformerConfiguration {
     fn default() -> Self {
@@ -72,11 +76,7 @@ impl TransformerConfigurationStore {
     pub(crate) async fn load(&self) -> Result<Option<TransformerConfiguration>, BridgeError> {
         Ok(self
             .db
-            .call(|repo| {
-                repo.get_meta(CONFIGURATION_KEY)?
-                    .map(|json| TransformerConfiguration::from_json(&json))
-                    .transpose()
-            })
+            .call(TransformerConfiguration::from_repository)
             .await?)
     }
 
@@ -88,16 +88,19 @@ impl TransformerConfigurationStore {
             return Ok(existing);
         }
         configuration.validate()?;
-        let json =
-            serde_json::to_string(&configuration).map_err(|e| BridgeError::from(e.to_string()))?;
+        let (application, books) = configuration.encoded_rows()?;
         Ok(self
             .db
             .write(move |repo| {
-                if let Some(existing) = repo.get_meta(CONFIGURATION_KEY)? {
-                    return TransformerConfiguration::from_json(&existing);
+                if let Some(existing) = TransformerConfiguration::from_repository(repo)? {
+                    return Ok(existing);
                 }
-                repo.set_meta(CONFIGURATION_KEY, &json)?;
-                Ok(configuration)
+                repo.replace_transformer_configuration(&application, &books)?;
+                TransformerConfiguration::from_repository(repo)?.ok_or_else(|| {
+                    Error::database(
+                        "transformer initialization did not persist application settings",
+                    )
+                })
             })
             .await?)
     }
@@ -107,25 +110,52 @@ impl TransformerConfigurationStore {
         configuration: TransformerConfiguration,
     ) -> Result<(), BridgeError> {
         configuration.validate()?;
-        let json =
-            serde_json::to_string(&configuration).map_err(|e| BridgeError::from(e.to_string()))?;
+        let (application, books) = configuration.encoded_rows()?;
         Ok(self
             .db
-            .write(move |repo| repo.set_meta(CONFIGURATION_KEY, &json))
+            .write(move |repo| repo.replace_transformer_configuration(&application, &books))
             .await?)
     }
 
-    /// Capture database rules for each chapter request, including non-UI consumers.
+    /// Only the application and requested book scopes are read for a chapter.
     pub(crate) async fn rules_for_book(
         &self,
         feed_id: &str,
         book_id: &str,
     ) -> Result<Vec<TransformerRule>, BridgeError> {
+        let feed_id = feed_id.to_owned();
+        let book_id = book_id.to_owned();
         Ok(self
-            .load()
-            .await?
-            .unwrap_or_default()
-            .rules_for_book(feed_id, book_id))
+            .db
+            .call(move |repo| {
+                let application = repo
+                    .get_application_transformers()?
+                    .map(|json| TransformerConfiguration::decode_rules(&json))
+                    .transpose()?
+                    .unwrap_or_else(|| TransformerConfiguration::default().application);
+                let book = repo
+                    .get_book_transformers(&feed_id, &book_id)?
+                    .map(BookTransformerConfiguration::try_from)
+                    .transpose()?;
+                Ok(TransformerConfiguration {
+                    application,
+                    books: vec![],
+                }
+                .effective_rules(book.as_ref()))
+            })
+            .await?)
+    }
+}
+
+impl TryFrom<BookTransformerRow> for BookTransformerConfiguration {
+    type Error = Error;
+    fn try_from(row: BookTransformerRow) -> Result<Self, Self::Error> {
+        Ok(Self {
+            feed_id: row.feed_id,
+            book_id: row.book_id,
+            inherit_application: row.inherit_application,
+            rules: TransformerConfiguration::decode_rules(&row.rules_json)?,
+        })
     }
 }
 
@@ -136,9 +166,42 @@ impl TransformerConfigurationEntry {
 }
 
 impl TransformerConfiguration {
-    fn from_json(json: &str) -> langhuan::error::Result<Self> {
+    fn decode_rules(json: &str) -> langhuan::error::Result<Vec<TransformerConfigurationEntry>> {
         serde_json::from_str(json)
-            .map_err(|e| Error::database(format!("corrupt transformer configuration: {e}")))
+            .map_err(|e| Error::database(format!("corrupt transformer rules: {e}")))
+    }
+
+    fn from_repository(repo: &Repo<'_>) -> langhuan::error::Result<Option<Self>> {
+        let Some(application) = repo.get_application_transformers()? else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            application: Self::decode_rules(&application)?,
+            books: repo
+                .list_book_transformers()?
+                .into_iter()
+                .map(BookTransformerConfiguration::try_from)
+                .collect::<langhuan::error::Result<_>>()?,
+        }))
+    }
+
+    fn encoded_rows(&self) -> Result<(String, Vec<BookTransformerRow>), BridgeError> {
+        let application = serde_json::to_string(&self.application)
+            .map_err(|e| BridgeError::from(e.to_string()))?;
+        let books = self
+            .books
+            .iter()
+            .map(|book| {
+                Ok(BookTransformerRow {
+                    feed_id: book.feed_id.clone(),
+                    book_id: book.book_id.clone(),
+                    inherit_application: book.inherit_application,
+                    rules_json: serde_json::to_string(&book.rules)
+                        .map_err(|e| BridgeError::from(e.to_string()))?,
+                })
+            })
+            .collect::<Result<_, BridgeError>>()?;
+        Ok((application, books))
     }
 
     fn effective_rules(&self, book: Option<&BookTransformerConfiguration>) -> Vec<TransformerRule> {
@@ -158,14 +221,6 @@ impl TransformerConfiguration {
             );
         }
         rules
-    }
-
-    pub(crate) fn rules_for_book(&self, feed_id: &str, book_id: &str) -> Vec<TransformerRule> {
-        let book = self
-            .books
-            .iter()
-            .find(|book| book.feed_id == feed_id && book.book_id == book_id);
-        self.effective_rules(book)
     }
 
     pub(crate) fn validate(&self) -> Result<(), BridgeError> {
@@ -256,6 +311,27 @@ mod tests {
     use super::*;
     use langhuan::model::{Paragraph, ParagraphId};
 
+    async fn seed_scope_feeds(db: &Db) {
+        db.write(|repo| {
+            for id in ["feed-a", "feed-b"] {
+                let meta = langhuan::feed::FeedMeta {
+                    id: id.into(),
+                    name: id.into(),
+                    version: "1.0.0".into(),
+                    author: None,
+                    description: None,
+                    base_url: "https://example.com".into(),
+                    access_domains: Default::default(),
+                    schema_version: 6,
+                };
+                repo.upsert_feed(&meta, None, "hash", 1)?;
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
+
     fn configuration() -> TransformerConfiguration {
         TransformerConfiguration {
             application: vec![TransformerConfigurationEntry {
@@ -299,6 +375,7 @@ mod tests {
         let path = directory.path().join("app.db");
         let backup = directory.path().join("backup.db");
         let db = Db::open(&path).await.unwrap();
+        seed_scope_feeds(&db).await;
         let store = TransformerConfigurationStore::new(db.clone());
         let expected = configuration();
         store.save(expected.clone()).await.unwrap();
@@ -328,6 +405,7 @@ mod tests {
     #[tokio::test]
     async fn migration_initializes_once_and_never_overwrites_database_settings() {
         let db = Db::open_in_memory().await.unwrap();
+        seed_scope_feeds(&db).await;
         let store = TransformerConfigurationStore::new(db.clone());
         assert!(store.load().await.unwrap().is_none());
         let initial = configuration();
@@ -356,6 +434,7 @@ mod tests {
     #[tokio::test]
     async fn failed_validation_preserves_the_previous_configuration() {
         let db = Db::open_in_memory().await.unwrap();
+        seed_scope_feeds(&db).await;
         let store = TransformerConfigurationStore::new(db.clone());
         let initial = store.initialize(configuration()).await.unwrap();
         let mut invalid = initial.clone();
@@ -367,6 +446,7 @@ mod tests {
     #[tokio::test]
     async fn competing_imports_commit_one_complete_snapshot() {
         let db = Db::open_in_memory().await.unwrap();
+        seed_scope_feeds(&db).await;
         let store = TransformerConfigurationStore::new(db.clone());
         let (first, second) = tokio::join!(
             store.initialize(configuration()),
@@ -375,6 +455,28 @@ mod tests {
         let first = first.unwrap();
         assert_eq!(first, second.unwrap());
         assert_eq!(store.load().await.unwrap(), Some(first));
+    }
+
+    #[tokio::test]
+    async fn scoped_rule_reads_do_not_decode_unrelated_books() {
+        let db = Db::open_in_memory().await.unwrap();
+        seed_scope_feeds(&db).await;
+        let store = TransformerConfigurationStore::new(db.clone());
+        store.save(configuration()).await.unwrap();
+        db.write(|repo| {
+            repo.conn().execute(
+                "UPDATE book_transformers SET rules_json = '[{}]' WHERE feed_id = 'feed-b'",
+                [],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            store.rules_for_book("feed-a", "book").await.unwrap().len(),
+            1
+        );
+        assert!(store.rules_for_book("feed-b", "book").await.is_err());
     }
 
     fn text(value: &str) -> Paragraph {

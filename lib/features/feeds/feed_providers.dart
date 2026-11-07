@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../rust_init.dart';
 import '../../src/rust/api/types.dart';
+import '../transformers/transformer_settings.dart';
 import 'feed_service.dart';
 
 /// FRB generates no `copyWith`; the notifier needs to flip `enabled`.
@@ -148,6 +149,8 @@ class FeedListNotifier extends Notifier<FeedListState> {
 
     try {
       await ref.read(feedServiceProvider).removeFeed(feedId);
+      // Feed deletion cascades its book-scoped transformer preferences.
+      ref.invalidate(transformerSettingsProvider);
 
       final selected = ref.read(selectedFeedProvider);
       if (selected is FeedSelectionOne && selected.feed.id == feedId) {

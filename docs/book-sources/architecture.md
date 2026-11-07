@@ -251,13 +251,20 @@ Rules run after the raw cache, so edits reprocess cached content without
 downloading it again or modifying the source data. Kept paragraphs retain
 their IDs and comment counts. Each request captures the effective chain for
 its book; there is no shared native conversion mode between books. Settings
-are persisted atomically in SQLite's existing `meta` table under
-`reader.transformers`, so full database backups include both application and
-book configurations. Chapter requests capture the effective rules directly
-from Rust's database layer; Flutter does not supply persistence snapshots with
-each request. SharedPreferences is consulted only for the initial import, and
-legacy keys are removed after the database commit succeeds. Existing database
-settings always take precedence over preferences.
+are persisted atomically in dedicated SQLite tables: `application_transformers`
+stores the application chain, and `book_transformers` stores each book scope's
+inheritance flag and ordered rules. Book settings reference their feed, not a
+cached book row: cache cleanup preserves them, while removing a feed cascades
+its settings. Full database backups include both tables. The database migration
+moves the previous `meta.reader.transformers` payload into these tables and
+removes only that metadata key.
+
+`FeedActor` receives its database handle during application bootstrap. It reads
+the application and requested book scopes when handling `GetParagraphs`, then
+builds the chapter's transform chain internally. Neither Flutter nor the API
+layer supplies transformer rules with the request. SharedPreferences is
+consulted only for an initial import; legacy preference keys are removed after
+the database commit succeeds. Existing database settings always take precedence.
 
 ## Failure model
 

@@ -124,6 +124,12 @@ pub async fn create_actors() {
     let bookmark_context = Context::new();
     let bookmark_addr = bookmark_context.address();
 
+    // FeedActor — handles feed content streaming, resolves feeds via
+    // Handler<GetFeed> on the RegistryActor.
+    tracing::debug!("creating feed actor");
+    let feed_context = Context::new();
+    let feed_addr = feed_context.address();
+
     let registry_actor = RegistryActor::new(engine, webview_addr.clone());
     let login_actor = LoginActor::new(registry_addr.clone());
     let app_data_actor = AppDataActor::new(
@@ -132,6 +138,7 @@ pub async fn create_actors() {
         bookshelf_addr.clone(),
         reading_progress_addr.clone(),
         bookmark_addr.clone(),
+        feed_addr.clone(),
     );
     let reading_progress_actor = ReadingProgressActor::new();
     let bookmark_actor = BookmarkActor::new();
@@ -143,11 +150,6 @@ pub async fn create_actors() {
     spawn(bookmark_context.run(bookmark_actor));
     spawn(webview_context.run(webview_actor));
 
-    // FeedActor — handles feed content streaming, resolves feeds via
-    // Handler<GetFeed> on the RegistryActor.
-    tracing::debug!("creating feed actor");
-    let feed_context = Context::new();
-    let feed_addr = feed_context.address();
     let feed_actor = FeedActor::new(registry_addr.clone());
     spawn(feed_context.run(feed_actor));
 
