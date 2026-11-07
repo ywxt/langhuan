@@ -892,27 +892,3 @@ class FeedService {
     return rust_webview.cancelWebview(requestId: requestId);
   }
 }
-
-// ---------------------------------------------------------------------------
-// Exceptions
-// ---------------------------------------------------------------------------
-
-class FeedPullException implements Exception {
-  const FeedPullException({required this.message, required this.kind});
-
-  final String message;
-  final ErrorKind kind;
-
-  @override
-  String toString() => 'FeedPullException: $message';
-}
-
-class FeedPreviewException implements Exception {
-  const FeedPreviewException({required this.message, required this.kind});
-
-  final String message;
-  final ErrorKind kind;
-
-  @override
-  String toString() => 'FeedPreviewException: $message';
-}

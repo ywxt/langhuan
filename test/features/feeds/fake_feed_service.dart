@@ -38,6 +38,8 @@ class FakeFeedService implements FeedService {
     this.removeFeedHandler,
     this.setFeedEnabledHandler,
     this.exportFeedsHandler,
+    this.previewFromUrlHandler,
+    this.previewFromFileHandler,
     this.previewImportFeedsHandler,
     this.importFeedsHandler,
     this.listBookmarksHandler,
@@ -60,6 +62,9 @@ class FakeFeedService implements FeedService {
   final Future<BookshelfRemoveResult> Function()? removeFromBookshelfHandler;
   final Future<List<FeedMetaItem>> Function()? listFeedsHandler;
   final Future<void> Function(String feedId)? removeFeedHandler;
+
+  final Future<FeedPreviewModel> Function(String url)? previewFromUrlHandler;
+  final Future<FeedPreviewModel> Function(String path)? previewFromFileHandler;
 
   @override
   Stream<List<SearchResultModel>> search({
@@ -148,6 +153,24 @@ class FakeFeedService implements FeedService {
       throw UnimplementedError('removeFeed not configured for this test');
     }
     return handler(feedId);
+  }
+
+  @override
+  Future<FeedPreviewModel> previewFromUrl(String url) {
+    final handler = previewFromUrlHandler;
+    if (handler == null) {
+      throw UnimplementedError('previewFromUrl not configured for this test');
+    }
+    return handler(url);
+  }
+
+  @override
+  Future<FeedPreviewModel> previewFromFile(String path) {
+    final handler = previewFromFileHandler;
+    if (handler == null) {
+      throw UnimplementedError('previewFromFile not configured for this test');
+    }
+    return handler(path);
   }
 
   final Future<void> Function(String feedId, bool enabled)?

@@ -47,24 +47,33 @@ class AddFeedNotifier extends Notifier<AddFeedState> {
   AddFeedState build() => const AddFeedIdle();
 
   /// Preview a feed script from a remote [url].
+  ///
+  /// Any failure — an unreachable URL, an oversized or non-script
+  /// response, a script that fails to parse — lands in [AddFeedError];
+  /// nothing may escape, or the dialog sticks on its loading state,
+  /// which also blocks dismissing it.
   Future<void> previewFromUrl(String url) async {
     state = const AddFeedLoading();
     try {
       final preview = await ref.read(feedServiceProvider).previewFromUrl(url);
       state = AddFeedPreview(preview: preview);
-    } on FeedPreviewException catch (e) {
-      state = AddFeedError(message: e.message);
+    } catch (e) {
+      state = AddFeedError(message: normalizeErrorMessage(e));
     }
   }
 
   /// Preview a feed script from a local file [path] (Rust reads the file).
+  ///
+  /// Failures land in [AddFeedError] for the same reason as
+  /// [previewFromUrl]: an escaped error would strand the dialog in its
+  /// loading state.
   Future<void> previewFromFile(String path) async {
     state = const AddFeedLoading();
     try {
       final preview = await ref.read(feedServiceProvider).previewFromFile(path);
       state = AddFeedPreview(preview: preview);
-    } on FeedPreviewException catch (e) {
-      state = AddFeedError(message: e.message);
+    } catch (e) {
+      state = AddFeedError(message: normalizeErrorMessage(e));
     }
   }
 
