@@ -473,6 +473,123 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pipeline_rejects_a_handler_that_never_advances_the_cursor() {
+        let body = r#"
+          function search() {
+            return { type: "complete",
+              result: [{ id: "1", title: "One", author: "Test" }],
+              next_cursor: { page: 1 } };
+          }
+          const empty = () => ({ type: "complete", result: [] });
+          const bookInfo = () => ({ type: "complete", result: { id: "1", title: "One", author: "Test" } });
+          export default { search, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(6, body))
+            .await
+            .unwrap();
+
+        let collected = feed.search("x").collect::<Vec<_>>().await;
+        // The first page flows through; its frozen next cursor fails page two.
+        assert_eq!(collected.len(), 2);
+        assert!(collected[0].is_ok());
+        let error = collected[1]
+            .as_ref()
+            .expect_err("a cursor that never advances must fail the stream");
+        assert!(
+            error
+                .to_string()
+                .contains("pipeline cursor does not advance")
+        );
+    }
+
+    #[tokio::test]
+    async fn pipeline_rejects_oversized_cursors() {
+        // Each page returns a distinct cursor well past the size budget, so
+        // only the size check — not the advance check — can stop the stream.
+        let body = r#"
+          function search(event) {
+            const page = event.cursor?.page ?? 0;
+            return { type: "complete", result: [],
+              next_cursor: { page: page + 1, pad: "x".repeat(5000) } };
+          }
+          const empty = () => ({ type: "complete", result: [] });
+          const bookInfo = () => ({ type: "complete", result: { id: "1", title: "One", author: "Test" } });
+          export default { search, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(6, body))
+            .await
+            .unwrap();
+
+        let collected = feed.search("x").collect::<Vec<_>>().await;
+        assert_eq!(collected.len(), 1);
+        let error = collected[0]
+            .as_ref()
+            .expect_err("an oversized cursor must be refused before any page is consumed");
+        assert!(
+            error
+                .to_string()
+                .contains("pipeline cursor does not advance")
+        );
+    }
+
+    #[tokio::test]
+    async fn pipeline_cuts_off_cursor_cycles_at_the_page_budget() {
+        let body = r#"
+          function search(event) {
+            const page = event.cursor?.page ?? 0;
+            return { type: "complete", result: [], next_cursor: { page: (page + 1) % 2 } };
+          }
+          const empty = () => ({ type: "complete", result: [] });
+          const bookInfo = () => ({ type: "complete", result: { id: "1", title: "One", author: "Test" } });
+          export default { search, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(6, body))
+            .await
+            .unwrap();
+
+        let collected = feed.search("x").collect::<Vec<_>>().await;
+        assert_eq!(collected.len(), 1);
+        let error = collected[0]
+            .as_ref()
+            .expect_err("a cursor cycle must hit the page budget instead of looping");
+        assert!(error.to_string().contains("pipeline page limit exceeded"));
+    }
+
+    #[tokio::test]
+    async fn comments_page_rejects_a_frozen_cursor() {
+        use crate::feed::comments::CommentsQuery;
+        let script = r#"
+          const empty = () => ({ type: "complete", result: [] });
+          export default {
+            search: empty, bookInfo: empty, chapters: empty, paragraphs: empty,
+            comments: { paragraph: null, chapter() {
+              return JSON.parse(JSON.stringify({ type: "complete",
+                result: { items: [{ id: "c1", author: { name: "Reader" }, text: "Comment" }], total_count: null },
+                next_cursor: { page: 2 } }));
+            } }
+          };
+        "#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(6, script))
+            .await
+            .unwrap();
+        let query = CommentsQuery {
+            book_id: "b".into(),
+            chapter_id: "c".into(),
+            paragraph_id: None,
+            parent_id: None,
+        };
+        let error = feed
+            .comments_page(&query, serde_json::json!({ "page": 2 }))
+            .await
+            .expect_err("a cursor equal to the page's input must be rejected");
+        assert!(error.to_string().contains("does not advance"));
+    }
+
+    #[tokio::test]
     async fn keeps_returned_feed_object_between_calls() {
         let body = r#"
           let calls = 0;

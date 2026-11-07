@@ -20,6 +20,10 @@ pub type FeedStream<'a, T> = Pin<Box<dyn Stream<Item = Result<T>> + Send + 'a>>;
 ///
 /// On a transient error the stream retries the failing page up to the
 /// implementation-defined maximum before yielding the error and terminating.
+/// Pagination is bounded the same way: a page whose cursor does not advance
+/// (or exceeds the cursor size budget) fails the stream, and so does
+/// passing the implementation-defined page budget, so a runaway handler
+/// cannot loop indefinitely.
 pub trait Feed: Send + Sync {
     /// Search for books matching the given keyword.
     ///

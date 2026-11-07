@@ -37,6 +37,16 @@ const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 /// comment-counts request — with headroom; anything longer is a runaway
 /// reducer loop the host must cut off.
 const MAX_INTERNAL_STEPS: usize = 16;
+/// Pages one automatically pipelined operation may fetch before the host
+/// cuts it off. A handler can cycle cursors (A→B→A) so every page passes
+/// the per-page advance check while the stream never completes; this
+/// budget is the backstop. Sized far above the deepest legitimate
+/// pagination — a ten-thousand-chapter list at a hundred items per page
+/// needs a hundred.
+const MAX_PIPELINE_PAGES: usize = 1_000;
+/// Encoded JSON bytes a pagination cursor may occupy, shared by the
+/// explicit comments API and the automatic pipeline.
+const MAX_CURSOR_BYTES: usize = 4 * 1024;
 const MAX_USER_AGENT_BYTES: usize = 512;
 const MAX_RETRIES: u32 = 3;
 const BASE_DELAY_MS: u64 = 200;
@@ -300,7 +310,7 @@ impl JsFeed {
         {
             return Err(Error::invalid_feed("invalid comment target"));
         }
-        if serde_json::to_vec(&cursor).map_or(true, |v| v.len() > 4096) {
+        if serde_json::to_vec(&cursor).map_or(true, |v| v.len() > MAX_CURSOR_BYTES) {
             return Err(Error::invalid_feed("comment cursor exceeds 4096 bytes"));
         }
         let operation = if query.paragraph_id.is_some() {
@@ -346,7 +356,7 @@ impl JsFeed {
         }
         let next_cursor = complete.next_cursor.map(JsData::into_json);
         if let Some(next) = &next_cursor
-            && (*next == cursor || serde_json::to_vec(next).map_or(true, |v| v.len() > 4096))
+            && !cursor_advances(&cursor, next)
         {
             return Err(Error::invalid_feed(
                 "comment cursor does not advance or exceeds limit",
@@ -725,10 +735,34 @@ impl JsFeed {
     {
         Box::pin(stream! {
             let mut cursor = JsData::Null;
+            let mut cursor_json = Value::Null;
+            let mut pages = 0usize;
             loop {
+                if pages >= MAX_PIPELINE_PAGES {
+                    yield Err(Error::invalid_feed("pipeline page limit exceeded"));
+                    break;
+                }
                 match self.run_page(&operation, &cursor).await {
                     Ok(page) => {
-                        let next = page.next_cursor;
+                        pages += 1;
+                        // Validate the page's cursor before yielding its
+                        // items, mirroring `comments_page`'s page-level
+                        // rejection; the original `JsData` still threads
+                        // through unchanged.
+                        let next = match page.next_cursor {
+                            Some(value) => {
+                                let next_json = value.clone().into_json();
+                                if !cursor_advances(&cursor_json, &next_json) {
+                                    yield Err(Error::invalid_feed(
+                                        "pipeline cursor does not advance or exceeds limit",
+                                    ));
+                                    break;
+                                }
+                                cursor_json = next_json;
+                                Some(value)
+                            }
+                            None => None,
+                        };
                         for item in page.items {
                             yield Ok(item);
                         }
@@ -865,6 +899,15 @@ fn spend_step(steps_left: &mut usize) -> Result<()> {
         .checked_sub(1)
         .ok_or_else(|| Error::javascript("feed operation exceeded the internal step limit"))?;
     Ok(())
+}
+
+/// A page's next cursor must advance pagination: it differs from the
+/// cursor that produced the page and stays within [`MAX_CURSOR_BYTES`].
+/// The explicit comments API and the automatic pipeline share the rule so
+/// both reject the same runaway handlers.
+fn cursor_advances(prev: &Value, next: &Value) -> bool {
+    *next != *prev
+        && serde_json::to_vec(next).is_ok_and(|encoded| encoded.len() <= MAX_CURSOR_BYTES)
 }
 
 impl Feed for JsFeed {

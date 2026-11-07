@@ -300,7 +300,7 @@ type CompleteStep = {
 | --- | :---: | --- |
 | `type` | Yes | Must be `"complete"`. |
 | `result` | Yes | Search, chapters and paragraphs return an array; `bookInfo` returns a book object; `login.status` returns a boolean; comments return a [`CommentResult`](#comment-result). Missing or `undefined` is an error. An empty page must explicitly return an empty array. |
-| `next_cursor` | No | JSON token for another page. `null`/`undefined` ends pagination. It becomes the next page's `event.cursor`. Bytes, functions and other non-JSON values are rejected. Single-value operations do not paginate. |
+| `next_cursor` | No | JSON token for another page. `null`/`undefined` ends pagination. It becomes the next page's `event.cursor`. Bytes, functions and other non-JSON values are rejected. The token is limited to 4,096 encoded bytes and must differ from the page's `event.cursor`: the host fails a page that repeats it, and automatically followed pagination stops at 1,000 pages. Single-value operations do not paginate. |
 
 Results and cursors must be JSON-compatible. Results are capped at 16 MiB;
 `Uint8Array`, `BigInt`, cycles and unsupported host objects are rejected.
