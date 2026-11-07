@@ -68,12 +68,11 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                     },
                   ),
                   const SizedBox(height: LanghuanTheme.spaceMd),
-                  Text(l10n.readerFontFileLabel),
-                  const SizedBox(height: LanghuanTheme.spaceSm),
-                  Text(
-                    settings.customFontDisplayName ??
+                  SettingValueRow(
+                    label: l10n.readerFontFileLabel,
+                    value:
+                        settings.customFontDisplayName ??
                         l10n.readerFontSystemDefault,
-                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
                   Row(

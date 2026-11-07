@@ -458,7 +458,7 @@ void main() {
     );
 
     testWidgets(
-      'typography sliders place the label at the left end and the value at the right end',
+      'interface sheet rows place the label at the left end and the value at the right end',
       (tester) async {
         SharedPreferences.setMockInitialValues({});
         final container = ProviderContainer();
@@ -502,6 +502,19 @@ void main() {
         expect(find.text('1.00x'), findsOneWidget);
         expect(
           tester.getTopRight(find.text('1.00x')).dx,
+          closeTo(tester.getTopRight(slider).dx, 1),
+        );
+
+        // The font-file row above the sliders carries the same form: the
+        // label at the left end, the active font at the right end.
+        expect(find.text('Font File'), findsOneWidget);
+        expect(
+          tester.getTopLeft(find.text('Font File')).dx,
+          closeTo(tester.getTopLeft(slider).dx, 1),
+        );
+        expect(find.text('System Default'), findsOneWidget);
+        expect(
+          tester.getTopRight(find.text('System Default')).dx,
           closeTo(tester.getTopRight(slider).dx, 1),
         );
       },

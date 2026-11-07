@@ -374,7 +374,7 @@ Wise mobile scale adapted:
 - Grouped settings in cards with `background.neutral`
 - Section labels: Label style, `content.tertiary`, uppercase
 - Setting rows: Label at the left end, current value at the right end (`content.secondary`); no dividers, use 1px `background.overlay` separator inside card
-- The two-end label/value form also carries reader sheet sliders and listening panel rows
+- The two-end label/value form also carries reader sheet rows and listening panel rows
 - Navigation rows: Chevron trailing icon
 
 ### 4.6 Book detail page
