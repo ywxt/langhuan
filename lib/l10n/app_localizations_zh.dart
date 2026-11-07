@@ -232,24 +232,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerFontReset => '重設';
 
   @override
-  String readerFontScale(String scale) {
-    return '字體 ${scale}x';
-  }
+  String get readerFontScale => '字體';
 
   @override
-  String readerLetterSpacing(String value) {
-    return '字距 $value';
-  }
+  String get readerLetterSpacing => '字距';
 
   @override
-  String readerParagraphSpacing(String value) {
-    return '段落間距 $value';
-  }
+  String get readerParagraphSpacing => '段落間距';
 
   @override
-  String readerLineHeight(String value) {
-    return '行高 $value';
-  }
+  String get readerLineHeight => '行高';
 
   @override
   String get readerLoadError => '加載章節失敗';

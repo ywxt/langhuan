@@ -8,6 +8,7 @@ import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/utils/snackbars.dart';
 import '../../../shared/widgets/chapter_scrollbar.dart';
+import '../../../shared/widgets/setting_value_row.dart';
 import '../../feeds/feed_service.dart';
 import '../../transformers/transformer_settings_page.dart';
 import '../bookmark_provider.dart';
@@ -123,8 +124,8 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                   // — the reader reflows in place as a preview — and commit
                   // the exact value when the drag ends.
                   _TypoSlider(
-                    labelBuilder: (v) =>
-                        l10n.readerFontScale(v.toStringAsFixed(2)),
+                    label: l10n.readerFontScale,
+                    valueBuilder: (v) => '${v.toStringAsFixed(2)}x',
                     value: settings.fontScale,
                     min: ReaderSettingsState.minFontScale,
                     max: ReaderSettingsState.maxFontScale,
@@ -133,8 +134,8 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
                   _TypoSlider(
-                    labelBuilder: (v) =>
-                        l10n.readerLetterSpacing(v.toStringAsFixed(2)),
+                    label: l10n.readerLetterSpacing,
+                    valueBuilder: (v) => v.toStringAsFixed(2),
                     value: settings.letterSpacing,
                     min: 0,
                     max: 4,
@@ -143,8 +144,8 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
                   _TypoSlider(
-                    labelBuilder: (v) =>
-                        l10n.readerParagraphSpacing(v.toStringAsFixed(0)),
+                    label: l10n.readerParagraphSpacing,
+                    valueBuilder: (v) => v.toStringAsFixed(0),
                     value: settings.paragraphSpacing,
                     min: 4,
                     max: 32,
@@ -153,8 +154,8 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
                   ),
                   const SizedBox(height: LanghuanTheme.spaceSm),
                   _TypoSlider(
-                    labelBuilder: (v) =>
-                        l10n.readerLineHeight(v.toStringAsFixed(2)),
+                    label: l10n.readerLineHeight,
+                    valueBuilder: (v) => v.toStringAsFixed(2),
                     value: settings.lineHeight,
                     min: 1.2,
                     max: 2.4,
@@ -182,7 +183,8 @@ Future<void> showReaderInterfaceSheet(BuildContext context) async {
 /// pending timer and commits the exact final value.
 class _TypoSlider extends StatefulWidget {
   const _TypoSlider({
-    required this.labelBuilder,
+    required this.label,
+    required this.valueBuilder,
     required this.value,
     required this.min,
     required this.max,
@@ -190,7 +192,8 @@ class _TypoSlider extends StatefulWidget {
     required this.onCommit,
   });
 
-  final String Function(double value) labelBuilder;
+  final String label;
+  final String Function(double value) valueBuilder;
   final double value;
   final double min;
   final double max;
@@ -258,7 +261,10 @@ class _TypoSliderState extends State<_TypoSlider> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(widget.labelBuilder(current)),
+        SettingValueRow(
+          label: widget.label,
+          value: widget.valueBuilder(current),
+        ),
         Slider(
           value: current.clamp(widget.min, widget.max),
           min: widget.min,

@@ -196,6 +196,22 @@ void main() {
       'Off',
     );
 
+    // The preset chips spread across the full row width like the
+    // transport row: the first chip starts at the label's left edge and
+    // the last ends at the value's right edge.
+    final labelLeft = tester.getTopLeft(find.text('Speech rate')).dx;
+    final valueRight = tester
+        .getTopRight(find.byKey(const ValueKey('listening-rate-value')))
+        .dx;
+    expect(
+      tester.getTopLeft(find.widgetWithText(ChoiceChip, '0.75×')).dx,
+      closeTo(labelLeft, 1),
+    );
+    expect(
+      tester.getTopRight(find.widgetWithText(ChoiceChip, '2×')).dx,
+      closeTo(valueRight, 1),
+    );
+
     // Committing a preset moves the far-end summary with it.
     await tester.tap(find.text('15m'));
     await tester.pump();

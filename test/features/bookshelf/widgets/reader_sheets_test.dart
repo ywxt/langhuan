@@ -456,5 +456,55 @@ void main() {
         expect(container.read(readerSettingsProvider).fontScale, latestCommit);
       },
     );
+
+    testWidgets(
+      'typography sliders place the label at the left end and the value at the right end',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        container.read(readerSettingsProvider);
+
+        // Tall surface so the interface column (mode row, font row, four
+        // sliders) is reachable without scrolling the sheet.
+        tester.view.physicalSize = const Size(800, 1800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: localized(
+              Scaffold(
+                body: sheetLauncher(
+                  (ref, context) => showReaderInterfaceSheet(context),
+                ),
+              ),
+            ),
+          ),
+        );
+        // Let the notifier's async restore settle before reading geometry.
+        await tester.pump(const Duration(milliseconds: 100));
+
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        // The font slider's header row is the app-wide setting-row layout
+        // (ui-design-spec §4.5): label at the left end, current value at
+        // the right end, both edges shared with the full-width track.
+        final slider = find.byType(Slider).first;
+        expect(find.text('Font'), findsOneWidget);
+        expect(
+          tester.getTopLeft(find.text('Font')).dx,
+          closeTo(tester.getTopLeft(slider).dx, 1),
+        );
+        expect(find.text('1.00x'), findsOneWidget);
+        expect(
+          tester.getTopRight(find.text('1.00x')).dx,
+          closeTo(tester.getTopRight(slider).dx, 1),
+        );
+      },
+    );
   });
 }

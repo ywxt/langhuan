@@ -234,24 +234,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readerFontReset => 'Reset';
 
   @override
-  String readerFontScale(String scale) {
-    return 'Font ${scale}x';
-  }
+  String get readerFontScale => 'Font';
 
   @override
-  String readerLetterSpacing(String value) {
-    return 'Letter Spacing $value';
-  }
+  String get readerLetterSpacing => 'Letter Spacing';
 
   @override
-  String readerParagraphSpacing(String value) {
-    return 'Paragraph Spacing $value';
-  }
+  String get readerParagraphSpacing => 'Paragraph Spacing';
 
   @override
-  String readerLineHeight(String value) {
-    return 'Line Height $value';
-  }
+  String get readerLineHeight => 'Line Height';
 
   @override
   String get readerLoadError => 'Failed to load chapter';

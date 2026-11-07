@@ -503,26 +503,26 @@ abstract class AppLocalizations {
   /// Font scale slider label
   ///
   /// In en, this message translates to:
-  /// **'Font {scale}x'**
-  String readerFontScale(String scale);
+  /// **'Font'**
+  String get readerFontScale;
 
   /// Letter spacing slider label
   ///
   /// In en, this message translates to:
-  /// **'Letter Spacing {value}'**
-  String readerLetterSpacing(String value);
+  /// **'Letter Spacing'**
+  String get readerLetterSpacing;
 
   /// Paragraph spacing slider label
   ///
   /// In en, this message translates to:
-  /// **'Paragraph Spacing {value}'**
-  String readerParagraphSpacing(String value);
+  /// **'Paragraph Spacing'**
+  String get readerParagraphSpacing;
 
   /// Line height slider label
   ///
   /// In en, this message translates to:
-  /// **'Line Height {value}'**
-  String readerLineHeight(String value);
+  /// **'Line Height'**
+  String get readerLineHeight;
 
   /// Reader page content load error title
   ///

@@ -216,17 +216,17 @@
   "readerFontReset": "Reset",
   "@readerFontReset": { "description": "Button to clear the custom font selection" },
 
-  "readerFontScale": "Font {scale}x",
-  "@readerFontScale": { "description": "Font scale slider label", "placeholders": { "scale": { "type": "String" } } },
+  "readerFontScale": "Font",
+  "@readerFontScale": { "description": "Font scale slider label" },
 
-  "readerLetterSpacing": "Letter Spacing {value}",
-  "@readerLetterSpacing": { "description": "Letter spacing slider label", "placeholders": { "value": { "type": "String" } } },
+  "readerLetterSpacing": "Letter Spacing",
+  "@readerLetterSpacing": { "description": "Letter spacing slider label" },
 
-  "readerParagraphSpacing": "Paragraph Spacing {value}",
-  "@readerParagraphSpacing": { "description": "Paragraph spacing slider label", "placeholders": { "value": { "type": "String" } } },
+  "readerParagraphSpacing": "Paragraph Spacing",
+  "@readerParagraphSpacing": { "description": "Paragraph spacing slider label" },
 
-  "readerLineHeight": "Line Height {value}",
-  "@readerLineHeight": { "description": "Line height slider label", "placeholders": { "value": { "type": "String" } } },
+  "readerLineHeight": "Line Height",
+  "@readerLineHeight": { "description": "Line height slider label" },
 
   "readerLoadError": "Failed to load chapter",
   "@readerLoadError": { "description": "Reader page content load error title" },

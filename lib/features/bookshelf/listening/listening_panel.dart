@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/loading.dart';
+import '../../../shared/widgets/setting_value_row.dart';
 import 'listening_controller.dart';
 import 'listening_voice_picker.dart';
 
@@ -23,34 +24,6 @@ String _sleepSummary(ListeningController controller, AppLocalizations l10n) {
   final duration = controller.sleepDuration;
   if (duration != null) return '${duration.inMinutes}m';
   return l10n.listeningNoTimer;
-}
-
-/// Label at one end, current value at the other — the app-wide setting-row
-/// layout (ui-design-spec §4.5), matching the settings page's rows.
-class _SettingValueRow extends StatelessWidget {
-  const _SettingValueRow({required this.label, required this.value, this.valueKey});
-
-  final String label;
-  final String value;
-  final Key? valueKey;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Text(label),
-        const Spacer(),
-        Text(
-          value,
-          key: valueKey,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 Future<void> showListeningPanel(
@@ -143,12 +116,13 @@ Future<void> showListeningPanel(
                   ),
                 ),
                 const SizedBox(height: LanghuanTheme.spaceMdSm),
-                _SettingValueRow(
+                SettingValueRow(
                   label: l10n.listeningRate,
                   value: _rateLabel(controller.rate),
                   valueKey: const ValueKey('listening-rate-value'),
                 ),
                 Wrap(
+                  alignment: WrapAlignment.spaceBetween,
                   spacing: LanghuanTheme.spaceSm,
                   children: [
                     for (final preset in _ratePresets)
@@ -168,12 +142,13 @@ Future<void> showListeningPanel(
                   onChangeEnd: (value) => controller.configure(rate: value),
                 ),
                 const SizedBox(height: LanghuanTheme.spaceMdSm),
-                _SettingValueRow(
+                SettingValueRow(
                   label: l10n.listeningSleep,
                   value: _sleepSummary(controller, l10n),
                   valueKey: const ValueKey('listening-sleep-value'),
                 ),
                 Wrap(
+                  alignment: WrapAlignment.spaceBetween,
                   spacing: LanghuanTheme.spaceSm,
                   children: [
                     ChoiceChip(
