@@ -168,6 +168,49 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('setting rows carry the current value at the far end', (
+    tester,
+  ) async {
+    _mockPreferences();
+    final controller = ListeningController(_Service(), _Engine());
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(_app(home: _panelOpener(controller)));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    // Label and value are separate widgets of one row — the app-wide
+    // setting-row layout (ui-design-spec §4.5) — not a single glued
+    // "Label · value" string.
+    expect(find.text('Speech rate'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('listening-rate-value')))
+          .data,
+      '1×',
+    );
+    expect(find.text('Sleep timer'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('listening-sleep-value')))
+          .data,
+      'Off',
+    );
+
+    // Committing a preset moves the far-end summary with it.
+    await tester.tap(find.text('15m'));
+    await tester.pump();
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('listening-sleep-value')))
+          .data,
+      '15m',
+    );
+    // Cancel the armed sleep timer before teardown.
+    await controller.stop();
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('custom sleep timer dialog commits minutes', (tester) async {
     _mockPreferences();
     final controller = ListeningController(_Service(), _Engine());

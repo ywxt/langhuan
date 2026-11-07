@@ -17,6 +17,42 @@ String _rateLabel(double value) =>
 String _durationLabel(Duration remaining) =>
     '${remaining.inMinutes}:${remaining.inSeconds.remainder(60).toString().padLeft(2, '0')}';
 
+/// Current sleep-timer selection as the row's far-end summary.
+String _sleepSummary(ListeningController controller, AppLocalizations l10n) {
+  if (controller.sleepAtChapterEnd) return l10n.listeningChapterEnd;
+  final duration = controller.sleepDuration;
+  if (duration != null) return '${duration.inMinutes}m';
+  return l10n.listeningNoTimer;
+}
+
+/// Label at one end, current value at the other — the app-wide setting-row
+/// layout (ui-design-spec §4.5), matching the settings page's rows.
+class _SettingValueRow extends StatelessWidget {
+  const _SettingValueRow({required this.label, required this.value, this.valueKey});
+
+  final String label;
+  final String value;
+  final Key? valueKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Text(label),
+        const Spacer(),
+        Text(
+          value,
+          key: valueKey,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 Future<void> showListeningPanel(
   BuildContext context,
   ListeningController controller, {
@@ -107,7 +143,11 @@ Future<void> showListeningPanel(
                   ),
                 ),
                 const SizedBox(height: LanghuanTheme.spaceMdSm),
-                Text('${l10n.listeningRate} · ${_rateLabel(controller.rate)}'),
+                _SettingValueRow(
+                  label: l10n.listeningRate,
+                  value: _rateLabel(controller.rate),
+                  valueKey: const ValueKey('listening-rate-value'),
+                ),
                 Wrap(
                   spacing: LanghuanTheme.spaceSm,
                   children: [
@@ -128,7 +168,11 @@ Future<void> showListeningPanel(
                   onChangeEnd: (value) => controller.configure(rate: value),
                 ),
                 const SizedBox(height: LanghuanTheme.spaceMdSm),
-                Text(l10n.listeningSleep),
+                _SettingValueRow(
+                  label: l10n.listeningSleep,
+                  value: _sleepSummary(controller, l10n),
+                  valueKey: const ValueKey('listening-sleep-value'),
+                ),
                 Wrap(
                   spacing: LanghuanTheme.spaceSm,
                   children: [
