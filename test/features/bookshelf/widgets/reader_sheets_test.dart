@@ -387,6 +387,45 @@ void main() {
     });
   });
 
+  group('showReaderSettingsSheet transformer entry', () {
+    testWidgets('uses the same icon as the settings page entry', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(readerSettingsProvider);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: localized(
+            Scaffold(
+              body: sheetLauncher(
+                (ref, context) => showReaderSettingsSheet(context),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // The reader settings sheet's transformer entry carries the same
+      // icon as the settings page's Transformers row
+      // (Icons.auto_fix_high_outlined), not the translate glyph.
+      final button = find.widgetWithText(
+        OutlinedButton,
+        'Book transformers',
+      );
+      expect(button, findsOneWidget);
+      final icon = tester.widget<Icon>(
+        find.descendant(of: button, matching: find.byType(Icon)),
+      );
+      expect(icon.icon, Icons.auto_fix_high_outlined);
+    });
+  });
+
   group('showReaderInterfaceSheet typography sliders', () {
     testWidgets(
       'the font slider commits throttled live values and the exact final one',

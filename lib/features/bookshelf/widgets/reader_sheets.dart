@@ -364,7 +364,7 @@ Future<void> showReaderSettingsSheet(
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  icon: const Icon(Icons.translate),
+                  icon: const Icon(Icons.auto_fix_high_outlined),
                   label: Text(l10n.transformBookSettings),
                   onPressed: () async {
                     await openTransformerSettings(
