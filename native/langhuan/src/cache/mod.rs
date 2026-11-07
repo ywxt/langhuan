@@ -476,13 +476,13 @@ impl CoverDownloader {
             // `pending` — the download retries once the feed's allowlist
             // covers the hop.
             Err(crate::error::Error::Script(crate::error::ScriptError::DomainNotAllowed {
-                url: blocked,
+                host: blocked,
                 ..
             })) => {
                 tracing::warn!(
                     feed_id = %feed_id,
                     book_id = %book_id,
-                    url = %blocked,
+                    host = %blocked,
                     "cover redirect blocked by access_domains"
                 );
                 return;

@@ -621,6 +621,15 @@ pub(crate) fn redact_url_secrets(url: &str) -> String {
 // Domain allowlist helper
 // ---------------------------------------------------------------------------
 
+/// The host the allowlist matches against: parsed, ASCII-lowercased, with
+/// the trailing root-label dot removed. `None` when `url` is not absolute.
+pub(crate) fn url_host(url: &str) -> Option<String> {
+    reqwest::Url::parse(url)
+        .ok()?
+        .host_str()
+        .map(|host| host.trim_end_matches('.').to_ascii_lowercase())
+}
+
 /// Check whether the host of `url` is permitted by `access_domains`.
 ///
 /// Entries are exact hostnames or leftmost-label wildcards such as
@@ -629,13 +638,8 @@ pub(crate) fn redact_url_secrets(url: &str) -> String {
 /// Returns `true` if the host is allowed, `false` if the URL cannot be parsed
 /// or the host is not in the list.
 pub(crate) fn domain_allowed(url: &str, access_domains: &HashSet<String>) -> bool {
-    let parsed = match reqwest::Url::parse(url) {
-        Ok(u) => u,
-        Err(_) => return false,
-    };
-    let host = match parsed.host_str() {
-        Some(host) => host.trim_end_matches('.').to_ascii_lowercase(),
-        None => return false,
+    let Some(host) = url_host(url) else {
+        return false;
     };
     access_domains.iter().any(|entry| {
         let entry = entry.to_ascii_lowercase();
@@ -661,7 +665,7 @@ mod tests {
 
     use super::{
         FeedClient, HttpBody, HttpRequest, collect_response_headers, domain_allowed,
-        redact_url_secrets,
+        redact_url_secrets, url_host,
     };
 
     #[test]
@@ -704,6 +708,15 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn url_host_normalizes_what_the_allowlist_matches() {
+        assert_eq!(
+            url_host("https://API.Example.COM./path"),
+            Some("api.example.com".to_owned())
+        );
+        assert_eq!(url_host("/relative"), None);
+    }
+
     #[tokio::test]
     async fn execute_rejects_every_request_when_allowlist_is_empty() {
         let request = HttpRequest::get("https://example.com/books".to_owned());
@@ -715,14 +728,29 @@ mod tests {
             .expect_err("an empty allowlist must deny network access");
 
         let crate::error::Error::Script(crate::error::ScriptError::DomainNotAllowed {
-            url,
+            host,
             access_domains,
         }) = error
         else {
             panic!("expected a domain-not-allowed error, got: {error}");
         };
-        assert_eq!(url, request.url);
+        // The error reports the host the allowlist matched against, not the URL.
+        assert_eq!(host, "example.com");
         assert!(access_domains.is_empty());
+
+        // A URL without a host keeps the raw value — there is nothing to parse.
+        let relative = HttpRequest::get("/books".to_owned());
+        let error = client
+            .execute("test", &relative, Duration::from_secs(1))
+            .await
+            .expect_err("an empty allowlist must deny network access");
+        let crate::error::Error::Script(crate::error::ScriptError::DomainNotAllowed {
+            host, ..
+        }) = error
+        else {
+            panic!("expected a domain-not-allowed error, got: {error}");
+        };
+        assert_eq!(host, "/books");
     }
 
     #[test]
@@ -817,12 +845,12 @@ mod tests {
             .expect_err("a redirect hop outside the allowlist must be blocked");
 
         let crate::error::Error::Script(crate::error::ScriptError::DomainNotAllowed {
-            url, ..
+            host, ..
         }) = error
         else {
             panic!("expected a domain-not-allowed error, got: {error}");
         };
-        assert_eq!(url, "https://evil.example/land");
+        assert_eq!(host, "evil.example");
     }
 
     #[tokio::test]

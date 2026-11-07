@@ -45,12 +45,16 @@ pub(crate) fn localize_error(e: &langhuan::error::Error) -> String {
                 t!("error.script_parse", line = line, message = message).to_string()
             }
             ScriptError::DomainNotAllowed {
-                url,
+                host,
                 access_domains,
             } => t!(
                 "error.domain_not_allowed",
-                url = url,
-                allowed = join(access_domains.iter().map(|s| s.as_str()), ", ")
+                host = host,
+                allowed = if access_domains.is_empty() {
+                    t!("error.none").to_string()
+                } else {
+                    join(access_domains.iter().map(|s| s.as_str()), ", ")
+                }
             )
             .to_string(),
             ScriptError::SchemaTooNew {
@@ -127,5 +131,34 @@ pub(crate) fn size_label(bytes: usize) -> String {
         format!("{} MB", bytes / MB)
     } else {
         format!("{} KB", bytes / KB)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::localize_error;
+
+    #[test]
+    fn domain_errors_report_the_host_and_the_allowlist() {
+        let error = langhuan::error::Error::domain_not_allowed(
+            "https://Example.com/books",
+            HashSet::from(["api.example.com".to_owned()]),
+        );
+        assert_eq!(
+            localize_error(&error),
+            "Domain not allowed: example.com (allowed: api.example.com)"
+        );
+    }
+
+    #[test]
+    fn domain_errors_without_an_allowlist_say_none() {
+        let error =
+            langhuan::error::Error::domain_not_allowed("https://example.com/books", HashSet::new());
+        assert_eq!(
+            localize_error(&error),
+            "Domain not allowed: example.com (allowed: none)"
+        );
     }
 }

@@ -69,11 +69,13 @@ pub enum ScriptError {
     #[error("script parse error at line {line}: {message}")]
     Parse { line: usize, message: String },
 
-    /// An HTTP request was blocked because the target domain is not in the
-    /// feed's `access_domains` list.
-    #[error("domain not allowed: {url} (access_domains: {access_domains:?})")]
+    /// An HTTP request or WebView verification was blocked because the
+    /// target domain is not in the feed's `access_domains` list. `host`
+    /// carries what the allowlist matched against: the parsed host, or the
+    /// raw value when it is not an absolute URL.
+    #[error("domain not allowed: {host} (access_domains: {access_domains:?})")]
     DomainNotAllowed {
-        url: String,
+        host: String,
         access_domains: HashSet<String>,
     },
 
@@ -242,8 +244,9 @@ impl Error {
 
     #[inline]
     pub fn domain_not_allowed(url: impl Into<String>, access_domains: HashSet<String>) -> Self {
+        let url = url.into();
         ScriptError::DomainNotAllowed {
-            url: url.into(),
+            host: crate::http::url_host(&url).unwrap_or(url),
             access_domains,
         }
         .into()

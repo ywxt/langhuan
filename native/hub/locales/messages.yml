@@ -24,8 +24,11 @@ error.feed_script_missing:
   en: "Feed '%{id}': no script stored for its active version"
   zh: "書源「%{id}」：未存儲當前版本的腳本"
 error.domain_not_allowed:
-  en: "Domain not allowed: %{url} (allowed: %{allowed})"
-  zh: "域名未授權：%{url}（允許：%{allowed}）"
+  en: "Domain not allowed: %{host} (allowed: %{allowed})"
+  zh: "域名未授權：%{host}（允許：%{allowed}）"
+error.none:
+  en: "none"
+  zh: "無"
 error.feed_schema_too_new:
   en: "Feed '%{feed_id}' requires schema version %{file_version}, but only version %{supported_version} is supported. Please update the app."
   zh: "書源「%{feed_id}」需要架構版本 %{file_version}，但僅支持版本 %{supported_version}，請更新應用。"
