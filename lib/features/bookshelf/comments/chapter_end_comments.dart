@@ -53,7 +53,11 @@ class _ChapterEndCommentsState extends State<ChapterEndComments> {
     // the request bookkeeping must not compete with that frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _loadStarted) return;
-      _loadStarted = true;
+      // A remount (sliver recycle, page rebuild) lands here on an
+      // already-settled controller — loadMore then returns without
+      // notifying, so the flag flip must carry its own rebuild or the
+      // section keeps rendering the skeleton.
+      setState(() => _loadStarted = true);
       unawaited(widget.controller.loadMore());
     });
   }

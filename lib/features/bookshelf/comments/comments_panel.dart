@@ -97,7 +97,11 @@ class _CommentsPanelState extends State<CommentsPanel> {
     if (status != AnimationStatus.completed) return;
     _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
     _routeAnimation = null;
-    _startInitialLoad();
+    // The panel can open on an already-settled controller (shared with the
+    // inline section) — loadMore then returns without notifying, so the
+    // flag flip must carry its own rebuild or the skeleton outlives the
+    // entrance animation.
+    setState(_startInitialLoad);
   }
 
   void _startInitialLoad() {
