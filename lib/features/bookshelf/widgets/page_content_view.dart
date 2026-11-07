@@ -170,6 +170,9 @@ class PageContentView extends StatelessWidget {
     if (source is ParagraphContent_Text) {
       return BadgedText(
         text: item.isPartial ? item.visibleText : source.content,
+        firstLineIndent: (item.startOffset ?? 0) == 0
+            ? source.layout.firstLineIndent.toDouble()
+            : 0,
         style: typo.body.copyWith(letterSpacing: item.letterSpacing),
         commentCount: badgeCount,
         badgeGap: item.badgeGap,

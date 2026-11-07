@@ -20,6 +20,7 @@ import 'package:langhuan/shared/app_service.dart';
 import 'package:langhuan/rust_init.dart';
 import 'package:langhuan/src/rust/frb_generated.dart';
 import 'package:langhuan/src/rust/api/types.dart';
+import 'package:langhuan/src/rust/api/transformers.dart' as transformers;
 
 import 'fixture_feed.dart';
 
@@ -32,13 +33,17 @@ class _Settings extends ReaderSettingsNotifier {
 
 class _Speech implements SpeechEngine {
   Completer<void>? pending;
+  final spoken = <String>[];
   @override
   Future<List<LocalVoice>> voices() async => const [
     LocalVoice('fixture', 'Fixture', 'en-US'),
   ];
   @override
-  Future<void> speak(String text, LocalVoice voice, double rate) =>
-      (pending = Completer<void>()).future;
+  Future<void> speak(String text, LocalVoice voice, double rate) {
+    spoken.add(text);
+    return (pending = Completer<void>()).future;
+  }
+
   @override
   Future<void> stop() async => finish();
   void finish() {
@@ -104,12 +109,27 @@ void main() {
     final service = FeedService.instance;
     final preview = await service.previewFromFile(file.path);
     await service.installFeed(preview.requestId);
+    await transformers.initializeTransformerConfiguration(
+      configuration: const TransformerConfiguration(
+        application: [
+          TransformerConfigurationEntry(
+            name: '',
+            enabled: true,
+            rule: TransformerRule.paragraphIndent(spaces: 2),
+          ),
+        ],
+        books: [],
+      ),
+    );
     final content = await service.paragraphs(
       feedId: 'listening-reader',
       bookId: '1001',
       chapterId: '1',
     );
-    final first = (content.first as ParagraphContent_Text).id.toStringValue();
+    final firstText = content.first as ParagraphContent_Text;
+    expect(firstText.layout.firstLineIndent, 2);
+    expect(firstText.content.startsWith('A long reading paragraph.'), isTrue);
+    final first = firstText.id.toStringValue();
     final second = (content[1] as ParagraphContent_Text).id.toStringValue();
     final third = (content.last as ParagraphContent_Text).id.toStringValue();
 
@@ -169,6 +189,11 @@ void main() {
             : null;
         await controller.start(feedId: 'listening-reader', bookId: '1001');
         await _until(tester, () => speech.pending != null);
+        expect(
+          speech.spoken.first.startsWith('A long reading paragraph.'),
+          isTrue,
+        );
+        expect(speech.spoken.first.contains('　'), isFalse);
         for (
           var count = 0;
           controller.paragraphId != second && count < 60;

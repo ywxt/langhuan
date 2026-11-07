@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../src/rust/api/types.dart';
 import '../../feeds/feed_service.dart' show ParagraphIdStringExt;
 import 'comment_badge.dart';
+import 'reader_text_indent.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data models
@@ -158,9 +159,17 @@ class PageBreaker {
     TextStyle style,
     TextAlign align,
     double width,
-    Size? badgeSize,
-  ) {
-    final painter = _textPainter(text, style, align, width, badgeSize);
+    Size? badgeSize, [
+    double firstLineIndent = 0,
+  ]) {
+    final painter = _textPainter(
+      text,
+      style,
+      align,
+      width,
+      badgeSize,
+      firstLineIndent,
+    );
     final height = painter.height;
     painter.dispose();
     return height;
@@ -171,29 +180,45 @@ class PageBreaker {
     TextStyle style,
     TextAlign align,
     double width,
-    Size? badgeSize,
-  ) {
+    Size? badgeSize, [
+    double firstLineIndent = 0,
+  ]) {
+    final indentWidth = BadgedText.indentWidth(
+      text: text,
+      style: style,
+      scaler: textScaler,
+      maxWidth: width,
+      em: firstLineIndent,
+      direction: textDirection,
+      locale: locale,
+      badgeSize: badgeSize,
+    );
+    final fontSize = style.fontSize ?? 14;
+    final scale = fontSize == 0 ? 0.0 : textScaler.scale(fontSize) / fontSize;
     final painter = TextPainter(
-      text: badgeSize == null
-          ? TextSpan(text: text, style: style)
-          : BadgedText.inlineSpan(text, style, const SizedBox.shrink()),
+      text: ReaderTextIndent.span(
+        badgeSize == null
+            ? TextSpan(text: text, style: style)
+            : BadgedText.inlineSpan(text, style, const SizedBox.shrink()),
+        indentWidth,
+      ),
       textDirection: textDirection,
       textAlign: align,
       textScaler: textScaler,
       locale: locale,
     );
-    if (badgeSize != null) {
-      final fontSize = style.fontSize ?? 14;
-      final scale = fontSize == 0 ? 0.0 : textScaler.scale(fontSize) / fontSize;
+    if (badgeSize != null || indentWidth > 0) {
       painter.setPlaceholderDimensions([
-        BadgedText.tailDimensions(
-          text,
-          style,
-          badgeSize,
-          textDirection,
-          locale,
-          scale: scale,
-        ),
+        if (indentWidth > 0) ReaderTextIndent.dimensions(indentWidth, scale),
+        if (badgeSize != null)
+          BadgedText.tailDimensions(
+            text,
+            style,
+            badgeSize,
+            textDirection,
+            locale,
+            scale: scale,
+          ),
       ]);
     }
     painter.layout(maxWidth: width);
@@ -208,6 +233,7 @@ class PageBreaker {
     required ParagraphContent source,
     required TextStyle style,
     required TextAlign textAlign,
+    double firstLineIndent = 0,
     Size? badgeSize,
     double? badgeGap,
     bool badgeCompact = false,
@@ -229,7 +255,28 @@ class PageBreaker {
     // paragraph, so a split landing before a line's hung trailing spaces
     // shifted every later line boundary and under-filled the remaining
     // pages; keeping the grid fills pages to their true capacity.
-    final tp = _textPainter(text, style, textAlign, width, badgeSize);
+    final tp = _textPainter(
+      text,
+      style,
+      textAlign,
+      width,
+      badgeSize,
+      firstLineIndent,
+    );
+    final indentPrefix =
+        BadgedText.indentWidth(
+              text: text,
+              style: style,
+              scaler: textScaler,
+              maxWidth: width,
+              em: firstLineIndent,
+              direction: textDirection,
+              locale: locale,
+              badgeSize: badgeSize,
+            ) >
+            0
+        ? 1
+        : 0;
 
     final lineMetrics = tp.computeLineMetrics();
     // Suffix sums of line heights: "does the rest of the paragraph fit?"
@@ -368,9 +415,8 @@ class PageBreaker {
       int splitFor(int lines) {
         final lastLine = lineMetrics[lineIdx + lines - 1];
         final bottom = lastLine.baseline + lastLine.descent;
-        return tp
-            .getPositionForOffset(Offset(width, bottom - 1))
-            .offset
+        return (tp.getPositionForOffset(Offset(width, bottom - 1)).offset -
+                indentPrefix)
             .clamp(charStart + 1, text.length);
       }
 
@@ -410,6 +456,7 @@ class PageBreaker {
             textAlign,
             width,
             null,
+            charStart == 0 ? firstLineIndent : 0,
           );
           if (height <= space) {
             best = middle;
@@ -620,6 +667,9 @@ class PaginationJob {
         align: item is ParagraphContent_Title
             ? TextAlign.center
             : TextAlign.start,
+        firstLineIndent: item is ParagraphContent_Text
+            ? item.layout.firstLineIndent.toDouble()
+            : 0,
       );
       style = badgeLayout.style;
       badgeSize = badgeLayout.badgeSize(badgeSize);
@@ -672,6 +722,9 @@ class PaginationJob {
           _ => throw StateError('Expected text or title'),
         },
         style: style,
+        firstLineIndent: item is ParagraphContent_Text
+            ? item.layout.firstLineIndent.toDouble()
+            : 0,
         badgeGap: badgeLayout?.gap,
         badgeCompact: badgeLayout?.compact ?? false,
         textAlign: item is ParagraphContent_Title

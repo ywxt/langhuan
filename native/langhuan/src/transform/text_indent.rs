@@ -1,14 +1,13 @@
 //! Text paragraph indentation transform.
 //!
-//! Sets a configurable first-line indent on [`Paragraph::Text`] content so rendered
-//! paragraphs start with a first-line indent.
+//! Sets first-line layout metadata without changing paragraph text.
 
 use crate::model::Paragraph;
 
 use super::{ParagraphTransform, TransformOutput};
 
 pub struct TextIndentTransform {
-    indent: String,
+    spaces: u8,
 }
 
 impl TextIndentTransform {
@@ -17,9 +16,7 @@ impl TextIndentTransform {
     }
 
     pub fn with_spaces(spaces: u8) -> Self {
-        Self {
-            indent: "\u{3000}".repeat(usize::from(spaces)),
-        }
+        Self { spaces }
     }
 }
 
@@ -32,23 +29,11 @@ impl Default for TextIndentTransform {
 impl ParagraphTransform for TextIndentTransform {
     fn init(&mut self, _chapter_id: &str) {}
 
-    fn apply(&mut self, paragraph: Paragraph, out: &mut TransformOutput<'_>) {
-        match paragraph {
-            Paragraph::Text {
-                id,
-                mut content,
-                comment_count,
-            } => {
-                let text = content.trim_start_matches([' ', '\t', '\u{3000}']);
-                content = format!("{}{text}", self.indent);
-                out.push(Paragraph::Text {
-                    id,
-                    content,
-                    comment_count,
-                });
-            }
-            other => out.push(other),
+    fn apply(&mut self, mut paragraph: Paragraph, out: &mut TransformOutput<'_>) {
+        if let Paragraph::Text { layout, .. } = &mut paragraph {
+            layout.first_line_indent = self.spaces;
         }
+        out.push(paragraph);
     }
 }
 
@@ -59,7 +44,7 @@ mod tests {
     use crate::transform::{ParagraphTransform, TransformOutput};
 
     #[test]
-    fn indents_text_paragraph() {
+    fn sets_layout_without_modifying_text() {
         let mut transform = TextIndentTransform::new();
         transform.init("chapter-1");
 
@@ -70,6 +55,7 @@ mod tests {
                 id: ParagraphId::generated(1),
                 content: "第一段".to_string(),
                 comment_count: Some(7),
+                layout: Default::default(),
             },
             &mut out,
         );
@@ -79,9 +65,11 @@ mod tests {
             Paragraph::Text {
                 content,
                 comment_count,
+                layout,
                 ..
             } => {
-                assert_eq!(content, "\u{3000}\u{3000}第一段");
+                assert_eq!(content, "第一段");
+                assert_eq!(layout.first_line_indent, 2);
                 assert_eq!(*comment_count, Some(7));
             }
             _ => panic!("expected text paragraph"),

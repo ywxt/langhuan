@@ -707,6 +707,7 @@ mod tests {
                 Ok(Paragraph::Text {
                     id: ParagraphId::generated(i),
                     content: format!("{book_id}/{chapter_id}/{i}"),
+                    layout: Default::default(),
                     comment_count: None,
                 })
             })))
@@ -805,11 +806,13 @@ mod tests {
         }
         assert_eq!(displayed.len(), 1);
         assert!(
-            matches!(&displayed[0], Paragraph::Text {content, ..} if content == "　　　changed/changed-c0/0")
+            matches!(&displayed[0], Paragraph::Text {content, layout, ..} if content == "changed/changed-c0/0" && layout.first_line_indent == 3)
         );
         let original = collect_ok(cached.paragraphs("b1", "b1-c0")).await;
         assert_eq!(original.len(), 2);
-        assert!(matches!(&original[0], Paragraph::Text {content, ..} if content == "b1/b1-c0/0"));
+        assert!(
+            matches!(&original[0], Paragraph::Text {content, layout, ..} if content == "b1/b1-c0/0" && layout.first_line_indent == 0)
+        );
         assert!(matches!(&original[1], Paragraph::Text {content, ..} if content == "b1/b1-c0/1"));
         assert_eq!(inner.paragraph_fetches.load(Ordering::SeqCst), 1);
     }

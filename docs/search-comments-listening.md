@@ -220,6 +220,10 @@ voice/rate changes, sleep timers, and persistence. Its states are `idle`,
 isolates callbacks from superseded playback sessions.
 
 The controller speaks titles and text, skipping images and empty paragraphs.
+It uses transformed text content directly. Layout Transformers such as first-line
+indentation set paragraph metadata rather than inserting whitespace; listening
+therefore needs no indentation-specific text cleanup. Source whitespace and
+explicit Regex replacements retain their normal text semantics.
 Utterances contain at most 240 UTF-16 code units, prefer punctuation boundaries,
 and never split a surrogate pair. These chunks are engine inputs, not saved
 positions. The next chapter is prefetched while the current chapter plays; no

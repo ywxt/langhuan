@@ -105,33 +105,15 @@ impl ParagraphTransform for OpenCcTransform {
         // No per-chapter state needed — the converter is global.
     }
 
-    fn apply(&mut self, paragraph: Paragraph, out: &mut TransformOutput<'_>) {
-        if self.mode == ConversionMode::None {
-            out.push(paragraph);
-            return;
+    fn apply(&mut self, mut paragraph: Paragraph, out: &mut TransformOutput<'_>) {
+        if self.mode != ConversionMode::None {
+            match &mut paragraph {
+                Paragraph::Title { text, .. } => *text = self.convert(text),
+                Paragraph::Text { content, .. } => *content = self.convert(content),
+                Paragraph::Image { .. } => {}
+            }
         }
-
-        out.push(match paragraph {
-            Paragraph::Title {
-                id,
-                text,
-                comment_count,
-            } => Paragraph::Title {
-                id,
-                text: self.convert(&text),
-                comment_count,
-            },
-            Paragraph::Text {
-                id,
-                content,
-                comment_count,
-            } => Paragraph::Text {
-                id,
-                content: self.convert(&content),
-                comment_count,
-            },
-            img @ Paragraph::Image { .. } => img,
-        });
+        out.push(paragraph);
     }
 }
 
@@ -169,6 +151,7 @@ mod tests {
                 id: ParagraphId::source("5".into()),
                 content: "鼠标坏了".to_string(),
                 comment_count: Some(3),
+                layout: Default::default(),
             },
             &mut out,
         );

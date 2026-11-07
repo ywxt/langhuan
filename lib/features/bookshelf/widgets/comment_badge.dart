@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
+import 'reader_text_indent.dart';
 
 /// The paragraph-comment badge: a compact 💬 + count capsule that flows
 /// inline right after a paragraph's last character (see [BadgedText]).
@@ -148,7 +149,8 @@ class CommentBadge extends StatelessWidget {
 
 /// Paragraph text with the comment badge flowing inline right after the
 /// last character — the official-app placement. A null or non-positive
-/// [commentCount] renders a plain [Text].
+/// [commentCount] renders text without a badge. [firstLineIndent] adds a
+/// layout-only first-line spacer without changing [text].
 ///
 /// When the last line cannot fit the full badge, [CommentParagraphLayout]
 /// may resolve to the compact icon-only capsule ([CommentBadge.compact]);
@@ -212,6 +214,37 @@ class BadgedText extends StatelessWidget {
     );
   }
 
+  /// Keep the first inline unit beside its indent. A one-grapheme paragraph
+  /// may combine that grapheme and its badge into one indivisible tail.
+  static double indentWidth({
+    required String text,
+    required TextStyle style,
+    required TextScaler scaler,
+    required double maxWidth,
+    required double em,
+    required TextDirection direction,
+    Locale? locale,
+    Size? badgeSize,
+  }) {
+    double? minimumContentWidth;
+    if (em > 0 && badgeSize != null && tailText(text) == text) {
+      minimumContentWidth = tailDimensions(
+        text,
+        style,
+        badgeSize,
+        direction,
+        locale,
+      ).size.width;
+    }
+    return ReaderTextIndent.width(
+      em,
+      style,
+      scaler,
+      maxWidth,
+      minimumContentWidth: minimumContentWidth,
+    );
+  }
+
   const BadgedText({
     super.key,
     required this.text,
@@ -221,9 +254,11 @@ class BadgedText extends StatelessWidget {
     this.onCommentTap,
     this.badgeGap,
     this.badgeCompact = false,
+    this.firstLineIndent = 0,
   });
 
   final String text;
+  final double firstLineIndent;
   final TextStyle? style;
   final TextAlign? textAlign;
 
@@ -244,12 +279,27 @@ class BadgedText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final count = commentCount;
-    if (count == null || count <= 0) {
+    if ((count == null || count <= 0) && firstLineIndent == 0) {
       return Text(text, style: style, textAlign: textAlign);
     }
     return LayoutBuilder(
       builder: (context, constraints) {
         final effectiveStyle = DefaultTextStyle.of(context).style.merge(style);
+        final indentWidth = ReaderTextIndent.width(
+          firstLineIndent,
+          effectiveStyle,
+          MediaQuery.textScalerOf(context),
+          constraints.maxWidth,
+        );
+        if (count == null || count <= 0) {
+          return Text.rich(
+            ReaderTextIndent.span(
+              TextSpan(text: text, style: effectiveStyle),
+              indentWidth,
+            ),
+            textAlign: textAlign,
+          );
+        }
         final layout = badgeGap == null
             ? CommentParagraphLayout.resolve(
                 text: text,
@@ -260,6 +310,7 @@ class BadgedText extends StatelessWidget {
                 direction: Directionality.of(context),
                 locale: Localizations.localeOf(context),
                 align: textAlign ?? TextAlign.start,
+                firstLineIndent: firstLineIndent,
               )
             : CommentParagraphLayout(
                 effectiveStyle,
@@ -267,31 +318,45 @@ class BadgedText extends StatelessWidget {
                 compact: badgeCompact,
               );
         return Text.rich(
-          inlineSpan(
-            text,
-            layout.style,
-            MediaQuery.withNoTextScaling(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(tailText(text), style: layout.style),
-                  // The capsule's smaller label must not supply the Row's baseline.
-                  IgnoreBaseline(
-                    child: SizedBox.fromSize(
-                      size: layout.badgeSize(
-                        CommentBadge.inlineSize(context, count),
-                      ),
-                      child: Padding(
-                        padding: EdgeInsets.only(left: layout.gap),
-                        child: CommentBadge(
-                          count: count,
-                          onTap: onCommentTap,
-                          compact: layout.compact,
+          ReaderTextIndent.span(
+            inlineSpan(
+              text,
+              layout.style,
+              MediaQuery.withNoTextScaling(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(tailText(text), style: layout.style),
+                    // The capsule's smaller label must not supply the Row's baseline.
+                    IgnoreBaseline(
+                      child: SizedBox.fromSize(
+                        size: layout.badgeSize(
+                          CommentBadge.inlineSize(context, count),
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.only(left: layout.gap),
+                          child: CommentBadge(
+                            count: count,
+                            onTap: onCommentTap,
+                            compact: layout.compact,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+              ),
+            ),
+            BadgedText.indentWidth(
+              text: text,
+              style: layout.style,
+              scaler: MediaQuery.textScalerOf(context),
+              maxWidth: constraints.maxWidth,
+              em: firstLineIndent,
+              direction: Directionality.of(context),
+              locale: Localizations.localeOf(context),
+              badgeSize: layout.badgeSize(
+                CommentBadge.inlineSize(context, count),
               ),
             ),
           ),
@@ -333,18 +398,34 @@ class CommentParagraphLayout {
     required TextDirection direction,
     required Locale? locale,
     required TextAlign align,
+    double firstLineIndent = 0,
   }) {
     final original = CommentParagraphLayout(style, CommentBadge.inlineGap);
     if (!width.isFinite || width <= 0 || text.isEmpty) return original;
     final fontSize = style.fontSize ?? 14;
     final scale = fontSize == 0 ? 0.0 : textScaler.scale(fontSize) / fontSize;
 
+    final indentWidth = ReaderTextIndent.width(
+      firstLineIndent,
+      style,
+      textScaler,
+      width,
+    );
     TextPainter badged(CommentParagraphLayout layout) {
+      final indentWidth = BadgedText.indentWidth(
+        text: text,
+        style: layout.style,
+        scaler: textScaler,
+        maxWidth: width,
+        em: firstLineIndent,
+        direction: direction,
+        locale: locale,
+        badgeSize: layout.badgeSize(badgeSize),
+      );
       final painter = TextPainter(
-        text: BadgedText.inlineSpan(
-          text,
-          layout.style,
-          const SizedBox.shrink(),
+        text: ReaderTextIndent.span(
+          BadgedText.inlineSpan(text, layout.style, const SizedBox.shrink()),
+          indentWidth,
         ),
         textDirection: direction,
         textAlign: align,
@@ -352,6 +433,7 @@ class CommentParagraphLayout {
         locale: locale,
       );
       painter.setPlaceholderDimensions([
+        if (indentWidth > 0) ReaderTextIndent.dimensions(indentWidth, scale),
         BadgedText.tailDimensions(
           text,
           layout.style,
@@ -366,18 +448,30 @@ class CommentParagraphLayout {
     }
 
     int lineCount(TextPainter painter) {
-      final count = painter.computeLineMetrics().length;
+      final lines = painter.computeLineMetrics();
+      final count = lines.any((line) => line.width > width + 0.5)
+          ? 1 << 30
+          : lines.length;
       painter.dispose();
       return count;
     }
 
     final plain = TextPainter(
-      text: TextSpan(text: text, style: original.style),
+      text: ReaderTextIndent.span(
+        TextSpan(text: text, style: original.style),
+        indentWidth,
+      ),
       textDirection: direction,
       textAlign: align,
       textScaler: textScaler,
       locale: locale,
-    )..layout(maxWidth: width);
+    );
+    if (indentWidth > 0) {
+      plain.setPlaceholderDimensions([
+        ReaderTextIndent.dimensions(indentWidth, scale),
+      ]);
+    }
+    plain.layout(maxWidth: width);
     final plainLines = plain.computeLineMetrics();
     plain.dispose();
     final target = plainLines.length;

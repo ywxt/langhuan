@@ -136,6 +136,19 @@ impl std::fmt::Display for ParagraphId {
     }
 }
 
+/// Presentation properties produced by paragraph transforms, not script text.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ParagraphLayout {
+    /// First-line indent in em units. Zero leaves the text unindented.
+    pub first_line_indent: u8,
+}
+
+impl ParagraphLayout {
+    fn is_default(&self) -> bool {
+        self.first_line_indent == 0
+    }
+}
+
 /// A single content unit in a chapter, emitted as part of a paragraphs stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -153,6 +166,8 @@ pub enum Paragraph {
     Text {
         id: ParagraphId,
         content: String,
+        #[serde(default, skip_serializing_if = "ParagraphLayout::is_default")]
+        layout: ParagraphLayout,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         comment_count: Option<u32>,
     },
@@ -258,6 +273,7 @@ impl RawParagraph {
             } => Paragraph::Text {
                 id: make_id(id),
                 content,
+                layout: ParagraphLayout::default(),
                 comment_count,
             },
             RawParagraph::Image {
@@ -294,6 +310,28 @@ mod identity_tests {
 mod comment_count_tests {
     use super::*;
 
+    #[test]
+    fn raw_paragraphs_have_no_layout_payload_and_text_is_unchanged() {
+        let raw: RawParagraph =
+            serde_json::from_str(r#"{"type":"text","id":"p","content":"　 原文"}"#).unwrap();
+        let mut paragraph = raw.into_paragraph(0);
+        let cached = serde_json::to_value(&paragraph).unwrap();
+        assert_eq!(cached["content"], "　 原文");
+        assert!(cached.get("layout").is_none());
+        if let Paragraph::Text { layout, .. } = &mut paragraph {
+            layout.first_line_indent = 2;
+        }
+        let rendered = serde_json::to_value(&paragraph).unwrap();
+        assert_eq!(rendered["content"], cached["content"]);
+        assert_eq!(rendered["layout"]["first_line_indent"], 2);
+        assert_eq!(
+            serde_json::from_value::<Paragraph>(rendered).unwrap(),
+            paragraph
+        );
+        let restored: Paragraph = serde_json::from_value(cached).unwrap();
+        assert!(matches!(restored, Paragraph::Text {layout, ..} if layout.first_line_indent == 0));
+    }
+
     /// Script paragraphs report counts as `comment_count` (the script JSON
     /// protocol is snake_case throughout); omission reads as unknown.
     #[test]
@@ -308,6 +346,7 @@ mod comment_count_tests {
                 id: ParagraphId::source("3".into()),
                 content: "正文".to_string(),
                 comment_count: Some(5139),
+                layout: Default::default(),
             }
         );
 
@@ -320,6 +359,7 @@ mod comment_count_tests {
                 id: ParagraphId::generated(1),
                 content: "正文".to_string(),
                 comment_count: None,
+                layout: Default::default(),
             }
         );
         assert_eq!(paragraph.comment_count(), None);

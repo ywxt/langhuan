@@ -200,6 +200,7 @@ mod tests {
             id: ParagraphId::generated(0),
             content: "Hello".to_string(),
             comment_count: None,
+            layout: Default::default(),
         };
         let output = chain.apply(input);
 
@@ -220,21 +221,25 @@ mod tests {
             id: ParagraphId::generated(0),
             content: "a".into(),
             comment_count: None,
+            layout: Default::default(),
         });
         out.push(Paragraph::Text {
             id: ParagraphId::generated(0),
             content: "b".into(),
             comment_count: None,
+            layout: Default::default(),
         });
         out.push(Paragraph::Text {
             id: ParagraphId::source("custom".into()),
             content: "c".into(),
             comment_count: None,
+            layout: Default::default(),
         });
         out.push(Paragraph::Text {
             id: ParagraphId::source("custom".into()),
             content: "d".into(),
             comment_count: None,
+            layout: Default::default(),
         });
         drop(out);
 
@@ -267,6 +272,7 @@ mod tests {
             id: ParagraphId::source("839".into()),
             content: "text".into(),
             comment_count: None,
+            layout: Default::default(),
         });
         assert_eq!(
             result

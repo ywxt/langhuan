@@ -62,6 +62,7 @@ mod tests {
             id: ParagraphId::source("original".into()),
             content: value.into(),
             comment_count: Some(5),
+            layout: Default::default(),
         }
     }
     #[test]
@@ -70,7 +71,7 @@ mod tests {
         let mut items = vec![];
         rule.apply(text("廣告12 廣告34"), &mut TransformOutput::new(&mut items));
         assert!(
-            matches!(&items[0], Paragraph::Text {content, comment_count: Some(5), id } if content == "12/廣告 34/廣告" && id.source_id() == Some("original"))
+            matches!(&items[0], Paragraph::Text {content, comment_count: Some(5), id, .. } if content == "12/廣告 34/廣告" && id.source_id() == Some("original"))
         );
     }
     #[test]

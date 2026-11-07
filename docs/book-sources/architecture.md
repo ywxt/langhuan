@@ -222,19 +222,30 @@ source paragraphs through unchanged.
 Use the **+** action to choose a transformer type and open its editor. The list
 shows each rule's custom name (or its type), enabled state, and configuration
 summary. Select a rule to edit its name, enabled state, and parameters on a
-separate page. Saving commits directly to SQLite; leaving without saving
+bottom sheet. Saving commits directly to SQLite; leaving without saving
 retains the previous state. Drag the handles in the list to change the execution
-order; each reorder is saved directly to SQLite. Deletion is available in the
-single-rule editor's menu.
+order; each reorder is saved directly to SQLite. Swipe a row to delete it with
+confirmation and undo, or use the single-rule editor's menu.
 
 Application rules are managed in application settings; book rules are managed
 only through the reading screen's settings. Inherited application rules also
 appear in the book list. Opening one displays a notice that edits affect all
 inheriting books. There is no book-detail settings action.
 
-Indentation replaces existing leading spaces or tabs with 0–8 ideographic
-spaces. Zero removes the existing indent; disabling the rule preserves source
-spacing. Title cleanup keeps only the first title paragraph per chapter.
+All rules consume and emit structured paragraphs through the same ordered
+Transformer interface. Text rules modify `content`; layout rules modify
+presentation metadata. First-line indentation sets `layout.first_line_indent`
+to 0–8 em without adding, removing, or replacing any text. When multiple indent
+rules apply, the last one wins, including zero to clear an earlier layout indent.
+Source whitespace is preserved; use an explicit Regex rule if it should be removed.
+Title cleanup keeps only the first title paragraph per chapter.
+
+The layout metadata is application-generated, not a source-script field. Both
+reading modes use it for measurement and rendering. Horizontal continuation pages
+do not repeat first-line indentation, and the render-only placeholder does not
+count toward saved UTF-16 character offsets. Listening reads the transformed
+`content` directly, so layout rules do not introduce spaces into speech input.
+The raw chapter cache is unchanged and does not store Transformer output.
 
 Replacement changes every match inside each text paragraph;
 deletion removes an entire paragraph if any part matches. Regex rules preserve

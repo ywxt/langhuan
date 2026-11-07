@@ -559,6 +559,7 @@ mod tests {
                 id: ParagraphId::generated(1),
                 content: "hello".to_owned(),
                 comment_count: Some(0),
+                layout: Default::default(),
             },
         ]
     }

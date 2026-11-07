@@ -231,6 +231,7 @@ mod tests {
             id: crate::model::ParagraphId::generated(0),
             content: "x".repeat(bytes_each),
             comment_count: None,
+            layout: Default::default(),
         }];
         for i in 0..n {
             conn.set_paragraphs("f1", book_id, &format!("c{i}"), &paragraphs, at_ms)

@@ -702,6 +702,7 @@ mod tests {
             id: ParagraphId::source("source-paragraph".into()),
             content: value.into(),
             comment_count: Some(7),
+            layout: Default::default(),
         }
     }
 
@@ -726,8 +727,36 @@ mod tests {
         assert!(chain.apply(text("这里是广告")).is_empty());
         let output = chain.apply(text("这是正文"));
         assert!(
-            matches!(&output[0], Paragraph::Text { content, id, comment_count: Some(7) }
+            matches!(&output[0], Paragraph::Text { content, id, comment_count: Some(7), .. }
             if content == "這是正文" && id.source_id() == Some("source-paragraph"))
+        );
+    }
+
+    #[test]
+    fn text_and_layout_rules_compose_without_inserting_spaces() {
+        let original = text("鼠标旧文字");
+        let mut chain = build_transform_chain(vec![
+            TransformerRule::ParagraphIndent { spaces: 4 },
+            TransformerRule::ChineseConversion {
+                mode: ChineseConversionMode::S2t,
+            },
+            TransformerRule::RegexReplace {
+                pattern: "舊".into(),
+                replacement: "新".into(),
+                include_titles: false,
+            },
+            TransformerRule::ParagraphIndent { spaces: 2 },
+        ])
+        .unwrap();
+        let result = chain.apply(original.clone());
+        assert!(
+            matches!(&result[0], Paragraph::Text { content, layout, id, comment_count: Some(7) }
+            if content == "鼠標新文字" && layout.first_line_indent == 2 && id == original.id())
+        );
+        let bridge = crate::api::types::ParagraphContent::from(result[0].clone());
+        assert!(
+            matches!(bridge, crate::api::types::ParagraphContent::Text { content, layout, .. }
+            if content == "鼠標新文字" && layout.first_line_indent == 2)
         );
     }
 
@@ -739,12 +768,12 @@ mod tests {
         let mut indented =
             build_transform_chain(vec![TransformerRule::ParagraphIndent { spaces: 4 }]).unwrap();
         assert!(
-            matches!(&indented.apply(original.clone())[0], Paragraph::Text {content, ..} if content == "　　　　正文")
+            matches!(&indented.apply(original.clone())[0], Paragraph::Text {content, layout, ..} if content == "  正文" && layout.first_line_indent == 4)
         );
         let mut no_indent =
             build_transform_chain(vec![TransformerRule::ParagraphIndent { spaces: 0 }]).unwrap();
         assert!(
-            matches!(&no_indent.apply(original)[0], Paragraph::Text {content, ..} if content == "正文")
+            matches!(&no_indent.apply(original)[0], Paragraph::Text {content, layout, ..} if content == "  正文" && layout.first_line_indent == 0)
         );
         assert!(
             build_transform_chain(vec![TransformerRule::ParagraphIndent { spaces: 9 }]).is_err()

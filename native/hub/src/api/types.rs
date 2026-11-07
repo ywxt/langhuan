@@ -537,6 +537,15 @@ impl From<langhuan::model::ParagraphId> for ParagraphId {
     }
 }
 
+/// Presentation properties applied after raw chapter content is loaded.
+#[frb(non_opaque)]
+#[derive(Debug, Clone)]
+pub struct ParagraphLayout {
+    #[frb(default = 0)]
+    pub first_line_indent: u8,
+}
+
+#[frb(non_opaque)]
 pub enum ParagraphContent {
     Title {
         id: ParagraphId,
@@ -547,6 +556,8 @@ pub enum ParagraphContent {
     Text {
         id: ParagraphId,
         content: String,
+        #[frb(default = "const ParagraphLayout()")]
+        layout: ParagraphLayout,
         comment_count: Option<u32>,
     },
     Image {
@@ -573,10 +584,14 @@ impl From<langhuan::model::Paragraph> for ParagraphContent {
             Paragraph::Text {
                 id,
                 content,
+                layout,
                 comment_count,
             } => ParagraphContent::Text {
                 id: ParagraphId::from(id),
                 content,
+                layout: ParagraphLayout {
+                    first_line_indent: layout.first_line_indent,
+                },
                 comment_count,
             },
             Paragraph::Image {

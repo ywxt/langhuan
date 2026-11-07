@@ -60,8 +60,9 @@ class ParagraphView extends StatelessWidget {
         commentCount: commentCount,
         onCommentTap: onCommentTap,
       ),
-      ParagraphContent_Text(:final content) => BadgedText(
+      ParagraphContent_Text(:final content, :final layout) => BadgedText(
         text: content,
+        firstLineIndent: layout.firstLineIndent.toDouble(),
         style: typo.body,
         commentCount: commentCount,
         onCommentTap: onCommentTap,
