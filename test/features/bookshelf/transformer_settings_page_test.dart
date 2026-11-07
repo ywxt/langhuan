@@ -164,6 +164,12 @@ void main() {
             .data,
         'My indent',
       );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('transformer-editor-type')))
+            .data,
+        'Paragraph indentation',
+      );
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(settings.saved!.single.indentSpaces, 4);
@@ -183,6 +189,12 @@ void main() {
             .data,
         'My indent',
       );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('transformer-editor-type')))
+            .data,
+        'Paragraph indentation',
+      );
       await tester.enterText(find.byType(TextFormField).first, '   ');
       await tester.pump();
       expect(
@@ -192,6 +204,10 @@ void main() {
             )
             .data,
         'Paragraph indentation',
+      );
+      expect(
+        find.byKey(const ValueKey('transformer-editor-type')),
+        findsNothing,
       );
       expect(find.text('First-line indent: 4 characters'), findsOneWidget);
     },

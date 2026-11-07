@@ -92,14 +92,34 @@ class _TransformerRuleEditorSheetState
                     Icon(transformerIcon(_rule.kind)),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Text(
-                        _rule.name.trim().isEmpty
-                            ? transformerLabel(l, _rule.kind)
-                            : _rule.name.trim(),
-                        key: const ValueKey('transformer-editor-title'),
-                        style: Theme.of(context).textTheme.titleLarge,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _rule.name.trim().isEmpty
+                                ? transformerLabel(l, _rule.kind)
+                                : _rule.name.trim(),
+                            key: const ValueKey('transformer-editor-title'),
+                            style: Theme.of(context).textTheme.titleLarge,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (_rule.name.trim().isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              transformerLabel(l, _rule.kind),
+                              key: const ValueKey('transformer-editor-type'),
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                     CloseButton(
