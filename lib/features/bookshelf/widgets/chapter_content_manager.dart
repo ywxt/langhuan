@@ -50,7 +50,7 @@ class ChapterContentManager extends StatefulWidget {
     this.paragraphSpacing = LanghuanTheme.spaceMd,
     required this.lineHeight,
     required this.contentPadding,
-    required this.chineseConversion,
+    this.transformerRevision = '',
     this.paginationSliceBudget = const Duration(milliseconds: 4),
     this.onParagraphLongPress,
     this.selectedChapterId,
@@ -81,7 +81,7 @@ class ChapterContentManager extends StatefulWidget {
   final double paragraphSpacing;
   final double lineHeight;
   final EdgeInsets contentPadding;
-  final ChineseConversionMode chineseConversion;
+  final String transformerRevision;
 
   /// Per-frame time budget for incremental pagination (horizontal mode).
   /// Tests inject [Duration.zero] to make one paragraph paginate per frame,
@@ -1118,8 +1118,8 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       return;
     }
 
-    if (oldWidget.chineseConversion != widget.chineseConversion) {
-      // Paragraphs must be re-fetched through the new conversion mode.
+    if (oldWidget.transformerRevision != widget.transformerRevision) {
+      // Paragraphs must be re-fetched through the new transformer combination.
       _pagesByChapter.clear();
       _badgeIdsByChapter.clear();
       _paginationJobs.clear();

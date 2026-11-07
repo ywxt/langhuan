@@ -1333,4 +1333,118 @@ class AppLocalizationsZh extends AppLocalizations {
   String readerCommentCountCompact(String count) {
     return '$count萬';
   }
+
+  @override
+  String get transformTitle => '正文轉換';
+
+  @override
+  String get transformBookSettings => '本書正文轉換';
+
+  @override
+  String get transformDescription => '規則從上到下依次執行。點擊規則可編輯名稱、啓停狀態和配置。';
+
+  @override
+  String get transformRegexReplace => '正則替換';
+
+  @override
+  String get transformRegexDelete => '正則刪除段落';
+
+  @override
+  String get transformSave => '保存';
+
+  @override
+  String get transformAdd => '添加轉換規則';
+
+  @override
+  String get transformName => '名稱（可選）';
+
+  @override
+  String get transformPattern => '正則表達式';
+
+  @override
+  String get transformReplacement => '替換內容';
+
+  @override
+  String get transformIncludeTitles => '同時處理章節標題';
+
+  @override
+  String get transformRegexHelp =>
+      '替換內容可用 \$1、\$2 引用捕獲組，\$\$ 表示美元符號。支持 (?i) 等內聯標誌，不支持環視及正則表達式內的反向引用。';
+
+  @override
+  String get transformInherit => '先應用全局轉換規則';
+
+  @override
+  String get transformInheritDescription => '關閉後僅使用本書的規則。';
+
+  @override
+  String get transformEmpty => '此組合尚無規則。';
+
+  @override
+  String get transformMoveUp => '上移';
+
+  @override
+  String get transformMoveDown => '下移';
+
+  @override
+  String get transformPatternRequired => '請輸入正則表達式。';
+
+  @override
+  String get transformIndent => '段落縮進';
+
+  @override
+  String get transformDeduplicate => '章節標題去重';
+
+  @override
+  String get transformConversionDescription => '轉換正文和章節標題的繁簡字形。';
+
+  @override
+  String get transformReplaceDescription => '替換段落中所有匹配正則表達式的文字。';
+
+  @override
+  String get transformDeleteDescription => '文字匹配時，刪除整個段落。';
+
+  @override
+  String get transformIndentDescription => '設置首行縮進，替換段落原有的行首空格。';
+
+  @override
+  String get transformDeduplicateDescription => '保留首個章節標題，移除後續重複的標題段落。';
+
+  @override
+  String get transformKeepFirstTitle => '每章僅保留首個標題';
+
+  @override
+  String transformIndentCharacters(int count) {
+    return '首行縮進：$count 個字符';
+  }
+
+  @override
+  String get transformApplicationRules => '應用級規則';
+
+  @override
+  String get transformBookRules => '本書規則';
+
+  @override
+  String get transformAddHint => '點擊 + 選擇轉換器並進入配置頁。';
+
+  @override
+  String get transformEnabled => '已啓用';
+
+  @override
+  String get transformDisabled => '已停用';
+
+  @override
+  String get transformEmptyReplacement => '（空文字）';
+
+  @override
+  String get transformRemoveTitle => '刪除轉換器？';
+
+  @override
+  String get transformRemoveMessage => '要從組合中移除此轉換器嗎？';
+
+  @override
+  String get transformApplicationEditHint => '這是應用級規則。修改會影響所有繼承它的書籍。';
+
+  @override
+  String get transformReorder => '拖動調整順序';
 }

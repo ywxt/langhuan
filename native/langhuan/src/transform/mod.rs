@@ -13,6 +13,7 @@
 
 pub mod dedup_title;
 pub mod opencc;
+pub mod regex;
 pub mod text_indent;
 
 use std::collections::HashSet;

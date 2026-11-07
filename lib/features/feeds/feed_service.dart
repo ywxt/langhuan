@@ -1,5 +1,5 @@
-import 'pull_stream.dart';
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import '../../src/rust/api/comments.dart' as rust_comments;
@@ -13,6 +13,7 @@ import '../../src/rust/api/transfer.dart' as rust_transfer;
 import '../../src/rust/api/webview.dart' as rust_webview;
 import '../../src/rust/api/types.dart';
 import '../bookshelf/bookshelf_operation.dart';
+import 'pull_stream.dart';
 
 // ---------------------------------------------------------------------------
 // ParagraphId ↔ String helpers (synchronous, no FFI round-trip)
@@ -566,14 +567,12 @@ class FeedService {
     required String bookId,
     required String chapterId,
     bool forceRefresh = false,
-  }) {
-    return rust_stream.paragraphs(
-      feedId: feedId,
-      bookId: bookId,
-      chapterId: chapterId,
-      forceRefresh: forceRefresh,
-    );
-  }
+  }) => rust_stream.paragraphs(
+    feedId: feedId,
+    bookId: bookId,
+    chapterId: chapterId,
+    forceRefresh: forceRefresh,
+  );
 
   // -------------------------------------------------------------------------
   // Bookshelf

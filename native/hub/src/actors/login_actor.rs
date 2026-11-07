@@ -218,12 +218,10 @@ impl LoginActor {
         let Some(support) = feed.supports_auth() else {
             return Err(BridgeError::auth_status_not_supported(feed_id));
         };
-        match feed.auth_status(&support).await {
-            Ok(FeedAuthStatus::LoggedIn) => Ok(AuthStatus::LoggedIn),
-            Ok(FeedAuthStatus::Expired) => Ok(AuthStatus::Expired),
-            Ok(FeedAuthStatus::LoggedOut) => Ok(AuthStatus::LoggedOut),
-            Err(e) => Err(BridgeError::from(e)),
-        }
+        feed.auth_status(&support)
+            .await
+            .map(Into::into)
+            .map_err(BridgeError::from)
     }
 
     async fn do_auth_clear(&mut self, feed_id: &str) -> Result<(), BridgeError> {

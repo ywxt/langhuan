@@ -18,9 +18,8 @@ import '../../shared/utils/snackbars.dart';
 import '../../shared/widgets/confirm_dialog.dart';
 import '../../shared/widgets/loading.dart';
 import '../../src/rust/api/types.dart' show CacheStats;
-import '../bookshelf/reader_settings_provider.dart';
 import '../bookshelf/widgets/book_cover.dart' show coverProvider;
-import '../bookshelf/widgets/chinese_conversion_picker.dart';
+import '../transformers/transformer_settings_page.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -230,7 +229,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   _SectionLabel(label: l10n.settingsReading),
                   const SizedBox(height: LanghuanTheme.spaceSm),
                   _SettingsCard(
-                    children: [_ChineseConversionRow(ref: ref, l10n: l10n)],
+                    children: [
+                      _SettingsRow(
+                        icon: Icons.auto_fix_high_outlined,
+                        label: l10n.transformTitle,
+                        subtitle: l10n.transformDescription,
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => openTransformerSettings(context),
+                      ),
+                    ],
                   ),
 
                   const SizedBox(height: LanghuanTheme.spaceLg),
@@ -549,37 +556,6 @@ class _StatsChips extends StatelessWidget {
             ),
         ],
       ),
-    );
-  }
-}
-
-class _ChineseConversionRow extends StatelessWidget {
-  const _ChineseConversionRow({required this.ref, required this.l10n});
-
-  final WidgetRef ref;
-  final AppLocalizations l10n;
-
-  @override
-  Widget build(BuildContext context) {
-    final chineseConversion = ref.watch(
-      readerSettingsProvider.select((s) => s.chineseConversion),
-    );
-    final notifier = ref.read(readerSettingsProvider.notifier);
-
-    return _SettingsRow(
-      icon: Icons.translate,
-      label: l10n.settingsChineseConversion,
-      subtitle:
-          '${l10n.settingsChineseConversionDescription}\n'
-          '${chineseConversionLabel(l10n, chineseConversion)}',
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () async {
-        final mode = await showChineseConversionPicker(
-          context,
-          selected: chineseConversion,
-        );
-        if (mode != null) notifier.setChineseConversion(mode);
-      },
     );
   }
 }

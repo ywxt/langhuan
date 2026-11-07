@@ -1,19 +1,25 @@
 //! Text paragraph indentation transform.
 //!
-//! Prepends two ideographic spaces to [`Paragraph::Text`] content so rendered
+//! Sets a configurable first-line indent on [`Paragraph::Text`] content so rendered
 //! paragraphs start with a first-line indent.
 
 use crate::model::Paragraph;
 
 use super::{ParagraphTransform, TransformOutput};
 
-const FIRST_LINE_INDENT: &str = "\u{3000}\u{3000}";
-
-pub struct TextIndentTransform;
+pub struct TextIndentTransform {
+    indent: String,
+}
 
 impl TextIndentTransform {
     pub fn new() -> Self {
-        Self
+        Self::with_spaces(2)
+    }
+
+    pub fn with_spaces(spaces: u8) -> Self {
+        Self {
+            indent: "\u{3000}".repeat(usize::from(spaces)),
+        }
     }
 }
 
@@ -33,9 +39,8 @@ impl ParagraphTransform for TextIndentTransform {
                 mut content,
                 comment_count,
             } => {
-                if !content.starts_with(FIRST_LINE_INDENT) {
-                    content.insert_str(0, FIRST_LINE_INDENT);
-                }
+                let text = content.trim_start_matches([' ', '\t', '\u{3000}']);
+                content = format!("{}{text}", self.indent);
                 out.push(Paragraph::Text {
                     id,
                     content,

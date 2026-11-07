@@ -1372,4 +1372,128 @@ class AppLocalizationsEn extends AppLocalizations {
   String readerCommentCountCompact(String count) {
     return '${count}K';
   }
+
+  @override
+  String get transformTitle => 'Transformers';
+
+  @override
+  String get transformBookSettings => 'Book transformers';
+
+  @override
+  String get transformDescription =>
+      'Rules run from top to bottom. Select a rule to edit its name, status, and configuration.';
+
+  @override
+  String get transformRegexReplace => 'Regex replacement';
+
+  @override
+  String get transformRegexDelete => 'Delete matching paragraphs';
+
+  @override
+  String get transformSave => 'Save';
+
+  @override
+  String get transformAdd => 'Add transformer';
+
+  @override
+  String get transformName => 'Name (optional)';
+
+  @override
+  String get transformPattern => 'Regular expression';
+
+  @override
+  String get transformReplacement => 'Replacement';
+
+  @override
+  String get transformIncludeTitles => 'Also apply to chapter titles';
+
+  @override
+  String get transformRegexHelp =>
+      'Use \$1 or \$2 for capture groups; \$\$ inserts a literal dollar sign. Inline flags such as (?i) are supported. Lookaround and pattern backreferences are not supported.';
+
+  @override
+  String get transformInherit => 'Apply application transformers first';
+
+  @override
+  String get transformInheritDescription =>
+      'Turn off to use only this book’s rules.';
+
+  @override
+  String get transformEmpty => 'No rules in this combination.';
+
+  @override
+  String get transformMoveUp => 'Move up';
+
+  @override
+  String get transformMoveDown => 'Move down';
+
+  @override
+  String get transformPatternRequired => 'Enter a regular expression.';
+
+  @override
+  String get transformIndent => 'Paragraph indentation';
+
+  @override
+  String get transformDeduplicate => 'Chapter title cleanup';
+
+  @override
+  String get transformConversionDescription =>
+      'Convert paragraph text and chapter titles between Chinese variants.';
+
+  @override
+  String get transformReplaceDescription =>
+      'Replace every regex match within a paragraph.';
+
+  @override
+  String get transformDeleteDescription =>
+      'Remove the whole paragraph when its text matches.';
+
+  @override
+  String get transformIndentDescription =>
+      'Set the first-line indent; replaces existing leading spaces.';
+
+  @override
+  String get transformDeduplicateDescription =>
+      'Keep the first chapter title and remove later duplicate title paragraphs.';
+
+  @override
+  String get transformKeepFirstTitle =>
+      'Keep only the first title in each chapter';
+
+  @override
+  String transformIndentCharacters(int count) {
+    return 'First-line indent: $count characters';
+  }
+
+  @override
+  String get transformApplicationRules => 'Application rules';
+
+  @override
+  String get transformBookRules => 'This book’s rules';
+
+  @override
+  String get transformAddHint => 'Use + to choose and configure a transformer.';
+
+  @override
+  String get transformEnabled => 'Enabled';
+
+  @override
+  String get transformDisabled => 'Disabled';
+
+  @override
+  String get transformEmptyReplacement => '(empty text)';
+
+  @override
+  String get transformRemoveTitle => 'Delete transformer?';
+
+  @override
+  String get transformRemoveMessage =>
+      'Remove this transformer from the combination?';
+
+  @override
+  String get transformApplicationEditHint =>
+      'This is an application rule. Changes affect every book that inherits it.';
+
+  @override
+  String get transformReorder => 'Drag to reorder';
 }

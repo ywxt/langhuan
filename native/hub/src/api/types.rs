@@ -382,6 +382,18 @@ pub struct SearchResultItem {
     pub description: Option<String>,
 }
 
+impl From<langhuan::model::SearchResult> for SearchResultItem {
+    fn from(value: langhuan::model::SearchResult) -> Self {
+        Self {
+            id: value.id,
+            title: value.title,
+            author: value.author,
+            cover_url: value.cover_url,
+            description: value.description,
+        }
+    }
+}
+
 /// One event of an aggregated (all-installed-feeds) search.
 ///
 /// Every installed feed runs its own search concurrently. `Item` carries
@@ -404,6 +416,15 @@ pub enum AggregatedSearchEvent {
 pub struct ChapterItem {
     pub id: String,
     pub title: String,
+}
+
+impl From<langhuan::model::ChapterInfo> for ChapterItem {
+    fn from(value: langhuan::model::ChapterInfo) -> Self {
+        Self {
+            id: value.id,
+            title: value.title,
+        }
+    }
 }
 
 /// Identity before text transforms.
@@ -482,11 +503,49 @@ pub enum ParagraphContent {
     },
 }
 
+impl From<langhuan::model::Paragraph> for ParagraphContent {
+    fn from(paragraph: langhuan::model::Paragraph) -> Self {
+        use langhuan::model::Paragraph;
+        match paragraph {
+            Paragraph::Title {
+                id,
+                text,
+                comment_count,
+            } => ParagraphContent::Title {
+                id: ParagraphId::from(id),
+                text,
+                comment_count,
+            },
+            Paragraph::Text {
+                id,
+                content,
+                comment_count,
+            } => ParagraphContent::Text {
+                id: ParagraphId::from(id),
+                content,
+                comment_count,
+            },
+            Paragraph::Image {
+                id,
+                url,
+                alt,
+                comment_count,
+            } => ParagraphContent::Image {
+                id: ParagraphId::from(id),
+                url,
+                alt,
+                comment_count,
+            },
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
-// Chinese conversion types
+// Reader transformer types
 // ---------------------------------------------------------------------------
 
 /// Chinese text conversion mode, sent from Flutter.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ChineseConversionMode {
     /// No conversion — pass through unchanged.
     None,
@@ -500,12 +559,68 @@ pub enum ChineseConversionMode {
     S2hk,
 }
 
+/// One ordered text transformer. Images are always preserved.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum TransformerRule {
+    ParagraphIndent {
+        spaces: u8,
+    },
+    DeduplicateTitles,
+    ChineseConversion {
+        mode: ChineseConversionMode,
+    },
+    RegexReplace {
+        pattern: String,
+        replacement: String,
+        include_titles: bool,
+    },
+    RegexDelete {
+        pattern: String,
+        include_titles: bool,
+    },
+}
+
+/// A configured rule, including its display name and enabled state.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TransformerConfigurationEntry {
+    pub name: String,
+    pub enabled: bool,
+    pub rule: TransformerRule,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BookTransformerConfiguration {
+    pub feed_id: String,
+    pub book_id: String,
+    pub inherit_application: bool,
+    pub rules: Vec<TransformerConfigurationEntry>,
+}
+
+/// Complete user configuration, persisted atomically in the application database.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TransformerConfiguration {
+    pub application: Vec<TransformerConfigurationEntry>,
+    pub books: Vec<BookTransformerConfiguration>,
+}
+
 pub struct BookInfo {
     pub id: String,
     pub title: String,
     pub author: String,
     pub cover_url: Option<String>,
     pub description: Option<String>,
+}
+
+impl From<langhuan::model::BookInfo> for BookInfo {
+    fn from(value: langhuan::model::BookInfo) -> Self {
+        Self {
+            id: value.id,
+            title: value.title,
+            author: value.author,
+            cover_url: value.cover_url,
+            description: value.description,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -527,6 +642,16 @@ pub enum AuthStatus {
     LoggedIn,
     Expired,
     LoggedOut,
+}
+
+impl From<langhuan::feed::AuthStatus> for AuthStatus {
+    fn from(status: langhuan::feed::AuthStatus) -> Self {
+        match status {
+            langhuan::feed::AuthStatus::LoggedIn => Self::LoggedIn,
+            langhuan::feed::AuthStatus::Expired => Self::Expired,
+            langhuan::feed::AuthStatus::LoggedOut => Self::LoggedOut,
+        }
+    }
 }
 
 pub struct CookieEntry {

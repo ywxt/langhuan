@@ -21,8 +21,7 @@
 use std::sync::LazyLock;
 use std::time::Instant;
 
-use langhuan::feed::{AuthStatus as FeedAuthStatus, Feed, FeedAuthFlow};
-use langhuan::model::Paragraph;
+use langhuan::feed::{Feed, FeedAuthFlow};
 use langhuan::script::feed::ScriptFeed;
 use langhuan::script::runtime::ScriptEngine;
 use langhuan::step_trace::{StepTraceEntry, StepTraceRecorder};
@@ -30,7 +29,7 @@ use langhuan::trace::{TraceEntry, TraceRecorder};
 use tokio_stream::StreamExt;
 
 use super::types::{
-    AuthStatus, BookInfo, BridgeError, ChapterItem, ParagraphContent, ParagraphId, SearchResultItem,
+    AuthStatus, BookInfo, BridgeError, ChapterItem, ParagraphContent, SearchResultItem,
 };
 use crate::actors::hub_db;
 
@@ -205,7 +204,7 @@ pub async fn debug_run_stage(script: String, stage: DebugStage) -> DebugRunResul
     // Compilation and the stage run both happen inside the scope: script
     // loading performs no HTTP, so only the stage's own traffic is traced.
     let core = recorder
-        .scope(step_recorder.scope(run_script_stage(script, stage)))
+        .scope(step_recorder.scope(stage.run_script(script)))
         .await;
     let (trace, dropped) = recorder.finish();
     let (steps, dropped_steps) = step_recorder.finish();
@@ -231,64 +230,66 @@ struct DebugRunCore {
     error: Option<BridgeError>,
 }
 
-async fn run_script_stage(script: String, stage: DebugStage) -> DebugRunCore {
-    let feed = match DEBUG_ENGINE.load_script(&script).await {
-        Ok(feed) => feed,
-        Err(e) => {
-            return DebugRunCore {
-                script_meta: None,
-                auth: DebugAuthUse::NotSupported,
-                output: None,
-                error: Some(e.into()),
-            };
-        }
-    };
-
-    let meta = feed.meta();
-    let script_meta = DebugScriptMeta {
-        id: meta.id.clone(),
-        name: meta.name.clone(),
-        version: meta.version.clone(),
-        base_url: meta.base_url.clone(),
-    };
-
-    // Reuse the stored login of a feed with the same id (read-only):
-    // login-gated stages observe exactly the cookies production would.
-    let auth = match feed.supports_auth() {
-        None => DebugAuthUse::NotSupported,
-        Some(support) => {
-            let (applied, error) = match load_stored_auth(&meta.id).await {
-                Ok(stored) => {
-                    let applied = if stored.is_some() {
-                        DebugAuthUse::Applied
-                    } else {
-                        DebugAuthUse::Missing
-                    };
-                    match feed.set_auth_info(&support, stored) {
-                        Ok(()) => (applied, None),
-                        Err(e) => (applied, Some(e.into())),
-                    }
-                }
-                Err(e) => (DebugAuthUse::Missing, Some(e)),
-            };
-            if let Some(error) = error {
+impl DebugStage {
+    async fn run_script(self, script: String) -> DebugRunCore {
+        let feed = match DEBUG_ENGINE.load_script(&script).await {
+            Ok(feed) => feed,
+            Err(e) => {
                 return DebugRunCore {
-                    script_meta: Some(script_meta),
-                    auth: applied,
+                    script_meta: None,
+                    auth: DebugAuthUse::NotSupported,
                     output: None,
-                    error: Some(error),
+                    error: Some(e.into()),
                 };
             }
-            applied
-        }
-    };
+        };
 
-    let (output, error) = run_stage(&feed, stage).await;
-    DebugRunCore {
-        script_meta: Some(script_meta),
-        auth,
-        output,
-        error,
+        let meta = feed.meta();
+        let script_meta = DebugScriptMeta {
+            id: meta.id.clone(),
+            name: meta.name.clone(),
+            version: meta.version.clone(),
+            base_url: meta.base_url.clone(),
+        };
+
+        // Reuse the stored login of a feed with the same id (read-only):
+        // login-gated stages observe exactly the cookies production would.
+        let auth = match feed.supports_auth() {
+            None => DebugAuthUse::NotSupported,
+            Some(support) => {
+                let (applied, error) = match load_stored_auth(&meta.id).await {
+                    Ok(stored) => {
+                        let applied = if stored.is_some() {
+                            DebugAuthUse::Applied
+                        } else {
+                            DebugAuthUse::Missing
+                        };
+                        match feed.set_auth_info(&support, stored) {
+                            Ok(()) => (applied, None),
+                            Err(e) => (applied, Some(e.into())),
+                        }
+                    }
+                    Err(e) => (DebugAuthUse::Missing, Some(e)),
+                };
+                if let Some(error) = error {
+                    return DebugRunCore {
+                        script_meta: Some(script_meta),
+                        auth: applied,
+                        output: None,
+                        error: Some(error),
+                    };
+                }
+                applied
+            }
+        };
+
+        let (output, error) = self.run(&feed).await;
+        DebugRunCore {
+            script_meta: Some(script_meta),
+            auth,
+            output,
+            error,
+        }
     }
 }
 
@@ -316,158 +317,142 @@ async fn load_stored_auth(feed_id: &str) -> Result<Option<serde_json::Value>, Br
         .map_err(BridgeError::from)
 }
 
-/// Execute one stage on a freshly compiled feed, collecting stream items
-/// until exhaustion or the first error.
-async fn run_stage(
-    feed: &ScriptFeed,
-    stage: DebugStage,
-) -> (Option<DebugStageOutput>, Option<BridgeError>) {
-    match stage {
-        DebugStage::Search { keyword } => {
-            let mut items = Vec::new();
-            let mut error = None;
-            let mut stream = feed.search(&keyword);
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(item) => items.push(SearchResultItem {
-                        id: item.id,
-                        title: item.title,
-                        author: item.author,
-                        cover_url: item.cover_url,
-                        description: item.description,
-                    }),
-                    Err(e) => {
-                        error = Some(e.into());
-                        break;
+impl DebugStage {
+    /// Execute one stage on a freshly compiled feed, collecting stream items
+    /// until exhaustion or the first error.
+    async fn run(self, feed: &ScriptFeed) -> (Option<DebugStageOutput>, Option<BridgeError>) {
+        match self {
+            DebugStage::Search { keyword } => {
+                let mut items = Vec::new();
+                let mut error = None;
+                let mut stream = feed.search(&keyword);
+                while let Some(result) = stream.next().await {
+                    match result {
+                        Ok(item) => items.push(SearchResultItem::from(item)),
+                        Err(e) => {
+                            error = Some(e.into());
+                            break;
+                        }
                     }
                 }
+                wrap_stream_output(
+                    error.is_none() || !items.is_empty(),
+                    DebugStageOutput::Search { items },
+                    error,
+                )
             }
-            wrap_stream_output(
-                error.is_none() || !items.is_empty(),
-                DebugStageOutput::Search { items },
-                error,
-            )
-        }
-        DebugStage::BookInfo { book_id } => match feed.book_info(&book_id).await {
-            Ok(info) => (
-                Some(DebugStageOutput::BookInfo {
-                    info: BookInfo {
-                        id: info.id,
-                        title: info.title,
-                        author: info.author,
-                        cover_url: info.cover_url,
-                        description: info.description,
-                    },
-                }),
-                None,
-            ),
-            Err(e) => (None, Some(e.into())),
-        },
-        DebugStage::Chapters { book_id } => {
-            let mut items = Vec::new();
-            let mut error = None;
-            let mut stream = feed.chapters(&book_id);
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(chapter) => items.push(ChapterItem {
-                        id: chapter.id,
-                        title: chapter.title,
-                    }),
-                    Err(e) => {
-                        error = Some(e.into());
-                        break;
-                    }
-                }
-            }
-            wrap_stream_output(
-                error.is_none() || !items.is_empty(),
-                DebugStageOutput::Chapters { items },
-                error,
-            )
-        }
-        DebugStage::Paragraphs {
-            book_id,
-            chapter_id,
-        } => {
-            let mut items = Vec::new();
-            let mut error = None;
-            let mut stream = feed.paragraphs(&book_id, &chapter_id);
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(paragraph) => items.push(paragraph_content(paragraph)),
-                    Err(e) => {
-                        error = Some(e.into());
-                        break;
-                    }
-                }
-            }
-            wrap_stream_output(
-                error.is_none() || !items.is_empty(),
-                DebugStageOutput::Paragraphs { items },
-                error,
-            )
-        }
-        DebugStage::AuthStatus => {
-            let Some(support) = feed.supports_auth() else {
-                return (
-                    None,
-                    Some(BridgeError::auth_status_not_supported(&feed.meta().id)),
-                );
-            };
-            match feed.auth_status(&support).await {
-                Ok(status) => (
-                    Some(DebugStageOutput::AuthStatus {
-                        status: bridge_auth_status(status),
+            DebugStage::BookInfo { book_id } => match feed.book_info(&book_id).await {
+                Ok(info) => (
+                    Some(DebugStageOutput::BookInfo {
+                        info: BookInfo::from(info),
                     }),
                     None,
                 ),
                 Err(e) => (None, Some(e.into())),
+            },
+            DebugStage::Chapters { book_id } => {
+                let mut items = Vec::new();
+                let mut error = None;
+                let mut stream = feed.chapters(&book_id);
+                while let Some(result) = stream.next().await {
+                    match result {
+                        Ok(chapter) => items.push(ChapterItem::from(chapter)),
+                        Err(e) => {
+                            error = Some(e.into());
+                            break;
+                        }
+                    }
+                }
+                wrap_stream_output(
+                    error.is_none() || !items.is_empty(),
+                    DebugStageOutput::Chapters { items },
+                    error,
+                )
             }
-        }
-        DebugStage::Manual {
-            operation,
-            input_json,
-            cursor_json,
-        } => {
-            let input = match serde_json::from_str::<serde_json::Value>(&input_json) {
-                Ok(value) if value.is_object() => value,
-                Ok(_) => {
+            DebugStage::Paragraphs {
+                book_id,
+                chapter_id,
+            } => {
+                let mut items = Vec::new();
+                let mut error = None;
+                let mut stream = feed.paragraphs(&book_id, &chapter_id);
+                while let Some(result) = stream.next().await {
+                    match result {
+                        Ok(paragraph) => items.push(ParagraphContent::from(paragraph)),
+                        Err(e) => {
+                            error = Some(e.into());
+                            break;
+                        }
+                    }
+                }
+                wrap_stream_output(
+                    error.is_none() || !items.is_empty(),
+                    DebugStageOutput::Paragraphs { items },
+                    error,
+                )
+            }
+            DebugStage::AuthStatus => {
+                let Some(support) = feed.supports_auth() else {
                     return (
                         None,
-                        Some(BridgeError::from(
-                            "Operation input must be a JSON object".to_owned(),
-                        )),
+                        Some(BridgeError::auth_status_not_supported(&feed.meta().id)),
                     );
-                }
-                Err(error) => {
-                    return (
+                };
+                match feed.auth_status(&support).await {
+                    Ok(status) => (
+                        Some(DebugStageOutput::AuthStatus {
+                            status: status.into(),
+                        }),
                         None,
-                        Some(BridgeError::from(format!(
-                            "Invalid operation input JSON: {error}"
-                        ))),
-                    );
+                    ),
+                    Err(e) => (None, Some(e.into())),
                 }
-            };
-            let cursor = match serde_json::from_str::<serde_json::Value>(&cursor_json) {
-                Ok(value) => value,
-                Err(error) => {
-                    return (
+            }
+            DebugStage::Manual {
+                operation,
+                input_json,
+                cursor_json,
+            } => {
+                let input = match serde_json::from_str::<serde_json::Value>(&input_json) {
+                    Ok(value) if value.is_object() => value,
+                    Ok(_) => {
+                        return (
+                            None,
+                            Some(BridgeError::from(
+                                "Operation input must be a JSON object".to_owned(),
+                            )),
+                        );
+                    }
+                    Err(error) => {
+                        return (
+                            None,
+                            Some(BridgeError::from(format!(
+                                "Invalid operation input JSON: {error}"
+                            ))),
+                        );
+                    }
+                };
+                let cursor = match serde_json::from_str::<serde_json::Value>(&cursor_json) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        return (
+                            None,
+                            Some(BridgeError::from(format!("Invalid cursor JSON: {error}"))),
+                        );
+                    }
+                };
+                match feed.debug_operation_page(&operation, input, cursor).await {
+                    Ok(page) => (
+                        Some(DebugStageOutput::Manual {
+                            result_json: serde_json::to_string_pretty(&page.result).unwrap(),
+                            next_cursor_json: page
+                                .next_cursor
+                                .map(|value| serde_json::to_string_pretty(&value).unwrap()),
+                        }),
                         None,
-                        Some(BridgeError::from(format!("Invalid cursor JSON: {error}"))),
-                    );
+                    ),
+                    Err(error) => (None, Some(error.into())),
                 }
-            };
-            match feed.debug_operation_page(&operation, input, cursor).await {
-                Ok(page) => (
-                    Some(DebugStageOutput::Manual {
-                        result_json: serde_json::to_string_pretty(&page.result).unwrap(),
-                        next_cursor_json: page
-                            .next_cursor
-                            .map(|value| serde_json::to_string_pretty(&value).unwrap()),
-                    }),
-                    None,
-                ),
-                Err(error) => (None, Some(error.into())),
             }
         }
     }
@@ -482,48 +467,6 @@ fn wrap_stream_output(
     error: Option<BridgeError>,
 ) -> (Option<DebugStageOutput>, Option<BridgeError>) {
     (has_output.then_some(output), error)
-}
-
-fn paragraph_content(paragraph: Paragraph) -> ParagraphContent {
-    match paragraph {
-        Paragraph::Title {
-            id,
-            text,
-            comment_count,
-        } => ParagraphContent::Title {
-            id: ParagraphId::from(id),
-            text,
-            comment_count,
-        },
-        Paragraph::Text {
-            id,
-            content,
-            comment_count,
-        } => ParagraphContent::Text {
-            id: ParagraphId::from(id),
-            content,
-            comment_count,
-        },
-        Paragraph::Image {
-            id,
-            url,
-            alt,
-            comment_count,
-        } => ParagraphContent::Image {
-            id: ParagraphId::from(id),
-            url,
-            alt,
-            comment_count,
-        },
-    }
-}
-
-fn bridge_auth_status(status: FeedAuthStatus) -> AuthStatus {
-    match status {
-        FeedAuthStatus::LoggedIn => AuthStatus::LoggedIn,
-        FeedAuthStatus::Expired => AuthStatus::Expired,
-        FeedAuthStatus::LoggedOut => AuthStatus::LoggedOut,
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -631,12 +574,10 @@ export default { search, bookInfo, chapters, paragraphs };
             ))
             .await?;
 
-        let (output, error) = run_stage(
-            &feed,
-            DebugStage::Search {
-                keyword: "k".to_owned(),
-            },
-        )
+        let (output, error) = DebugStage::Search {
+            keyword: "k".to_owned(),
+        }
+        .run(&feed)
         .await;
 
         assert!(error.is_none());
@@ -654,12 +595,10 @@ export default { search, bookInfo, chapters, paragraphs };
             .load_script(paged_fixture_script())
             .await?;
 
-        let (pipeline_output, pipeline_error) = run_stage(
-            &feed,
-            DebugStage::Search {
-                keyword: "k".to_owned(),
-            },
-        )
+        let (pipeline_output, pipeline_error) = DebugStage::Search {
+            keyword: "k".to_owned(),
+        }
+        .run(&feed)
         .await;
         assert!(pipeline_error.is_none());
         let Some(DebugStageOutput::Search { items }) = pipeline_output else {
@@ -667,14 +606,12 @@ export default { search, bookInfo, chapters, paragraphs };
         };
         assert_eq!(items.len(), 2, "default mode must follow pagination");
 
-        let (first_output, first_error) = run_stage(
-            &feed,
-            DebugStage::Manual {
-                operation: "search".to_owned(),
-                input_json: r#"{"keyword":"k"}"#.to_owned(),
-                cursor_json: "null".to_owned(),
-            },
-        )
+        let (first_output, first_error) = DebugStage::Manual {
+            operation: "search".to_owned(),
+            input_json: r#"{"keyword":"k"}"#.to_owned(),
+            cursor_json: "null".to_owned(),
+        }
+        .run(&feed)
         .await;
         assert!(first_error.is_none());
         let Some(DebugStageOutput::Manual {
@@ -694,14 +631,12 @@ export default { search, bookInfo, chapters, paragraphs };
             serde_json::json!({ "page": 2 })
         );
 
-        let (second_output, second_error) = run_stage(
-            &feed,
-            DebugStage::Manual {
-                operation: "search".to_owned(),
-                input_json: r#"{"keyword":"k"}"#.to_owned(),
-                cursor_json: next_cursor,
-            },
-        )
+        let (second_output, second_error) = DebugStage::Manual {
+            operation: "search".to_owned(),
+            input_json: r#"{"keyword":"k"}"#.to_owned(),
+            cursor_json: next_cursor,
+        }
+        .run(&feed)
         .await;
         assert!(second_error.is_none());
         let Some(DebugStageOutput::Manual {
@@ -732,12 +667,10 @@ export default { search, bookInfo, chapters, paragraphs };
             ))
             .await?;
 
-        let (output, error) = run_stage(
-            &feed,
-            DebugStage::Search {
-                keyword: "k".to_owned(),
-            },
-        )
+        let (output, error) = DebugStage::Search {
+            keyword: "k".to_owned(),
+        }
+        .run(&feed)
         .await;
 
         assert!(error.is_none());
@@ -762,12 +695,10 @@ export default { search, bookInfo, chapters, paragraphs };
             ))
             .await?;
 
-        let (output, error) = run_stage(
-            &feed,
-            DebugStage::Search {
-                keyword: "k".to_owned(),
-            },
-        )
+        let (output, error) = DebugStage::Search {
+            keyword: "k".to_owned(),
+        }
+        .run(&feed)
         .await;
 
         assert!(error.is_none());
@@ -786,7 +717,7 @@ export default { search, bookInfo, chapters, paragraphs };
             .load_script(&fixture_script("http://127.0.0.1:1", "{}"))
             .await?;
 
-        let (output, error) = run_stage(&feed, DebugStage::AuthStatus).await;
+        let (output, error) = DebugStage::AuthStatus.run(&feed).await;
         assert!(output.is_none());
         assert!(error.is_some());
         Ok(())
@@ -809,12 +740,14 @@ export default { search, bookInfo, chapters, paragraphs };
         let recorder = TraceRecorder::new();
         let step_recorder = StepTraceRecorder::new();
         let (output, error) = recorder
-            .scope(step_recorder.scope(run_stage(
-                &feed,
-                DebugStage::Search {
-                    keyword: "k".to_owned(),
-                },
-            )))
+            .scope(
+                step_recorder.scope(
+                    DebugStage::Search {
+                        keyword: "k".to_owned(),
+                    }
+                    .run(&feed),
+                ),
+            )
             .await;
         let (trace, dropped) = recorder.finish();
         let (steps, dropped_steps) = step_recorder.finish();

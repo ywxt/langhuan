@@ -786,6 +786,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn transforms_on_a_cache_miss_never_change_cached_source_paragraphs() {
+        use crate::transform::{
+            TransformChain, regex::RegexTransform, text_indent::TextIndentTransform,
+        };
+        let (db, inner, cached) = setup_feed(HashSet::new()).await;
+        shelve(&db, "b1").await;
+        let mut chain = TransformChain::new();
+        chain.push(Box::new(RegexTransform::new("/1$", None, false).unwrap()));
+        chain.push(Box::new(
+            RegexTransform::new("b1", Some("changed".into()), false).unwrap(),
+        ));
+        chain.push(Box::new(TextIndentTransform::with_spaces(3)));
+        let mut stream = cached.paragraphs("b1", "b1-c0");
+        let mut displayed = Vec::new();
+        while let Some(item) = stream.next().await {
+            displayed.extend(chain.apply(item.unwrap()));
+        }
+        assert_eq!(displayed.len(), 1);
+        assert!(
+            matches!(&displayed[0], Paragraph::Text {content, ..} if content == "　　　changed/changed-c0/0")
+        );
+        let original = collect_ok(cached.paragraphs("b1", "b1-c0")).await;
+        assert_eq!(original.len(), 2);
+        assert!(matches!(&original[0], Paragraph::Text {content, ..} if content == "b1/b1-c0/0"));
+        assert!(matches!(&original[1], Paragraph::Text {content, ..} if content == "b1/b1-c0/1"));
+        assert_eq!(inner.paragraph_fetches.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
     async fn unshelved_books_bypass_the_cache_entirely() {
         let (db, inner, cached) = setup_feed(HashSet::new()).await;
 

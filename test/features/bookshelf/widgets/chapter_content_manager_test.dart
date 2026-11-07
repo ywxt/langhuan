@@ -72,7 +72,7 @@ void main() {
     WidgetTester tester, {
     required FakeFeedService service,
     ReaderPageMode pageMode = ReaderPageMode.horizontal,
-    ChineseConversionMode conversion = ChineseConversionMode.none,
+    String transformerRevision = '',
     List<ReaderPosition>? positions,
     Future<void> Function()? onRefreshBook,
     void Function(String, ParagraphContent)? onParagraphComments,
@@ -104,7 +104,7 @@ void main() {
             fontScale: 1.0,
             lineHeight: 1.5,
             contentPadding: const EdgeInsets.all(16),
-            chineseConversion: conversion,
+            transformerRevision: transformerRevision,
           ),
         ),
       ),
@@ -268,7 +268,7 @@ void main() {
     expect(find.text('Chapter One'), findsOneWidget);
   });
 
-  testWidgets('a conversion change re-fetches the window paragraphs', (
+  testWidgets('a transformer chain change re-fetches the window paragraphs', (
     tester,
   ) async {
     final calls = <(String, String, String, bool)>[];
@@ -278,12 +278,11 @@ void main() {
     final before = calls.where((c) => c.$3 == 'c1').length;
     expect(before, 1);
 
-    // Rebuild with a different conversion mode: paragraphs must be fetched
-    // again through the new conversion.
+    // A changed effective chain must reprocess cached source paragraphs.
     await pumpManager(
       tester,
       service: fake,
-      conversion: ChineseConversionMode.s2T,
+      transformerRevision: 'updated-chain',
     );
 
     expect(calls.where((c) => c.$3 == 'c1').length, 2);
@@ -386,7 +385,7 @@ void main() {
             fontScale: fontScale,
             lineHeight: 1.5,
             contentPadding: const EdgeInsets.all(16),
-            chineseConversion: ChineseConversionMode.none,
+            transformerRevision: '',
             showComments: showComments,
             showChapterComments: showChapterComments,
             pageProgress: pageProgress,

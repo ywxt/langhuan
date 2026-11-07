@@ -14,6 +14,7 @@ import '../../shared/widgets/loading.dart';
 import '../../src/rust/api/types.dart';
 import '../feeds/feed_providers.dart';
 import '../feeds/feed_service.dart';
+import '../transformers/transformer_settings.dart';
 import 'comments/comments_controller.dart';
 import 'comments/comments_panel.dart';
 import 'bookshelf_provider.dart';
@@ -345,13 +346,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   }
 
   Future<void> _openSettingsSheet() {
-    return showReaderSettingsSheet(context);
+    return showReaderSettingsSheet(
+      context,
+      feedId: widget.feedId,
+      bookId: widget.bookId,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final settings = ref.watch(readerSettingsProvider);
+    final transformers = ref.watch(transformerSettingsProvider);
     final activeChapterId = ref.watch(
       readingProgressProvider.select((s) => s.activeChapterId),
     );
@@ -373,10 +379,27 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
       );
     }
 
-    if (_screenController.isInitializing) {
+    if (_screenController.isInitializing || transformers.isLoading) {
       return Scaffold(
         appBar: AppBar(title: Text(l10n.readerTitle)),
         body: const LoadingState(),
+      );
+    }
+
+    if (transformers.hasError) {
+      final display = describeError(
+        transformers.error,
+        l10n,
+        genericTitle: l10n.readerLoadError,
+      );
+      return Scaffold(
+        appBar: AppBar(title: Text(l10n.readerTitle)),
+        body: ErrorState(
+          title: display.title,
+          message: display.detail,
+          onRetry: () => ref.invalidate(transformerSettingsProvider),
+          retryLabel: l10n.bookDetailRetry,
+        ),
       );
     }
 
@@ -490,7 +513,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                           letterSpacing: settings.letterSpacing,
                           paragraphSpacing: settings.paragraphSpacing,
                           lineHeight: settings.lineHeight,
-                          chineseConversion: settings.chineseConversion,
+                          transformerRevision:
+                              transformers.asData?.value.signature(
+                                widget.feedId,
+                                widget.bookId,
+                              ) ??
+                              '',
                           pageProgress: _pageProgress,
                           viewportTopInset:
                               settings.pageMode == ReaderPageMode.vertical

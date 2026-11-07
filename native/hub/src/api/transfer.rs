@@ -80,32 +80,34 @@ pub(crate) async fn export_feeds_from_db(db: &Db) -> Result<String, BridgeError>
     .map_err(|e| BridgeError::from(format!("feed export serialization failed: {e}")))
 }
 
-/// Parse a feed export: either the wrapper object or a bare entry array.
-fn parse_export_entries(json: &str) -> Result<Vec<FeedExportEntry>, BridgeError> {
-    let value: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| BridgeError::from(format!("not a feed export: {e}")))?;
+impl FeedExportFile {
+    /// Parse a feed export: either the wrapper object or a bare entry array.
+    fn parse_entries(json: &str) -> Result<Vec<FeedExportEntry>, BridgeError> {
+        let value: serde_json::Value = serde_json::from_str(json)
+            .map_err(|e| BridgeError::from(format!("not a feed export: {e}")))?;
 
-    let entries_value = match value {
-        serde_json::Value::Array(_) => value,
-        serde_json::Value::Object(ref map) => match map.get("format") {
-            Some(format) if format.as_str() != Some(EXPORT_FORMAT) => {
-                return Err(BridgeError::from(format!(
-                    "unknown feed export format: expected {EXPORT_FORMAT}"
-                )));
-            }
-            _ => map.get("feeds").cloned().unwrap_or(serde_json::Value::Null),
-        },
-        _ => serde_json::Value::Null,
-    };
+        let entries_value = match value {
+            serde_json::Value::Array(_) => value,
+            serde_json::Value::Object(ref map) => match map.get("format") {
+                Some(format) if format.as_str() != Some(EXPORT_FORMAT) => {
+                    return Err(BridgeError::from(format!(
+                        "unknown feed export format: expected {EXPORT_FORMAT}"
+                    )));
+                }
+                _ => map.get("feeds").cloned().unwrap_or(serde_json::Value::Null),
+            },
+            _ => serde_json::Value::Null,
+        };
 
-    let entries: Vec<FeedExportEntry> = serde_json::from_value(entries_value)
-        .map_err(|e| BridgeError::from(format!("malformed feed export: {e}")))?;
-    if entries.is_empty() {
-        return Err(BridgeError::from(
-            "feed export contains no feeds".to_owned(),
-        ));
+        let entries: Vec<FeedExportEntry> = serde_json::from_value(entries_value)
+            .map_err(|e| BridgeError::from(format!("malformed feed export: {e}")))?;
+        if entries.is_empty() {
+            return Err(BridgeError::from(
+                "feed export contains no feeds".to_owned(),
+            ));
+        }
+        Ok(entries)
     }
-    Ok(entries)
 }
 
 /// Classify a feed import against the installed registry: parse every
@@ -120,7 +122,7 @@ pub(crate) async fn preview_import_feeds_from_db(
     db: &Db,
     json: &str,
 ) -> Result<Vec<FeedImportEntry>, BridgeError> {
-    let entries = parse_export_entries(json)?;
+    let entries = FeedExportFile::parse_entries(json)?;
     let installed = db.call(|repo| repo.list_feeds()).await?;
 
     let mut preview = Vec::with_capacity(entries.len());
@@ -146,7 +148,7 @@ pub(crate) async fn preview_import_feeds_from_db(
 /// exact same version and content are skipped; each other entry installs
 /// independently, and failures are collected per entry.
 pub async fn import_feeds(json: String) -> Result<FeedImportOutcome, BridgeError> {
-    let entries = parse_export_entries(&json)?;
+    let entries = FeedExportFile::parse_entries(&json)?;
     addresses()?
         .registry
         .clone()
@@ -267,17 +269,19 @@ mod tests {
 
     #[tokio::test]
     async fn export_rejects_unknown_format_and_empty_files() -> TestResult {
-        assert!(parse_export_entries("{\"format\":\"other\",\"feeds\":[]}").is_err());
-        assert!(parse_export_entries("{\"format\":\"langhuan-feeds\",\"feeds\":[]}").is_err());
-        assert!(parse_export_entries("[]").is_err());
-        assert!(parse_export_entries("not json").is_err());
+        assert!(FeedExportFile::parse_entries("{\"format\":\"other\",\"feeds\":[]}").is_err());
+        assert!(
+            FeedExportFile::parse_entries("{\"format\":\"langhuan-feeds\",\"feeds\":[]}").is_err()
+        );
+        assert!(FeedExportFile::parse_entries("[]").is_err());
+        assert!(FeedExportFile::parse_entries("not json").is_err());
 
         // A bare array with one entry is accepted.
         let bare = format!(
             "[{{\"script\":{}}}]",
             serde_json::to_string(&script("f1", "1.0.0"))?
         );
-        assert_eq!(parse_export_entries(&bare)?.len(), 1);
+        assert_eq!(FeedExportFile::parse_entries(&bare)?.len(), 1);
         Ok(())
     }
 

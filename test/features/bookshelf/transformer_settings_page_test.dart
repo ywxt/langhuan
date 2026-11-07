@@ -1,0 +1,348 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:langhuan/features/transformers/transformer_rule_card.dart';
+import 'package:langhuan/features/transformers/transformer_rule_editor_page.dart';
+import 'package:langhuan/features/transformers/transformer_settings.dart';
+import 'package:langhuan/features/transformers/transformer_settings_page.dart';
+import 'package:langhuan/l10n/app_localizations.dart';
+
+class _Settings extends TransformerSettingsNotifier {
+  _Settings(this.initial);
+  final TransformerSettings initial;
+  List<TransformerEntry>? saved;
+  String? savedFeed;
+  bool failNext = false;
+  @override
+  Future<TransformerSettings> build() async => initial;
+  @override
+  Future<void> save({
+    required List<TransformerEntry> rules,
+    String? feedId,
+    String? bookId,
+    bool inheritApplication = true,
+  }) async {
+    if (failNext) {
+      failNext = false;
+      throw StateError('Save failed');
+    }
+    saved = List.of(rules);
+    savedFeed = feedId;
+    final current = state.requireValue;
+    state = AsyncData(
+      feedId == null
+          ? TransformerSettings(application: rules, books: current.books)
+          : TransformerSettings(
+              application: current.application,
+              books: {
+                ...current.books,
+                TransformerSettings.bookKey(feedId, bookId!): BookTransformers(
+                  rules: rules,
+                  inheritApplication: inheritApplication,
+                ),
+              },
+            ),
+    );
+  }
+}
+
+Future<void> _open(
+  WidgetTester tester,
+  _Settings settings, {
+  bool book = false,
+  double textScale = 1,
+}) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [transformerSettingsProvider.overrideWith(() => settings)],
+      child: MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        ),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: TransformerSettingsPage(
+          feedId: book ? 'feed' : null,
+          bookId: book ? 'book' : null,
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+Finder _card(TransformerKind kind) => find.byWidgetPredicate(
+  (widget) => widget is TransformerRuleCard && widget.rule.kind == kind,
+);
+
+Future<void> _reorderLastBeforeFirst(WidgetTester tester) async {
+  final handles = find.byType(ReorderableDragStartListener);
+  final start = tester.getCenter(handles.last);
+  final target = tester.getCenter(handles.first);
+  final gesture = await tester.startGesture(start);
+  for (var step = 1; step <= 8; step++) {
+    await gesture.moveTo(Offset.lerp(start, target, step / 8)!);
+    await tester.pump(const Duration(milliseconds: 32));
+  }
+  await gesture.up();
+  await tester.pumpAndSettle();
+}
+
+void main() {
+  testWidgets(
+    'list is read-only on narrow screens and details contain configuration',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 760);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final settings = _Settings(
+        TransformerSettings(
+          application: [
+            for (final kind in TransformerKind.values)
+              TransformerEntry(
+                kind: kind,
+                pattern: 'advertisement',
+                replacement: 'text',
+              ),
+          ],
+        ),
+      );
+      await _open(tester, settings, textScale: 1.3);
+      expect(find.byType(TextFormField), findsNothing);
+      expect(find.byType(Slider), findsNothing);
+      expect(find.byType(Switch), findsNothing);
+      await tester.ensureVisible(_card(TransformerKind.paragraphIndent));
+      await tester.pumpAndSettle();
+      await tester.tap(_card(TransformerKind.paragraphIndent));
+      await tester.pumpAndSettle();
+      expect(find.byType(TransformerRuleEditorPage), findsOneWidget);
+      expect(find.byType(Slider), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'add opens an editor, custom naming and saving persist immediately',
+    (tester) async {
+      final settings = _Settings(TransformerSettings());
+      await _open(tester, settings);
+      await tester.tap(find.byType(FloatingActionButton));
+      await tester.pumpAndSettle();
+      expect(find.text('Chapter title cleanup'), findsOneWidget);
+      expect(find.text('Regex replacement'), findsOneWidget);
+      await tester.tap(find.text('Paragraph indentation'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TransformerRuleEditorPage), findsOneWidget);
+      tester.widget<Slider>(find.byType(Slider)).onChanged!(4);
+      await tester.pump();
+      await tester.enterText(find.byType(TextFormField).first, '  My indent  ');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(settings.saved!.single.indentSpaces, 4);
+      expect(settings.saved!.single.name, 'My indent');
+      expect(find.byType(TransformerRuleEditorPage), findsNothing);
+      expect(find.text('My indent'), findsOneWidget);
+      expect(find.byType(TextFormField), findsNothing);
+      expect(find.byType(Slider), findsNothing);
+      await tester.tap(find.text('My indent'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextFormField, 'My indent'), findsOneWidget);
+      expect(find.text('First-line indent: 4 characters'), findsOneWidget);
+    },
+  );
+
+  testWidgets('leaving an add or edit page discards unsaved changes', (
+    tester,
+  ) async {
+    final settings = _Settings(
+      TransformerSettings(
+        application: const [
+          TransformerEntry(
+            kind: TransformerKind.paragraphIndent,
+            name: 'Original',
+          ),
+        ],
+      ),
+    );
+    await _open(tester, settings);
+    await tester.tap(find.text('Original'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, 'Discard');
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('Original'), findsOneWidget);
+    expect(settings.saved, isNull);
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Regex replacement'));
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(TransformerRuleCard), findsOneWidget);
+    expect(settings.saved, isNull);
+  });
+
+  testWidgets(
+    'editing inherited rules explicitly updates the application scope',
+    (tester) async {
+      final settings = _Settings(
+        TransformerSettings(
+          application: const [
+            TransformerEntry(
+              kind: TransformerKind.paragraphIndent,
+              indentSpaces: 3,
+            ),
+          ],
+        ),
+      );
+      await _open(tester, settings, book: true);
+      expect(find.text('Application rules'), findsOneWidget);
+      expect(find.text('First-line indent: 3 characters'), findsOneWidget);
+      await tester.tap(_card(TransformerKind.paragraphIndent));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'This is an application rule. Changes affect every book that inherits it.',
+        ),
+        findsOneWidget,
+      );
+      await tester.enterText(find.byType(TextFormField).first, 'Global indent');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(settings.savedFeed, isNull);
+      expect(find.text('Global indent'), findsOneWidget);
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      expect(settings.savedFeed, 'feed');
+      expect(find.byType(TransformerRuleCard), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'list drag reorders persist without opening the editor or changing configurations',
+    (tester) async {
+      final settings = _Settings(
+        TransformerSettings(
+          application: const [
+            TransformerEntry(
+              kind: TransformerKind.regexReplace,
+              pattern: 'first',
+              replacement: 'before',
+            ),
+            TransformerEntry(
+              kind: TransformerKind.regexDelete,
+              pattern: 'second',
+            ),
+          ],
+        ),
+      );
+      await _open(tester, settings);
+      expect(find.byType(PopupMenuButton<TransformerEditAction>), findsNothing);
+      await tester.tap(_card(TransformerKind.regexReplace));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'before'),
+        'after',
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      await _reorderLastBeforeFirst(tester);
+      expect(find.byType(TransformerRuleEditorPage), findsNothing);
+      final cards = tester
+          .widgetList<TransformerRuleCard>(find.byType(TransformerRuleCard))
+          .map((c) => c.rule)
+          .toList();
+      expect(cards.map((c) => c.pattern), ['second', 'first']);
+      expect(settings.saved!.last.replacement, 'after');
+      await tester.tap(_card(TransformerKind.regexDelete));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(PopupMenuButton<TransformerEditAction>));
+      await tester.pumpAndSettle();
+      expect(find.text('Move up'), findsNothing);
+      expect(find.text('Move down'), findsNothing);
+      expect(find.text('Delete'), findsOneWidget);
+    },
+  );
+
+  testWidgets('failed reorders retain the saved order and allow retry', (
+    tester,
+  ) async {
+    final settings = _Settings(
+      TransformerSettings(
+        application: const [
+          TransformerEntry(kind: TransformerKind.paragraphIndent),
+          TransformerEntry(kind: TransformerKind.deduplicateTitles),
+        ],
+      ),
+    )..failNext = true;
+    await _open(tester, settings);
+    await _reorderLastBeforeFirst(tester);
+    expect(find.textContaining('Save failed'), findsOneWidget);
+    expect(settings.saved, isNull);
+    expect(
+      tester
+          .widgetList<TransformerRuleCard>(find.byType(TransformerRuleCard))
+          .first
+          .rule
+          .kind,
+      TransformerKind.paragraphIndent,
+    );
+    await _reorderLastBeforeFirst(tester);
+    expect(settings.saved!.first.kind, TransformerKind.deduplicateTitles);
+    expect(find.textContaining('Save failed'), findsNothing);
+  });
+
+  testWidgets('failed saves keep the editor open and can be retried', (
+    tester,
+  ) async {
+    final settings = _Settings(
+      TransformerSettings(
+        application: const [
+          TransformerEntry(kind: TransformerKind.paragraphIndent),
+        ],
+      ),
+    )..failNext = true;
+    await _open(tester, settings);
+    await tester.tap(_card(TransformerKind.paragraphIndent));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, 'Retried');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Save failed'), findsOneWidget);
+    expect(find.byType(TransformerRuleEditorPage), findsOneWidget);
+    expect(settings.saved, isNull);
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TransformerRuleEditorPage), findsNothing);
+    expect(settings.saved!.single.name, 'Retried');
+  });
+
+  testWidgets(
+    'delete is available only in the editor and requires confirmation',
+    (tester) async {
+      final settings = _Settings(
+        TransformerSettings(
+          application: const [
+            TransformerEntry(kind: TransformerKind.paragraphIndent),
+          ],
+        ),
+      );
+      await _open(tester, settings);
+      await tester.tap(_card(TransformerKind.paragraphIndent));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(PopupMenuButton<TransformerEditAction>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      expect(settings.saved, isNull);
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+      await tester.pumpAndSettle();
+      expect(settings.saved, isEmpty);
+      expect(find.byType(TransformerRuleCard), findsNothing);
+    },
+  );
+}

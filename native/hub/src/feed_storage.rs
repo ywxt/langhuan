@@ -57,26 +57,28 @@ enum Op {
     Flush(oneshot::Sender<()>),
 }
 
-/// Apply one queued operation to the database. The channel is FIFO, so
-/// submission order is preserved; `Flush` only signals.
-async fn apply(db: &Db, op: Op) -> Result<()> {
-    match op {
-        Op::Set {
-            feed_id,
-            key,
-            value,
-        } => {
-            db.call(move |repo| repo.set_feed_storage(&feed_id, &key, &value))
-                .await
-        }
-        Op::Delete { feed_id, key } => {
-            db.call(move |repo| repo.delete_feed_storage(&feed_id, &key))
-                .await
-        }
-        #[cfg(test)]
-        Op::Flush(done) => {
-            let _ = done.send(());
-            Ok(())
+impl Op {
+    /// Apply one queued operation to the database. The channel is FIFO, so
+    /// submission order is preserved; `Flush` only signals.
+    async fn apply(self, db: &Db) -> Result<()> {
+        match self {
+            Op::Set {
+                feed_id,
+                key,
+                value,
+            } => {
+                db.call(move |repo| repo.set_feed_storage(&feed_id, &key, &value))
+                    .await
+            }
+            Op::Delete { feed_id, key } => {
+                db.call(move |repo| repo.delete_feed_storage(&feed_id, &key))
+                    .await
+            }
+            #[cfg(test)]
+            Op::Flush(done) => {
+                let _ = done.send(());
+                Ok(())
+            }
         }
     }
 }
@@ -137,7 +139,7 @@ impl FeedStorage {
         // singleton drops cleanly once its senders close.
         tokio::spawn(async move {
             while let Some(op) = rx.recv().await {
-                if let Err(error) = apply(&db, op).await {
+                if let Err(error) = op.apply(&db).await {
                     tracing::warn!(error = %error, "feed storage write dropped");
                 }
             }

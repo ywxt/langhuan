@@ -115,7 +115,7 @@ void main() {
             fontScale: 1.0,
             lineHeight: 1.5,
             contentPadding: const EdgeInsets.all(16),
-            chineseConversion: ChineseConversionMode.none,
+            transformerRevision: '',
             showChapterComments: true,
             // One paragraph per frame: the materialization becomes
             // deterministic instead of racing a real-time budget.

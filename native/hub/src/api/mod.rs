@@ -9,7 +9,6 @@ pub mod bookmark;
 pub mod bookshelf;
 pub mod cache;
 pub mod comments;
-pub mod conversion;
 pub mod debug;
 pub mod feed_stream;
 pub mod init;
@@ -17,6 +16,7 @@ pub mod locale;
 pub mod reading_progress;
 pub mod registry;
 pub mod transfer;
+pub mod transformers;
 pub mod webview;
 
 // Re-export all public API functions so FRB can find them.
@@ -25,11 +25,11 @@ pub use auth::*;
 pub use bookmark::*;
 pub use bookshelf::*;
 pub use cache::*;
-pub use conversion::*;
 pub use debug::*;
 pub use feed_stream::*;
 pub use locale::*;
 pub use reading_progress::*;
 pub use registry::*;
 pub use transfer::*;
+pub use transformers::*;
 pub use webview::*;

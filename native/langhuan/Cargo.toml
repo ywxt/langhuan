@@ -10,6 +10,7 @@ crate-type = ["lib"]
 wildcard_imports = "deny"
 
 [dependencies]
+regex = "1"
 rquickjs = { version = "0.14", features = ["bindgen", "parallel"] }
 reqwest = { version = "0.13", features = [
     "query",

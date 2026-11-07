@@ -9,10 +9,10 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/utils/snackbars.dart';
 import '../../../shared/widgets/chapter_scrollbar.dart';
 import '../../feeds/feed_service.dart';
+import '../../transformers/transformer_settings_page.dart';
 import '../bookmark_provider.dart';
 import '../reader_settings_provider.dart';
 import '../reading_progress_provider.dart';
-import 'chinese_conversion_picker.dart';
 import 'reader_theme_picker.dart';
 
 Future<void> showReaderInterfaceSheet(BuildContext context) async {
@@ -272,7 +272,11 @@ class _TypoSliderState extends State<_TypoSlider> {
   }
 }
 
-Future<void> showReaderSettingsSheet(BuildContext context) async {
+Future<void> showReaderSettingsSheet(
+  BuildContext context, {
+  String? feedId,
+  String? bookId,
+}) async {
   final l10n = AppLocalizations.of(context);
 
   await showModalBottomSheet<void>(
@@ -348,7 +352,7 @@ Future<void> showReaderSettingsSheet(BuildContext context) async {
               ),
               const SizedBox(height: LanghuanTheme.spaceMd),
               Text(
-                l10n.readerChineseConversion,
+                l10n.transformTitle,
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
               const SizedBox(height: LanghuanTheme.spaceSm),
@@ -356,15 +360,13 @@ Future<void> showReaderSettingsSheet(BuildContext context) async {
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   icon: const Icon(Icons.translate),
-                  label: Text(
-                    chineseConversionLabel(l10n, settings.chineseConversion),
-                  ),
+                  label: Text(l10n.transformBookSettings),
                   onPressed: () async {
-                    final mode = await showChineseConversionPicker(
+                    await openTransformerSettings(
                       context,
-                      selected: settings.chineseConversion,
+                      feedId: feedId,
+                      bookId: bookId,
                     );
-                    if (mode != null) notifier.setChineseConversion(mode);
                   },
                 ),
               ),

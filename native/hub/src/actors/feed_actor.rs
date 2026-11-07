@@ -13,9 +13,7 @@ use std::{
 use async_trait::async_trait;
 use langhuan::cache::CachedFeed;
 use langhuan::feed::Feed;
-use langhuan::model::Paragraph;
 use langhuan::script::feed::ScriptFeed;
-use langhuan::transform::TransformChain;
 use messages::prelude::{Actor, Address, Context, Handler};
 use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
@@ -24,11 +22,11 @@ use tokio_stream::StreamExt;
 
 use crate::api::types::{
     AggregatedSearchEvent, BookInfo, BridgeError, ChapterItem, FeedMetaItem, ParagraphContent,
-    ParagraphId, SearchResultItem,
+    SearchResultItem,
 };
 
-use super::conversion_actor::{BuildTransformChain, ConversionActor};
 use super::registry_actor::{GetFeed, ListFeeds, RegistryActor};
+use crate::api::transformers::build_transform_chain;
 
 // ---------------------------------------------------------------------------
 // Generic pull-based stream
@@ -213,40 +211,6 @@ async fn drive_stream<S, SrcItem, T, F>(
     }
 }
 
-fn paragraph_content(paragraph: Paragraph) -> ParagraphContent {
-    match paragraph {
-        Paragraph::Title {
-            id,
-            text,
-            comment_count,
-        } => ParagraphContent::Title {
-            id: ParagraphId::from(id),
-            text,
-            comment_count,
-        },
-        Paragraph::Text {
-            id,
-            content,
-            comment_count,
-        } => ParagraphContent::Text {
-            id: ParagraphId::from(id),
-            content,
-            comment_count,
-        },
-        Paragraph::Image {
-            id,
-            url,
-            alt,
-            comment_count,
-        } => ParagraphContent::Image {
-            id: ParagraphId::from(id),
-            url,
-            alt,
-            comment_count,
-        },
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
@@ -277,6 +241,7 @@ pub struct GetParagraphs {
     pub book_id: String,
     pub chapter_id: String,
     pub force_refresh: bool,
+    pub transformers: Vec<crate::api::types::TransformerRule>,
 }
 
 // ---------------------------------------------------------------------------
@@ -291,20 +256,15 @@ const MAX_CONCURRENT_FEED_SEARCHES: usize = 4;
 
 pub struct FeedActor {
     registry_addr: Address<RegistryActor>,
-    conversion_addr: Address<ConversionActor>,
     search_permits: Arc<Semaphore>,
 }
 
 impl Actor for FeedActor {}
 
 impl FeedActor {
-    pub fn new(
-        registry_addr: Address<RegistryActor>,
-        conversion_addr: Address<ConversionActor>,
-    ) -> Self {
+    pub fn new(registry_addr: Address<RegistryActor>) -> Self {
         Self::with_search_permits(
             registry_addr,
-            conversion_addr,
             Arc::new(Semaphore::new(MAX_CONCURRENT_FEED_SEARCHES)),
         )
     }
@@ -313,12 +273,10 @@ impl FeedActor {
     /// caller — used by tests to observe the bound deterministically.
     pub fn with_search_permits(
         registry_addr: Address<RegistryActor>,
-        conversion_addr: Address<ConversionActor>,
         search_permits: Arc<Semaphore>,
     ) -> Self {
         Self {
             registry_addr,
-            conversion_addr,
             search_permits,
         }
     }
@@ -357,13 +315,7 @@ impl Handler<GetBookInfo> for FeedActor {
             .book_info_with_options(&msg.book_id, msg.force_refresh)
             .await
             .map_err(BridgeError::from)?;
-        Ok(BookInfo {
-            id: info.id,
-            title: info.title,
-            author: info.author,
-            cover_url: info.cover_url,
-            description: info.description,
-        })
+        Ok(BookInfo::from(info))
     }
 }
 
@@ -376,14 +328,7 @@ impl Handler<OpenSearchStream> for FeedActor {
         let feed = self.resolve_feed(&msg.feed_id).await?;
         let keyword = msg.keyword;
         Ok(spawn_pull_stream(|tx| async move {
-            drive_stream(feed.search(&keyword), tx, |item| SearchResultItem {
-                id: item.id,
-                title: item.title,
-                author: item.author,
-                cover_url: item.cover_url,
-                description: item.description,
-            })
-            .await
+            drive_stream(feed.search(&keyword), tx, SearchResultItem::from).await
         }))
     }
 }
@@ -479,13 +424,7 @@ async fn search_one_feed(
             Ok(item) => AggregatedSearchEvent::Item {
                 feed_id: meta.id.clone(),
                 feed_name: meta.name.clone(),
-                item: SearchResultItem {
-                    id: item.id,
-                    title: item.title,
-                    author: item.author,
-                    cover_url: item.cover_url,
-                    description: item.description,
-                },
+                item: SearchResultItem::from(item),
             },
             Err(e) => AggregatedSearchEvent::FeedError {
                 feed_id: meta.id.clone(),
@@ -548,10 +487,7 @@ impl Handler<GetChapters> for FeedActor {
                         return Err(BridgeError::from(error));
                     }
                 };
-                items.push(ChapterItem {
-                    id: item.id,
-                    title: item.title,
-                });
+                items.push(ChapterItem::from(item));
             }
             tracing::debug!(
                 feed_id = %feed_id,
@@ -583,12 +519,8 @@ impl Handler<GetParagraphs> for FeedActor {
                 .await?;
         }
 
-        // Build a transform chain from the current conversion settings.
-        let mut transform_chain: TransformChain = self
-            .conversion_addr
-            .send(BuildTransformChain)
-            .await
-            .map_err(BridgeError::from)?;
+        // Capture this request's rules; no shared mutable conversion state.
+        let mut transform_chain = build_transform_chain(msg.transformers)?;
 
         let feed_id = msg.feed_id;
         let book_id = msg.book_id;
@@ -616,13 +548,13 @@ impl Handler<GetParagraphs> for FeedActor {
                     }
                 };
                 if transform_chain.is_empty() {
-                    items.push(paragraph_content(paragraph));
+                    items.push(ParagraphContent::from(paragraph));
                 } else {
                     items.extend(
                         transform_chain
                             .apply(paragraph)
                             .into_iter()
-                            .map(paragraph_content),
+                            .map(ParagraphContent::from),
                     );
                 }
             }
@@ -891,7 +823,7 @@ export default (() => {
     }
 
     /// Spawn a registry (initialized with [db] via its handler), plus
-    /// conversion and feed actors, returning the feed actor's address.
+    /// feed actor, returning the feed actor's address.
     async fn spawn_feed_actor(db: Db) -> Result<Address<FeedActor>, Box<dyn Error>> {
         spawn_feed_actor_with_permits(db, Arc::new(Semaphore::new(1))).await
     }
@@ -915,17 +847,9 @@ export default (() => {
             .map_err(|e| format!("messaging: {e}"))?
             .map_err(|e| format!("init: {e}"))?;
 
-        let conversion_context = Context::new();
-        let conversion_addr = conversion_context.address();
-        spawn(conversion_context.run(ConversionActor::new()));
-
         let feed_context = Context::new();
         let feed_addr = feed_context.address();
-        spawn(feed_context.run(FeedActor::with_search_permits(
-            registry_addr,
-            conversion_addr,
-            permits,
-        )));
+        spawn(feed_context.run(FeedActor::with_search_permits(registry_addr, permits)));
         Ok(feed_addr)
     }
 

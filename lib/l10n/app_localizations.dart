@@ -2485,6 +2485,228 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count}K'**
   String readerCommentCountCompact(String count);
+
+  /// No description provided for @transformTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Transformers'**
+  String get transformTitle;
+
+  /// No description provided for @transformBookSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Book transformers'**
+  String get transformBookSettings;
+
+  /// No description provided for @transformDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Rules run from top to bottom. Select a rule to edit its name, status, and configuration.'**
+  String get transformDescription;
+
+  /// No description provided for @transformRegexReplace.
+  ///
+  /// In en, this message translates to:
+  /// **'Regex replacement'**
+  String get transformRegexReplace;
+
+  /// No description provided for @transformRegexDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete matching paragraphs'**
+  String get transformRegexDelete;
+
+  /// No description provided for @transformSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get transformSave;
+
+  /// No description provided for @transformAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add transformer'**
+  String get transformAdd;
+
+  /// No description provided for @transformName.
+  ///
+  /// In en, this message translates to:
+  /// **'Name (optional)'**
+  String get transformName;
+
+  /// No description provided for @transformPattern.
+  ///
+  /// In en, this message translates to:
+  /// **'Regular expression'**
+  String get transformPattern;
+
+  /// No description provided for @transformReplacement.
+  ///
+  /// In en, this message translates to:
+  /// **'Replacement'**
+  String get transformReplacement;
+
+  /// No description provided for @transformIncludeTitles.
+  ///
+  /// In en, this message translates to:
+  /// **'Also apply to chapter titles'**
+  String get transformIncludeTitles;
+
+  /// No description provided for @transformRegexHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Use \$1 or \$2 for capture groups; \$\$ inserts a literal dollar sign. Inline flags such as (?i) are supported. Lookaround and pattern backreferences are not supported.'**
+  String get transformRegexHelp;
+
+  /// No description provided for @transformInherit.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply application transformers first'**
+  String get transformInherit;
+
+  /// No description provided for @transformInheritDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off to use only this book’s rules.'**
+  String get transformInheritDescription;
+
+  /// No description provided for @transformEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No rules in this combination.'**
+  String get transformEmpty;
+
+  /// No description provided for @transformMoveUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Move up'**
+  String get transformMoveUp;
+
+  /// No description provided for @transformMoveDown.
+  ///
+  /// In en, this message translates to:
+  /// **'Move down'**
+  String get transformMoveDown;
+
+  /// No description provided for @transformPatternRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a regular expression.'**
+  String get transformPatternRequired;
+
+  /// No description provided for @transformIndent.
+  ///
+  /// In en, this message translates to:
+  /// **'Paragraph indentation'**
+  String get transformIndent;
+
+  /// No description provided for @transformDeduplicate.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter title cleanup'**
+  String get transformDeduplicate;
+
+  /// No description provided for @transformConversionDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Convert paragraph text and chapter titles between Chinese variants.'**
+  String get transformConversionDescription;
+
+  /// No description provided for @transformReplaceDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace every regex match within a paragraph.'**
+  String get transformReplaceDescription;
+
+  /// No description provided for @transformDeleteDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the whole paragraph when its text matches.'**
+  String get transformDeleteDescription;
+
+  /// No description provided for @transformIndentDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Set the first-line indent; replaces existing leading spaces.'**
+  String get transformIndentDescription;
+
+  /// No description provided for @transformDeduplicateDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the first chapter title and remove later duplicate title paragraphs.'**
+  String get transformDeduplicateDescription;
+
+  /// No description provided for @transformKeepFirstTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep only the first title in each chapter'**
+  String get transformKeepFirstTitle;
+
+  /// No description provided for @transformIndentCharacters.
+  ///
+  /// In en, this message translates to:
+  /// **'First-line indent: {count} characters'**
+  String transformIndentCharacters(int count);
+
+  /// No description provided for @transformApplicationRules.
+  ///
+  /// In en, this message translates to:
+  /// **'Application rules'**
+  String get transformApplicationRules;
+
+  /// No description provided for @transformBookRules.
+  ///
+  /// In en, this message translates to:
+  /// **'This book’s rules'**
+  String get transformBookRules;
+
+  /// No description provided for @transformAddHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use + to choose and configure a transformer.'**
+  String get transformAddHint;
+
+  /// No description provided for @transformEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Enabled'**
+  String get transformEnabled;
+
+  /// No description provided for @transformDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Disabled'**
+  String get transformDisabled;
+
+  /// No description provided for @transformEmptyReplacement.
+  ///
+  /// In en, this message translates to:
+  /// **'(empty text)'**
+  String get transformEmptyReplacement;
+
+  /// No description provided for @transformRemoveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete transformer?'**
+  String get transformRemoveTitle;
+
+  /// No description provided for @transformRemoveMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove this transformer from the combination?'**
+  String get transformRemoveMessage;
+
+  /// No description provided for @transformApplicationEditHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This is an application rule. Changes affect every book that inherits it.'**
+  String get transformApplicationEditHint;
+
+  /// No description provided for @transformReorder.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag to reorder'**
+  String get transformReorder;
 }
 
 class _AppLocalizationsDelegate

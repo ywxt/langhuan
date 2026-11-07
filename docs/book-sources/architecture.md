@@ -189,6 +189,76 @@ Do not cache a helper URL merely because it looks versioned. If a page selects
 the current asset dynamically, rediscover it for each operation and omit
 `cache_key`; otherwise a site rollout can leave the source using stale code.
 
+## Reader transformers
+
+Transformers are user settings, separate from the source's reducer exports.
+Application settings define an ordered chain for all books. Book settings can
+append their own chain or turn off application inheritance to use only their
+own rules. Entries can be named, enabled, disabled, edited, and reordered.
+
+The reader processes paragraphs in this order:
+
+```text
+raw source result / raw chapter cache
+  -> enabled application rules (when inherited)
+  -> enabled book rules
+  -> reader layout and listening
+```
+
+Chinese conversion, regular-expression replacement, paragraph deletion,
+first-line indentation, and chapter-title deduplication use the same chain.
+No transformer is implicitly inserted before or after that chain. New settings
+start with visible title-cleanup and two-character indentation entries; both can
+be disabled, removed, configured, or reordered. An empty effective chain passes
+source paragraphs through unchanged.
+
+Use the **+** action to choose a transformer type and open its editor. The list
+shows each rule's custom name (or its type), enabled state, and configuration
+summary. Select a rule to edit its name, enabled state, and parameters on a
+separate page. Saving commits directly to SQLite; leaving without saving
+retains the previous state. Drag the handles in the list to change the execution
+order; each reorder is saved directly to SQLite. Deletion is available in the
+single-rule editor's menu.
+
+Application rules are managed in application settings; book rules are managed
+only through the reading screen's settings. Inherited application rules also
+appear in the book list. Opening one displays a notice that edits affect all
+inheriting books. There is no book-detail settings action.
+
+Indentation replaces existing leading spaces or tabs with 0–8 ideographic
+spaces. Zero removes the existing indent; disabling the rule preserves source
+spacing. Title cleanup keeps only the first title paragraph per chapter.
+
+Replacement changes every match inside each text paragraph;
+deletion removes an entire paragraph if any part matches. Regex rules preserve
+chapter titles unless **Also apply to chapter titles** is enabled. Images pass
+through unchanged. Chinese conversion applies to both text and titles.
+
+For example, put Simplified-to-Traditional conversion before a replacement
+matching `廣告` when the source returns Simplified Chinese. Reversing the order
+changes what that replacement sees. A deletion pattern such as `^.*下載.*$`
+removes matching text paragraphs; replacing it with an empty string instead
+retains the paragraph identity and only removes matching text.
+
+Regex rules use Rust's `regex` syntax: `$1`, `${name}`, and `$$` in replacements
+refer to numbered groups, named groups, and a literal dollar sign. Inline flags
+such as `(?i)` and `(?m)` are supported; lookaround and pattern backreferences
+are not. Patterns and replacements are each limited to 4096 UTF-8 bytes, regex
+compilation to 1 MiB with a nesting limit of 128, and each effective chain to
+64 active rules. Validation uses the same engine before saving.
+
+Rules run after the raw cache, so edits reprocess cached content without
+downloading it again or modifying the source data. Kept paragraphs retain
+their IDs and comment counts. Each request captures the effective chain for
+its book; there is no shared native conversion mode between books. Settings
+are persisted atomically in SQLite's existing `meta` table under
+`reader.transformers`, so full database backups include both application and
+book configurations. Chapter requests capture the effective rules directly
+from Rust's database layer; Flutter does not supply persistence snapshots with
+each request. SharedPreferences is consulted only for the initial import, and
+legacy keys are removed after the database commit succeeds. Existing database
+settings always take precedence over preferences.
+
 ## Failure model
 
 Expected website states return `FeedError` values, for example

@@ -1695,6 +1695,7 @@ dependencies = [
  "hmac",
  "md-5",
  "mockito",
+ "regex",
  "reqwest",
  "rquickjs",
  "rustls",

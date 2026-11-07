@@ -93,7 +93,7 @@ void main() {
             fontScale: 1.0,
             lineHeight: 1.5,
             contentPadding: const EdgeInsets.all(16),
-            chineseConversion: ChineseConversionMode.none,
+            transformerRevision: '',
             // One paragraph per frame: the mask lifecycle becomes
             // deterministic instead of racing a real-time 4ms budget.
             paginationSliceBudget: Duration.zero,

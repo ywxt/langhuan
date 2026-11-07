@@ -6,8 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../shared/theme/app_theme.dart';
-import '../../src/rust/api/conversion.dart' as rust_conversion;
-import '../../src/rust/api/types.dart' show ChineseConversionMode;
 
 enum ReaderThemeMode { system, light, dark, sepia, custom }
 
@@ -81,7 +79,6 @@ class ReaderSettingsState {
     this.lineHeight = 1.8,
     this.themeMode = ReaderThemeMode.system,
     this.customTheme = const ReaderCustomTheme(),
-    this.chineseConversion = ChineseConversionMode.none,
     this.pageMode = ReaderPageMode.horizontal,
     this.showComments = true,
   });
@@ -95,7 +92,6 @@ class ReaderSettingsState {
   final double lineHeight;
   final ReaderThemeMode themeMode;
   final ReaderCustomTheme customTheme;
-  final ChineseConversionMode chineseConversion;
   final ReaderPageMode pageMode;
 
   /// Whether the reader shows paragraph-comment badges and the tap-to-open
@@ -113,7 +109,6 @@ class ReaderSettingsState {
     double? lineHeight,
     ReaderThemeMode? themeMode,
     ReaderCustomTheme? customTheme,
-    ChineseConversionMode? chineseConversion,
     ReaderPageMode? pageMode,
     bool? showComments,
   }) {
@@ -131,7 +126,6 @@ class ReaderSettingsState {
       lineHeight: lineHeight ?? this.lineHeight,
       themeMode: themeMode ?? this.themeMode,
       customTheme: customTheme ?? this.customTheme,
-      chineseConversion: chineseConversion ?? this.chineseConversion,
       pageMode: pageMode ?? this.pageMode,
       showComments: showComments ?? this.showComments,
     );
@@ -150,7 +144,6 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
   static const _kCustomThemeBackground = 'reader.customTheme.background';
   static const _kCustomThemeForeground = 'reader.customTheme.foreground';
   static const _kCustomThemeAccent = 'reader.customTheme.accent';
-  static const _kChineseConversion = 'reader.chineseConversion';
   static const _kPageMode = 'reader.pageMode';
   static const _kShowComments = 'reader.showComments';
 
@@ -280,21 +273,6 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
     _persistState();
   }
 
-  void setChineseConversion(ChineseConversionMode mode) {
-    state = state.copyWith(chineseConversion: mode);
-    _persistState();
-    // Fire-and-forget: notify Rust backend so subsequent streams use this mode.
-    _syncConversionMode(mode);
-  }
-
-  /// Push the conversion mode to the Rust backend. Fire-and-forget: a
-  /// missing bridge (tests, previews) must never break settings handling.
-  void _syncConversionMode(ChineseConversionMode mode) {
-    try {
-      rust_conversion.setChineseConversionMode(mode: mode);
-    } catch (_) {}
-  }
-
   void setPageMode(ReaderPageMode mode) {
     state = state.copyWith(pageMode: mode);
     _persistState();
@@ -326,7 +304,6 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
         .clamp(1.2, 2.4);
 
     final themeIndex = prefs.getInt(_kThemeMode);
-    final conversionIndex = prefs.getInt(_kChineseConversion);
     final pageModeIndex = prefs.getInt(_kPageMode);
     final storedShowComments = prefs.getBool(_kShowComments);
 
@@ -336,13 +313,6 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
             themeIndex < ReaderThemeMode.values.length
         ? ReaderThemeMode.values[themeIndex]
         : state.themeMode;
-
-    final restoredConversion =
-        conversionIndex != null &&
-            conversionIndex >= 0 &&
-            conversionIndex < ChineseConversionMode.values.length
-        ? ChineseConversionMode.values[conversionIndex]
-        : state.chineseConversion;
 
     final restoredPageMode =
         pageModeIndex != null &&
@@ -383,15 +353,12 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
       lineHeight: lineHeight,
       themeMode: restoredThemeMode,
       customTheme: customTheme,
-      chineseConversion: restoredConversion,
       pageMode: restoredPageMode,
       showComments: storedShowComments ?? state.showComments,
       fontFamily: () => hasFileFont ? null : storedFontFamily,
       customFontFilePath: () => storedFilePath,
       customFontDisplayName: () => storedDisplayName,
     );
-
-    _syncConversionMode(restoredConversion);
 
     if (storedFilePath != null && storedFilePath.isNotEmpty) {
       try {
@@ -448,7 +415,6 @@ class ReaderSettingsNotifier extends Notifier<ReaderSettingsState> {
       _kCustomThemeAccent,
       state.customTheme.accent.toARGB32(),
     );
-    await prefs.setInt(_kChineseConversion, state.chineseConversion.index);
     await prefs.setInt(_kPageMode, state.pageMode.index);
     await prefs.setBool(_kShowComments, state.showComments);
   }

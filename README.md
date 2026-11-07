@@ -19,8 +19,9 @@ being tied to one catalogue or one website.
   familiar swipe actions.
 - **Choose how reading feels** — Switch between horizontal pages and seamless
   vertical reading, change fonts and spacing, and create custom reader themes.
-- **Read Chinese your way** — Convert content to Traditional Chinese, Taiwan
-  usage, or Hong Kong variants while reading.
+- **Shape the text you read** — Combine Chinese conversion, regex replacement,
+  and removal of unwanted paragraphs. Set defaults for all books and fine-tune
+  the ordered rules for each book.
 - **Keep useful data local** — Cache books and chapters for fast reopening,
   preserve shelved content during maintenance, and export or import sources.
 - **Sign in when a source needs it** — Complete login or human verification in
