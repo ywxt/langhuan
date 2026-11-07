@@ -47,6 +47,22 @@ void main() {
     await oldResponse.drain<void>();
   });
 
+  test('the copy-ready example asks the discovery endpoint first', () {
+    final command = DeveloperAgentRoutes.curlExample(
+      Uri.parse('http://127.0.0.1:49152'),
+      'token',
+    );
+    // The dialog's example sends agents to the catalogue first — its
+    // response points back at /v1/run and the script endpoints — instead
+    // of walking them straight into a run request.
+    expect(
+      command,
+      "curl -s 'http://127.0.0.1:49152/v1/operations' "
+      "-H 'Authorization: Bearer token'",
+    );
+    expect(command, isNot(contains('/v1/run')));
+  });
+
   Future<(int, Map<String, dynamic>)> post(
     DeveloperAgentServer server,
     String path, [

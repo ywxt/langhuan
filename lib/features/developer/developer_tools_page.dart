@@ -128,11 +128,7 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
     if (!mounted || !_agentServer.isRunning) return;
     final uri = _agentServer.baseUri!;
     final token = _agentServer.token!;
-    final command =
-        "curl -s '${uri.resolve(DeveloperAgentRoutes.runOperation)}' "
-        "-H 'Authorization: Bearer $token' "
-        "-H 'Content-Type: application/json' "
-        "--data '{\"operation\":\"search\",\"input\":{\"keyword\":\"test\"}}'";
+    final command = DeveloperAgentRoutes.curlExample(uri, token);
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(

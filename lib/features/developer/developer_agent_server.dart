@@ -25,6 +25,13 @@ abstract final class DeveloperAgentRoutes {
   static const runOperation = '/v1/run';
   static const loadScript = '/v1/load';
   static const reloadScript = '/v1/reload';
+
+  /// Copy-ready curl that asks [operations] for the catalogue first; the
+  /// response's `run_endpoint` and `script_endpoints` then point at
+  /// [runOperation], [loadScript], and [reloadScript].
+  static String curlExample(Uri baseUri, String token) =>
+      "curl -s '${baseUri.resolve(operations)}' "
+      "-H 'Authorization: Bearer $token'";
 }
 
 /// Loopback-only HTTP facade for local AI agents and editor integrations.
