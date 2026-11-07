@@ -5,7 +5,7 @@ import 'package:langhuan/features/bookshelf/widgets/reader_typography.dart';
 import 'package:langhuan/src/rust/api/types.dart';
 
 void main() {
-  // The test fonts do not implement `halt`; these tests pin the style
+  // The test fonts do not implement `chws`; these tests pin the style
   // contract (the feature travels with the recipe), not actual squeezing.
   const textTheme = TextTheme(
     bodyLarge: TextStyle(fontSize: 16),
@@ -25,7 +25,7 @@ void main() {
       expect(body.fontFamily, 'Serif');
       expect(body.letterSpacing, 0.5);
       expect(body.height, 2.0);
-      expect(body.fontFeatures, contains(const FontFeature('halt')));
+      expect(body.fontFeatures, contains(const FontFeature('chws')));
     });
 
     test('title scales the theme size without a height override', () {
@@ -40,7 +40,7 @@ void main() {
       expect(title.fontFamily, 'Serif');
       expect(title.letterSpacing, 0.5);
       expect(title.height, isNull);
-      expect(title.fontFeatures, contains(const FontFeature('halt')));
+      expect(title.fontFeatures, contains(const FontFeature('chws')));
     });
 
     test('defaults keep the theme family and base sizes', () {
@@ -62,7 +62,7 @@ void main() {
       ),
     );
     final body = tester.widget<Text>(find.text('你好，世界。'));
-    expect(body.style?.fontFeatures, contains(const FontFeature('halt')));
+    expect(body.style?.fontFeatures, contains(const FontFeature('chws')));
     expect(body.style?.height, 1.8);
   });
 
@@ -73,7 +73,7 @@ void main() {
       MaterialApp(home: Material(child: ParagraphView(paragraph: _title('第一章')))),
     );
     final title = tester.widget<Text>(find.text('第一章'));
-    expect(title.style?.fontFeatures, contains(const FontFeature('halt')));
+    expect(title.style?.fontFeatures, contains(const FontFeature('chws')));
   });
 }
 

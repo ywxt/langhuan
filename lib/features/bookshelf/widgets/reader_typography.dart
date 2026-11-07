@@ -32,10 +32,12 @@ class ReaderTypography {
   /// Line-height multiplier for body paragraphs.
   final double lineHeight;
 
-  /// Alternate half-width CJK punctuation (標點擠壓, OpenType `halt`).
-  /// Fonts without the feature ignore it, so it stays always-on rather
-  /// than growing a setting.
-  static const List<FontFeature> _punctuationSqueeze = [FontFeature('halt')];
+  /// Squeezes full-width punctuation (標點擠壓) between the neighbours that
+  /// CJK typography expects it (OpenType `chws`, the contextual
+  /// half-width spacing of JLREQ §3.1.4 — consecutive brackets, commas,
+  /// full stops). Fonts without the feature ignore it, so it stays
+  /// always-on rather than growing a setting.
+  static const List<FontFeature> _punctuationSqueeze = [FontFeature('chws')];
 
   /// Chapter title style: scaled [TextTheme.headlineSmall] with no height
   /// override, matching the historic hand-copied recipes.
