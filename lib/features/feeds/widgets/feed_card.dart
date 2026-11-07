@@ -18,10 +18,14 @@ class FeedCard extends ConsumerWidget {
     this.isDeleting = false,
     this.enabled = true,
     this.onDelete,
+    this.margin = const EdgeInsets.only(bottom: 12),
+    this.borderRadius,
   });
 
   final FeedMetaItem feed;
   final bool isDeleting, enabled;
+  final EdgeInsetsGeometry margin;
+  final BorderRadius? borderRadius;
   final Future<void> Function()? onDelete;
 
   @override
@@ -45,6 +49,8 @@ class FeedCard extends ConsumerWidget {
       ?authLabel,
     ].join(' · ');
     return ConfigurationListCard(
+      margin: margin,
+      borderRadius: borderRadius,
       leading: Icon(Icons.extension_outlined),
       title: feed.name,
       subtitle: summary,

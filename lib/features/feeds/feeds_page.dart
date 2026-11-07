@@ -19,6 +19,7 @@ import '../../shared/widgets/confirm_dialog.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/loading.dart';
+import '../../shared/widgets/swipe_action_card.dart';
 import '../../src/rust/api/types.dart';
 import '../bookshelf/bookshelf_provider.dart';
 import 'add_feed_sheet.dart';
@@ -342,12 +343,25 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
               deletingId != null ||
               _pendingDeleteIds.isNotEmpty;
 
-          return FeedCard(
-            key: ValueKey('feed-${feed.id}'),
-            feed: feed,
-            isDeleting: isDeleting,
-            enabled: !isBusy,
-            onDelete: () => _confirmAndDelete(feed, l10n),
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: SwipeActionCard(
+              dismissKey: ValueKey('feed-${feed.id}'),
+              deleteTooltip: l10n.feedDeleteConfirm,
+              enabled: !isBusy,
+              confirmDismiss: (_) async {
+                await _confirmAndDelete(feed, l10n);
+                return false;
+              },
+              child: FeedCard(
+                feed: feed,
+                isDeleting: isDeleting,
+                enabled: !isBusy,
+                margin: EdgeInsets.zero,
+                borderRadius: BorderRadius.zero,
+                onDelete: () => _confirmAndDelete(feed, l10n),
+              ),
+            ),
           );
         },
       ),
@@ -414,7 +428,7 @@ class _FeedsPageState extends ConsumerState<FeedsPage> {
     showErrorSnack(cur, message);
   }
 
-  /// Confirm the detail sheet's delete action, then allow undo.
+  /// Share confirmation and undo between swipe and detail-sheet deletion.
   Future<void> _confirmAndDelete(
     FeedMetaItem feed,
     AppLocalizations l10n,

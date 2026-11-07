@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:langhuan/features/feeds/feed_providers.dart';
+import 'package:langhuan/features/feeds/feeds_page.dart';
+import 'package:langhuan/shared/widgets/swipe_action_card.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/features/feeds/widgets/feed_card.dart';
 import 'package:langhuan/shared/widgets/configuration_list_card.dart';
@@ -55,6 +57,52 @@ Widget _testApp(Widget child) {
 }
 
 void main() {
+  testWidgets('feed swipe deletion still confirms and supports undo', (
+    tester,
+  ) async {
+    final deleted = <String>[];
+    final service = FakeFeedService(
+      listFeedsHandler: () async => [_feedA],
+      removeFeedHandler: (id) async => deleted.add(id),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          feedServiceProvider.overrideWithValue(service),
+          feedAuthStatusProvider.overrideWith((ref, request) => null),
+          appDataDirectorySetProvider.overrideWith(
+            (ref) async => const AppDataDirectoryResult(feedCount: 1),
+          ),
+        ],
+        child: _testApp(const FeedsPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(SwipeActionCard), findsOneWidget);
+    final card = tester.widget<ConfigurationListCard>(
+      find.byType(ConfigurationListCard),
+    );
+    expect(card.margin, EdgeInsets.zero);
+    expect(card.borderRadius, BorderRadius.zero);
+    await tester.drag(find.byType(Dismissible), const Offset(-600, 0));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FeedCard), findsOneWidget);
+    expect(deleted, isEmpty);
+    await tester.drag(find.byType(Dismissible), const Offset(-600, 0));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FeedCard), findsNothing);
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FeedCard), findsOneWidget);
+    expect(deleted, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('long source summaries and error states fit narrow screens', (
     tester,
   ) async {

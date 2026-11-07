@@ -316,9 +316,10 @@ Wise mobile scale adapted:
 - Feeds and Transformers share the same summary card: leading icon, title,
   two-line summary, status label, and detail chevron. Feed authentication status
   appears in the summary; load errors use the error colour for the status label.
-- Feed list rows contain no toggles or delete gestures. Tap to open the existing
-  detail sheet for enabled state, authentication, metadata, and confirmed deletion
-  with undo.
+- Feed list rows support swipe-to-delete with confirmation and undo. The swipe
+  background and card share one rounded outline; desktop also exposes a delete
+  button. Tap the summary to open the detail sheet for enabled state,
+  authentication, metadata, and the same delete flow.
 - Individual Transformer settings also open in a bottom sheet. The form scrolls
   above fixed Save/Delete actions and clears the keyboard inset. Closing without
   saving discards edits; sorting stays in the Transformer list.

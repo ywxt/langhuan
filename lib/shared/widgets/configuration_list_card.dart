@@ -10,15 +10,22 @@ class ConfigurationListCard extends StatelessWidget {
     required this.subtitle,
     required this.status,
     this.onTap,
+    this.margin = const EdgeInsets.only(bottom: 12),
+    this.borderRadius,
   });
 
   final Widget leading, status;
   final String title, subtitle;
   final VoidCallback? onTap;
+  final EdgeInsetsGeometry margin;
+  final BorderRadius? borderRadius;
 
   @override
   Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.only(bottom: 12),
+    margin: margin,
+    shape: borderRadius == null
+        ? null
+        : RoundedRectangleBorder(borderRadius: borderRadius!),
     clipBehavior: Clip.antiAlias,
     child: ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
