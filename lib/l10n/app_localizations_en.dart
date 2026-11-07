@@ -1336,33 +1336,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get listeningChapterEnd => 'End of chapter';
-
-  @override
-  String get listeningStopsAfterChapter => 'Stops after this chapter';
-
-  @override
-  String get listeningCustomTimer => 'Custom';
-
-  @override
-  String get listeningCustomTimerTitle => 'Custom sleep timer';
-
-  @override
-  String listeningMinutesLabel(int count) {
-    return '$count min';
-  }
-
-  @override
-  String listeningRemainingTime(String time) {
-    return 'Stops in $time';
-  }
-
-  @override
-  String listeningParagraphProgress(int current, int total) {
-    return 'Paragraph $current / $total';
-  }
-
-  @override
   String get readerShowComments => 'Show comments';
 
   @override
