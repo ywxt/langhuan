@@ -333,6 +333,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
   Future<void> _openTocSheet() {
     return showReaderTocSheet(
       context: context,
+      feedId: widget.feedId,
+      bookId: widget.bookId,
       ref: ref,
       chapters: _screenController.chapters,
       onJumpToChapter: (chapterId) {

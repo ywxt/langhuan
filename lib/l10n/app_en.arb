@@ -172,6 +172,8 @@
   "bookDetailNoDescription": "No description available",
   "@bookDetailNoDescription": { "description": "Fallback text when description is empty" },
 
+  "chapterCached": "Cached",
+  "chapterNotCached": "Not cached",
   "bookDetailChapters": "Chapters ({count})",
   "@bookDetailChapters": {
     "description": "Chapter section title with chapter count",

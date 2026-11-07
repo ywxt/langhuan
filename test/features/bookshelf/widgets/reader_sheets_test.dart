@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:langhuan/features/bookshelf/reader_settings_provider.dart';
+import 'package:langhuan/features/bookshelf/chapter_cache_provider.dart';
 import 'package:langhuan/features/bookshelf/widgets/reader_sheets.dart';
 import 'package:langhuan/features/feeds/feed_providers.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
@@ -224,11 +225,16 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
+          overrides: [
+            cachedChapterIdsProvider.overrideWith((ref, key) async => {'c2'}),
+          ],
           child: localized(
             Scaffold(
               body: sheetLauncher((ref, context) {
                 return showReaderTocSheet(
                   context: context,
+                  feedId: 'feed',
+                  bookId: 'book',
                   ref: ref,
                   chapters: chapters,
                   onJumpToChapter: jumps.add,
@@ -388,7 +394,9 @@ void main() {
   });
 
   group('showReaderSettingsSheet transformer entry', () {
-    testWidgets('uses the same icon as the settings page entry', (tester) async {
+    testWidgets('uses the same icon as the settings page entry', (
+      tester,
+    ) async {
       SharedPreferences.setMockInitialValues({});
       final container = ProviderContainer();
       addTearDown(container.dispose);
@@ -414,10 +422,7 @@ void main() {
       // The reader settings sheet's transformer entry carries the same
       // icon as the settings page's Transformers row
       // (Icons.auto_fix_high_outlined), not the translate glyph.
-      final button = find.widgetWithText(
-        OutlinedButton,
-        'Book transformers',
-      );
+      final button = find.widgetWithText(OutlinedButton, 'Book transformers');
       expect(button, findsOneWidget);
       final icon = tester.widget<Icon>(
         find.descendant(of: button, matching: find.byType(Icon)),

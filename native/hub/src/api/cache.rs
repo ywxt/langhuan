@@ -45,6 +45,16 @@ pub async fn clear_cache() -> Result<CleanupResult, BridgeError> {
     })
 }
 
+/// List the book's stored raw chapters without loading paragraph payloads.
+pub async fn cached_chapter_ids(
+    feed_id: String,
+    book_id: String,
+) -> Result<Vec<String>, BridgeError> {
+    Ok(hub_db()?
+        .call(move |repo| repo.cached_chapter_ids(&feed_id, &book_id))
+        .await?)
+}
+
 /// Read the downloaded cover for a book, if one is stored.
 pub async fn get_cover(feed_id: String, book_id: String) -> Result<Option<CoverData>, BridgeError> {
     let db: Db = hub_db()?;

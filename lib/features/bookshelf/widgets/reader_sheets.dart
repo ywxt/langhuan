@@ -12,6 +12,8 @@ import '../../../shared/widgets/setting_value_row.dart';
 import '../../feeds/feed_service.dart';
 import '../../transformers/transformer_settings_page.dart';
 import '../bookmark_provider.dart';
+import '../chapter_cache_provider.dart';
+import 'chapter_cache_indicator.dart';
 import '../reader_settings_provider.dart';
 import '../reading_progress_provider.dart';
 import 'reader_theme_picker.dart';
@@ -484,6 +486,8 @@ List<BookmarkModel> _filterBookmarks(
 
 Future<void> showReaderTocSheet({
   required BuildContext context,
+  required String feedId,
+  required String bookId,
   required WidgetRef ref,
   required List<ChapterInfoModel> chapters,
   required void Function(String chapterId) onJumpToChapter,
@@ -506,6 +510,10 @@ Future<void> showReaderTocSheet({
         builder: (context, ref, _) {
           final reading = ref.watch(readingProgressProvider);
           final currentActiveId = reading.activeChapterId;
+          final cachedIds = ref
+              .watch(cachedChapterIdsProvider((feedId: feedId, bookId: bookId)))
+              .asData
+              ?.value;
 
           return Builder(
             builder: (context) {
@@ -539,6 +547,9 @@ Future<void> showReaderTocSheet({
                             : null,
                       ),
                       selected: isActive,
+                      trailing: ChapterCacheIndicator(
+                        cached: cachedIds?.contains(chapter.id),
+                      ),
                       onTap: () {
                         Navigator.of(context).pop();
                         onJumpToChapter(chapter.id);

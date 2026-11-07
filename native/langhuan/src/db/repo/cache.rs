@@ -457,6 +457,17 @@ impl Repo<'_> {
         Ok(())
     }
 
+    /// Stored raw chapter IDs only: no paragraph decoding, source access, or
+    /// last-used timestamp updates when presenting a table of contents.
+    pub fn cached_chapter_ids(&self, feed_id: &str, book_id: &str) -> Result<Vec<String>> {
+        let mut statement = self.conn.prepare_cached(
+            "SELECT chapter_id FROM chapters WHERE feed_id = ?1 AND book_id = ?2 ORDER BY chapter_id",
+        )?;
+        Ok(statement
+            .query_map([feed_id, book_id], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
     /// Read cached chapter paragraphs and refresh `last_used_at_ms`.
     pub fn get_paragraphs(
         &self,
@@ -562,6 +573,43 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("read cover_state")
+    }
+
+    #[test]
+    fn cached_chapter_ids_are_scoped_and_follow_content_removal() {
+        let db = TestDb::new();
+        db.seed_feed("f");
+        db.seed_feed("g");
+        let repo = db.repo();
+        repo.set_paragraphs("f", "b", "c2", &[], 10).unwrap();
+        repo.set_paragraphs("f", "b", "c1", &[], 10).unwrap();
+        repo.set_paragraphs("f", "other", "c3", &[], 10).unwrap();
+        repo.set_paragraphs("g", "b", "c4", &[], 10).unwrap();
+        assert_eq!(repo.cached_chapter_ids("f", "b").unwrap(), ["c1", "c2"]);
+        assert!(repo.cached_chapter_ids("f", "missing").unwrap().is_empty());
+        let used_before: i64 = db
+            .conn()
+            .query_row(
+                "SELECT last_used_at_ms FROM books WHERE feed_id='f' AND book_id='b'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        repo.cached_chapter_ids("f", "b").unwrap();
+        let used_after: i64 = db
+            .conn()
+            .query_row(
+                "SELECT last_used_at_ms FROM books WHERE feed_id='f' AND book_id='b'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(used_before, used_after);
+        repo.delete_paragraphs("f", "b", "c1").unwrap();
+        assert_eq!(repo.cached_chapter_ids("f", "b").unwrap(), ["c2"]);
+        assert_eq!(repo.cached_chapter_ids("g", "b").unwrap(), ["c4"]);
+        repo.clear_cache().unwrap();
+        assert!(repo.cached_chapter_ids("f", "b").unwrap().is_empty());
     }
 
     #[test]

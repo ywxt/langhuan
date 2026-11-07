@@ -16,9 +16,11 @@ import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/loading.dart';
 import 'book_providers.dart';
 import 'bookshelf_provider.dart';
+import 'chapter_cache_provider.dart';
 import 'reading_progress_provider.dart';
 import 'widgets/book_cover.dart';
 import 'widgets/book_cover_hero.dart';
+import 'widgets/chapter_cache_indicator.dart';
 import 'widgets/reader_types.dart';
 
 class BookDetailRouteExtra {
@@ -147,6 +149,16 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
         ),
       );
     }
+
+    final cachedIds = ref
+        .watch(
+          cachedChapterIdsProvider((
+            feedId: widget.feedId,
+            bookId: widget.bookId,
+          )),
+        )
+        .asData
+        ?.value;
 
     final hasCurrentBook =
         bookInfoState.feedId == widget.feedId &&
@@ -456,13 +468,25 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                                   : theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
-                          trailing: isLastRead
-                              ? Icon(
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ChapterCacheIndicator(
+                                cached: cachedIds?.contains(chapter.id),
+                                foreground: isLastRead
+                                    ? theme.colorScheme.onPrimaryContainer
+                                    : null,
+                              ),
+                              if (isLastRead) ...[
+                                const SizedBox(width: 8),
+                                Icon(
                                   Icons.bookmark,
                                   size: 18,
                                   color: theme.colorScheme.onPrimaryContainer,
-                                )
-                              : null,
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
                       ),
                     );

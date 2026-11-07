@@ -193,6 +193,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bookDetailNoDescription => 'No description available';
 
   @override
+  String get chapterCached => 'Cached';
+
+  @override
+  String get chapterNotCached => 'Not cached';
+
+  @override
   String bookDetailChapters(int count) {
     return 'Chapters ($count)';
   }

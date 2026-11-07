@@ -58,6 +58,8 @@
   "bookDetailContinueReading": "繼續閱讀",
   "bookDetailLastReadChapter": "上次讀到：{chapterTitle}",
   "bookDetailNoDescription": "暫無簡介",
+  "chapterCached": "已緩存",
+  "chapterNotCached": "未緩存",
   "bookDetailChapters": "章節（{count}）",
   "bookDetailChaptersError": "加載章節失敗",
   "bookDetailMissingParams": "缺少書籍參數",

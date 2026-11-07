@@ -1,3 +1,5 @@
+import 'chapter_cache_changes.dart';
+
 import '../../src/rust/api/app_data.dart' as rust_app_data;
 import '../../src/rust/api/cache.dart' as rust_cache;
 import '../../src/rust/api/locale.dart' as rust_locale;
@@ -16,7 +18,9 @@ class AppService {
   ///
   /// Returns the number of feeds loaded.
   Future<int> setAppDataDirectory(String path) {
-    return rust_app_data.setAppDataDirectory(path: path);
+    return trackChapterCacheChange(
+      () => rust_app_data.setAppDataDirectory(path: path),
+    );
   }
 
   /// Send the current locale to Rust for i18n.
@@ -29,7 +33,7 @@ class AppService {
   ///
   /// Shelved books and their data are always preserved.
   Future<CleanupResult> cleanupStaleData() {
-    return rust_cache.cleanupStaleData();
+    return trackChapterCacheChange(rust_cache.cleanupStaleData);
   }
 
   /// Snapshot of database and cache statistics.
@@ -42,7 +46,7 @@ class AppService {
   /// The bookshelf, reading progress, and bookmarks are untouched; covers
   /// re-download on demand.
   Future<CleanupResult> clearCache() {
-    return rust_cache.clearCache();
+    return trackChapterCacheChange(rust_cache.clearCache);
   }
 
   /// Write a standalone snapshot of the whole database (feeds, shelf,

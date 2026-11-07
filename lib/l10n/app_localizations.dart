@@ -422,6 +422,18 @@ abstract class AppLocalizations {
   /// **'No description available'**
   String get bookDetailNoDescription;
 
+  /// No description provided for @chapterCached.
+  ///
+  /// In en, this message translates to:
+  /// **'Cached'**
+  String get chapterCached;
+
+  /// No description provided for @chapterNotCached.
+  ///
+  /// In en, this message translates to:
+  /// **'Not cached'**
+  String get chapterNotCached;
+
   /// Chapter section title with chapter count
   ///
   /// In en, this message translates to:

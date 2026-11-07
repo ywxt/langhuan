@@ -191,6 +191,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bookDetailNoDescription => '暫無簡介';
 
   @override
+  String get chapterCached => '已緩存';
+
+  @override
+  String get chapterNotCached => '未緩存';
+
+  @override
   String bookDetailChapters(int count) {
     return '章節（$count）';
   }

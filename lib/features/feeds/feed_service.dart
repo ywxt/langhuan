@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../../shared/chapter_cache_changes.dart';
+import '../../src/rust/api/cache.dart' as rust_cache;
 import '../../src/rust/api/comments.dart' as rust_comments;
 import '../../src/rust/api/auth.dart' as rust_auth;
 import '../../src/rust/api/bookmark.dart' as rust_bookmark;
@@ -562,16 +564,25 @@ class FeedService {
     cursorJson: cursorJson,
   );
 
+  Future<List<String>> cachedChapterIds({
+    required String feedId,
+    required String bookId,
+  }) => rust_cache.cachedChapterIds(feedId: feedId, bookId: bookId);
+
   Future<List<ParagraphContent>> paragraphs({
     required String feedId,
     required String bookId,
     required String chapterId,
     bool forceRefresh = false,
-  }) => rust_stream.paragraphs(
+  }) => trackChapterCacheChange(
+    () => rust_stream.paragraphs(
+      feedId: feedId,
+      bookId: bookId,
+      chapterId: chapterId,
+      forceRefresh: forceRefresh,
+    ),
     feedId: feedId,
     bookId: bookId,
-    chapterId: chapterId,
-    forceRefresh: forceRefresh,
   );
 
   // -------------------------------------------------------------------------
@@ -609,9 +620,13 @@ class FeedService {
     required String feedId,
     required String sourceBookId,
   }) async {
-    final outcome = await rust_bookshelf.bookshelfRemove(
+    final outcome = await trackChapterCacheChange(
+      () => rust_bookshelf.bookshelfRemove(
+        feedId: feedId,
+        sourceBookId: sourceBookId,
+      ),
       feedId: feedId,
-      sourceBookId: sourceBookId,
+      bookId: sourceBookId,
     );
     return switch (outcome) {
       BookshelfRemoveOutcome.removed => BookshelfRemoveResult.removed,
@@ -767,7 +782,7 @@ class FeedService {
   /// exact same version and content are skipped; each other entry installs
   /// independently, and failures are collected per entry.
   Future<FeedImportOutcome> importFeeds(String json) {
-    return rust_transfer.importFeeds(json: json);
+    return trackChapterCacheChange(() => rust_transfer.importFeeds(json: json));
   }
 
   // -------------------------------------------------------------------------
@@ -788,11 +803,16 @@ class FeedService {
   ///
   /// [requestId] is the feed id returned by the preview call.
   Future<void> installFeed(String requestId) {
-    return rust_registry.installFeed(requestId: requestId);
+    return trackChapterCacheChange(
+      () => rust_registry.installFeed(requestId: requestId),
+    );
   }
 
   Future<void> removeFeed(String feedId) {
-    return rust_registry.removeFeed(feedId: feedId);
+    return trackChapterCacheChange(
+      () => rust_registry.removeFeed(feedId: feedId),
+      feedId: feedId,
+    );
   }
 
   FeedPreviewModel _toPreviewModel(FeedPreviewInfo info) {

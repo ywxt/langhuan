@@ -24,8 +24,8 @@ class FakeCommentRequest implements CommentRequest {
 
 /// Hand-rolled [FeedService] fake for notifier unit tests.
 ///
-/// Handlers are assigned per test; anything called without a handler fails
-/// the test through [noSuchMethod].
+/// Cache metadata defaults to an empty cache. Other handlers are assigned
+/// per test; unconfigured operations fail the test.
 class FakeFeedService implements FeedService {
   FakeFeedService({
     this.searchHandler,
@@ -45,6 +45,7 @@ class FakeFeedService implements FeedService {
     this.listBookmarksHandler,
     this.chaptersHandler,
     this.paragraphsHandler,
+    this.cachedChapterIdsHandler,
     this.markBookshelfSeenHandler,
     this.getReadingProgressHandler,
     this.setReadingProgressHandler,
@@ -259,6 +260,17 @@ class FakeFeedService implements FeedService {
     bool forceRefresh,
   })?
   paragraphsHandler;
+
+  final Future<List<String>> Function(String feedId, String bookId)?
+  cachedChapterIdsHandler;
+
+  @override
+  Future<List<String>> cachedChapterIds({
+    required String feedId,
+    required String bookId,
+  }) async => cachedChapterIdsHandler == null
+      ? const []
+      : await cachedChapterIdsHandler!(feedId, bookId);
 
   @override
   Future<List<ParagraphContent>> paragraphs({

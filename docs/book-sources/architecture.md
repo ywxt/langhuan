@@ -180,6 +180,13 @@ browser value back to the script.
 Application caches store parsed book, directory, and chapter data. They are
 outside the source contract and make normal reopening fast.
 
+Chapter-directory cache badges use a separate bulk `cached_chapter_ids` query.
+It selects only stored raw chapter IDs for one source/book; it does not fetch
+source content, decode paragraphs, or update cache access timestamps. Both
+chapter lists share an auto-disposed provider. Completed chapter requests,
+including failed refreshes, and cache maintenance invalidate affected snapshots.
+A query failure remains unknown instead of being displayed as uncached.
+
 A request step may additionally provide `cache_key` for a small in-memory,
 per-source response cache. It is intended only for immutable helper assets.
 The runtime stores at most eight responses, each no larger than 1 MiB, and

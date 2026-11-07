@@ -404,6 +404,14 @@ Wise mobile scale adapted:
 └─────────────────────────────┘
 ```
 
+Both the detail chapter list and reader table of contents use the same cache
+indicators: a completion icon for cached chapters and a neutral cloud for
+uncached chapters. Tooltips and accessibility labels describe each state. The
+current/last-read chapter marker remains independent and can appear alongside
+the cache icon. Unknown cache state reserves the same space without claiming
+that content is uncached. Loading or clearing chapter content refreshes the
+indicators, including while the directory is open.
+
 ### 4.7 Reader page
 
 ```
