@@ -1943,7 +1943,7 @@ abstract class AppLocalizations {
   /// Developer page: script editor explanation
   ///
   /// In en, this message translates to:
-  /// **'Paste a JavaScript feed or import one from an installed feed. Scripts run in an isolated native QuickJS sandbox; installed feeds are untouched.'**
+  /// **'Paste a JavaScript feed or import one from an installed feed. Load the script to make runs use it; every load resets its state. Scripts run in an isolated native QuickJS sandbox; installed feeds are untouched.'**
   String get devScriptHint;
 
   /// Developer page: import-from-installed-feed action
@@ -1993,6 +1993,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Imported \"{name}\"'**
   String devScriptImported(String name);
+
+  /// Developer page: compile the editor's script into the debug environment
+  ///
+  /// In en, this message translates to:
+  /// **'Load'**
+  String get devScriptLoad;
+
+  /// Snackbar after the editor's script was loaded into the debug environment
+  ///
+  /// In en, this message translates to:
+  /// **'Script loaded — runs use this version'**
+  String get devScriptLoaded;
 
   /// Snackbar when reading an installed feed's script fails
   ///

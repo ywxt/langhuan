@@ -1005,7 +1005,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get devScriptHint =>
-      '貼上 JavaScript 書源或從已安裝的書源導入；腳本在隔離的原生 QuickJS 沙盒中運行，不影響已安裝的書源。';
+      '貼上 JavaScript 書源或從已安裝的書源導入。載入後運行才會使用新腳本，每次載入都會重置狀態；腳本在隔離的原生 QuickJS 沙盒中運行，不影響已安裝的書源。';
 
   @override
   String get devScriptImport => '導入';
@@ -1032,6 +1032,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String devScriptImported(String name) {
     return '已導入「$name」';
   }
+
+  @override
+  String get devScriptLoad => '載入';
+
+  @override
+  String get devScriptLoaded => '腳本已載入，運行將使用此版本';
 
   @override
   String get devScriptLoadError => '讀取書源腳本失敗';

@@ -78,13 +78,12 @@ impl Default for ScriptEngine {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use std::sync::Arc;
-    use std::sync::Mutex;
 
     use serde_json::Value;
 
     use crate::error::{Error, ExpectedErrorCode, ScriptError};
+    use crate::feed::storage::MemoryStorage;
     use crate::feed::{
         CookieEntry, Feed, FeedAuthFlow, StorageHandler, WebviewFuture, WebviewHandler,
         WebviewRequest, WebviewSnapshot,
@@ -1148,36 +1147,8 @@ mod tests {
     // langhuan:storage
     // -----------------------------------------------------------------------
 
-    /// An in-memory [`StorageHandler`] shared across feeds.
-    #[derive(Default)]
-    struct MemoryStorage(Mutex<HashMap<(String, String), Value>>);
-
-    impl StorageHandler for MemoryStorage {
-        fn get(&self, feed_id: &str, key: &str) -> Result<Option<Value>> {
-            Ok(self
-                .0
-                .lock()
-                .unwrap()
-                .get(&(feed_id.to_owned(), key.to_owned()))
-                .cloned())
-        }
-
-        fn set(&self, feed_id: &str, key: &str, value: Value) -> Result<()> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert((feed_id.to_owned(), key.to_owned()), value);
-            Ok(())
-        }
-
-        fn delete(&self, feed_id: &str, key: &str) -> Result<()> {
-            self.0
-                .lock()
-                .unwrap()
-                .remove(&(feed_id.to_owned(), key.to_owned()));
-            Ok(())
-        }
-    }
+    // The backend is the shipped `MemoryStorage` — the same type debug
+    // tooling installs per session.
 
     /// A feed that stores its "device" in `search`, reads it in `bookInfo`,
     /// and deletes it in `chapters`.

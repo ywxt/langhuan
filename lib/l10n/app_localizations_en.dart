@@ -1041,7 +1041,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get devScriptHint =>
-      'Paste a JavaScript feed or import one from an installed feed. Scripts run in an isolated native QuickJS sandbox; installed feeds are untouched.';
+      'Paste a JavaScript feed or import one from an installed feed. Load the script to make runs use it; every load resets its state. Scripts run in an isolated native QuickJS sandbox; installed feeds are untouched.';
 
   @override
   String get devScriptImport => 'Import';
@@ -1068,6 +1068,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String devScriptImported(String name) {
     return 'Imported \"$name\"';
   }
+
+  @override
+  String get devScriptLoad => 'Load';
+
+  @override
+  String get devScriptLoaded => 'Script loaded — runs use this version';
 
   @override
   String get devScriptLoadError => 'Failed to load the feed script';

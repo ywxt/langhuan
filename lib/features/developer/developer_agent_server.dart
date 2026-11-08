@@ -9,13 +9,9 @@ import '../../src/rust/api/comments.dart' show CommentItem;
 import '../../src/rust/api/debug.dart';
 import '../../src/rust/api/types.dart';
 
-typedef CurrentDebugScript = String Function();
 typedef EditorScriptWriter = Future<void> Function(String script);
 typedef DebugStageRunner =
-    Future<DebugRunResult> Function({
-      required String script,
-      required DebugStage stage,
-    });
+    Future<DebugRunResult> Function({required DebugStage stage});
 typedef InstalledScriptLoader =
     Future<String> Function({required String feedId});
 
@@ -41,13 +37,11 @@ abstract final class DeveloperAgentRoutes {
 /// random bearer token, and never binds to a LAN interface.
 class DeveloperAgentServer {
   DeveloperAgentServer({
-    required CurrentDebugScript currentScript,
     DebugStageRunner runner = debugRunStage,
     InstalledScriptLoader installedScriptLoader = debugGetInstalledScript,
     EditorScriptWriter? editorScriptWriter,
     bool Function()? workspaceBusy,
-  }) : _currentScript = currentScript,
-       _runner = runner,
+  }) : _runner = runner,
        _installedScriptLoader = installedScriptLoader,
        _editorScriptWriter = editorScriptWriter,
        _workspaceBusy = workspaceBusy ?? (() => false);
@@ -61,7 +55,6 @@ class DeveloperAgentServer {
   static const _sourceDocsUrl =
       'https://github.com/ywxt/langhuan/blob/main/'
       'docs/book-sources/README.md';
-  final CurrentDebugScript _currentScript;
   final DebugStageRunner _runner;
   final InstalledScriptLoader _installedScriptLoader;
   final EditorScriptWriter? _editorScriptWriter;
@@ -168,7 +161,14 @@ class DeveloperAgentServer {
               'the debug workspace is unavailable',
             );
           }
-          await writer(script);
+          try {
+            await writer(script);
+          } on BridgeError catch (error) {
+            // Loading compiles the script into the debug environment;
+            // a source that fails to compile is a client error, and the
+            // editor keeps its previous contents.
+            throw _AgentRequestError(HttpStatus.badRequest, error.message);
+          }
           _loadedSource = source;
           return _json(request.response, HttpStatus.ok, {
             'ok': true,
@@ -191,10 +191,17 @@ class DeveloperAgentServer {
         _busy = true;
         try {
           final body = await _readJsonObject(request);
-          final script = await _resolveScript(body);
+          _rejectInlineScript(body);
           final stage = _parseStage(body);
-          final result = await _runner(script: script, stage: stage);
+          final result = await _runner(stage: stage);
           return _json(request.response, HttpStatus.ok, _resultJson(result));
+        } on BridgeError catch (error) {
+          // A precondition failure — no script loaded, or the debug
+          // actor unreachable — not a run failure: run errors travel
+          // inside the result.
+          return _json(request.response, HttpStatus.badRequest, {
+            'error': error.message,
+          });
         } finally {
           _busy = false;
         }
@@ -242,10 +249,6 @@ class DeveloperAgentServer {
           'cursor':
               'single_page only; the next_cursor from a previous '
               'response, null restarts',
-          'script':
-              'optional inline JavaScript; overrides the editor '
-              'script for this run',
-          'feed_id': 'optional installed feed id; runs its script',
         },
         'response': {
           'ok': 'false exactly when error is present',
@@ -278,7 +281,9 @@ class DeveloperAgentServer {
         'body':
             'exactly one non-empty string: script (inline '
             'JavaScript), path (absolute UTF-8 file on this machine, '
-            'max 2 MiB), or feed_id (installed feed)',
+            'max 2 MiB), or feed_id (installed feed); loading compiles '
+            'the script into the debug environment, so sources that '
+            'fail to compile are rejected',
       },
       'reload': {
         'method': 'POST',
@@ -286,6 +291,10 @@ class DeveloperAgentServer {
         'body': 'empty; re-reads the source of the last successful load',
       },
     },
+    'script':
+        'runs execute the loaded script — the source of the last '
+        'successful /v1/load (or the editor contents when the tools '
+        'opened); /v1/load replaces it and resets its state',
     'modes': {
       'pipeline': 'default; follows next_cursor until complete',
       'single_page':
@@ -347,8 +356,9 @@ class DeveloperAgentServer {
     },
     'errors': {
       '400':
-          'malformed body, unknown operation or mode, or unusable '
-          'script source',
+          'malformed body, unknown operation or mode, legacy inline '
+          'script fields, a source that fails to compile, or no script '
+          'loaded',
       '401': 'missing or invalid bearer token',
       '404': 'unknown route',
       '409': 'another run or load is active, or the debug workspace is busy',
@@ -449,21 +459,19 @@ class DeveloperAgentServer {
     }
   }
 
-  Future<String> _resolveScript(Map<String, Object?> body) async {
-    final inline = body['script'];
-    if (inline is String && inline.trim().isNotEmpty) return inline;
-    final feedId = body['feed_id'];
-    if (feedId is String && feedId.trim().isNotEmpty) {
-      return _installedScriptLoader(feedId: feedId.trim());
+  /// Inline scripts were removed: `/v1/run` executes the loaded script.
+  /// Reject the legacy fields instead of silently ignoring them, so a
+  /// caller that still sends them learns about the change.
+  void _rejectInlineScript(Map<String, Object?> body) {
+    for (final field in ['script', 'feed_id']) {
+      if (body.containsKey(field)) {
+        throw _AgentRequestError(
+          HttpStatus.badRequest,
+          'inline scripts are not supported — load the script with '
+          '/v1/load first; /v1/run executes the loaded script',
+        );
+      }
     }
-    final current = _currentScript();
-    if (current.trim().isEmpty) {
-      throw const _AgentRequestError(
-        HttpStatus.badRequest,
-        'provide script or feed_id, or load a script in the editor',
-      );
-    }
-    return current;
   }
 
   DebugStage _parseStage(Map<String, Object?> body) {

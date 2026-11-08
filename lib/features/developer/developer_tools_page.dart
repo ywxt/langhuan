@@ -37,18 +37,38 @@ class _RunRecord {
   final DebugRunResult result;
 }
 
+/// Loads `script` into the native debug environment.
+typedef DebugEnvironmentLoader =
+    Future<void> Function({required String script});
+
+/// Drops the native debug environment.
+typedef DebugEnvironmentCloser = Future<void> Function();
+
 /// The developer tools page: a standalone feed-script environment.
 ///
-/// Scripts are pasted here (or imported read-only from an installed feed),
-/// compiled and executed independently of the app's normal operation —
-/// nothing runs against the installed registry and nothing a run does is
-/// written back. The page runs one pipeline stage of the script with
-/// arbitrary input, showing the typed output, the terminal error (if any),
-/// and the recorded HTTP traffic side by side; results accumulate in an
-/// in-memory history so a script author can compare runs before and after
-/// an edit.
+/// Scripts are pasted here (or imported read-only from an installed feed)
+/// and loaded into a stateful debug environment — the editor's contents
+/// are compiled when the page opens, on the explicit load/reload action,
+/// and whenever the editor is replaced wholesale. Runs execute the loaded
+/// script (not the editor text), so module state and session-scoped
+/// storage persist across runs; every load resets them. Nothing runs
+/// against the installed registry and nothing a run does is written back.
+/// The page runs one pipeline stage of the script with arbitrary input,
+/// showing the typed output, the terminal error (if any), and the recorded
+/// HTTP traffic side by side; results accumulate in an in-memory history
+/// so a script author can compare runs before and after an edit.
 class DeveloperToolsPage extends ConsumerStatefulWidget {
-  const DeveloperToolsPage({super.key});
+  const DeveloperToolsPage({
+    super.key,
+    this.loadEnvironment = debugLoadScript,
+    this.closeEnvironment = debugCloseEnvironment,
+  });
+
+  /// Compiles a script into the debug environment (fresh state).
+  final DebugEnvironmentLoader loadEnvironment;
+
+  /// Drops the debug environment when the page closes.
+  final DebugEnvironmentCloser closeEnvironment;
 
   @override
   ConsumerState<DeveloperToolsPage> createState() => _DeveloperToolsPageState();
@@ -72,6 +92,7 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
 
   bool _running = false;
   bool _importing = false;
+  bool _loading = false;
   bool _agentServerChanging = false;
   late final DeveloperAgentServer _agentServer;
   final List<_RunRecord> _history = [];
@@ -81,11 +102,14 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
   void initState() {
     super.initState();
     _agentServer = DeveloperAgentServer(
-      currentScript: () => _scriptController.text,
-      workspaceBusy: () => _running || _importing,
+      workspaceBusy: () => _running || _importing || _loading,
       editorScriptWriter: (script) async {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_kScriptKey, script);
+        if (!mounted) return;
+        // Load before touching the editor: a source that fails to
+        // compile leaves both the environment and the editor unchanged.
+        await widget.loadEnvironment(script: script);
         if (!mounted) return;
         setState(() {
           _scriptController.text = script;
@@ -93,12 +117,13 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
         });
       },
     );
-    _restoreScript();
+    unawaited(_openEnvironment());
   }
 
   @override
   void dispose() {
     unawaited(_agentServer.stop());
+    unawaited(_closeEnvironment());
     _scriptController.dispose();
     _keywordController.dispose();
     _bookIdController.dispose();
@@ -108,6 +133,30 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
     _manualInputController.dispose();
     _manualCursorController.dispose();
     super.dispose();
+  }
+
+  /// The environment opens with the page: the restored editor contents
+  /// are loaded directly, so the session starts where the last one left
+  /// off. Best effort — a stale persisted script that no longer compiles
+  /// leaves the environment empty, and the next explicit load reports
+  /// the failure properly.
+  Future<void> _openEnvironment() async {
+    await _restoreScript();
+    final script = _scriptController.text;
+    if (script.trim().isEmpty) return;
+    try {
+      await widget.loadEnvironment(script: script);
+    } catch (error) {
+      debugPrint('developer tools: opening the environment failed: $error');
+    }
+  }
+
+  Future<void> _closeEnvironment() async {
+    try {
+      await widget.closeEnvironment();
+    } catch (error) {
+      debugPrint('developer tools: closing the environment failed: $error');
+    }
   }
 
   Future<void> _toggleAgentServer() async {
@@ -271,6 +320,10 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
     try {
       final script = await debugGetInstalledScript(feedId: feedId);
       if (!mounted) return;
+      // Load before touching the editor: a source that fails to compile
+      // leaves both the environment and the editor unchanged.
+      await widget.loadEnvironment(script: script);
+      if (!mounted) return;
       _scriptController.text = script;
       final messenger = ScaffoldMessenger.of(context);
       final message = AppLocalizations.of(context).devScriptImported(feedName);
@@ -297,18 +350,44 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
     await _persistScript();
   }
 
-  // -------------------------------------------------------------------------
-  // Running
-  // -------------------------------------------------------------------------
-
-  Future<void> _run() async {
-    if (_running) return;
+  /// Load the editor's contents into the debug environment.
+  ///
+  /// Loading is explicit: runs execute the loaded script, so editor
+  /// changes take effect only after a load — and every load resets the
+  /// environment's state (fresh realm, fresh in-memory storage).
+  Future<void> _loadScript() async {
+    if (_loading) return;
     final l10n = AppLocalizations.of(context);
     final script = _scriptController.text.trim();
     if (script.isEmpty) {
       showErrorSnack(ScaffoldMessenger.of(context), l10n.devScriptMissing);
       return;
     }
+    unawaited(_persistScript());
+    setState(() => _loading = true);
+    try {
+      await widget.loadEnvironment(script: script);
+      if (!mounted) return;
+      showSuccessSnack(
+        ScaffoldMessenger.of(context),
+        l10n.devScriptLoaded,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showErrorSnack(ScaffoldMessenger.of(context), normalizeErrorMessage(error));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Running
+  // -------------------------------------------------------------------------
+
+  /// Runs execute the loaded script; the editor's text matters only for
+  /// the next load.
+  Future<void> _run() async {
+    if (_running) return;
     final stage = _buildStage();
     if (stage == null) return;
 
@@ -317,7 +396,7 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
     unawaited(_persistScript());
     setState(() => _running = true);
     try {
-      final result = await debugRunStage(script: script, stage: stage);
+      final result = await debugRunStage(stage: stage);
       if (!mounted) return;
       setState(() {
         _history.add(
@@ -534,7 +613,9 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
               return _DesktopWorkbench(
                 scriptController: _scriptController,
                 importing: _importing,
+                loading: _loading,
                 onImport: _importFromInstalled,
+                onLoad: _loadScript,
                 onClear: _clearScript,
                 stage: _stage,
                 onStageChanged: (stage) => setState(() => _stage = stage),
@@ -568,7 +649,9 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
                 _ScriptSection(
                   controller: _scriptController,
                   importing: _importing,
+                  loading: _loading,
                   onImport: _importFromInstalled,
+                  onLoad: _loadScript,
                   onClear: _clearScript,
                 ),
                 const SizedBox(height: LanghuanTheme.spaceLg),
@@ -660,7 +743,9 @@ class _DesktopWorkbench extends StatelessWidget {
   const _DesktopWorkbench({
     required this.scriptController,
     required this.importing,
+    required this.loading,
     required this.onImport,
+    required this.onLoad,
     required this.onClear,
     required this.stage,
     required this.onStageChanged,
@@ -685,7 +770,9 @@ class _DesktopWorkbench extends StatelessWidget {
 
   final TextEditingController scriptController;
   final bool importing;
+  final bool loading;
   final VoidCallback onImport;
+  final VoidCallback onLoad;
   final VoidCallback onClear;
   final _StageKind stage;
   final ValueChanged<_StageKind> onStageChanged;
@@ -720,7 +807,9 @@ class _DesktopWorkbench extends StatelessWidget {
             child: _DesktopScriptPane(
               controller: scriptController,
               importing: importing,
+              loading: loading,
               onImport: onImport,
+              onLoad: onLoad,
               onClear: onClear,
             ),
           ),
@@ -781,13 +870,17 @@ class _DesktopScriptPane extends StatelessWidget {
   const _DesktopScriptPane({
     required this.controller,
     required this.importing,
+    required this.loading,
     required this.onImport,
+    required this.onLoad,
     required this.onClear,
   });
 
   final TextEditingController controller;
   final bool importing;
+  final bool loading;
   final VoidCallback onImport;
+  final VoidCallback onLoad;
   final VoidCallback onClear;
 
   @override
@@ -805,6 +898,13 @@ class _DesktopScriptPane extends StatelessWidget {
               const SizedBox(width: LanghuanTheme.spaceSm),
               Text(l10n.devScriptLabel, style: theme.textTheme.titleSmall),
               const Spacer(),
+              TextButton.icon(
+                onPressed: loading ? null : onLoad,
+                icon: loading
+                    ? const LanghuanSpinner(size: 14)
+                    : const Icon(Icons.refresh_rounded, size: 16),
+                label: Text(l10n.devScriptLoad),
+              ),
               TextButton.icon(
                 onPressed: importing ? null : onImport,
                 icon: importing
@@ -1011,13 +1111,17 @@ class _ScriptSection extends StatelessWidget {
   const _ScriptSection({
     required this.controller,
     required this.importing,
+    required this.loading,
     required this.onImport,
+    required this.onLoad,
     required this.onClear,
   });
 
   final TextEditingController controller;
   final bool importing;
+  final bool loading;
   final VoidCallback onImport;
+  final VoidCallback onLoad;
   final VoidCallback onClear;
 
   @override
@@ -1043,17 +1147,26 @@ class _ScriptSection extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            TextButton.icon(
+            // Icon actions: the labelled desktop buttons do not fit a
+            // phone's width, tooltips carry their meaning.
+            IconButton(
+              tooltip: l10n.devScriptLoad,
+              onPressed: loading ? null : onLoad,
+              icon: loading
+                  ? const LanghuanSpinner(size: 16)
+                  : const Icon(Icons.refresh_rounded),
+            ),
+            IconButton(
+              tooltip: l10n.devScriptImport,
               onPressed: importing ? null : onImport,
               icon: importing
-                  ? const LanghuanSpinner(size: 14)
-                  : const Icon(Icons.download_rounded, size: 16),
-              label: Text(l10n.devScriptImport),
+                  ? const LanghuanSpinner(size: 16)
+                  : const Icon(Icons.download_rounded),
             ),
-            TextButton.icon(
+            IconButton(
+              tooltip: l10n.devScriptClear,
               onPressed: onClear,
-              icon: const Icon(Icons.delete_outline_rounded, size: 16),
-              label: Text(l10n.devScriptClear),
+              icon: const Icon(Icons.delete_outline_rounded),
             ),
           ],
         ),

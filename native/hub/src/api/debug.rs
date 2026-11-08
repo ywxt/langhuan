@@ -2,12 +2,26 @@
 //!
 //! The debug environment is deliberately independent from the app's normal
 //! operation. Scripts are compiled from source handed in by the caller (the
-//! developer page) — never from the installed registry — and run on a
-//! dedicated engine with no response cache and no bookshelf pipeline.
-//! Nothing a run does is written back. The only reads into app state are
-//! the "import installed script" convenience ([`debug_get_installed_script`])
-//! and the stored auth payload for the script's feed id, so login-gated
-//! stages observe the same cookies as production.
+//! developer page) — never from the installed registry — and run with no
+//! response cache and no bookshelf pipeline. Nothing a run does is written
+//! back to app state. The only reads into it are the "import installed
+//! script" convenience ([`debug_get_installed_script`]) and the stored auth
+//! payload for the script's feed id, so login-gated stages observe the same
+//! cookies as production.
+//!
+//! The environment is stateful and owned by the
+//! [`DebugActor`](crate::actors::DebugActor): [`debug_load_script`] compiles
+//! the editor's contents over a fresh engine — the page calls it when it
+//! opens (with the restored editor text), for the explicit load/reload
+//! action, and whenever the editor is replaced wholesale — and runs then
+//! execute that loaded instance directly, so module state and the
+//! session-scoped in-memory storage backend persist across runs. A load is
+//! a state reset; [`debug_close_environment`] drops everything when the
+//! page closes. Installed feeds' persistent storage is never involved.
+//! Webview steps run through the same interactive verification page as
+//! production: the actor attaches the hub's
+//! [`WebviewBridge`](crate::actors::webview_actor) when loading, so a gated
+//! run pauses until the human finishes verifying.
 //!
 //! A run reuses the production execution path exactly — same sandbox, same
 //! `access_domains` enforcement, same auth patching — while recording every
@@ -18,12 +32,10 @@
 //! carries the items collected before the failure, so a script author can
 //! see a half-parsed page and its error side by side.
 
-use std::sync::LazyLock;
 use std::time::Instant;
 
 use langhuan::feed::{Feed, FeedAuthFlow};
 use langhuan::script::feed::ScriptFeed;
-use langhuan::script::runtime::ScriptEngine;
 use langhuan::step_trace::{StepTraceEntry, StepTraceRecorder};
 use langhuan::trace::{TraceEntry, TraceRecorder};
 use tokio_stream::StreamExt;
@@ -32,15 +44,8 @@ use super::comments::CommentItem;
 use super::types::{
     AuthStatus, BookInfo, BridgeError, ChapterItem, ParagraphContent, SearchResultItem,
 };
-use crate::actors::hub_db;
-
-/// Script engine shared by all debug runs.
-///
-/// Debug feeds are compiled fresh from the caller's script source on every
-/// run — no cached [`ScriptFeed`], no shared state with the production
-/// registry — but the engine (and with it one HTTP client and connection
-/// pool) is reused so repeated runs do not rebuild TLS state.
-static DEBUG_ENGINE: LazyLock<ScriptEngine> = LazyLock::new(ScriptEngine::new);
+use crate::actors::debug_actor::{LeaveDebugTools, LoadDebugScript, RunDebugStage};
+use crate::actors::{addresses, hub_db};
 
 /// Stage selection plus its input, mirroring the reading pipeline's
 /// operations one to one.
@@ -202,22 +207,60 @@ pub struct DebugRunResult {
     pub duration_ms: u64,
 }
 
-/// Run one pipeline stage of a feed script with full observability.
+/// Load `script` into the debug environment.
 ///
-/// The script is compiled from `script` — the developer page's editor
-/// contents, which may be a work-in-progress that is not installed
-/// anywhere. The stage then executes exactly as production would, while
-/// every HTTP request — including ones the domain allowlist blocks — is
-/// recorded into the result's trace.
-pub async fn debug_run_stage(script: String, stage: DebugStage) -> DebugRunResult {
+/// The script is compiled over a fresh engine — and with it fresh
+/// in-memory storage — so loading is also reloading: whatever the previous
+/// environment held dies with it. The developer tools page calls this when
+/// it opens (with the restored editor contents), for the explicit
+/// load/reload action, and whenever the editor's script is replaced
+/// wholesale (agent loads, imports). Until a script is loaded — and after
+/// the page closes — runs fail.
+pub async fn debug_load_script(script: String) -> Result<(), BridgeError> {
+    addresses()?
+        .debug
+        .clone()
+        .send(LoadDebugScript { script })
+        .await?
+}
+
+/// Drop the debug environment — the developer tools page calls this when
+/// it closes.
+///
+/// The loaded script, its module state, and the session's in-memory
+/// storage die with the environment; installed feeds' persistent storage
+/// was never involved.
+pub async fn debug_close_environment() -> Result<(), BridgeError> {
+    addresses()?.debug.clone().send(LeaveDebugTools).await?;
+    Ok(())
+}
+
+/// Run one pipeline stage of the loaded script with full observability.
+///
+/// The stage executes exactly as production would, while every HTTP
+/// request — including ones the domain allowlist blocks — is recorded into
+/// the result's trace. The run happens in the actor's stateful
+/// environment; when no script is loaded the call fails.
+pub async fn debug_run_stage(stage: DebugStage) -> Result<DebugRunResult, BridgeError> {
+    addresses()?
+        .debug
+        .clone()
+        .send(RunDebugStage { stage })
+        .await?
+}
+
+/// Run one stage of the loaded `feed` with full observability — the
+/// actor-side implementation of [`debug_run_stage`].
+///
+/// The whole run happens inside the recorders' scope: only the stage's
+/// own traffic is traced.
+pub(crate) async fn run_stage(feed: &ScriptFeed, stage: DebugStage) -> DebugRunResult {
     let start = Instant::now();
     let recorder = TraceRecorder::new();
     let step_recorder = StepTraceRecorder::new();
 
-    // Compilation and the stage run both happen inside the scope: script
-    // loading performs no HTTP, so only the stage's own traffic is traced.
     let core = recorder
-        .scope(step_recorder.scope(stage.run_script(script)))
+        .scope(step_recorder.scope(stage.run_with(feed)))
         .await;
     let (trace, dropped) = recorder.finish();
     let (steps, dropped_steps) = step_recorder.finish();
@@ -244,19 +287,11 @@ struct DebugRunCore {
 }
 
 impl DebugStage {
-    async fn run_script(self, script: String) -> DebugRunCore {
-        let feed = match DEBUG_ENGINE.load_script(&script).await {
-            Ok(feed) => feed,
-            Err(e) => {
-                return DebugRunCore {
-                    script_meta: None,
-                    auth: DebugAuthUse::NotSupported,
-                    output: None,
-                    error: Some(e.into()),
-                };
-            }
-        };
-
+    /// Run the stage on the loaded `feed` — the same instance every run
+    /// of one load executes, so module state and storage persist. Stored
+    /// auth is hydrated per run: the page's "auth status before and after
+    /// login" workflow observes fresh cookies without a reload.
+    async fn run_with(self, feed: &ScriptFeed) -> DebugRunCore {
         let meta = feed.meta();
         let script_meta = DebugScriptMeta {
             id: meta.id.clone(),
@@ -296,7 +331,7 @@ impl DebugStage {
             }
         };
 
-        let (output, error) = self.run(&feed).await;
+        let (output, error) = self.run(feed).await;
         DebugRunCore {
             script_meta: Some(script_meta),
             auth,

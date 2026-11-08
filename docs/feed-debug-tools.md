@@ -1,8 +1,9 @@
 # Book-source developer tools
 
 Langhuan includes an isolated stage runner for developing schema-6 sources on
-the same device that runs the app. It executes editor contents directly; a
-work-in-progress source does not need to be installed first.
+the same device that runs the app. It loads the editor's script into a
+stateful debug environment and executes it there; a work-in-progress source
+does not need to be installed first.
 
 ## Opening the tools
 
@@ -18,6 +19,28 @@ You can paste a source or load the current script of an installed source into
 the editor. Loading is read-only: debug runs never replace the installed
 script, source registry, bookshelf, or caches.
 
+## The debug environment
+
+The environment is the loaded script, and it is stateful. Opening the page
+loads the restored editor contents; the **Load** action compiles the current
+editor contents into the environment (and so does importing from an installed
+feed, or an Agent API `/v1/load`). Runs always execute the loaded script —
+never the editor text — so:
+
+- module state and `langhuan:storage` writes persist across runs of one load,
+  which is what makes incremental flows (register once, then reuse) debuggable;
+- every load compiles over a fresh engine: state, storage, and module
+  variables reset, so a reload starts from a clean slate;
+- the environment lives exactly while the developer page is open — closing
+  the page drops the script with everything it wrote.
+
+`langhuan:storage` is therefore available in the tools: it is backed by the
+environment's in-memory storage, namespaced by source id, and never touches
+the persistent storage of installed feeds. Webview steps run through the same
+interactive verification page as production: a gated run pauses until you
+finish verifying in the app's WebView, and the snapshot flows back into the
+run's result.
+
 ## Stage runner
 
 Choose one stage and enter its input:
@@ -32,10 +55,10 @@ Choose one stage and enter its input:
 | Advanced single page | Operation, input JSON, cursor JSON | One raw reducer result and `next_cursor` |
 
 Each operation is independently callable; selecting Search invokes only the
-feed's exported `search` reducer, for example. Each run compiles a fresh source
-object in the production sandbox and uses the production request, reducer,
-domain-policy, authentication-patching, and parser paths. It does not use
-normal response or bookshelf caches.
+feed's exported `search` reducer, for example. Each run executes the loaded
+source object in the production sandbox and uses the production request,
+reducer, domain-policy, authentication-patching, and parser paths. It does not
+use normal response or bookshelf caches.
 
 The five typed stages are the default and preserve the normal app behaviour:
 streaming operations automatically follow `next_cursor` until completion.
@@ -148,22 +171,23 @@ After saving changes to that file, `POST /v1/reload` with an empty body
 or `{}` reads it again. For `feed_id`, reload reads the installed script again;
 for `script`, it restores the original inline source. Reload requires a previous
 successful load in this developer-page session. Failed loads preserve the
-editor and previous source selection. Script syntax is checked when running,
-so incomplete scripts can still be loaded for editing.
+editor and previous source selection. Loading compiles the script into the
+debug environment, so sources that fail to compile are rejected; the
+environment's state resets with every successful load.
 
 Both endpoints require the Bearer token. They return `409` while the workspace
 is running or importing; malformed sources and unreadable/non-UTF-8 files return
 `400`, oversized files return `413`. Successful responses contain `ok`, `source`
 (`script`, `path`, or `feed_id`), `bytes` (UTF-8 byte count), and the `path` or
 `feed_id` when applicable. They do not install or replace production feeds.
-Subsequent `/v1/run` calls without `script` or `feed_id` use the updated editor.
+Subsequent `/v1/run` calls execute the newly loaded script.
 
-`POST /v1/run` accepts an inline `script`, an installed `feed_id`, or neither
-(which uses the current editor contents):
+`POST /v1/run` executes the loaded script. The body carries the operation and
+its input (inline `script` and `feed_id` fields are not accepted — load them
+with `/v1/load` first):
 
 ```json
 {
-  "feed_id": "org.eu.ywxt.langhuan.example",
   "operation": "search",
   "input": { "keyword": "example" }
 }
@@ -172,7 +196,8 @@ Subsequent `/v1/run` calls without `script` or `feed_id` use the updated editor.
 The other operation inputs are `{ "bookId": "..." }` for `bookInfo` and
 `chapters`, `{ "bookId": "...", "chapterId": "..." }` for `paragraphs`,
 and an empty object for `login.status`. Responses contain typed output,
-structured failures, reducer steps, and masked HTTP data.
+structured failures, reducer steps, and masked HTTP data. A run before any
+script is loaded (or with legacy `script`/`feed_id` fields) returns `400`.
 
 By default the API uses `"mode": "pipeline"` and follows all cursors, matching
 the UI's typed stages. Comment operations accept `bookId`, `chapterId`, an

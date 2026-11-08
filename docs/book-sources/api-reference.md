@@ -1012,7 +1012,9 @@ size overflow throw.
 ## `langhuan:storage`
 
 Available only in the feed realm when the host installs its source-scoped
-storage backend.
+storage backend. The reading app installs a persistent backend; the
+developer tools install a session-scoped in-memory one (see
+[Developer tools](../feed-debug-tools.md)).
 
 ```js
 import { storage } from "langhuan:storage";

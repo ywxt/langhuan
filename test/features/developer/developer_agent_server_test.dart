@@ -7,10 +7,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:langhuan/features/developer/developer_agent_server.dart';
 import 'package:langhuan/src/rust/api/comments.dart';
 import 'package:langhuan/src/rust/api/debug.dart';
+import 'package:langhuan/src/rust/api/types.dart';
 
 void main() {
   test('catalogue advertises consistent routes and HTTP mode names', () async {
-    final server = DeveloperAgentServer(currentScript: () => 'source');
+    final server = DeveloperAgentServer();
     addTearDown(server.stop);
     await server.start();
     final client = HttpClient();
@@ -40,15 +41,11 @@ void main() {
     expect(endpoints['run']!['path'], '/v1/run');
     expect(
       (endpoints['run']!['body'] as Map).keys,
-      unorderedEquals([
-        'operation',
-        'input',
-        'mode',
-        'cursor',
-        'script',
-        'feed_id',
-      ]),
+      unorderedEquals(['operation', 'input', 'mode', 'cursor']),
     );
+
+    // The catalogue explains which script a run executes.
+    expect(body['script'] as String, contains('/v1/load'));
 
     // The example is a runnable body: its operation is in the catalogue.
     final example = endpoints['run']!['example'] as Map<String, dynamic>;
@@ -148,7 +145,6 @@ void main() {
       final finish = Completer<void>();
       var editor = 'old';
       final server = DeveloperAgentServer(
-        currentScript: () => editor,
         editorScriptWriter: (script) async {
           started.complete();
           await finish.future;
@@ -187,14 +183,11 @@ void main() {
       final file = File('${directory.path}/source.js');
       await file.writeAsString('version one');
       var editor = 'old source';
-      String? executed;
       final server = DeveloperAgentServer(
-        currentScript: () => editor,
         editorScriptWriter: (source) async {
           editor = source;
         },
-        runner: ({required script, required stage}) async {
-          executed = script;
+        runner: ({required stage}) async {
           return const DebugRunResult(
             auth: DebugAuthUse.notSupported,
             trace: [],
@@ -227,7 +220,6 @@ void main() {
         })).$1,
         HttpStatus.ok,
       );
-      expect(executed, 'version two');
       await file.writeAsBytes([0xff]);
       expect((await post(server, '/v1/reload')).$1, HttpStatus.badRequest);
       expect(editor, 'version two');
@@ -247,7 +239,6 @@ void main() {
       var busy = false;
       var installed = 'installed version one';
       final server = DeveloperAgentServer(
-        currentScript: () => editor,
         workspaceBusy: () => busy,
         editorScriptWriter: (source) async {
           editor = source;
@@ -294,12 +285,9 @@ void main() {
   test(
     'agent API is loopback-only, authenticated, and runs an operation',
     () async {
-      String? receivedScript;
       DebugStage? receivedStage;
       final server = DeveloperAgentServer(
-        currentScript: () => 'export default {}',
-        runner: ({required script, required stage}) async {
-          receivedScript = script;
+        runner: ({required stage}) async {
           receivedStage = stage;
           return const DebugRunResult(
             auth: DebugAuthUse.notSupported,
@@ -354,7 +342,6 @@ void main() {
       expect(response.statusCode, HttpStatus.ok);
       expect(body['ok'], true);
       expect(body['steps'], hasLength(1));
-      expect(receivedScript, 'export default {}');
       expect(receivedStage, isA<DebugStage_Search>());
       expect((receivedStage! as DebugStage_Search).keyword, 'book');
     },
@@ -363,8 +350,7 @@ void main() {
   test('single_page mode forwards raw input and cursor', () async {
     DebugStage? receivedStage;
     final server = DeveloperAgentServer(
-      currentScript: () => 'export default {}',
-      runner: ({required script, required stage}) async {
+      runner: ({required stage}) async {
         receivedStage = stage;
         return const DebugRunResult(
           auth: DebugAuthUse.notSupported,
@@ -416,8 +402,7 @@ void main() {
   test('comments operations run as a pipeline by default', () async {
     DebugStage? receivedStage;
     final server = DeveloperAgentServer(
-      currentScript: () => 'export default {}',
-      runner: ({required script, required stage}) async {
+      runner: ({required stage}) async {
         receivedStage = stage;
         return const DebugRunResult(
           auth: DebugAuthUse.notSupported,
@@ -478,8 +463,7 @@ void main() {
 
   test('comments pipeline output serializes every comment field', () async {
     final server = DeveloperAgentServer(
-      currentScript: () => 'export default {}',
-      runner: ({required script, required stage}) async {
+      runner: ({required stage}) async {
         return DebugRunResult(
           auth: DebugAuthUse.notSupported,
           output: DebugStageOutput.comments(items: [
@@ -526,8 +510,7 @@ void main() {
 
   test('comments operations validate their input', () async {
     final server = DeveloperAgentServer(
-      currentScript: () => 'export default {}',
-      runner: ({required script, required stage}) async {
+      runner: ({required stage}) async {
         throw StateError('the runner must not be reached');
       },
     );
@@ -549,6 +532,71 @@ void main() {
         'input': {'bookId': 'b', 'chapterId': 'c', 'parentId': '  '},
       })).$1,
       HttpStatus.badRequest,
+    );
+  });
+
+  test('run rejects the removed inline script fields', () async {
+    DebugStage? receivedStage;
+    final server = DeveloperAgentServer(
+      runner: ({required stage}) async {
+        receivedStage = stage;
+        return const DebugRunResult(
+          auth: DebugAuthUse.notSupported,
+          trace: [],
+          droppedEntries: 0,
+          steps: [],
+          droppedSteps: 0,
+          durationMs: 0,
+        );
+      },
+    );
+    addTearDown(server.stop);
+    await server.start();
+
+    // The legacy fields are rejected, not silently ignored, so a caller
+    // that still sends them learns that runs execute the loaded script.
+    for (final body in <Map<String, Object?>>[
+      {
+        'operation': 'search',
+        'input': {'keyword': 'book'},
+        'script': 'export default {}',
+      },
+      {
+        'operation': 'search',
+        'input': {'keyword': 'book'},
+        'feed_id': 'org.example.feed',
+      },
+    ]) {
+      final (status, response) = await post(server, '/v1/run', body);
+      expect(status, HttpStatus.badRequest);
+      expect(response['error'] as String, contains('/v1/load'));
+      expect(receivedStage, isNull, reason: 'the runner must not be reached');
+    }
+  });
+
+  test('run surfaces environment preconditions as a client error', () async {
+    // The native runner throws a bridge error when no script is loaded —
+    // a precondition failure, reported as 400 with its message.
+    final server = DeveloperAgentServer(
+      runner: ({required stage}) async {
+        throw const BridgeError(
+          kind: ErrorKind.internal(),
+          message: 'no script loaded — load a script into the developer '
+              'tools first',
+        );
+      },
+    );
+    addTearDown(server.stop);
+    await server.start();
+
+    final (status, response) = await post(server, '/v1/run', {
+      'operation': 'search',
+      'input': {'keyword': 'book'},
+    });
+    expect(status, HttpStatus.badRequest);
+    expect(
+      response['error'] as String,
+      contains('no script loaded'),
     );
   });
 }

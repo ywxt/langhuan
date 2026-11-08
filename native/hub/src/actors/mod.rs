@@ -5,6 +5,7 @@
 pub(crate) mod app_data_actor;
 pub(crate) mod bookmark_actor;
 pub(crate) mod bookshelf_actor;
+pub(crate) mod debug_actor;
 pub(crate) mod feed_actor;
 pub(crate) mod locale_actor;
 pub(crate) mod login_actor;
@@ -15,6 +16,7 @@ pub(crate) mod webview_actor;
 pub(crate) use app_data_actor::AppDataActor;
 pub(crate) use bookmark_actor::BookmarkActor;
 pub(crate) use bookshelf_actor::BookshelfActor;
+pub(crate) use debug_actor::DebugActor;
 pub(crate) use feed_actor::FeedActor;
 use langhuan::script::runtime::ScriptEngine;
 pub(crate) use locale_actor::LocaleActor;
@@ -52,6 +54,7 @@ pub(crate) struct ActorAddresses {
     pub app_data: Address<AppDataActor>,
     pub bookmark: Address<BookmarkActor>,
     pub webview: Address<WebviewActor>,
+    pub debug: Address<DebugActor>,
 }
 
 /// Returns a reference to the global actor addresses.
@@ -111,6 +114,12 @@ pub async fn create_actors() {
     let webview_context = Context::new();
     let webview_addr = webview_context.address();
 
+    // DebugActor — owns the developer tools' stateful debug environment
+    // (the loaded script and its session-scoped storage).
+    tracing::debug!("creating debug actor");
+    let debug_context = Context::new();
+    let debug_addr = debug_context.address();
+
     // BookshelfActor - local bookshelf storage and simple capability response.
     tracing::debug!("creating bookshelf actor");
     let bookshelf_context = Context::new();
@@ -143,12 +152,14 @@ pub async fn create_actors() {
     let reading_progress_actor = ReadingProgressActor::new();
     let bookmark_actor = BookmarkActor::new();
     let webview_actor = WebviewActor::new();
+    let debug_actor = DebugActor::new(webview_addr.clone());
     spawn(registry_context.run(registry_actor));
     spawn(login_context.run(login_actor));
     spawn(app_data_context.run(app_data_actor));
     spawn(reading_progress_context.run(reading_progress_actor));
     spawn(bookmark_context.run(bookmark_actor));
     spawn(webview_context.run(webview_actor));
+    spawn(debug_context.run(debug_actor));
 
     let feed_actor = FeedActor::new(registry_addr.clone());
     spawn(feed_context.run(feed_actor));
@@ -167,6 +178,7 @@ pub async fn create_actors() {
             app_data: app_data_addr,
             bookmark: bookmark_addr,
             webview: webview_addr,
+            debug: debug_addr,
         })
         .is_err()
     {

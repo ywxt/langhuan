@@ -951,7 +951,7 @@
   "devScriptLabel": "Feed script",
   "@devScriptLabel": { "description": "Developer page: script editor section label" },
 
-  "devScriptHint": "Paste a JavaScript feed or import one from an installed feed. Scripts run in an isolated native QuickJS sandbox; installed feeds are untouched.",
+  "devScriptHint": "Paste a JavaScript feed or import one from an installed feed. Load the script to make runs use it; every load resets its state. Scripts run in an isolated native QuickJS sandbox; installed feeds are untouched.",
   "@devScriptHint": { "description": "Developer page: script editor explanation" },
 
   "devScriptImport": "Import",
@@ -980,6 +980,12 @@
     "description": "Snackbar after a script was imported into the editor",
     "placeholders": { "name": { "type": "String" } }
   },
+
+  "devScriptLoad": "Load",
+  "@devScriptLoad": { "description": "Developer page: compile the editor's script into the debug environment" },
+
+  "devScriptLoaded": "Script loaded — runs use this version",
+  "@devScriptLoaded": { "description": "Snackbar after the editor's script was loaded into the debug environment" },
 
   "devScriptLoadError": "Failed to load the feed script",
   "@devScriptLoadError": { "description": "Snackbar when reading an installed feed's script fails" },
