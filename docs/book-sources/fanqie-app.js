@@ -1488,7 +1488,7 @@ function comments(event) {
   }
   return {
     type: "complete",
-    result: { items: page.items },
+    result: page.items,
     next_cursor: page.next_cursor,
   };
 }

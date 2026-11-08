@@ -283,13 +283,16 @@ impl JsFeed {
         self.comment_support
     }
 
-    pub async fn comments_page(
+    /// Validate a comment target against the script's declared support and
+    /// the contract's field caps, returning the operation it selects.
+    /// Shared by the explicit page API and the pipeline stream so both
+    /// reject the same targets.
+    fn comment_operation(
         &self,
         query: &crate::feed::comments::CommentsQuery,
-        cursor: Value,
-    ) -> Result<crate::feed::comments::CommentPage> {
-        use crate::feed::comments::{Comment, CommentPage};
-        let supported = if query.paragraph_id.is_some() {
+    ) -> Result<OperationKind> {
+        let paragraph = query.paragraph_id.is_some();
+        let supported = if paragraph {
             self.comment_support.1
         } else {
             self.comment_support.0
@@ -310,18 +313,24 @@ impl JsFeed {
         {
             return Err(Error::invalid_feed("invalid comment target"));
         }
-        if serde_json::to_vec(&cursor).map_or(true, |v| v.len() > MAX_CURSOR_BYTES) {
-            return Err(Error::invalid_feed("comment cursor exceeds 4096 bytes"));
-        }
-        let operation = if query.paragraph_id.is_some() {
+        Ok(if paragraph {
             OperationKind::ParagraphComments
         } else {
             OperationKind::ChapterComments
-        };
-        let input = JsData::from_json(&serde_json::json!({
-            "bookId": query.book_id, "chapterId": query.chapter_id,
-            "paragraphId": query.paragraph_id, "parentId": query.parent_id,
-        }));
+        })
+    }
+
+    pub async fn comments_page(
+        &self,
+        query: &crate::feed::comments::CommentsQuery,
+        cursor: Value,
+    ) -> Result<crate::feed::comments::CommentPage> {
+        use crate::feed::comments::CommentPage;
+        let operation = self.comment_operation(query)?;
+        if serde_json::to_vec(&cursor).map_or(true, |v| v.len() > MAX_CURSOR_BYTES) {
+            return Err(Error::invalid_feed("comment cursor exceeds 4096 bytes"));
+        }
+        let input = comment_input(query);
         let complete = self
             .run_operation(
                 &JsOperation::Invoke {
@@ -331,28 +340,9 @@ impl JsFeed {
                 &JsData::from_json(&cursor),
             )
             .await?;
-        #[derive(serde::Deserialize)]
-        struct CommentResult {
-            items: Vec<Comment>,
-        }
-        let page: CommentResult = serde_json::from_value(complete.result)
+        let items: Vec<crate::feed::comments::Comment> = serde_json::from_value(complete.result)
             .map_err(|e| Error::javascript(format!("invalid comment page: {e}")))?;
-        let items = page.items;
-        if items.len() > 200
-            || items.iter().any(|c| {
-                c.id.is_empty()
-                    || c.id.len() > 4096
-                    || c.text.len() > 32768
-                    || c.author.name.len() > 1024
-                    || c.created_at_ms
-                        .is_some_and(|t| !(0..=8_640_000_000_000_000).contains(&t))
-                    || c.author.avatar_url.as_ref().is_some_and(|v| v.len() > 8192)
-            })
-        {
-            return Err(Error::invalid_feed(
-                "comment page exceeds item or text limits",
-            ));
-        }
+        validate_comment_page(&items)?;
         let next_cursor = complete.next_cursor.map(JsData::into_json);
         if let Some(next) = &next_cursor
             && !cursor_advances(&cursor, next)
@@ -362,6 +352,36 @@ impl JsFeed {
             ));
         }
         Ok(CommentPage { items, next_cursor })
+    }
+
+    /// Stream every comment of one thread by following `next_cursor` — the
+    /// pipeline form of the comments operations, for developer tooling. The
+    /// production UI keeps [`crate::feed::comments::FeedComments`] so a
+    /// panel can hold independent chapter, paragraph and reply cursors and
+    /// retry a single page boundary.
+    pub fn comments_stream(
+        &self,
+        query: crate::feed::comments::CommentsQuery,
+    ) -> FeedStream<'_, crate::feed::comments::Comment> {
+        Box::pin(stream! {
+            let input = comment_input(&query);
+            let operation = match self.comment_operation(&query) {
+                Ok(operation) => JsOperation::Invoke {
+                    operation,
+                    input: &input,
+                },
+                Err(error) => {
+                    yield Err(error);
+                    return;
+                }
+            };
+            let stream =
+                self.paged_stream_validated(operation, validate_comment_page);
+            let mut stream = std::pin::pin!(stream);
+            while let Some(result) = stream.next().await {
+                yield result;
+            }
+        })
     }
 
     pub(crate) fn new(
@@ -727,6 +747,22 @@ impl JsFeed {
     where
         T: DeserializeOwned + Send + 'a,
     {
+        self.paged_stream_validated(operation, |_| Ok(()))
+    }
+
+    /// [`Self::paged_stream`] with a page-level validator. The validator
+    /// runs when a page arrives, before any of its items flow, so a page
+    /// that violates the contract never yields a partial prefix — the
+    /// stream form of the explicit page API's page-level rejection.
+    fn paged_stream_validated<'a, T, F>(
+        &'a self,
+        operation: JsOperation<'a>,
+        validate_page: F,
+    ) -> FeedStream<'a, T>
+    where
+        T: DeserializeOwned + Send + 'a,
+        F: Fn(&[T]) -> Result<()> + Send + 'a,
+    {
         Box::pin(stream! {
             let mut cursor = JsData::Null;
             let mut cursor_json = Value::Null;
@@ -739,6 +775,10 @@ impl JsFeed {
                 match self.run_page(&operation, &cursor).await {
                     Ok(page) => {
                         pages += 1;
+                        if let Err(error) = validate_page(&page.items) {
+                            yield Err(error);
+                            break;
+                        }
                         // Validate the page's cursor before yielding its
                         // items, mirroring `comments_page`'s page-level
                         // rejection; the original `JsData` still threads
@@ -902,6 +942,37 @@ fn spend_step(steps_left: &mut usize) -> Result<()> {
 fn cursor_advances(prev: &Value, next: &Value) -> bool {
     *next != *prev
         && serde_json::to_vec(next).is_ok_and(|encoded| encoded.len() <= MAX_CURSOR_BYTES)
+}
+
+/// The `event.input` object of a comments operation, shared by the
+/// explicit page API and the pipeline stream.
+fn comment_input(query: &crate::feed::comments::CommentsQuery) -> JsData {
+    JsData::from_json(&serde_json::json!({
+        "bookId": query.book_id, "chapterId": query.chapter_id,
+        "paragraphId": query.paragraph_id, "parentId": query.parent_id,
+    }))
+}
+
+/// One comments page carries at most 200 items whose fields stay within
+/// the contract's caps. The explicit page API and the pipeline stream
+/// share the rule so both reject the same oversized pages.
+fn validate_comment_page(items: &[crate::feed::comments::Comment]) -> Result<()> {
+    if items.len() > 200
+        || items.iter().any(|c| {
+            c.id.is_empty()
+                || c.id.len() > 4096
+                || c.text.len() > 32768
+                || c.author.name.len() > 1024
+                || c.created_at_ms
+                    .is_some_and(|t| !(0..=8_640_000_000_000_000).contains(&t))
+                || c.author.avatar_url.as_ref().is_some_and(|v| v.len() > 8192)
+        })
+    {
+        return Err(Error::invalid_feed(
+            "comment page exceeds item or text limits",
+        ));
+    }
+    Ok(())
 }
 
 impl Feed for JsFeed {

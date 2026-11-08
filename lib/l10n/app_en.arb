@@ -1001,6 +1001,8 @@
   "@debugStageChapters": { "description": "Stage runner: chapters stage" },
   "debugStageParagraphs": "Paragraphs",
   "@debugStageParagraphs": { "description": "Stage runner: paragraphs stage" },
+  "debugStageComments": "Comments",
+  "@debugStageComments": { "description": "Stage runner: comments pipeline stage" },
   "debugStageAuthStatus": "Auth status",
   "@debugStageAuthStatus": { "description": "Stage runner: auth status probe stage" },
   "debugStageManual": "Advanced single page",
@@ -1019,6 +1021,10 @@
   "@debugInputBookId": { "description": "Stage runner input: book id" },
   "debugInputChapterId": "Chapter ID",
   "@debugInputChapterId": { "description": "Stage runner input: chapter id" },
+  "debugInputParagraphId": "Paragraph ID (optional)",
+  "@debugInputParagraphId": { "description": "Stage runner input: paragraph id, selects comments.paragraph" },
+  "debugInputParentId": "Parent comment ID (optional)",
+  "@debugInputParentId": { "description": "Stage runner input: parent comment id, reads replies" },
 
   "debugInputMissing": "Please fill in: {field}",
   "@debugInputMissing": {

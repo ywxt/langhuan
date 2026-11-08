@@ -34,6 +34,26 @@ pub struct CommentPage {
     pub next_cursor_json: Option<String>,
 }
 
+impl From<langhuan::feed::comments::Comment> for CommentItem {
+    fn from(c: langhuan::feed::comments::Comment) -> Self {
+        // Lossless move from the contract-shaped feed model: every field
+        // maps one-to-one, nothing is dropped or re-encoded.
+        Self {
+            id: c.id,
+            author: CommentAuthor {
+                name: c.author.name,
+                avatar_url: c.author.avatar_url,
+            },
+            text: c.text,
+            created_at_ms: c.created_at_ms,
+            like_count: c.like_count,
+            replies: c.replies.map(|r| CommentReplies {
+                total_count: r.total_count,
+            }),
+        }
+    }
+}
+
 /// The result and cancellation methods use shared access, so an in-flight
 /// bridge result call cannot prevent another call from aborting the task.
 pub struct CommentRequest {
@@ -154,25 +174,7 @@ pub async fn get_comments_page(
         )
         .await?;
     Ok(CommentPage {
-        // Lossless move from the contract-shaped feed model: every field
-        // maps one-to-one, nothing is dropped or re-encoded.
-        items: page
-            .items
-            .into_iter()
-            .map(|c| CommentItem {
-                id: c.id,
-                author: CommentAuthor {
-                    name: c.author.name,
-                    avatar_url: c.author.avatar_url,
-                },
-                text: c.text,
-                created_at_ms: c.created_at_ms,
-                like_count: c.like_count,
-                replies: c.replies.map(|r| CommentReplies {
-                    total_count: r.total_count,
-                }),
-            })
-            .collect(),
+        items: page.items.into_iter().map(CommentItem::from).collect(),
         next_cursor_json: page.next_cursor.map(|v| v.to_string()),
     })
 }

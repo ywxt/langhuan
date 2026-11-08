@@ -28,6 +28,7 @@ use langhuan::step_trace::{StepTraceEntry, StepTraceRecorder};
 use langhuan::trace::{TraceEntry, TraceRecorder};
 use tokio_stream::StreamExt;
 
+use super::comments::CommentItem;
 use super::types::{
     AuthStatus, BookInfo, BridgeError, ChapterItem, ParagraphContent, SearchResultItem,
 };
@@ -52,6 +53,15 @@ pub enum DebugStage {
     Chapters { book_id: String },
     /// `paragraphs(book_id, chapter_id)` → the chapter's paragraphs.
     Paragraphs { book_id: String, chapter_id: String },
+    /// `comments.chapter`/`comments.paragraph` → the whole thread, following
+    /// `next_cursor` until it runs out. The production UI keeps the explicit
+    /// page API for its independent chapter, paragraph and reply cursors.
+    Comments {
+        book_id: String,
+        chapter_id: String,
+        paragraph_id: Option<String>,
+        parent_id: Option<String>,
+    },
     /// The login-status probe (requires a feed with a `login` block).
     AuthStatus,
     /// Execute exactly one operation/page with raw JSON input and cursor.
@@ -76,6 +86,9 @@ pub enum DebugStageOutput {
     },
     Paragraphs {
         items: Vec<ParagraphContent>,
+    },
+    Comments {
+        items: Vec<CommentItem>,
     },
     AuthStatus {
         status: AuthStatus,
@@ -391,6 +404,36 @@ impl DebugStage {
                     error,
                 )
             }
+            DebugStage::Comments {
+                book_id,
+                chapter_id,
+                paragraph_id,
+                parent_id,
+            } => {
+                let query = langhuan::feed::comments::CommentsQuery {
+                    book_id,
+                    chapter_id,
+                    paragraph_id,
+                    parent_id,
+                };
+                let mut items = Vec::new();
+                let mut error = None;
+                let mut stream = feed.comments_stream(query);
+                while let Some(result) = stream.next().await {
+                    match result {
+                        Ok(comment) => items.push(CommentItem::from(comment)),
+                        Err(e) => {
+                            error = Some(e.into());
+                            break;
+                        }
+                    }
+                }
+                wrap_stream_output(
+                    error.is_none() || !items.is_empty(),
+                    DebugStageOutput::Comments { items },
+                    error,
+                )
+            }
             DebugStage::AuthStatus => {
                 let Some(support) = feed.supports_auth() else {
                     return (
@@ -553,6 +596,28 @@ export default { search, bookInfo, chapters, paragraphs };
 "#
     }
 
+    fn comments_fixture_script() -> &'static str {
+        r#"
+// ==Feed==
+// @id           dbg-comments-fixture
+// @name         Debug Comments Fixture
+// @version      1.0.0
+// @base_url     https://example.com
+// @access_domain example.com
+// @schema_version 6
+// ==/Feed==
+const empty = () => ({ type: "complete", result: [] });
+function commentsChapter(event) {
+  const page = event.cursor?.page ?? 1;
+  return { type: "complete",
+    result: [{ id: "c" + page, author: { name: "Reader" }, text: "Comment " + page }],
+    next_cursor: page < 2 ? { page: page + 1 } : null };
+}
+export default { search: empty, bookInfo: empty, chapters: empty, paragraphs: empty,
+  comments: { chapter: commentsChapter, paragraph: null } };
+"#
+    }
+
     async fn mock_search(server: &mut mockito::Server, body: &'static str) -> mockito::Mock {
         server
             .mock("GET", "/search")
@@ -586,6 +651,59 @@ export default { search, bookInfo, chapters, paragraphs };
         };
         let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
         assert_eq!(ids, ["1", "2", "3"]);
+        Ok(())
+    }
+
+    /// A comments pipeline run follows the thread's pages to its end.
+    #[tokio::test]
+    async fn comments_run_follows_the_whole_thread() -> TestResult {
+        let feed = ScriptEngine::new()
+            .load_script(comments_fixture_script())
+            .await?;
+
+        let (output, error) = DebugStage::Comments {
+            book_id: "b".to_owned(),
+            chapter_id: "c".to_owned(),
+            paragraph_id: None,
+            parent_id: None,
+        }
+        .run(&feed)
+        .await;
+
+        assert!(error.is_none());
+        let Some(DebugStageOutput::Comments { items }) = output else {
+            panic!("expected comments output");
+        };
+        let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, ["c1", "c2"]);
+        Ok(())
+    }
+
+    /// The flattened contract: a result that still wraps its items in an
+    /// object fails the page instead of being silently coerced.
+    #[tokio::test]
+    async fn comments_run_rejects_the_legacy_wrapped_result() -> TestResult {
+        let script = comments_fixture_script().replace(
+            "result: [{ id: \"c\" + page,",
+            "result: { items: [{ id: \"c\" + page,",
+        );
+        let script = script.replace(
+            "text: \"Comment \" + page }],",
+            "text: \"Comment \" + page }] },",
+        );
+        let feed = ScriptEngine::new().load_script(&script).await?;
+
+        let (output, error) = DebugStage::Comments {
+            book_id: "b".to_owned(),
+            chapter_id: "c".to_owned(),
+            paragraph_id: None,
+            parent_id: None,
+        }
+        .run(&feed)
+        .await;
+
+        assert!(error.is_some(), "the wrapped shape must fail the run");
+        assert!(output.is_none());
         Ok(())
     }
 

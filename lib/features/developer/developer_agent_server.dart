@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import '../../src/rust/api/comments.dart' show CommentItem;
 import '../../src/rust/api/debug.dart';
 import '../../src/rust/api/types.dart';
 
@@ -227,8 +228,8 @@ class DeveloperAgentServer {
           'operation': 'required string; one of operations[]',
           'input': 'required object; fields per operation',
           'mode':
-              'optional: pipeline (default) or single_page; '
-              'comments.* are always single_page',
+              'optional: pipeline (default) or single_page; the pipeline '
+              'mode follows next_cursor to the end',
           'cursor':
               'single_page only; the next_cursor from a previous '
               'response, null restarts',
@@ -299,22 +300,28 @@ class DeveloperAgentServer {
         'input': {'bookId': 'string', 'chapterId': 'string'},
       },
       {'name': 'login.status', 'input': <String, String>{}},
-      for (final kind in ['chapter', 'paragraph'])
-        {
-          'name': 'comments.$kind',
-          'mode': 'single_page',
-          'input': {
-            'bookId': 'string',
-            'chapterId': 'string',
-            if (kind == 'paragraph') 'paragraphId': 'string',
-            'parentId': 'string|null',
-          },
+      {
+        'name': 'comments.chapter',
+        'input': {
+          'bookId': 'string',
+          'chapterId': 'string',
+          'parentId': 'string|null',
         },
+      },
+      {
+        'name': 'comments.paragraph',
+        'input': {
+          'bookId': 'string',
+          'chapterId': 'string',
+          'paragraphId': 'string',
+          'parentId': 'string|null',
+        },
+      },
     ],
     'pagination':
-        'single_page responses carry output.next_cursor; pass it back '
-        'as the run body cursor until it is null to enumerate every '
-        'page',
+        'pipeline mode drains every page automatically; single_page '
+        'responses carry output.next_cursor, pass it back as the run body '
+        'cursor until it is null to enumerate pages manually',
     'limits': {
       'max_request_bytes': _maxRequestBytes,
       'concurrency': 'one run or load at a time; others get 409',
@@ -450,7 +457,7 @@ class DeveloperAgentServer {
       );
     }
     final mode = body['mode'];
-    if (mode == 'single_page' || operation.startsWith('comments.')) {
+    if (mode == 'single_page') {
       return DebugStage.manual(
         operation: operation,
         inputJson: jsonEncode(input),
@@ -469,6 +476,16 @@ class DeveloperAgentServer {
       );
     }
 
+    String? optionalString(String name) {
+      final value = input[name];
+      if (value == null) return null;
+      if (value is String && value.trim().isNotEmpty) return value.trim();
+      throw _AgentRequestError(
+        HttpStatus.badRequest,
+        'input.$name must be a non-empty string or null',
+      );
+    }
+
     return switch (operation) {
       'search' => DebugStage.search(keyword: requiredString('keyword')),
       'bookInfo' => DebugStage.bookInfo(bookId: requiredString('bookId')),
@@ -476,6 +493,17 @@ class DeveloperAgentServer {
       'paragraphs' => DebugStage.paragraphs(
         bookId: requiredString('bookId'),
         chapterId: requiredString('chapterId'),
+      ),
+      'comments.chapter' => DebugStage.comments(
+        bookId: requiredString('bookId'),
+        chapterId: requiredString('chapterId'),
+        parentId: optionalString('parentId'),
+      ),
+      'comments.paragraph' => DebugStage.comments(
+        bookId: requiredString('bookId'),
+        chapterId: requiredString('chapterId'),
+        paragraphId: requiredString('paragraphId'),
+        parentId: optionalString('parentId'),
       ),
       'login.status' => const DebugStage.authStatus(),
       _ => throw _AgentRequestError(
@@ -580,6 +608,10 @@ Object? _outputJson(DebugStageOutput? output) => switch (output) {
     'type': 'paragraphs',
     'items': [for (final item in items) _paragraphJson(item)],
   },
+  DebugStageOutput_Comments(:final items) => {
+    'type': 'comments',
+    'items': [for (final item in items) _commentItemJson(item)],
+  },
   DebugStageOutput_AuthStatus(:final status) => {
     'type': 'auth_status',
     'value': status.name,
@@ -628,3 +660,17 @@ Map<String, Object?> _paragraphJson(ParagraphContent paragraph) =>
     };
 
 Object _paragraphId(ParagraphId id) => jsonDecode(id.toStringValue());
+
+Map<String, Object?> _commentItemJson(CommentItem item) => {
+  'id': item.id,
+  'author': {
+    'name': item.author.name,
+    'avatar_url': item.author.avatarUrl,
+  },
+  'text': item.text,
+  'created_at_ms': item.createdAtMs,
+  'like_count': item.likeCount,
+  'replies': item.replies == null
+      ? null
+      : {'total_count': item.replies!.totalCount},
+};

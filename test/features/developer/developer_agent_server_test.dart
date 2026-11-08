@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:langhuan/features/developer/developer_agent_server.dart';
+import 'package:langhuan/src/rust/api/comments.dart';
 import 'package:langhuan/src/rust/api/debug.dart';
 
 void main() {
@@ -399,5 +400,144 @@ void main() {
     ]);
     expect(body['output']['next_cursor'], {'page': 3});
     expect(body['output']['type'], 'single_page');
+  });
+
+  test('comments operations run as a pipeline by default', () async {
+    DebugStage? receivedStage;
+    final server = DeveloperAgentServer(
+      currentScript: () => 'export default {}',
+      runner: ({required script, required stage}) async {
+        receivedStage = stage;
+        return const DebugRunResult(
+          auth: DebugAuthUse.notSupported,
+          output: DebugStageOutput.comments(items: []),
+          trace: [],
+          droppedEntries: 0,
+          steps: [],
+          droppedSteps: 0,
+          durationMs: 1,
+        );
+      },
+    );
+    addTearDown(server.stop);
+    await server.start();
+
+    final (status, body) = await post(server, '/v1/run', {
+      'operation': 'comments.paragraph',
+      'input': {
+        'bookId': 'b',
+        'chapterId': 'c',
+        'paragraphId': '839',
+        'parentId': null,
+      },
+    });
+
+    expect(status, HttpStatus.ok);
+    expect(body['ok'], true);
+    // No mode given: a comments operation is a regular pipeline stage now.
+    expect(receivedStage, isA<DebugStage_Comments>());
+    final stage = receivedStage! as DebugStage_Comments;
+    expect(stage.bookId, 'b');
+    expect(stage.chapterId, 'c');
+    expect(stage.paragraphId, '839');
+    expect(stage.parentId, isNull);
+    expect(body['output'], {
+      'type': 'comments',
+      'items': [],
+    });
+
+    // Chapter comments accept an optional parentId for reply threads.
+    await post(server, '/v1/run', {
+      'operation': 'comments.chapter',
+      'input': {'bookId': 'b', 'chapterId': 'c', 'parentId': 'c7'},
+    });
+    final replyStage = receivedStage! as DebugStage_Comments;
+    expect(replyStage.paragraphId, isNull);
+    expect(replyStage.parentId, 'c7');
+
+    // The single-page escape hatch still steps one page at a time.
+    await post(server, '/v1/run', {
+      'mode': 'single_page',
+      'operation': 'comments.chapter',
+      'input': {'bookId': 'b', 'chapterId': 'c'},
+      'cursor': {'page': 2},
+    });
+    expect(receivedStage, isA<DebugStage_Manual>());
+  });
+
+  test('comments pipeline output serializes every comment field', () async {
+    final server = DeveloperAgentServer(
+      currentScript: () => 'export default {}',
+      runner: ({required script, required stage}) async {
+        return DebugRunResult(
+          auth: DebugAuthUse.notSupported,
+          output: DebugStageOutput.comments(items: [
+            CommentItem(
+              id: 'c7',
+              author: const CommentAuthor(name: 'Reader', avatarUrl: null),
+              text: 'An interesting paragraph.',
+              createdAtMs: null,
+              likeCount: 12,
+              replies: const CommentReplies(totalCount: 3),
+            ),
+          ]),
+          trace: const [],
+          droppedEntries: 0,
+          steps: const [],
+          droppedSteps: 0,
+          durationMs: 1,
+        );
+      },
+    );
+    addTearDown(server.stop);
+    await server.start();
+
+    final (status, body) = await post(server, '/v1/run', {
+      'operation': 'comments.chapter',
+      'input': {'bookId': 'b', 'chapterId': 'c'},
+    });
+
+    expect(status, HttpStatus.ok);
+    expect(body['output'], {
+      'type': 'comments',
+      'items': [
+        {
+          'id': 'c7',
+          'author': {'name': 'Reader', 'avatar_url': null},
+          'text': 'An interesting paragraph.',
+          'created_at_ms': null,
+          'like_count': 12,
+          'replies': {'total_count': 3},
+        },
+      ],
+    });
+  });
+
+  test('comments operations validate their input', () async {
+    final server = DeveloperAgentServer(
+      currentScript: () => 'export default {}',
+      runner: ({required script, required stage}) async {
+        throw StateError('the runner must not be reached');
+      },
+    );
+    addTearDown(server.stop);
+    await server.start();
+
+    // comments.paragraph without a paragraphId cannot run.
+    expect(
+      (await post(server, '/v1/run', {
+        'operation': 'comments.paragraph',
+        'input': {'bookId': 'b', 'chapterId': 'c'},
+      })).$1,
+      HttpStatus.badRequest,
+    );
+    // An empty parentId is rejected like any other empty string.
+    expect(
+      (await post(server, '/v1/run', {
+        'operation': 'comments.chapter',
+        'input': {'bookId': 'b', 'chapterId': 'c', 'parentId': '  '},
+      })).$1,
+      HttpStatus.badRequest,
+    );
   });
 }

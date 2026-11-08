@@ -815,7 +815,7 @@ function commentsList(event, paragraphId) {
     if (parsed.failure) return parsed.failure;
     return {
       type: "complete",
-      result: { items: parsed.items },
+      result: parsed.items,
       next_cursor: parsed.isEnd ? null : { page: event.state.page + 1 },
     };
   }
@@ -853,7 +853,7 @@ function commentsMerged(event) {
       if (parsed.items.length > 0) {
         return {
           type: "complete",
-          result: { items: parsed.items },
+          result: parsed.items,
           next_cursor: parsed.isEnd
             ? { chapter: 1 }
             : { note: event.state.page + 1 },
@@ -869,7 +869,7 @@ function commentsMerged(event) {
 
     return {
       type: "complete",
-      result: { items: parsed.items },
+      result: parsed.items,
       next_cursor: parsed.isEnd
         ? null
         : { chapter: event.state.page + 1 },

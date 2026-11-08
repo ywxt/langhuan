@@ -299,7 +299,7 @@ type CompleteStep = {
 | Field | Required | Value and behaviour |
 | --- | :---: | --- |
 | `type` | Yes | Must be `"complete"`. |
-| `result` | Yes | Search, chapters and paragraphs return an array; `bookInfo` returns a book object; `login.status` returns a boolean; comments return a [`CommentResult`](#comment-result). Missing or `undefined` is an error. An empty page must explicitly return an empty array. |
+| `result` | Yes | Search, chapters, paragraphs and comments return an array; `bookInfo` returns a book object; `login.status` returns a boolean; the comments array holds at most 200 [`Comment`](#comment) objects. Missing or `undefined` is an error. An empty page must explicitly return an empty array. |
 | `next_cursor` | No | JSON token for another page. `null`/`undefined` ends pagination. It becomes the next page's `event.cursor`. Bytes, functions and other non-JSON values are rejected. The token is limited to 4,096 encoded bytes and must differ from the page's `event.cursor`: the host fails a page that repeats it, and automatically followed pagination stops at 1,000 pages. Single-value operations do not paginate. |
 
 Results and cursors must be JSON-compatible. Results are capped at 16 MiB;
@@ -454,18 +454,15 @@ liking, or other mutation operation.
 
 ### Comment result
 
+The `result` of a comments operation's [`complete`](#complete) step is the
+array of [`Comment`](#comment) objects itself — at most 200 per website page:
+
 ```ts
-type CommentResult = {
-  items: Comment[];
-};
+result: Comment[];
 ```
 
-| Field | Required | Behaviour |
-| --- | :---: | --- |
-| `items` | Yes | Array of at most 200 [`Comment`](#comment) objects from one website page. An empty array does not by itself end pagination. |
-
-This object is the `result` of a [`complete`](#complete) step. The pagination
-token is the step's sibling `next_cursor`, never a field of `CommentResult`.
+An empty array does not by itself end pagination. The pagination token is the
+step's sibling `next_cursor`, never a field of the result.
 
 ## Comments (read-only)
 
@@ -478,8 +475,8 @@ type Comments = {
 
 Either handler, or the entire `comments` object, may be absent or `null`.
 This means unsupported. Other non-function handler values fail source loading.
-The host detects support from exports without executing them. An empty
-`CommentResult.items` means supported with no results.
+The host detects support from exports without executing them. An empty result
+array means supported with no results.
 
 These functions read existing comments and replies. They do not expose posting,
 liking, voting, purchasing, or other remote mutations. There is no sort option;
@@ -491,8 +488,8 @@ the source uses the website's default order.
 | --- | --- | --- |
 | `event` | [`Event`](#event) with [`ChapterCommentsInput`](#chapter-comments-input) | Uses operation `comments.chapter`. Reads chapter comments, or existing replies when `input.parentId` is set. Paragraph identity is not used. |
 
-Return a normal [`Step`](#steps). Eventually complete with a
-[`CommentResult`](#comment-result) in `result` and an optional top-level
+Return a normal [`Step`](#steps). Eventually complete with the
+[`Comment`](#comment) array in `result` and an optional top-level
 `next_cursor`. Each completed operation returns one website page; the host does
 not automatically drain the collection.
 
@@ -503,7 +500,7 @@ not automatically drain the collection.
 | `event` | [`Event`](#event) with [`ParagraphCommentsInput`](#paragraph-comments-input) | Uses operation `comments.paragraph`. Reads comments on the selected original paragraph, or existing replies when `input.parentId` is set. |
 
 Return a normal [`Step`](#steps), completing with the same
-[`CommentResult`](#comment-result) as `comments.chapter`. Reply queries retain
+[`Comment`](#comment) array as `comments.chapter`. Reply queries retain
 `input.paragraphId` and use independent cursors; they do not introduce another
 operation name.
 
@@ -521,27 +518,25 @@ with its parent list or other reply lists.
 Invalid types and exceeded limits fail the page rather than silently truncating
 it. The UI retains displayed comments and retries the failed page. Refresh starts
 a new session; closing the panel cancels in-flight work. Developer tools and the
-Agent API invoke `comments.chapter` or `comments.paragraph` one page at a time,
-with explicit `input` and `cursor`.
+Agent API run the same operations either as a pipeline that follows `next_cursor`
+to the end of the thread, or one page at a time with explicit `input` and
+`cursor`.
 
 ### Example
 
-This completion contains one `Comment` with a `CommentReplies` descriptor,
-wrapped in a `CommentResult`:
+This completion contains one `Comment` with a `CommentReplies` descriptor:
 
 ```js
 return {
   type: "complete",
-  result: {
-    items: [{
-      id: "c7",
-      author: { name: "Reader", avatar_url: null },
-      text: "An interesting paragraph.",
-      created_at_ms: null,
-      like_count: 12,
-      replies: { total_count: 3 },
-    }],
-  },
+  result: [{
+    id: "c7",
+    author: { name: "Reader", avatar_url: null },
+    text: "An interesting paragraph.",
+    created_at_ms: null,
+    like_count: 12,
+    replies: { total_count: 3 },
+  }],
   next_cursor: { page: 2 },
 };
 ```

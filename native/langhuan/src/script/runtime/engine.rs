@@ -124,8 +124,8 @@ mod tests {
             search: empty, bookInfo: empty, chapters: empty, paragraphs: empty,
             comments: { paragraph: null, chapter(event) {
               const page = event.cursor?.page ?? 1;
-              return JSON.parse(JSON.stringify({ type: "complete", result: { items: [{ id: `${event.input.parentId ?? 'root'}-${page}`,
-                  author: { name: "Reader" }, text: "Comment", replies: { total_count: null } }] }, next_cursor: page === 1 ? { page: 2 } : null }));
+              return JSON.parse(JSON.stringify({ type: "complete", result: [{ id: `${event.input.parentId ?? 'root'}-${page}`,
+                  author: { name: "Reader" }, text: "Comment", replies: { total_count: null } }], next_cursor: page === 1 ? { page: 2 } : null }));
             } }
           };
         "#;
@@ -566,7 +566,7 @@ mod tests {
             search: empty, bookInfo: empty, chapters: empty, paragraphs: empty,
             comments: { paragraph: null, chapter() {
               return JSON.parse(JSON.stringify({ type: "complete",
-                result: { items: [{ id: "c1", author: { name: "Reader" }, text: "Comment" }] },
+                result: [{ id: "c1", author: { name: "Reader" }, text: "Comment" }],
                 next_cursor: { page: 2 } }));
             } }
           };
@@ -586,6 +586,93 @@ mod tests {
             .await
             .expect_err("a cursor equal to the page's input must be rejected");
         assert!(error.to_string().contains("does not advance"));
+    }
+
+    #[tokio::test]
+    async fn comments_stream_follows_pages_until_the_cursor_runs_out() {
+        use crate::feed::comments::CommentsQuery;
+        let script = r#"
+          const empty = () => ({ type: "complete", result: [] });
+          export default {
+            search: empty, bookInfo: empty, chapters: empty, paragraphs: empty,
+            comments: { paragraph: null, chapter(event) {
+              const page = event.cursor?.page ?? 1;
+              return JSON.parse(JSON.stringify({ type: "complete",
+                result: [{ id: `c${page}`, author: { name: "Reader" }, text: "Comment" }],
+                next_cursor: page === 3 ? null : { page: page + 1 } }));
+            } }
+          };
+        "#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(6, script))
+            .await
+            .unwrap();
+        let query = CommentsQuery {
+            book_id: "b".into(),
+            chapter_id: "c".into(),
+            paragraph_id: None,
+            parent_id: None,
+        };
+        let collected = feed.comments_stream(query).collect::<Vec<_>>().await;
+        let items = collected
+            .into_iter()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .expect("a paged comment thread must stream to its end");
+        assert_eq!(
+            items.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+            ["c1", "c2", "c3"]
+        );
+
+        // The operation follows the query, not the stream entry: a
+        // paragraph target hits the script's unsupported paragraph handler.
+        let paragraph = CommentsQuery {
+            book_id: "b".into(),
+            chapter_id: "c".into(),
+            paragraph_id: Some("839".into()),
+            parent_id: None,
+        };
+        let collected = feed.comments_stream(paragraph).collect::<Vec<_>>().await;
+        assert_eq!(collected.len(), 1);
+        assert!(collected[0].is_err());
+    }
+
+    #[tokio::test]
+    async fn comments_stream_rejects_an_oversized_page_before_yielding_items() {
+        use crate::feed::comments::CommentsQuery;
+        let script = r#"
+          const empty = () => ({ type: "complete", result: [] });
+          export default {
+            search: empty, bookInfo: empty, chapters: empty, paragraphs: empty,
+            comments: { paragraph: null, chapter() {
+              const items = Array.from({ length: 201 }, (_, i) => ({
+                id: `c${i}`, author: { name: "Reader" }, text: "Comment",
+              }));
+              return { type: "complete", result: items };
+            } }
+          };
+        "#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(6, script))
+            .await
+            .unwrap();
+        let query = CommentsQuery {
+            book_id: "b".into(),
+            chapter_id: "c".into(),
+            paragraph_id: None,
+            parent_id: None,
+        };
+        let collected = feed.comments_stream(query).collect::<Vec<_>>().await;
+        // The page is rejected whole: no partial prefix flows before the
+        // error, mirroring the explicit page API.
+        assert_eq!(collected.len(), 1);
+        let error = collected[0]
+            .as_ref()
+            .expect_err("a page over the item cap must fail the stream");
+        assert!(
+            error
+                .to_string()
+                .contains("comment page exceeds item or text limits")
+        );
     }
 
     #[tokio::test]

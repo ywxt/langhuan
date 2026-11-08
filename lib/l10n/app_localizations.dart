@@ -2042,6 +2042,12 @@ abstract class AppLocalizations {
   /// **'Paragraphs'**
   String get debugStageParagraphs;
 
+  /// Stage runner: comments pipeline stage
+  ///
+  /// In en, this message translates to:
+  /// **'Comments'**
+  String get debugStageComments;
+
   /// Stage runner: auth status probe stage
   ///
   /// In en, this message translates to:
@@ -2113,6 +2119,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Chapter ID'**
   String get debugInputChapterId;
+
+  /// Stage runner input: paragraph id, selects comments.paragraph
+  ///
+  /// In en, this message translates to:
+  /// **'Paragraph ID (optional)'**
+  String get debugInputParagraphId;
+
+  /// Stage runner input: parent comment id, reads replies
+  ///
+  /// In en, this message translates to:
+  /// **'Parent comment ID (optional)'**
+  String get debugInputParentId;
 
   /// Snackbar when a stage input is empty
   ///

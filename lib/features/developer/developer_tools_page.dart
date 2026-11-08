@@ -11,6 +11,7 @@ import '../../shared/utils/errors.dart';
 import '../../shared/utils/snackbars.dart';
 import '../../shared/widgets/confirm_dialog.dart';
 import '../../shared/widgets/loading.dart';
+import '../../src/rust/api/comments.dart' show CommentItem;
 import '../../src/rust/api/debug.dart';
 import '../../src/rust/api/types.dart';
 import '../feeds/feed_providers.dart';
@@ -20,7 +21,7 @@ import 'developer_agent_server.dart';
 
 /// Pipeline stages the runner can execute, mirroring the reading
 /// pipeline's operations.
-enum _StageKind { search, bookInfo, chapters, paragraphs, authStatus, manual }
+enum _StageKind { search, bookInfo, chapters, paragraphs, comments, authStatus, manual }
 
 /// One executed debug run, kept for the in-session history.
 class _RunRecord {
@@ -61,6 +62,8 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
   final _keywordController = TextEditingController();
   final _bookIdController = TextEditingController();
   final _chapterIdController = TextEditingController();
+  final _paragraphIdController = TextEditingController();
+  final _parentIdController = TextEditingController();
   final _manualInputController = TextEditingController(
     text: '{\n  "keyword": ""\n}',
   );
@@ -100,6 +103,8 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
     _keywordController.dispose();
     _bookIdController.dispose();
     _chapterIdController.dispose();
+    _paragraphIdController.dispose();
+    _parentIdController.dispose();
     _manualInputController.dispose();
     _manualCursorController.dispose();
     super.dispose();
@@ -385,6 +390,31 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
           return null;
         }
         return DebugStage.paragraphs(bookId: bookId, chapterId: chapterId);
+      case _StageKind.comments:
+        final bookId = _bookIdController.text.trim();
+        final chapterId = _chapterIdController.text.trim();
+        if (bookId.isEmpty) {
+          showErrorSnack(
+            ScaffoldMessenger.of(context),
+            l10n.debugInputMissing(l10n.debugInputBookId),
+          );
+          return null;
+        }
+        if (chapterId.isEmpty) {
+          showErrorSnack(
+            ScaffoldMessenger.of(context),
+            l10n.debugInputMissing(l10n.debugInputChapterId),
+          );
+          return null;
+        }
+        String? optional(String text) =>
+            text.isEmpty ? null : text;
+        return DebugStage.comments(
+          bookId: bookId,
+          chapterId: chapterId,
+          paragraphId: optional(_paragraphIdController.text.trim()),
+          parentId: optional(_parentIdController.text.trim()),
+        );
       case _StageKind.authStatus:
         return const DebugStage.authStatus();
       case _StageKind.manual:
@@ -407,6 +437,15 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
       case _StageKind.paragraphs:
         return '${_bookIdController.text.trim()} · '
             '${_chapterIdController.text.trim()}';
+      case _StageKind.comments:
+        final paragraphId = _paragraphIdController.text.trim();
+        final parentId = _parentIdController.text.trim();
+        return [
+          _bookIdController.text.trim(),
+          _chapterIdController.text.trim(),
+          if (paragraphId.isNotEmpty) paragraphId,
+          if (parentId.isNotEmpty) '↩ $parentId',
+        ].join(' · ');
       case _StageKind.authStatus:
         return '';
       case _StageKind.manual:
@@ -502,6 +541,8 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
                 keywordController: _keywordController,
                 bookIdController: _bookIdController,
                 chapterIdController: _chapterIdController,
+                paragraphIdController: _paragraphIdController,
+                parentIdController: _parentIdController,
                 manualOperation: _manualOperation,
                 onManualOperationChanged: _setManualOperation,
                 manualInputController: _manualInputController,
@@ -541,6 +582,8 @@ class _DeveloperToolsPageState extends ConsumerState<DeveloperToolsPage> {
                   keywordController: _keywordController,
                   bookIdController: _bookIdController,
                   chapterIdController: _chapterIdController,
+                  paragraphIdController: _paragraphIdController,
+                  parentIdController: _parentIdController,
                   manualOperation: _manualOperation,
                   onManualOperationChanged: _setManualOperation,
                   manualInputController: _manualInputController,
@@ -624,6 +667,8 @@ class _DesktopWorkbench extends StatelessWidget {
     required this.keywordController,
     required this.bookIdController,
     required this.chapterIdController,
+    required this.paragraphIdController,
+    required this.parentIdController,
     required this.manualOperation,
     required this.onManualOperationChanged,
     required this.manualInputController,
@@ -647,6 +692,8 @@ class _DesktopWorkbench extends StatelessWidget {
   final TextEditingController keywordController;
   final TextEditingController bookIdController;
   final TextEditingController chapterIdController;
+  final TextEditingController paragraphIdController;
+  final TextEditingController parentIdController;
   final String manualOperation;
   final ValueChanged<String> onManualOperationChanged;
   final TextEditingController manualInputController;
@@ -688,6 +735,8 @@ class _DesktopWorkbench extends StatelessWidget {
             keywordController: keywordController,
             bookIdController: bookIdController,
             chapterIdController: chapterIdController,
+            paragraphIdController: paragraphIdController,
+            parentIdController: parentIdController,
             manualOperation: manualOperation,
             onManualOperationChanged: onManualOperationChanged,
             manualInputController: manualInputController,
@@ -807,6 +856,8 @@ class _DesktopOperationPane extends StatelessWidget {
     required this.keywordController,
     required this.bookIdController,
     required this.chapterIdController,
+    required this.paragraphIdController,
+    required this.parentIdController,
     required this.manualOperation,
     required this.onManualOperationChanged,
     required this.manualInputController,
@@ -823,6 +874,8 @@ class _DesktopOperationPane extends StatelessWidget {
   final TextEditingController keywordController;
   final TextEditingController bookIdController;
   final TextEditingController chapterIdController;
+  final TextEditingController paragraphIdController;
+  final TextEditingController parentIdController;
   final String manualOperation;
   final ValueChanged<String> onManualOperationChanged;
   final TextEditingController manualInputController;
@@ -870,6 +923,8 @@ class _DesktopOperationPane extends StatelessWidget {
                 keywordController: keywordController,
                 bookIdController: bookIdController,
                 chapterIdController: chapterIdController,
+                paragraphIdController: paragraphIdController,
+                parentIdController: parentIdController,
                 manualOperation: manualOperation,
                 onManualOperationChanged: onManualOperationChanged,
                 manualInputController: manualInputController,
@@ -933,6 +988,7 @@ Map<_StageKind, String> _stageLabels(AppLocalizations l10n) => {
   _StageKind.bookInfo: l10n.debugStageBookInfo,
   _StageKind.chapters: l10n.debugStageChapters,
   _StageKind.paragraphs: l10n.debugStageParagraphs,
+  _StageKind.comments: l10n.debugStageComments,
   _StageKind.authStatus: l10n.debugStageAuthStatus,
   _StageKind.manual: l10n.debugStageManual,
 };
@@ -942,6 +998,7 @@ IconData _stageIcon(_StageKind stage) => switch (stage) {
   _StageKind.bookInfo => Icons.menu_book_outlined,
   _StageKind.chapters => Icons.format_list_numbered_rounded,
   _StageKind.paragraphs => Icons.subject_rounded,
+  _StageKind.comments => Icons.forum_outlined,
   _StageKind.authStatus => Icons.key_rounded,
   _StageKind.manual => Icons.tune_rounded,
 };
@@ -1036,14 +1093,7 @@ class _StageSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final labels = {
-      _StageKind.search: l10n.debugStageSearch,
-      _StageKind.bookInfo: l10n.debugStageBookInfo,
-      _StageKind.chapters: l10n.debugStageChapters,
-      _StageKind.paragraphs: l10n.debugStageParagraphs,
-      _StageKind.authStatus: l10n.debugStageAuthStatus,
-      _StageKind.manual: l10n.debugStageManual,
-    };
+    final labels = _stageLabels(l10n);
 
     return Wrap(
       spacing: LanghuanTheme.spaceSm,
@@ -1066,6 +1116,8 @@ class _InputArea extends StatelessWidget {
     required this.keywordController,
     required this.bookIdController,
     required this.chapterIdController,
+    required this.paragraphIdController,
+    required this.parentIdController,
     required this.manualOperation,
     required this.onManualOperationChanged,
     required this.manualInputController,
@@ -1076,6 +1128,8 @@ class _InputArea extends StatelessWidget {
   final TextEditingController keywordController;
   final TextEditingController bookIdController;
   final TextEditingController chapterIdController;
+  final TextEditingController paragraphIdController;
+  final TextEditingController parentIdController;
   final String manualOperation;
   final ValueChanged<String> onManualOperationChanged;
   final TextEditingController manualInputController;
@@ -1119,6 +1173,46 @@ class _InputArea extends StatelessWidget {
               controller: chapterIdController,
               decoration: InputDecoration(
                 labelText: l10n.debugInputChapterId,
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        );
+      case _StageKind.comments:
+        return Column(
+          children: [
+            TextField(
+              controller: bookIdController,
+              decoration: InputDecoration(
+                labelText: l10n.debugInputBookId,
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: LanghuanTheme.spaceSm),
+            TextField(
+              controller: chapterIdController,
+              decoration: InputDecoration(
+                labelText: l10n.debugInputChapterId,
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: LanghuanTheme.spaceSm),
+            TextField(
+              controller: paragraphIdController,
+              decoration: InputDecoration(
+                labelText: l10n.debugInputParagraphId,
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: LanghuanTheme.spaceSm),
+            TextField(
+              controller: parentIdController,
+              decoration: InputDecoration(
+                labelText: l10n.debugInputParentId,
                 border: const OutlineInputBorder(),
                 isDense: true,
               ),
@@ -1531,6 +1625,9 @@ class _OutputView extends StatelessWidget {
           DebugStageOutput_Paragraphs(:final items) => _ParagraphsOutput(
             items: items,
           ),
+          DebugStageOutput_Comments(:final items) => _CommentsOutput(
+            items: items,
+          ),
           DebugStageOutput_AuthStatus(:final status) => _AuthStatusOutput(
             status: status,
           ),
@@ -1839,6 +1936,88 @@ class _ParagraphsOutput extends StatelessWidget {
   }
 }
 
+class _CommentsOutput extends StatelessWidget {
+  const _CommentsOutput({required this.items});
+
+  final List<CommentItem> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+
+    if (items.isEmpty) {
+      return Text(
+        l10n.debugResultEmpty,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontStyle: FontStyle.italic,
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        for (final (index, comment) in items.indexed)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            leading: Text(
+              '${index + 1}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            title: Text(
+              comment.text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              comment.author.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (comment.likeCount != null) ...[
+                  Icon(
+                    Icons.favorite_outline,
+                    size: 14,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    '${comment.likeCount}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                if (comment.replies != null) ...[
+                  Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    size: 14,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    '${comment.replies!.totalCount ?? '?'}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _AuthStatusOutput extends StatelessWidget {
   const _AuthStatusOutput({required this.status});
 
@@ -1903,13 +2082,9 @@ class _HistorySection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    final labels = {
-      _StageKind.search: l10n.debugStageSearch,
-      _StageKind.bookInfo: l10n.debugStageBookInfo,
-      _StageKind.chapters: l10n.debugStageChapters,
-      _StageKind.paragraphs: l10n.debugStageParagraphs,
-      _StageKind.authStatus: l10n.debugStageAuthStatus,
-    };
+    // The complete stage table: history records every stage kind, so a
+    // local subset here would crash `labels[record.stage]!`.
+    final labels = _stageLabels(l10n);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

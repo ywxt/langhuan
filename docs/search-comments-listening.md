@@ -153,14 +153,12 @@ produce one completed website page:
 ```js
 return {
   type: "complete",
-  result: {
-    items: [{
-      id: "c7",
-      author: { name: "Reader" },
-      text: "An interesting paragraph.",
-      replies: { total_count: 3 },
-    }],
-  },
+  result: [{
+    id: "c7",
+    author: { name: "Reader" },
+    text: "An interesting paragraph.",
+    replies: { total_count: 3 },
+  }],
   next_cursor: { page: 2 },
 };
 ```
@@ -170,22 +168,23 @@ have independent cursors. `replies: null` hides the replies action;
 `replies: { total_count: null }` exposes it with an unknown count. The reference defines the input types
 [`ChapterCommentsInput`](book-sources/api-reference.md#chapter-comments-input) and
 [`ParagraphCommentsInput`](book-sources/api-reference.md#paragraph-comments-input),
-plus [`Comment`](book-sources/api-reference.md#comment) and
-[`CommentResult`](book-sources/api-reference.md#comment-result), with field-level
+plus the [`Comment`](book-sources/api-reference.md#comment) model with field-level
 behaviour and limits.
 
 ### Host and UI
 
 The host applies authentication, domain checks, retries, and resource limits to
-comment requests. Comment operations bypass helper-response caching and return
-one page at a time. The UI preserves loaded comments when a later page fails,
+comment requests. Comment operations bypass helper-response caching; the reading
+UI pages explicitly while developer tooling may pipeline the whole thread. The
+UI preserves loaded comments when a later page fails,
 retries the same cursor, deduplicates overlaps, and rejects cursor loops. Refresh
 replaces the session; closing the panel cancels pending work.
 
 Phones use a bottom sheet and wide layouts use a side dialog. Paragraph actions
 appear only when the visible paragraph has an original source ID. Developer tools
-and the Agent API use exactly `comments.chapter` and `comments.paragraph`, with
-explicit input and cursor values.
+and the Agent API use exactly `comments.chapter` and `comments.paragraph`; they
+either follow the whole thread as a pipeline or pass explicit cursor values one
+page at a time.
 
 Chapter comments additionally render inline at the end of their chapter in both
 reader modes: a sliver below the chapter's last paragraph in vertical mode, one

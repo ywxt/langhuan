@@ -1094,6 +1094,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get debugStageParagraphs => 'Paragraphs';
 
   @override
+  String get debugStageComments => 'Comments';
+
+  @override
   String get debugStageAuthStatus => 'Auth status';
 
   @override
@@ -1130,6 +1133,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get debugInputChapterId => 'Chapter ID';
+
+  @override
+  String get debugInputParagraphId => 'Paragraph ID (optional)';
+
+  @override
+  String get debugInputParentId => 'Parent comment ID (optional)';
 
   @override
   String debugInputMissing(String field) {

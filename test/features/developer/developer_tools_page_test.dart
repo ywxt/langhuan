@@ -89,4 +89,43 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('comments stage exposes the thread target inputs', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(500, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          localizationsDelegates: [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: DeveloperToolsPage(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final comments = find.text('Comments');
+    await tester.ensureVisible(comments);
+    await tester.tap(comments);
+    await tester.pumpAndSettle();
+
+    // The required thread target plus the two optional selectors: a
+    // paragraph id routes to comments.paragraph, a parent id reads replies.
+    expect(find.text('Book ID'), findsOneWidget);
+    expect(find.text('Chapter ID'), findsOneWidget);
+    expect(find.text('Paragraph ID (optional)'), findsOneWidget);
+    expect(find.text('Parent comment ID (optional)'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

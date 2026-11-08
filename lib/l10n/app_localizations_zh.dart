@@ -1058,6 +1058,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get debugStageParagraphs => '正文段落';
 
   @override
+  String get debugStageComments => '評論';
+
+  @override
   String get debugStageAuthStatus => '登錄狀態';
 
   @override
@@ -1092,6 +1095,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get debugInputChapterId => '章節 ID';
+
+  @override
+  String get debugInputParagraphId => '段落 ID（可選）';
+
+  @override
+  String get debugInputParentId => '父評論 ID（可選）';
 
   @override
   String debugInputMissing(String field) {
