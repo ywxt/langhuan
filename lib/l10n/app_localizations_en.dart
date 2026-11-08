@@ -1445,7 +1445,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get transformIndentDescription =>
-      'Set the first-line indent; replaces existing leading spaces.';
+      'Remove leading whitespace from text paragraphs and set the first-line indent.';
 
   @override
   String get transformDeduplicateDescription =>

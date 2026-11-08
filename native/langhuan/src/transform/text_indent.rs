@@ -1,6 +1,6 @@
 //! Text paragraph indentation transform.
 //!
-//! Sets first-line layout metadata without changing paragraph text.
+//! Removes leading whitespace and sets first-line layout metadata.
 
 use crate::model::Paragraph;
 
@@ -30,7 +30,12 @@ impl ParagraphTransform for TextIndentTransform {
     fn init(&mut self, _chapter_id: &str) {}
 
     fn apply(&mut self, mut paragraph: Paragraph, out: &mut TransformOutput<'_>) {
-        if let Paragraph::Text { layout, .. } = &mut paragraph {
+        if let Paragraph::Text {
+            content, layout, ..
+        } = &mut paragraph
+        {
+            let leading_bytes = content.len() - content.trim_start().len();
+            content.drain(..leading_bytes);
             layout.first_line_indent = self.spaces;
         }
         out.push(paragraph);
@@ -44,7 +49,7 @@ mod tests {
     use crate::transform::{ParagraphTransform, TransformOutput};
 
     #[test]
-    fn sets_layout_without_modifying_text() {
+    fn removes_leading_whitespace_and_sets_layout() {
         let mut transform = TextIndentTransform::new();
         transform.init("chapter-1");
 
@@ -53,7 +58,7 @@ mod tests {
         transform.apply(
             Paragraph::Text {
                 id: ParagraphId::generated(1),
-                content: "第一段".to_string(),
+                content: " \t\u{3000}第一段 內文  ".to_string(),
                 comment_count: Some(7),
                 layout: Default::default(),
             },
@@ -68,12 +73,30 @@ mod tests {
                 layout,
                 ..
             } => {
-                assert_eq!(content, "第一段");
+                assert_eq!(content, "第一段 內文  ");
                 assert_eq!(layout.first_line_indent, 2);
                 assert_eq!(*comment_count, Some(7));
             }
             _ => panic!("expected text paragraph"),
         }
+    }
+
+    #[test]
+    fn zero_indent_still_removes_leading_whitespace() {
+        let mut transform = TextIndentTransform::with_spaces(0);
+        let mut buf = Vec::new();
+        let mut out = TransformOutput::new(&mut buf);
+        transform.apply(
+            Paragraph::Text {
+                id: ParagraphId::generated(1),
+                content: "\u{3000}  ".to_string(),
+                comment_count: None,
+                layout: Default::default(),
+            },
+            &mut out,
+        );
+        assert!(matches!(&buf[0], Paragraph::Text { content, layout, .. }
+            if content.is_empty() && layout.first_line_indent == 0));
     }
 
     #[test]

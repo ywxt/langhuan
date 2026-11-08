@@ -466,7 +466,7 @@
   "transformConversionDescription": "轉換正文和章節標題的繁簡字形。",
   "transformReplaceDescription": "替換段落中所有匹配正則表達式的文字。",
   "transformDeleteDescription": "文字匹配時，刪除整個段落。",
-  "transformIndentDescription": "設置首行縮進，替換段落原有的行首空格。",
+  "transformIndentDescription": "移除文字段落開頭的空白，並設置首行縮進。",
   "transformDeduplicateDescription": "保留首個章節標題，移除後續重複的標題段落。",
   "transformKeepFirstTitle": "每章僅保留首個標題",
   "transformIndentCharacters": "首行縮進：{count} 個字符",

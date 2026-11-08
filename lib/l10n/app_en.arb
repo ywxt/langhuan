@@ -1187,7 +1187,7 @@
   "transformConversionDescription": "Convert paragraph text and chapter titles between Chinese variants.",
   "transformReplaceDescription": "Replace every regex match within a paragraph.",
   "transformDeleteDescription": "Remove the whole paragraph when its text matches.",
-  "transformIndentDescription": "Set the first-line indent; replaces existing leading spaces.",
+  "transformIndentDescription": "Remove leading whitespace from text paragraphs and set the first-line indent.",
   "transformDeduplicateDescription": "Keep the first chapter title and remove later duplicate title paragraphs.",
   "transformKeepFirstTitle": "Keep only the first title in each chapter",
   "transformIndentCharacters": "First-line indent: {count} characters",

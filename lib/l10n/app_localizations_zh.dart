@@ -1400,7 +1400,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get transformDeleteDescription => '文字匹配時，刪除整個段落。';
 
   @override
-  String get transformIndentDescription => '設置首行縮進，替換段落原有的行首空格。';
+  String get transformIndentDescription => '移除文字段落開頭的空白，並設置首行縮進。';
 
   @override
   String get transformDeduplicateDescription => '保留首個章節標題，移除後續重複的標題段落。';
@@ -1450,4 +1450,1452 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get transformReorder => '拖動調整順序';
+}
+
+/// The translations for Chinese, as used in China (`zh_CN`).
+class AppLocalizationsZhCn extends AppLocalizationsZh {
+  AppLocalizationsZhCn() : super('zh_CN');
+
+  @override
+  String get appName => '琅嬛';
+
+  @override
+  String get navBookshelf => '书架';
+
+  @override
+  String get navFeeds => '书源';
+
+  @override
+  String get bookshelfTitle => '书架';
+
+  @override
+  String get bookshelfRefresh => '刷新书架并检查更新';
+
+  @override
+  String bookshelfNewChapters(int count) {
+    return '$count 个新章节';
+  }
+
+  @override
+  String get bookshelfCheckFailed => '检查更新失败';
+
+  @override
+  String bookshelfCheckPartialFailure(int count) {
+    return '$count 本书检查失败';
+  }
+
+  @override
+  String get bookshelfEmpty => '书架是空的';
+
+  @override
+  String get bookshelfEmptyHint => '搜索并收藏书籍后会显示在这里';
+
+  @override
+  String get bookshelfSearchHint => '搜索书籍…';
+
+  @override
+  String get bookshelfLoadError => '加载书架失败';
+
+  @override
+  String get bookshelfAdded => '已加入本地书架';
+
+  @override
+  String get bookshelfRemoved => '已从本地书架移除';
+
+  @override
+  String get bookshelfActionFailed => '书架操作失败';
+
+  @override
+  String get bookshelfErrorAppDataNotReady => '应用数据目录未准备就绪';
+
+  @override
+  String get bookshelfErrorAddFailed => '添加书籍失败';
+
+  @override
+  String get bookshelfErrorRemoveFailed => '移除书籍失败';
+
+  @override
+  String get bookshelfErrorLoadFailed => '加载书架失败';
+
+  @override
+  String get bookshelfBookDetails => '书籍详情';
+
+  @override
+  String get bookshelfDeleteConfirmTitle => '删除书籍？';
+
+  @override
+  String bookshelfDeleteConfirmMessage(String bookTitle) {
+    return '确定要从书架删除「$bookTitle」吗？';
+  }
+
+  @override
+  String get bookshelfDeleteCascadeWarning => '这也会删除该书的快取章节、封面、阅读进度与书签。';
+
+  @override
+  String get bookshelfDeleteCancel => '取消';
+
+  @override
+  String get bookshelfDeleteConfirm => '删除';
+
+  @override
+  String bookshelfDeleteQueued(String bookTitle) {
+    return '「$bookTitle」将从书架移除';
+  }
+
+  @override
+  String get bookshelfDeleteUndo => '撤销';
+
+  @override
+  String bookshelfReadingProgress(int current, int total, int percent) {
+    return '第 $current/$total 章 · $percent%';
+  }
+
+  @override
+  String bookshelfReadingProgressPercent(int percent) {
+    return '$percent%';
+  }
+
+  @override
+  String get bookshelfFeedPaused => '书源已暂停';
+
+  @override
+  String get bookshelfFeedPausedHint => '书源已暂停；已收藏书籍仍可阅读，但不会检查更新。';
+
+  @override
+  String get searchTitle => '搜索';
+
+  @override
+  String get searchHistory => '搜索历史';
+
+  @override
+  String get searchHistoryClear => '清空历史';
+
+  @override
+  String get searchHistoryDelete => '删除此记录';
+
+  @override
+  String get searchHintNoFeed => '请先选择书源…';
+
+  @override
+  String get searchHintAllFeeds => '在全部书源中搜索…';
+
+  @override
+  String get searchAllFeeds => '全部';
+
+  @override
+  String searchSourceFailed(Object feedName) {
+    return '「$feedName」搜索失败';
+  }
+
+  @override
+  String searchHintWithFeed(String feedName) {
+    return '在 $feedName 中搜索…';
+  }
+
+  @override
+  String get searchCancel => '取消';
+
+  @override
+  String get searchClear => '清除';
+
+  @override
+  String get searchEmptyPrompt => '输入关键词开始搜索';
+
+  @override
+  String searchNoResults(String keyword) {
+    return '「$keyword」无搜索结果';
+  }
+
+  @override
+  String get searchError => '搜索出错';
+
+  @override
+  String get searchRetry => '重试';
+
+  @override
+  String get searchLoadMore => '加载更多';
+
+  @override
+  String get bookDetailTitle => '书籍详情';
+
+  @override
+  String get bookDetailError => '加载书籍信息失败';
+
+  @override
+  String get bookDetailRetry => '重试';
+
+  @override
+  String get bookDetailStartReading => '开始阅读';
+
+  @override
+  String get bookDetailContinueReading => '继续阅读';
+
+  @override
+  String bookDetailLastReadChapter(String chapterTitle) {
+    return '上次读到：$chapterTitle';
+  }
+
+  @override
+  String get bookDetailNoDescription => '暂无简介';
+
+  @override
+  String get chapterCached => '已缓存';
+
+  @override
+  String get chapterNotCached => '未缓存';
+
+  @override
+  String bookDetailChapters(int count) {
+    return '章节（$count）';
+  }
+
+  @override
+  String get bookDetailChaptersError => '加载章节失败';
+
+  @override
+  String get bookDetailMissingParams => '缺少书籍参数';
+
+  @override
+  String get bookDetailEmpty => '暂无书籍信息';
+
+  @override
+  String get bookDetailAddBookshelf => '加入本地书架';
+
+  @override
+  String get bookDetailRemoveBookshelf => '从本地书架移除';
+
+  @override
+  String get readerTitle => '阅读';
+
+  @override
+  String get readerMissingParams => '缺少阅读参数';
+
+  @override
+  String get readerFontLoadFailed => '字体档案载入失败';
+
+  @override
+  String get readerFontFileLabel => '字体档案';
+
+  @override
+  String get readerFontSystemDefault => '系统默认';
+
+  @override
+  String get readerFontChoose => '选择字体档案';
+
+  @override
+  String get readerFontReset => '重设';
+
+  @override
+  String get readerFontScale => '字体';
+
+  @override
+  String get readerLetterSpacing => '字距';
+
+  @override
+  String get readerParagraphSpacing => '段落间距';
+
+  @override
+  String get readerLineHeight => '行高';
+
+  @override
+  String get readerLoadError => '加载章节失败';
+
+  @override
+  String get readerEmpty => '暂无章节正文';
+
+  @override
+  String get readerPrevChapter => '上一章';
+
+  @override
+  String get readerNextChapter => '下一章';
+
+  @override
+  String readerChapterProgress(int current, int total) {
+    return '第 $current / $total 章';
+  }
+
+  @override
+  String readerPageProgress(int current, int total) {
+    return '第 $current/$total 页';
+  }
+
+  @override
+  String readerBookProgress(int percent) {
+    return '本书 $percent%';
+  }
+
+  @override
+  String get readerModeVertical => '上下滑动';
+
+  @override
+  String get readerModeHorizontal => '左右翻页';
+
+  @override
+  String get readerModeLabel => '阅读方式';
+
+  @override
+  String get readerEndOfBook => '已读至最新章节';
+
+  @override
+  String get readerEndHint => '暂时没有更多章节。\n刷新目录，查看是否有更新。';
+
+  @override
+  String get readerEndChecking => '正在检查更新…';
+
+  @override
+  String get readerEndChecked => '目录已刷新，暂时没有新章节。';
+
+  @override
+  String get readerBackToText => '返回正文';
+
+  @override
+  String get readerRefreshChapters => '刷新目录';
+
+  @override
+  String get readerLoading => '加载中…';
+
+  @override
+  String get readerChapterLoadError => '章节加载失败';
+
+  @override
+  String get readerRetry => '重试';
+
+  @override
+  String get errorCategoryAuthRequired => '需要登录';
+
+  @override
+  String get errorCategoryCfChallenge => '触发了 Cloudflare 验证';
+
+  @override
+  String get errorCategoryRateLimited => '请求过于频繁';
+
+  @override
+  String get errorCategoryContentNotFound => '找不到内容';
+
+  @override
+  String get errorCategorySourceUnavailable => '书源暂时不可用';
+
+  @override
+  String get errorCategoryScriptError => '脚本错误';
+
+  @override
+  String get errorCategoryNetwork => '网络错误';
+
+  @override
+  String get errorCategoryScriptRuntime => '脚本运行错误';
+
+  @override
+  String get errorCategoryScriptConfig => '脚本配置错误';
+
+  @override
+  String get errorCategoryStorage => '存储错误';
+
+  @override
+  String get errorCategoryRegistry => '找不到书源';
+
+  @override
+  String get readerToc => '目录';
+
+  @override
+  String get readerInterface => '界面';
+
+  @override
+  String get readerSettings => '设置';
+
+  @override
+  String get readerRefreshChapter => '刷新本章';
+
+  @override
+  String get readerBookmarks => '书签';
+
+  @override
+  String get readerBookmarkAdded => '已添加书签';
+
+  @override
+  String get readerBookmarkRemoved => '已删除书签';
+
+  @override
+  String get readerNoBookmarks => '暂无书签';
+
+  @override
+  String get readerAddBookmark => '添加书签';
+
+  @override
+  String get readerSearchTocHint => '搜索章节';
+
+  @override
+  String get readerSearchBookmarksHint => '搜索书签';
+
+  @override
+  String get readerThemeSystem => '跟随系统';
+
+  @override
+  String get readerThemeLight => '浅色';
+
+  @override
+  String get readerThemeDark => '深色';
+
+  @override
+  String get readerThemeSepia => '护眼';
+
+  @override
+  String get readerThemeCustom => '自定义';
+
+  @override
+  String get readerThemeCustomizeTitle => '自定义阅读主题';
+
+  @override
+  String get readerThemeBackground => '背景';
+
+  @override
+  String get readerThemeText => '文字';
+
+  @override
+  String get readerThemeAccent => '强调色';
+
+  @override
+  String get readerThemePreview => '预览';
+
+  @override
+  String get readerThemePreviewTitle => '章节标题';
+
+  @override
+  String get readerThemePreviewBody => '让每一页都有舒适的阅读体验。';
+
+  @override
+  String get readerThemeContrastWarning => '请选择对比更明显的背景色与文字色。';
+
+  @override
+  String get readerThemeReset => '重置';
+
+  @override
+  String get readerThemeApply => '应用';
+
+  @override
+  String get readerThemeColorHue => '色相';
+
+  @override
+  String get readerThemeColorSaturation => '饱和度';
+
+  @override
+  String get readerThemeColorBrightness => '亮度';
+
+  @override
+  String get readerThemeColorCancel => '取消';
+
+  @override
+  String get readerThemeLabel => '主题';
+
+  @override
+  String readerSearchNoMatch(String keyword) {
+    return '没有符合「$keyword」的内容';
+  }
+
+  @override
+  String get readerSettingPlaceholder => '此入口预留，后续扩展。';
+
+  @override
+  String get readerChineseConversion => '繁简转换';
+
+  @override
+  String get chineseConversionNone => '不转换';
+
+  @override
+  String get chineseConversionS2t => '简体转繁体';
+
+  @override
+  String get chineseConversionT2s => '繁体转简体';
+
+  @override
+  String get chineseConversionS2tw => '简体 → 台湾正体';
+
+  @override
+  String get chineseConversionS2hk => '简体 → 香港繁体';
+
+  @override
+  String get feedsTitle => '书源';
+
+  @override
+  String get feedsSearchHint => '搜索书源…';
+
+  @override
+  String get feedsEmpty => '暂无书源\n请添加书源以开始使用';
+
+  @override
+  String feedsNoMatch(String keyword) {
+    return '未找到匹配的书源「$keyword」';
+  }
+
+  @override
+  String get feedsLoadError => '加载书源失败';
+
+  @override
+  String get feedsRetry => '重试';
+
+  @override
+  String get feedDetailId => 'ID';
+
+  @override
+  String get feedDetailBaseUrl => '主站网址';
+
+  @override
+  String get feedDetailAccessDomains => '允许访问的域名';
+
+  @override
+  String get feedDetailNoDomainRestriction => '网络访问已禁用';
+
+  @override
+  String get feedDetailSource => '来源';
+
+  @override
+  String get feedDetailEnabled => '启用书源';
+
+  @override
+  String get feedDetailEnabledHint => '暂停的书源不参与聚合搜索与更新检查。';
+
+  @override
+  String get feedDetailBooksLabel => '书架书籍';
+
+  @override
+  String feedDetailBookCount(int count) {
+    return '$count 本';
+  }
+
+  @override
+  String get feedDetailCopyId => '复制 ID';
+
+  @override
+  String get feedDetailCopied => '已复制';
+
+  @override
+  String get feedDetailDelete => '删除书源';
+
+  @override
+  String get feedItemPaused => '已暂停';
+
+  @override
+  String get feedAuthLabel => '登录';
+
+  @override
+  String get feedAuthStatusLoggedIn => '已登录';
+
+  @override
+  String get feedAuthStatusLoggedOut => '未登录';
+
+  @override
+  String get feedAuthStatusExpired => '登录已过期';
+
+  @override
+  String get feedAuthStatusUnsupported => '不支持';
+
+  @override
+  String get feedAuthLogin => '登录';
+
+  @override
+  String get feedAuthLogout => '登出';
+
+  @override
+  String get feedAuthPageTitle => '书源登录';
+
+  @override
+  String get feedAuthDone => '验证登录';
+
+  @override
+  String get feedAuthInstructions => '请在此网页完成登录，然后点击「验证登录」。';
+
+  @override
+  String get feedAuthDesktopInstructions =>
+      '已在单独的窗口中打开登录页。请在该窗口完成登录，保持窗口开启，然后回到本页点击「验证登录」。';
+
+  @override
+  String get feedAuthDesktopWindowHint => '登录窗口保持开启中。完成登录后，点击右上角的「验证登录」。';
+
+  @override
+  String get feedAuthWindowClosed => '登录窗口已关闭。验证登录需要读取窗口中的页面与 cookies，请重新打开。';
+
+  @override
+  String get feedAuthReopenWindow => '重新打开登录窗口';
+
+  @override
+  String get feedAuthVerifying => '正在验证登录…';
+
+  @override
+  String get feedAuthNotSupported => '此书源不支持登录。';
+
+  @override
+  String get feedAuthUpdated => '登录验证成功';
+
+  @override
+  String get feedAuthLoggedOut => '已登出';
+
+  @override
+  String get feedAuthRefresh => '刷新登录状态';
+
+  @override
+  String get searchAuthHint => '此书源可能需要先登录';
+
+  @override
+  String get searchAuthAction => '去登录';
+
+  @override
+  String get webviewVerifyPageTitle => '验证';
+
+  @override
+  String get webviewVerifyDone => '完成';
+
+  @override
+  String get webviewVerifyInstructions => '请在此网页完成人机验证，然后点击「完成」。';
+
+  @override
+  String get webviewVerifyDesktopInstructions =>
+      '已在单独的窗口中打开验证页。请在该窗口完成验证，保持窗口开启，然后回到本页点击「完成」。';
+
+  @override
+  String get webviewVerifyDesktopWindowHint => '验证窗口保持开启中。完成验证后，点击右上角的「完成」。';
+
+  @override
+  String get webviewVerifyWindowClosed =>
+      '验证窗口已关闭。验证需要读取窗口中的页面与 cookies，请重新打开。';
+
+  @override
+  String get webviewVerifyReopenWindow => '重新打开验证窗口';
+
+  @override
+  String get webviewVerifySubmitting => '正在提交验证…';
+
+  @override
+  String get feedItemLoadError => '加载失败';
+
+  @override
+  String get feedDeleteConfirmTitle => '删除书源？';
+
+  @override
+  String feedDeleteConfirmMessage(String feedName) {
+    return '确定要删除「$feedName」吗？';
+  }
+
+  @override
+  String get feedDeleteCancel => '取消';
+
+  @override
+  String get feedDeleteConfirm => '删除';
+
+  @override
+  String get feedDeleteCascadeWarning => '这也会删除该书源的快取书籍、封面、阅读进度与书签。';
+
+  @override
+  String feedDeleteSuccess(String feedName) {
+    return '已删除 $feedName';
+  }
+
+  @override
+  String get feedDeleteError => '删除书源失败';
+
+  @override
+  String get feedToggleError => '切换书源状态失败';
+
+  @override
+  String get feedPause => '暂停书源';
+
+  @override
+  String get feedResume => '恢复书源';
+
+  @override
+  String get feedsMenuImport => '导入书源';
+
+  @override
+  String get feedsMenuExport => '导出书源';
+
+  @override
+  String get feedsExported => '书源已导出';
+
+  @override
+  String get feedsExportNone => '没有可导出的书源';
+
+  @override
+  String get feedsExportError => '导出书源失败';
+
+  @override
+  String get feedsImportError => '导入书源失败';
+
+  @override
+  String feedsImportTooLarge(String size) {
+    return '汇入文件超过 $size 上限';
+  }
+
+  @override
+  String get feedsImportTitle => '导入书源';
+
+  @override
+  String get feedsImportConfirm => '导入';
+
+  @override
+  String feedsImportCount(num count) {
+    return '共找到 $count 个书源';
+  }
+
+  @override
+  String feedsImportResult(Object failed, Object installed, Object skipped) {
+    return '已安装 $installed，跳过 $skipped，失败 $failed';
+  }
+
+  @override
+  String get feedsImportChangeNew => '新增';
+
+  @override
+  String get feedsImportChangeUpgrade => '升级';
+
+  @override
+  String get feedsImportChangeDowngrade => '降级';
+
+  @override
+  String get feedsImportChangeSame => '已安装';
+
+  @override
+  String get feedsImportChangeUnknown => '未知';
+
+  @override
+  String get feedSecurityWarningTitle => '只安装你信任的书源';
+
+  @override
+  String get feedSecurityWarningBody =>
+      '书源脚本可以向列出的域名请求资料，并处理登入会话资料。恶意书源可能泄露私隐或过度消耗资源；继续前请核对作者和允许访问的域名。';
+
+  @override
+  String get settingsBackup => '导出备份';
+
+  @override
+  String get settingsBackupDescription => '将书源、书架、阅读进度与书签保存为文件';
+
+  @override
+  String get settingsBackupSuccess => '备份已保存';
+
+  @override
+  String get settingsBackupError => '导出备份失败';
+
+  @override
+  String get feedDeleteBusy => '目前有其他书源操作进行中';
+
+  @override
+  String feedDeleteQueued(String feedName) {
+    return '「$feedName」将被删除';
+  }
+
+  @override
+  String get feedDeleteUndo => '撤销';
+
+  @override
+  String get feedSelectorNoFeeds => '暂无书源，请先在「书源」页面添加脚本';
+
+  @override
+  String get navSettings => '设置';
+
+  @override
+  String get settingsTitle => '设置';
+
+  @override
+  String get settingsAbout => '关于';
+
+  @override
+  String get settingsVersion => '版本';
+
+  @override
+  String get settingsLicenses => '开源许可';
+
+  @override
+  String get addFeedTitle => '添加书源';
+
+  @override
+  String get addFeedTabUrl => '从网络';
+
+  @override
+  String get addFeedTabUrlDesc => '从网络地址导入书源脚本';
+
+  @override
+  String get addFeedTabFile => '从本地';
+
+  @override
+  String get addFeedTabFileDesc => '从本地存储导入书源脚本';
+
+  @override
+  String get addFeedUrlHint => '输入脚本地址…';
+
+  @override
+  String get addFeedUrlPreview => '预览';
+
+  @override
+  String get addFeedPreviewTitle => '书源摘要';
+
+  @override
+  String get addFeedAllowedDomains => '允许访问的域名';
+
+  @override
+  String get addFeedNoDomainRestriction => '网络访问已禁用';
+
+  @override
+  String addFeedIsUpgrade(String from, String to) {
+    return '升级 $from → $to';
+  }
+
+  @override
+  String get addFeedBadgeNew => '新书源';
+
+  @override
+  String addFeedIsDowngrade(String from, String to) {
+    return '降级 $from → $to';
+  }
+
+  @override
+  String get addFeedIsSame => '与已安装版本相同';
+
+  @override
+  String addFeedVersionUnknown(String from, String to) {
+    return '已安装 $from，将安装 $to';
+  }
+
+  @override
+  String get addFeedInstall => '安装';
+
+  @override
+  String get addFeedError => '添加书源失败';
+
+  @override
+  String get addFeedSuccess => '书源安装成功';
+
+  @override
+  String addFeedAuditAction(String size) {
+    return '查看脚本（$size）';
+  }
+
+  @override
+  String get addFeedAuditTitle => '脚本审计';
+
+  @override
+  String addFeedAuditStats(String size, int lines) {
+    return '$size · $lines 行';
+  }
+
+  @override
+  String get addFeedAuditCopy => '复制';
+
+  @override
+  String get addFeedAuditCopied => '已复制脚本';
+
+  @override
+  String get addFeedAuditWrap => '切换自动换行';
+
+  @override
+  String get addFeedAuditFormat => '切换格式化检视';
+
+  @override
+  String get addFeedAuditFormattedNote => '已格式化以便阅读，安装的脚本保持原文';
+
+  @override
+  String get addFeedAuditSearchHint => '搜寻脚本内容…';
+
+  @override
+  String addFeedAuditMatchCount(int count) {
+    return '$count 处匹配';
+  }
+
+  @override
+  String get addFeedAuditNoMatch => '无匹配';
+
+  @override
+  String get addFeedAuditEmpty => '脚本内容为空';
+
+  @override
+  String get settingsReading => '阅读';
+
+  @override
+  String get settingsChineseConversion => '繁简转换';
+
+  @override
+  String get settingsChineseConversionDescription => '阅读时自动转换中文字体';
+
+  @override
+  String get settingsStorage => '存储';
+
+  @override
+  String get settingsCleanupCache => '清理缓存';
+
+  @override
+  String get settingsCleanupCacheDescription => '清理15天前的缓存数据和阅读进度（书架中的书不受影响）';
+
+  @override
+  String settingsCleanupSuccess(int count) {
+    return '已清理 $count 项';
+  }
+
+  @override
+  String get settingsCleanupNothingToClean => '没有需要清理的数据';
+
+  @override
+  String get settingsCleanupError => '清理失败';
+
+  @override
+  String get settingsStorageDatabaseSize => '资料库大小';
+
+  @override
+  String get settingsStorageCacheSize => '快取大小';
+
+  @override
+  String get settingsStorageBooks => '书籍';
+
+  @override
+  String get settingsStorageChapters => '章节';
+
+  @override
+  String get settingsStorageCovers => '封面';
+
+  @override
+  String get settingsStorageBookshelfCount => '书架';
+
+  @override
+  String get settingsClearCache => '清除快取';
+
+  @override
+  String get settingsClearCacheDescription => '删除所有已快取的章节与封面；书架、阅读进度与书签会保留';
+
+  @override
+  String get settingsClearCacheConfirmTitle => '清除快取？';
+
+  @override
+  String get settingsClearCacheConfirmMessage => '确定要清除所有快取吗？';
+
+  @override
+  String get settingsClearCacheNote => '快取章节与封面会被删除，需要时会重新下载；阅读进度与书签会保留。';
+
+  @override
+  String settingsClearCacheSuccess(String bytes) {
+    return '已清除快取 — 释放 $bytes';
+  }
+
+  @override
+  String get settingsClearCacheNothing => '快取已是空的';
+
+  @override
+  String get settingsClearCacheError => '清除快取失败';
+
+  @override
+  String get settingsDeveloper => '开发者';
+
+  @override
+  String get devToolsTitle => '开发者工具';
+
+  @override
+  String get devToolsEntryDescription => '书源脚本调试环境';
+
+  @override
+  String get devAgentApi => 'Agent API';
+
+  @override
+  String get devAgentApiTitle => '本地 Agent API';
+
+  @override
+  String get devAgentApiHint => '仅监听本机回环地址；关闭此开发者工具页后，API 会自动停止。';
+
+  @override
+  String get devAgentEndpoint => '接口地址';
+
+  @override
+  String get devAgentToken => 'Bearer 令牌';
+
+  @override
+  String get devAgentCopyCurl => '复制 curl';
+
+  @override
+  String get devAgentStop => '停止 API';
+
+  @override
+  String get devClose => '关闭';
+
+  @override
+  String get debugOperations => '操作';
+
+  @override
+  String debugStepTitle(int count) {
+    return 'Reducer 步骤（$count）';
+  }
+
+  @override
+  String get debugStepEmpty => '没有记录到 Reducer 步骤。';
+
+  @override
+  String debugStepDropped(int count) {
+    return '另有 $count 个步骤未被记录。';
+  }
+
+  @override
+  String debugStepRound(String operation, int round) {
+    return '$operation · 第 $round 轮';
+  }
+
+  @override
+  String devUnlockCountdown(int count) {
+    return '再点击 $count 次开启开发者模式';
+  }
+
+  @override
+  String get devUnlocked => '已开启开发者模式';
+
+  @override
+  String get devDisable => '关闭开发者模式';
+
+  @override
+  String get devDisableConfirmTitle => '关闭开发者模式？';
+
+  @override
+  String get devDisableConfirmMessage => '将隐藏开发者工具入口。';
+
+  @override
+  String get devScriptLabel => '书源脚本';
+
+  @override
+  String get devScriptHint =>
+      '贴上 JavaScript 书源或从已安装的书源导入。载入后运行才会使用新脚本，每次载入都会重置状态；脚本在隔离的原生 QuickJS 沙盒中运行，不影响已安装的书源。';
+
+  @override
+  String get devScriptImport => '导入';
+
+  @override
+  String get devScriptImportTitle => '选择已安装的书源';
+
+  @override
+  String get devScriptImportEmpty => '没有已安装的书源';
+
+  @override
+  String get devScriptClear => '清空';
+
+  @override
+  String get devScriptClearConfirmTitle => '清空脚本？';
+
+  @override
+  String get devScriptClearConfirmMessage => '将清空编辑器中的脚本内容。';
+
+  @override
+  String get devScriptMissing => '请先贴上或导入脚本';
+
+  @override
+  String devScriptImported(String name) {
+    return '已导入「$name」';
+  }
+
+  @override
+  String get devScriptLoad => '载入';
+
+  @override
+  String get devScriptLoaded => '脚本已载入，运行将使用此版本';
+
+  @override
+  String get devScriptLoadError => '读取书源脚本失败';
+
+  @override
+  String get devAuthApplied => '已套用存储登录态';
+
+  @override
+  String get devAuthMissing => '无存储登录态';
+
+  @override
+  String get devAuthNotSupported => '脚本未定义登录';
+
+  @override
+  String get debugStageSearch => '搜索';
+
+  @override
+  String get debugStageBookInfo => '书籍详情';
+
+  @override
+  String get debugStageChapters => '章节目录';
+
+  @override
+  String get debugStageParagraphs => '正文段落';
+
+  @override
+  String get debugStageComments => '评论';
+
+  @override
+  String get debugStageAuthStatus => '登录状态';
+
+  @override
+  String get debugStageManual => '高级单页调用';
+
+  @override
+  String get debugManualOperation => 'Operation';
+
+  @override
+  String get debugManualInput => 'Input JSON';
+
+  @override
+  String get debugManualInputHint => '作为 event.input 传入';
+
+  @override
+  String get debugManualCursor => 'Cursor JSON';
+
+  @override
+  String get debugManualCursorHint => '作为 event.cursor 传入；第一页使用 null';
+
+  @override
+  String get debugManualUseNextCursor => '使用下一页 Cursor';
+
+  @override
+  String get debugManualNoNextCursor => '没有 next_cursor，操作已完成。';
+
+  @override
+  String get debugInputKeyword => '关键词';
+
+  @override
+  String get debugInputBookId => '书籍 ID';
+
+  @override
+  String get debugInputChapterId => '章节 ID';
+
+  @override
+  String get debugInputParagraphId => '段落 ID（可选）';
+
+  @override
+  String get debugInputParentId => '父评论 ID（可选）';
+
+  @override
+  String debugInputMissing(String field) {
+    return '请填写：$field';
+  }
+
+  @override
+  String get debugRun => '运行';
+
+  @override
+  String get debugSummaryOk => '成功';
+
+  @override
+  String get debugSummaryFailed => '失败';
+
+  @override
+  String debugDurationMs(int ms) {
+    return '$ms ms';
+  }
+
+  @override
+  String get debugErrorTitle => '错误';
+
+  @override
+  String get debugOutputTitle => '输出';
+
+  @override
+  String get debugResultEmpty => '0 项结果';
+
+  @override
+  String get debugEmptyHint =>
+      '贴上或导入书源脚本，选择流水线阶段并运行。解析输出、错误（如有）与 HTTP 请求记录会显示在这里；运行结果会保存在本次会话的历史中。';
+
+  @override
+  String get debugChainBookInfo => '书籍详情';
+
+  @override
+  String get debugChainParagraphs => '正文段落';
+
+  @override
+  String get debugFieldId => 'ID';
+
+  @override
+  String get debugFieldTitle => '标题';
+
+  @override
+  String get debugFieldAuthor => '作者';
+
+  @override
+  String get debugFieldCover => '封面';
+
+  @override
+  String get debugFieldDescription => '简介';
+
+  @override
+  String get debugImageParagraph => '图片';
+
+  @override
+  String debugTraceTitle(int count) {
+    return 'HTTP 追踪（$count）';
+  }
+
+  @override
+  String get debugTraceEmpty => '没有发生 HTTP 请求。';
+
+  @override
+  String debugTraceDropped(int count) {
+    return '另有 $count 个请求未被记录（已达追踪上限）。';
+  }
+
+  @override
+  String get debugTraceSize => '响应大小';
+
+  @override
+  String get debugTraceHeaders => '请求头';
+
+  @override
+  String get debugTraceBodyPreview => '响应体预览';
+
+  @override
+  String debugHistoryTitle(int count) {
+    return '历史（$count）';
+  }
+
+  @override
+  String get readerChapterComments => '章节评论';
+
+  @override
+  String get readerParagraphComments => '段落评论';
+
+  @override
+  String get commentsReplies => '回复';
+
+  @override
+  String get commentsExpand => '展开';
+
+  @override
+  String get commentsCollapse => '收起';
+
+  @override
+  String get commentsAllReplies => '全部回复';
+
+  @override
+  String get commentsEmpty => '暂无评论';
+
+  @override
+  String get commentsMore => '加载更多';
+
+  @override
+  String get commentsEnd => '没有更多评论';
+
+  @override
+  String get commentsRefresh => '刷新评论';
+
+  @override
+  String get commentsSortHot => '最热';
+
+  @override
+  String get commentsSortLatest => '最新';
+
+  @override
+  String get commentsViewAll => '查看全部';
+
+  @override
+  String get listeningReturnToPosition => '回到朗读位置';
+
+  @override
+  String get listeningFromHere => '从这里听';
+
+  @override
+  String get listeningTitle => '系统语音听书';
+
+  @override
+  String get listeningStart => '开始听书';
+
+  @override
+  String get listeningPause => '暂停';
+
+  @override
+  String get listeningResume => '继续播放';
+
+  @override
+  String get listeningStop => '停止听书';
+
+  @override
+  String get listeningVoice => '引擎声音';
+
+  @override
+  String get listeningRate => '语速';
+
+  @override
+  String get listeningSleep => '定时停止';
+
+  @override
+  String get listeningNoTimer => '关闭';
+
+  @override
+  String get listeningLocalHint =>
+      '使用本机 TTS 引擎，支持引擎提供的联网声音；Linux 需要安装 eSpeak NG。';
+
+  @override
+  String get listeningError => '系统语音不可用或播放失败，请检查 TTS 引擎和声音后重试。';
+
+  @override
+  String get listeningCompleted => '已播放完毕';
+
+  @override
+  String get listeningPrevious => '上一段';
+
+  @override
+  String get listeningNext => '下一段';
+
+  @override
+  String get listeningSearchVoices => '搜索声音或语言';
+
+  @override
+  String get listeningNoVoicesMatch => '没有匹配的声音';
+
+  @override
+  String get listeningLoadingVoices => '正在加载系统声音…';
+
+  @override
+  String get listeningReloadVoices => '重新加载声音';
+
+  @override
+  String get listeningChapterEnd => '本章结束';
+
+  @override
+  String get listeningStopsAfterChapter => '本章结束后停止';
+
+  @override
+  String get listeningCustomTimer => '自订';
+
+  @override
+  String get listeningCustomTimerTitle => '自订定时';
+
+  @override
+  String listeningMinutesLabel(int count) {
+    return '$count 分钟';
+  }
+
+  @override
+  String listeningRemainingTime(String time) {
+    return '剩余 $time';
+  }
+
+  @override
+  String listeningParagraphProgress(int current, int total) {
+    return '本段 $current/$total';
+  }
+
+  @override
+  String get readerShowComments => '显示评论';
+
+  @override
+  String get readerHideComments => '隐藏评论';
+
+  @override
+  String readerCommentCountCompact(String count) {
+    return '$count万';
+  }
+
+  @override
+  String get transformTitle => '正文转换';
+
+  @override
+  String get transformBookSettings => '本书正文转换';
+
+  @override
+  String get transformDescription => '规则从上到下依次执行。点击规则可编辑名称、启停状态和配置。';
+
+  @override
+  String get transformRegexReplace => '正则替换';
+
+  @override
+  String get transformRegexDelete => '正则删除段落';
+
+  @override
+  String get transformSave => '保存';
+
+  @override
+  String get transformAdd => '添加转换规则';
+
+  @override
+  String get transformName => '名称（可选）';
+
+  @override
+  String get transformPattern => '正则表达式';
+
+  @override
+  String get transformReplacement => '替换内容';
+
+  @override
+  String get transformIncludeTitles => '同时处理章节标题';
+
+  @override
+  String get transformRegexHelp =>
+      '替换内容可用 \$1、\$2 引用捕获组，\$\$ 表示美元符号。支持 (?i) 等内联标志，不支持环视及正则表达式内的反向引用。';
+
+  @override
+  String get transformInherit => '先应用全局转换规则';
+
+  @override
+  String get transformInheritDescription => '关闭后仅使用本书的规则。';
+
+  @override
+  String get transformEmpty => '此组合尚无规则。';
+
+  @override
+  String get transformMoveUp => '上移';
+
+  @override
+  String get transformMoveDown => '下移';
+
+  @override
+  String get transformPatternRequired => '请输入正则表达式。';
+
+  @override
+  String get transformIndent => '段落缩进';
+
+  @override
+  String get transformDeduplicate => '章节标题去重';
+
+  @override
+  String get transformConversionDescription => '转换正文和章节标题的繁简字形。';
+
+  @override
+  String get transformReplaceDescription => '替换段落中所有匹配正则表达式的文字。';
+
+  @override
+  String get transformDeleteDescription => '文字匹配时，删除整个段落。';
+
+  @override
+  String get transformIndentDescription => '移除文字段落开头的空白，并设置首行缩进。';
+
+  @override
+  String get transformDeduplicateDescription => '保留首个章节标题，移除后续重复的标题段落。';
+
+  @override
+  String get transformKeepFirstTitle => '每章仅保留首个标题';
+
+  @override
+  String transformIndentCharacters(int count) {
+    return '首行缩进：$count 个字符';
+  }
+
+  @override
+  String get transformApplicationRules => '应用级规则';
+
+  @override
+  String get transformBookRules => '本书规则';
+
+  @override
+  String get transformAddHint => '点击 + 选择转换器并进入配置页。';
+
+  @override
+  String get transformEnabled => '已启用';
+
+  @override
+  String get transformDisabled => '已停用';
+
+  @override
+  String get transformEmptyReplacement => '（空文字）';
+
+  @override
+  String transformDeleteQueued(String name) {
+    return '「$name」将被删除';
+  }
+
+  @override
+  String get transformUndo => '撤销';
+
+  @override
+  String get transformRemoveTitle => '删除转换器？';
+
+  @override
+  String get transformRemoveMessage => '要从组合中移除此转换器吗？';
+
+  @override
+  String get transformApplicationEditHint => '这是应用级规则。修改会影响所有继承它的书籍。';
+
+  @override
+  String get transformReorder => '拖动调整顺序';
 }

@@ -141,6 +141,18 @@ mod tests {
     use super::localize_error;
 
     #[test]
+    fn chinese_locales_use_the_correct_script() {
+        assert_eq!(
+            t!("error.feed_not_found", locale = "zh-CN", id = "example"),
+            "找不到书源：example"
+        );
+        assert_eq!(
+            t!("error.feed_not_found", locale = "zh", id = "example"),
+            "找不到書源：example"
+        );
+    }
+
+    #[test]
     fn domain_errors_report_the_host_and_the_allowlist() {
         let error = langhuan::error::Error::domain_not_allowed(
             "https://Example.com/books",

@@ -96,6 +96,7 @@ abstract class AppLocalizations {
   static const List<Locale> supportedLocales = <Locale>[
     Locale('en'),
     Locale('zh'),
+    Locale('zh', 'CN'),
   ];
 
   /// Application name
@@ -2687,7 +2688,7 @@ abstract class AppLocalizations {
   /// No description provided for @transformIndentDescription.
   ///
   /// In en, this message translates to:
-  /// **'Set the first-line indent; replaces existing leading spaces.'**
+  /// **'Remove leading whitespace from text paragraphs and set the first-line indent.'**
   String get transformIndentDescription;
 
   /// No description provided for @transformDeduplicateDescription.
@@ -2799,6 +2800,18 @@ class _AppLocalizationsDelegate
 }
 
 AppLocalizations lookupAppLocalizations(Locale locale) {
+  // Lookup logic when language+country codes are specified.
+  switch (locale.languageCode) {
+    case 'zh':
+      {
+        switch (locale.countryCode) {
+          case 'CN':
+            return AppLocalizationsZhCn();
+        }
+        break;
+      }
+  }
+
   // Lookup logic when only language code is specified.
   switch (locale.languageCode) {
     case 'en':
