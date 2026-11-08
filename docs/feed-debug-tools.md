@@ -119,7 +119,8 @@ HTTP control fields, mode names, and output type tags use `snake_case`, such as
 `chapterId`, `login.status`); single-page debugging passes raw input and cursors
 through without renaming script-defined fields. The `/v1/operations` catalogue is
 self-describing: authentication, every endpoint's method, path, request and
-response shape, a runnable example, pagination, limits, and error codes.
+response shape, a runnable example, pagination, limits, error codes, and a
+GitHub link to the contract section of every operation.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -174,11 +175,10 @@ and an empty object for `login.status`. Responses contain typed output,
 structured failures, reducer steps, and masked HTTP data.
 
 By default the API uses `"mode": "pipeline"` and follows all cursors, matching
-the UI's typed stages. Comment operations always execute one source page,
-including when no mode is supplied. They accept `bookId`, `chapterId`, an
+the UI's typed stages. Comment operations accept `bookId`, `chapterId`, an
 optional `parentId` for existing replies, and `paragraphId` for paragraph
-comments. They never publish or modify comments. Set `"mode": "single_page"` and optionally provide
-`"cursor"` to execute only one page:
+comments. They never publish or modify comments. Set `"mode": "single_page"`
+and optionally provide `"cursor"` to execute only one page:
 
 ```json
 {
