@@ -59,30 +59,15 @@ void main() {
     expect(example['operation'], isIn(names));
     expect(example['input'], isA<Map<String, dynamic>>());
 
-    // Every operation links a contract section that really exists in the
-    // shipped api reference: the GitHub anchor must match one heading.
-    final headings = [
-      for (final line in File('docs/book-sources/api-reference.md')
-          .readAsLinesSync())
-        if (line.startsWith('###')) line.replaceFirst(RegExp(r'^#+\s*'), ''),
-    ];
-    String githubSlug(String heading) => heading
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9\s-]'), '')
-        .replaceAll(' ', '-');
-    final slugs = headings.map(githubSlug).toSet();
+    // Every operation links the shipped source documentation README.
     for (final operation in body['operations'] as List) {
       final entry = operation as Map<String, dynamic>;
       expect(entry.keys, unorderedEquals(['name', 'input', 'docs']));
-      final docs = entry['docs'] as String;
       expect(
-        docs,
-        startsWith(
-          'https://github.com/ywxt/langhuan/blob/main/'
-          'docs/book-sources/api-reference.md#',
-        ),
+        entry['docs'],
+        'https://github.com/ywxt/langhuan/blob/main/'
+        'docs/book-sources/README.md',
       );
-      expect(slugs, contains(docs.split('#').last));
     }
 
     // Auth guidance covers every route except health.

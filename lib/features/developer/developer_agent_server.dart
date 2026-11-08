@@ -54,12 +54,13 @@ class DeveloperAgentServer {
 
   static const _maxRequestBytes = 2 * 1024 * 1024;
 
-  /// The script contract on GitHub. Each catalogue operation links the
-  /// section documenting its handler or result model, so an agent can
-  /// read the contract without guessing URLs.
-  static const _contractDocUrl =
+  /// The book-source documentation entry point on GitHub. Every catalogue
+  /// operation links it so an agent starts from the source-writing guide —
+  /// model, examples, contract, and the documentation map — instead of
+  /// guessing URLs.
+  static const _sourceDocsUrl =
       'https://github.com/ywxt/langhuan/blob/main/'
-      'docs/book-sources/api-reference.md';
+      'docs/book-sources/README.md';
   final CurrentDebugScript _currentScript;
   final DebugStageRunner _runner;
   final InstalledScriptLoader _installedScriptLoader;
@@ -215,8 +216,8 @@ class DeveloperAgentServer {
   ///
   /// Self-sufficient for an agent: authentication, every endpoint's
   /// request and response shape, a runnable example, pagination, limits,
-  /// the failure modes, and a GitHub link into the contract section for
-  /// every operation.
+  /// the failure modes, and a GitHub link to the source documentation
+  /// for every operation.
   Map<String, Object?> _catalogue() => {
     'service': 'langhuan-feed-debug',
     'api_version': 1,
@@ -294,27 +295,27 @@ class DeveloperAgentServer {
       {
         'name': 'search',
         'input': {'keyword': 'string'},
-        'docs': '$_contractDocUrl#booksearch-item',
+        'docs': _sourceDocsUrl,
       },
       {
         'name': 'bookInfo',
         'input': {'bookId': 'string'},
-        'docs': '$_contractDocUrl#booksearch-item',
+        'docs': _sourceDocsUrl,
       },
       {
         'name': 'chapters',
         'input': {'bookId': 'string'},
-        'docs': '$_contractDocUrl#chapter',
+        'docs': _sourceDocsUrl,
       },
       {
         'name': 'paragraphs',
         'input': {'bookId': 'string', 'chapterId': 'string'},
-        'docs': '$_contractDocUrl#paragraph',
+        'docs': _sourceDocsUrl,
       },
       {
         'name': 'login.status',
         'input': <String, String>{},
-        'docs': '$_contractDocUrl#loginstatusevent',
+        'docs': _sourceDocsUrl,
       },
       {
         'name': 'comments.chapter',
@@ -323,7 +324,7 @@ class DeveloperAgentServer {
           'chapterId': 'string',
           'parentId': 'string|null',
         },
-        'docs': '$_contractDocUrl#commentschapterevent',
+        'docs': _sourceDocsUrl,
       },
       {
         'name': 'comments.paragraph',
@@ -333,7 +334,7 @@ class DeveloperAgentServer {
           'paragraphId': 'string',
           'parentId': 'string|null',
         },
-        'docs': '$_contractDocUrl#commentsparagraphevent',
+        'docs': _sourceDocsUrl,
       },
     ],
     'pagination':
