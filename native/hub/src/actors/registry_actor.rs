@@ -300,14 +300,17 @@ impl RegistryActor {
     ) -> Result<FeedPreviewInfo, BridgeError> {
         let (meta, _) = langhuan::script::meta::parse_meta(&content)?;
 
-        let current_version = match &self.db {
+        let installed = match &self.db {
             None => None,
             Some(db) => {
                 let id = meta.id.clone();
-                db.call(move |conn| Ok(conn.get_feed(&id)?.map(|row| row.version)))
-                    .await?
+                db.call(move |conn| conn.get_feed(&id)).await?
             }
         };
+        let current_version = installed.as_ref().map(|row| row.version.clone());
+        let content_matches_installed = installed
+            .as_ref()
+            .is_some_and(|row| row.content_hash == langhuan::hash::sha256_hex(content.as_bytes()));
         let version_change = classify_version_change(current_version.as_deref(), &meta.version);
 
         self.push_pending(
@@ -328,6 +331,7 @@ impl RegistryActor {
             base_url: meta.base_url,
             access_domains: meta.access_domains,
             current_version,
+            content_matches_installed,
             version_change,
             schema_version: meta.schema_version,
             script: content,
@@ -916,6 +920,13 @@ export default (() => {{
             .expect("f1 row");
         assert_eq!(row.version, "2.0.0");
         assert_eq!(installed.as_deref(), Some(script.as_str()));
+        let same = actor.do_preview(script.clone(), None).await?;
+        assert!(same.content_matches_installed);
+        let changed = actor
+            .do_preview(format!("{script}\n// changed"), None)
+            .await?;
+        assert!(!changed.content_matches_installed);
+        assert!(matches!(changed.version_change, VersionChange::Same));
         Ok(())
     }
 

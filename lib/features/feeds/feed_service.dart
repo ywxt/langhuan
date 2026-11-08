@@ -190,6 +190,7 @@ class FeedPreviewModel {
     this.author,
     this.description,
     this.currentVersion,
+    this.contentMatchesInstalled = false,
   });
 
   final String requestId;
@@ -201,6 +202,7 @@ class FeedPreviewModel {
   final String baseUrl;
   final List<String> accessDomains;
   final String? currentVersion;
+  final bool contentMatchesInstalled;
 
   /// How [version] relates to the installed [currentVersion].
   final VersionChange versionChange;
@@ -826,6 +828,7 @@ class FeedService {
       baseUrl: info.baseUrl,
       accessDomains: info.accessDomains.toList(growable: false),
       currentVersion: info.currentVersion,
+      contentMatchesInstalled: info.contentMatchesInstalled,
       versionChange: info.versionChange,
       script: info.script,
     );

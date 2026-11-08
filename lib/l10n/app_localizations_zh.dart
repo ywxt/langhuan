@@ -9,6 +9,9 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
+  String get feedUpdateUnchanged => '書源已是最新內容。';
+
+  @override
   String get feedUpdateTitle => '檢查書源更新';
 
   @override
@@ -1467,6 +1470,9 @@ class AppLocalizationsZh extends AppLocalizations {
 /// The translations for Chinese, as used in China (`zh_CN`).
 class AppLocalizationsZhCn extends AppLocalizationsZh {
   AppLocalizationsZhCn() : super('zh_CN');
+
+  @override
+  String get feedUpdateUnchanged => '书源已是最新内容。';
 
   @override
   String get feedUpdateTitle => '检查书源更新';

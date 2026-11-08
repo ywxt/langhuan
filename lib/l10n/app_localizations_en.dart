@@ -9,6 +9,9 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get feedUpdateUnchanged => 'Source is up to date.';
+
+  @override
   String get feedUpdateTitle => 'Check for updates';
 
   @override

@@ -1,6 +1,7 @@
 {
   "@@locale": "en",
 
+  "feedUpdateUnchanged": "Source is up to date.",
   "feedUpdateTitle": "Check for updates",
   "feedUpdateInstall": "Update source",
   "feedUpdateSuccess": "Source updated",

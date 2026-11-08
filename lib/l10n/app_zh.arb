@@ -1,6 +1,7 @@
 {
   "@@locale": "zh",
 
+  "feedUpdateUnchanged": "書源已是最新內容。",
   "feedUpdateTitle": "檢查書源更新",
   "feedUpdateInstall": "更新書源",
   "feedUpdateSuccess": "書源已更新",

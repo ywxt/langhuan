@@ -10,6 +10,7 @@ import '../../../shared/utils/snackbars.dart';
 import '../../../shared/widgets/meta_row.dart';
 import '../../../src/rust/api/types.dart';
 import '../../bookshelf/bookshelf_provider.dart';
+import '../add_feed_provider.dart';
 import '../feed_providers.dart';
 import '../feed_service.dart';
 import 'add_feed_dialog.dart';
@@ -52,6 +53,7 @@ class FeedDetailSheet extends ConsumerStatefulWidget {
 
 class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
   bool _toggling = false;
+  bool _checkingUpdate = false;
 
   @override
   Widget build(BuildContext context) {
@@ -238,22 +240,35 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
             ],
             if (feed.sourceUrl case final sourceUrl?) ...[
               const SizedBox(height: LanghuanTheme.spaceMd),
-              MetaRow(
-                icon: Icons.download_outlined,
-                label: l10n.feedDetailSource,
-                value: sourceUrl,
-              ),
-              const SizedBox(height: LanghuanTheme.spaceMd),
-              OutlinedButton.icon(
-                onPressed: () => showDialog<void>(
-                  context: context,
-                  builder: (_) => AddFeedDialog(
-                    updateFeedId: feed.id,
-                    updateUrl: sourceUrl,
+              Row(
+                children: [
+                  Expanded(
+                    child: MetaRow(
+                      icon: Icons.download_outlined,
+                      label: l10n.feedDetailSource,
+                      value: sourceUrl,
+                    ),
                   ),
-                ),
-                icon: const Icon(Icons.system_update_alt),
-                label: Text(l10n.feedUpdateTitle),
+                  if (_checkingUpdate)
+                    const SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: Center(
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    )
+                  else
+                    IconButton(
+                      tooltip: l10n.feedUpdateTitle,
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      onPressed: () => _checkUpdate(feed.id, sourceUrl),
+                    ),
+                ],
               ),
             ],
             const SizedBox(height: LanghuanTheme.spaceMd),
@@ -366,6 +381,40 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
       }
     } finally {
       if (mounted) setState(() => _toggling = false);
+    }
+  }
+
+  Future<void> _checkUpdate(String feedId, String url) async {
+    setState(() => _checkingUpdate = true);
+    final notifier = ref.read(addFeedProvider.notifier);
+    notifier.reset();
+    try {
+      await notifier.previewFromUrl(url);
+      if (!mounted) return;
+      final result = ref.read(addFeedProvider);
+      final l10n = AppLocalizations.of(context);
+      final messenger = ScaffoldMessenger.of(context);
+      if (result is AddFeedError) {
+        showErrorSnack(messenger, normalizeErrorMessage(result.error));
+      } else if (result is AddFeedPreview) {
+        if (result.preview.id != feedId) {
+          showErrorSnack(messenger, l10n.feedUpdateIdMismatch);
+        } else if (result.preview.contentMatchesInstalled) {
+          showSuccessSnack(messenger, l10n.feedUpdateUnchanged);
+        } else {
+          setState(() => _checkingUpdate = false);
+          await showDialog<void>(
+            context: context,
+            builder: (_) => AddFeedDialog(
+              updateFeedId: feedId,
+              updateUrl: url,
+              previewReady: true,
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _checkingUpdate = false);
     }
   }
 

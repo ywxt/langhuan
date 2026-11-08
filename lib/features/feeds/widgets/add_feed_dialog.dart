@@ -15,12 +15,14 @@ class AddFeedDialog extends ConsumerStatefulWidget {
     this.initialPath,
     this.updateFeedId,
     this.updateUrl,
+    this.previewReady = false,
   });
 
   /// When set, Rust will read and preview the script at this file path.
   final String? initialPath;
   final String? updateFeedId;
   final String? updateUrl;
+  final bool previewReady;
 
   @override
   ConsumerState<AddFeedDialog> createState() => _AddFeedDialogState();
@@ -37,6 +39,7 @@ class _AddFeedDialogState extends ConsumerState<AddFeedDialog> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (widget.previewReady) return;
       ref.read(addFeedProvider.notifier).reset();
       if (_isFileMode) {
         ref.read(addFeedProvider.notifier).previewFromFile(widget.initialPath!);

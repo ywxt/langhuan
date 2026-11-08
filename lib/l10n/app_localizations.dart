@@ -99,6 +99,12 @@ abstract class AppLocalizations {
     Locale('zh', 'CN'),
   ];
 
+  /// No description provided for @feedUpdateUnchanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Source is up to date.'**
+  String get feedUpdateUnchanged;
+
   /// No description provided for @feedUpdateTitle.
   ///
   /// In en, this message translates to:

@@ -335,6 +335,8 @@ pub struct FeedPreviewInfo {
     pub access_domains: HashSet<String>,
     /// Version of the currently installed script, if any.
     pub current_version: Option<String>,
+    /// Whether the downloaded content has the installed script's hash.
+    pub content_matches_installed: bool,
     /// Relation between `version` and `current_version`.
     pub version_change: VersionChange,
     pub schema_version: u32,

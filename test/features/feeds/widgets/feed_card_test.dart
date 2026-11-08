@@ -58,6 +58,63 @@ Widget _testApp(Widget child) {
 }
 
 void main() {
+  for (final unchanged in [true, false]) {
+    testWidgets(
+      'update check ${unchanged ? 'skips' : 'opens'} the preview based on content',
+      (tester) async {
+        final service = FakeFeedService(
+          listFeedsHandler: () async => [_feedA],
+          listBookshelfHandler: () async => [],
+          previewFromUrlHandler: (_) async => FeedPreviewModel(
+            requestId: 'feed-a',
+            id: 'feed-a',
+            name: 'Source A',
+            version: '1',
+            currentVersion: '1',
+            baseUrl: 'https://example.com',
+            accessDomains: const ['example.com'],
+            versionChange: VersionChange.same,
+            script: '// source',
+            contentMatchesInstalled: unchanged,
+          ),
+        );
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              feedServiceProvider.overrideWithValue(service),
+              feedAuthStatusProvider.overrideWith((ref, request) => null),
+              appDataDirectorySetProvider.overrideWith(
+                (ref) async => const AppDataDirectoryResult(feedCount: 1),
+              ),
+            ],
+            child: _testApp(
+              Consumer(
+                builder: (context, ref, _) {
+                  final items = ref.watch(feedListProvider).items;
+                  return items.isEmpty
+                      ? const SizedBox.shrink()
+                      : FeedCard(feed: items.first);
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Source A'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Check for updates'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byType(AlertDialog),
+          unchanged ? findsNothing : findsOneWidget,
+        );
+        if (unchanged)
+          expect(find.text('Source is up to date.'), findsOneWidget);
+        if (!unchanged) expect(find.text('Update source'), findsOneWidget);
+      },
+    );
+  }
+
   testWidgets('feed swipe deletion still confirms and supports undo', (
     tester,
   ) async {
@@ -320,7 +377,7 @@ void main() {
       expect(find.text('cdn.example.com'), findsOneWidget);
       expect(find.text('Source'), findsOneWidget);
       expect(find.text('https://example.com/source-a.js'), findsOneWidget);
-      expect(find.text('Check for updates'), findsOneWidget);
+      expect(find.byTooltip('Check for updates'), findsOneWidget);
       expect(find.text('Shelved books'), findsOneWidget);
       expect(find.text('2'), findsOneWidget);
       expect(find.byType(SwitchListTile), findsOneWidget);
