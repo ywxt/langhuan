@@ -676,6 +676,136 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn search_page_rejects_more_than_two_hundred_items() {
+        let body = r#"
+          function search() {
+            return { type: "complete", result: Array.from({ length: 201 }, (_, i) => ({
+              id: String(i), title: "T", author: "A",
+            })) };
+          }
+          const empty = () => ({ type: "complete", result: [] });
+          const bookInfo = () => ({ type: "complete", result: { id: "1", title: "One", author: "Test" } });
+          export default { search, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(6, body))
+            .await
+            .unwrap();
+
+        let collected = feed.search("x").collect::<Vec<_>>().await;
+        assert_eq!(collected.len(), 1);
+        let error = collected[0]
+            .as_ref()
+            .expect_err("an oversized search page must fail the stream");
+        assert!(
+            error
+                .to_string()
+                .contains("search page exceeds item or field limits")
+        );
+    }
+
+    #[tokio::test]
+    async fn chapter_page_rejects_more_than_ten_thousand_entries() {
+        let body = r#"
+          function chapters() {
+            return { type: "complete", result: Array.from({ length: 10001 }, (_, i) => ({
+              id: String(i), title: "C",
+            })) };
+          }
+          const empty = () => ({ type: "complete", result: [] });
+          const bookInfo = () => ({ type: "complete", result: { id: "1", title: "One", author: "Test" } });
+          export default { search: empty, bookInfo, chapters, paragraphs: empty };
+        "#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(6, body))
+            .await
+            .unwrap();
+
+        let collected = feed.chapters("b").collect::<Vec<_>>().await;
+        assert_eq!(collected.len(), 1);
+        let error = collected[0]
+            .as_ref()
+            .expect_err("an oversized directory page must fail the stream");
+        assert!(
+            error
+                .to_string()
+                .contains("chapter page exceeds item or field limits")
+        );
+    }
+
+    #[tokio::test]
+    async fn paragraph_page_rejects_oversized_content() {
+        let body = r#"
+          function paragraphs() {
+            return { type: "complete", result: [
+              { type: "text", content: "x".repeat(32769) },
+            ] };
+          }
+          const empty = () => ({ type: "complete", result: [] });
+          const bookInfo = () => ({ type: "complete", result: { id: "1", title: "One", author: "Test" } });
+          export default { search: empty, bookInfo, chapters: empty, paragraphs };
+        "#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(6, body))
+            .await
+            .unwrap();
+
+        let collected = feed.paragraphs("b", "c").collect::<Vec<_>>().await;
+        assert_eq!(collected.len(), 1);
+        let error = collected[0]
+            .as_ref()
+            .expect_err("an oversized paragraph must fail the stream");
+        assert!(
+            error
+                .to_string()
+                .contains("paragraph page exceeds item or field limits")
+        );
+    }
+
+    #[tokio::test]
+    async fn paragraph_page_rejects_an_empty_image_url() {
+        let body = r#"
+          function paragraphs() {
+            return { type: "complete", result: [{ type: "image", url: "" }] };
+          }
+          const empty = () => ({ type: "complete", result: [] });
+          const bookInfo = () => ({ type: "complete", result: { id: "1", title: "One", author: "Test" } });
+          export default { search: empty, bookInfo, chapters: empty, paragraphs };
+        "#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(6, body))
+            .await
+            .unwrap();
+
+        let collected = feed.paragraphs("b", "c").collect::<Vec<_>>().await;
+        assert_eq!(collected.len(), 1);
+        assert!(collected[0].is_err());
+    }
+
+    #[tokio::test]
+    async fn book_info_rejects_oversized_fields() {
+        let body = r#"
+          function bookInfo() {
+            return { type: "complete", result: {
+              id: "1", title: "x".repeat(1025), author: "Test",
+            } };
+          }
+          const empty = () => ({ type: "complete", result: [] });
+          export default { search: empty, bookInfo, chapters: empty, paragraphs: empty };
+        "#;
+        let feed = ScriptEngine::new()
+            .load_script(&source(6, body))
+            .await
+            .unwrap();
+
+        let error = feed
+            .book_info("1")
+            .await
+            .expect_err("an oversized book info must fail");
+        assert!(error.to_string().contains("book info exceeds field limits"));
+    }
+
+    #[tokio::test]
     async fn keeps_returned_feed_object_between_calls() {
         let body = r#"
           let calls = 0;

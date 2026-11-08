@@ -299,7 +299,7 @@ type CompleteStep = {
 | Field | Required | Value and behaviour |
 | --- | :---: | --- |
 | `type` | Yes | Must be `"complete"`. |
-| `result` | Yes | Search, chapters, paragraphs and comments return an array; `bookInfo` returns a book object; `login.status` returns a boolean; the comments array holds at most 200 [`Comment`](#comment) objects. Missing or `undefined` is an error. An empty page must explicitly return an empty array. |
+| `result` | Yes | Search, chapters, paragraphs and comments return an array; `bookInfo` returns a book object; `login.status` returns a boolean. Missing or `undefined` is an error. An empty page must explicitly return an empty array. Each page is capped before any item flows: search and comments at most 200 items, chapters at most 10,000, paragraphs at most 2,000. Item and field limits are documented per model below. |
 | `next_cursor` | No | JSON token for another page. `null`/`undefined` ends pagination. It becomes the next page's `event.cursor`. Bytes, functions and other non-JSON values are rejected. The token is limited to 4,096 encoded bytes and must differ from the page's `event.cursor`: the host fails a page that repeats it, and automatically followed pagination stops at 1,000 pages. Single-value operations do not paginate. |
 
 Results and cursors must be JSON-compatible. Results are capped at 16 MiB;
@@ -340,13 +340,16 @@ type Book = {
 };
 ```
 
+A search page holds at most 200 items; the same object returned by
+`bookInfo` is validated the same way.
+
 | Field | Required | Behaviour |
 | --- | :---: | --- |
-| `id` | Yes | Source-owned book identity. It should be non-empty and must remain stable when title/author changes. When pagination repeats an ID, the host keeps its first occurrence. |
-| `title` | Yes | Display title. |
-| `author` | Yes | Display author; use an explicit fallback string when the site omits it. |
-| `cover_url` | No | Absolute or site-usable cover URL, or `null`. It is consumed by the application image loader rather than a reducer request. |
-| `description` | No | Plain-text synopsis, or `null`. Do not return raw page HTML. |
+| `id` | Yes | Source-owned book identity. It must be non-empty, at most 4,096 UTF-8 bytes, and remain stable when title/author changes. When pagination repeats an ID, the host keeps its first occurrence. |
+| `title` | Yes | Display title, at most 1,024 UTF-8 bytes. |
+| `author` | Yes | Display author at most 1,024 UTF-8 bytes; use an explicit fallback string when the site omits it. |
+| `cover_url` | No | Absolute or site-usable cover URL, or `null`; at most 8,192 UTF-8 bytes. It is consumed by the application image loader rather than a reducer request. |
+| `description` | No | Plain-text synopsis at most 32,768 UTF-8 bytes, or `null`. Do not return raw page HTML. |
 
 The same shape is used by search results and `bookInfo` completion `result`.
 
@@ -356,10 +359,12 @@ The same shape is used by search results and `bookInfo` completion `result`.
 type Chapter = { id: string; title: string };
 ```
 
+A directory page holds at most 10,000 entries.
+
 | Field | Required | Behaviour |
 | --- | :---: | --- |
-| `id` | Yes | Stable source-owned chapter identity, unique across the complete paginated directory. It should be non-empty and is later returned as `input.chapterId`. |
-| `title` | Yes | User-facing chapter title in directory order. |
+| `id` | Yes | Stable source-owned chapter identity, unique across the complete paginated directory. It must be non-empty, at most 4,096 UTF-8 bytes, and is later returned as `input.chapterId`. |
+| `title` | Yes | User-facing chapter title in directory order, at most 1,024 UTF-8 bytes. |
 
 ### Paragraph
 
@@ -376,11 +381,14 @@ overlap. Chapter IDs remain strictly unique across all pages of one operation.
 Paragraph IDs are optional; the host assigns sequential indices
 when omitted.
 
+A chapter page holds at most 2,000 paragraphs. An explicit `id` is optional but
+must be non-empty and at most 4,096 UTF-8 bytes when given.
+
 | Variant | Fields and behaviour |
 | --- | --- |
-| `title` | `text` is the chapter/section heading. Optional `id` supplies the original source identity instead of a generated identity. Optional `comment_count` is the paragraph-comment total for this unit (the chapter as a whole for a title). |
-| `text` | `content` is one plain-text paragraph. Do not include HTML tags. Optional `id` supplies the original source identity instead of a generated identity. Optional `comment_count` is the paragraph-comment total for this paragraph. |
-| `image` | `url` identifies the image; optional `alt` is accessible fallback text and defaults to `null`. Optional `id` supplies the original source identity instead of a generated identity. Optional `comment_count` is the paragraph-comment total for this image. |
+| `title` | `text` is the chapter/section heading, at most 1,024 UTF-8 bytes. Optional `id` supplies the original source identity instead of a generated identity. Optional `comment_count` is the paragraph-comment total for this unit (the chapter as a whole for a title). |
+| `text` | `content` is one plain-text paragraph at most 32,768 UTF-8 bytes. Do not include HTML tags. Optional `id` supplies the original source identity instead of a generated identity. Optional `comment_count` is the paragraph-comment total for this paragraph. |
+| `image` | `url` identifies the image and must be non-empty, at most 8,192 UTF-8 bytes; optional `alt` is accessible fallback text at most 2,048 UTF-8 bytes and defaults to `null`. Optional `id` supplies the original source identity instead of a generated identity. Optional `comment_count` is the paragraph-comment total for this image. |
 
 `comment_count` is an unsigned integer (0–4,294,967,295). Omitted or `null`
 means unknown or unsupported; a number means known, where `0` is supported

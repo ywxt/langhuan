@@ -44,6 +44,15 @@ const MAX_INTERNAL_STEPS: usize = 16;
 /// pagination — a ten-thousand-chapter list at a hundred items per page
 /// needs a hundred.
 const MAX_PIPELINE_PAGES: usize = 1_000;
+/// Items one pipelined page may carry, per operation. Comments and search
+/// mirror website pages (tens of items each); the chapter budget fits a
+/// full SSR directory in one `complete`; a single chapter's paragraphs
+/// stay far below the paragraph budget. Past these lies only a runaway
+/// script, so the host fails the page instead of buffering it.
+const MAX_COMMENT_ITEMS_PER_PAGE: usize = 200;
+const MAX_SEARCH_ITEMS_PER_PAGE: usize = 200;
+const MAX_CHAPTER_ITEMS_PER_PAGE: usize = 10_000;
+const MAX_PARAGRAPH_ITEMS_PER_PAGE: usize = 2_000;
 /// Encoded JSON bytes a pagination cursor may occupy, shared by the
 /// explicit comments API and the automatic pipeline.
 const MAX_CURSOR_BYTES: usize = 4 * 1024;
@@ -375,8 +384,7 @@ impl JsFeed {
                     return;
                 }
             };
-            let stream =
-                self.paged_stream_validated(operation, validate_comment_page);
+            let stream = self.paged_stream(operation, validate_comment_page);
             let mut stream = std::pin::pin!(stream);
             while let Some(result) = stream.next().await {
                 yield result;
@@ -743,18 +751,12 @@ impl JsFeed {
             .map_err(|error| Error::javascript(format!("invalid value: {error}")))
     }
 
-    fn paged_stream<'a, T>(&'a self, operation: JsOperation<'a>) -> FeedStream<'a, T>
-    where
-        T: DeserializeOwned + Send + 'a,
-    {
-        self.paged_stream_validated(operation, |_| Ok(()))
-    }
-
-    /// [`Self::paged_stream`] with a page-level validator. The validator
-    /// runs when a page arrives, before any of its items flow, so a page
-    /// that violates the contract never yields a partial prefix — the
-    /// stream form of the explicit page API's page-level rejection.
-    fn paged_stream_validated<'a, T, F>(
+    /// The pagination engine: fetch pages, validate each one before any
+    /// of its items flow, and follow `next_cursor` until it runs out.
+    /// `validate_page` runs when a page arrives, so a page that violates
+    /// the contract never yields a partial prefix — the stream form of
+    /// the explicit page APIs' page-level rejection.
+    fn paged_stream<'a, T, F>(
         &'a self,
         operation: JsOperation<'a>,
         validate_page: F,
@@ -957,7 +959,7 @@ fn comment_input(query: &crate::feed::comments::CommentsQuery) -> JsData {
 /// the contract's caps. The explicit page API and the pipeline stream
 /// share the rule so both reject the same oversized pages.
 fn validate_comment_page(items: &[crate::feed::comments::Comment]) -> Result<()> {
-    if items.len() > 200
+    if items.len() > MAX_COMMENT_ITEMS_PER_PAGE
         || items.iter().any(|c| {
             c.id.is_empty()
                 || c.id.len() > 4096
@@ -975,21 +977,100 @@ fn validate_comment_page(items: &[crate::feed::comments::Comment]) -> Result<()>
     Ok(())
 }
 
+/// One search page carries at most 200 results whose fields stay within
+/// the contract's caps. Identifiers must be non-empty; the free-text
+/// fields are length-capped but may be empty.
+fn validate_search_page(items: &[SearchResult]) -> Result<()> {
+    if items.len() > MAX_SEARCH_ITEMS_PER_PAGE
+        || items.iter().any(|b| {
+            b.id.is_empty()
+                || b.id.len() > 4096
+                || b.title.len() > 1024
+                || b.author.len() > 1024
+                || b.cover_url.as_ref().is_some_and(|v| v.len() > 8192)
+                || b.description.as_ref().is_some_and(|v| v.len() > 32768)
+        })
+    {
+        return Err(Error::invalid_feed(
+            "search page exceeds item or field limits",
+        ));
+    }
+    Ok(())
+}
+
+/// A book info object follows the same field caps as a search result;
+/// its identifier must be non-empty.
+fn validate_book_info(info: &BookInfo) -> Result<()> {
+    if info.id.is_empty()
+        || info.id.len() > 4096
+        || info.title.len() > 1024
+        || info.author.len() > 1024
+        || info.cover_url.as_ref().is_some_and(|v| v.len() > 8192)
+        || info.description.as_ref().is_some_and(|v| v.len() > 32768)
+    {
+        return Err(Error::invalid_feed("book info exceeds field limits"));
+    }
+    Ok(())
+}
+
+/// One directory page carries at most 10,000 entries: a full SSR table of
+/// contents in a single `complete` is legitimate, so this budget sits far
+/// above real directories while still bounding a runaway script.
+fn validate_chapters_page(items: &[ChapterInfo]) -> Result<()> {
+    if items.len() > MAX_CHAPTER_ITEMS_PER_PAGE
+        || items
+            .iter()
+            .any(|c| c.id.is_empty() || c.id.len() > 4096 || c.title.len() > 1024)
+    {
+        return Err(Error::invalid_feed(
+            "chapter page exceeds item or field limits",
+        ));
+    }
+    Ok(())
+}
+
+/// One chapter page carries at most 2,000 paragraphs — a whole chapter
+/// in a single `complete` — with per-variant field caps. Script-level ids
+/// are optional (the host assigns one when absent) but must be non-empty
+/// when given; image URLs locate a resource, so empty ones are rejected.
+fn validate_paragraphs_page(items: &[RawParagraph]) -> Result<()> {
+    let id_ok = |id: &Option<String>| id.as_ref().is_none_or(|s| !s.is_empty() && s.len() <= 4096);
+    if items.len() > MAX_PARAGRAPH_ITEMS_PER_PAGE
+        || items.iter().any(|paragraph| match paragraph {
+            RawParagraph::Title { id, text, .. } => !id_ok(id) || text.len() > 1024,
+            RawParagraph::Text { id, content, .. } => !id_ok(id) || content.len() > 32768,
+            RawParagraph::Image { id, url, alt, .. } => {
+                !id_ok(id)
+                    || url.is_empty()
+                    || url.len() > 8192
+                    || alt.as_ref().is_some_and(|a| a.len() > 2048)
+            }
+        })
+    {
+        return Err(Error::invalid_feed(
+            "paragraph page exceeds item or field limits",
+        ));
+    }
+    Ok(())
+}
+
 impl Feed for JsFeed {
     fn search<'a>(&'a self, keyword: &'a str) -> FeedStream<'a, SearchResult> {
         let operation = JsOperation::Search { keyword };
-        let stream = self.paged_stream(operation);
+        let stream = self.paged_stream(operation, validate_search_page);
         self.unique_search_stream(stream)
     }
 
     async fn book_info(&self, id: &str) -> Result<BookInfo> {
         let operation = JsOperation::BookInfo { book_id: id };
-        self.run_value(&operation).await
+        let info: BookInfo = self.run_value(&operation).await?;
+        validate_book_info(&info)?;
+        Ok(info)
     }
 
     fn chapters<'a>(&'a self, book_id: &'a str) -> FeedStream<'a, ChapterInfo> {
         let operation = JsOperation::Chapters { book_id };
-        let stream = self.paged_stream(operation);
+        let stream = self.paged_stream(operation, validate_chapters_page);
         self.dedup_stream(stream, "chapter", |item: &ChapterInfo| item.id.clone())
     }
 
@@ -1002,7 +1083,8 @@ impl Feed for JsFeed {
             book_id,
             chapter_id,
         };
-        let raw: FeedStream<'a, RawParagraph> = self.paged_stream(operation);
+        let raw: FeedStream<'a, RawParagraph> =
+            self.paged_stream(operation, validate_paragraphs_page);
         let indexed: FeedStream<'a, Paragraph> = Box::pin(stream! {
             let mut index = 0usize;
             let mut raw = std::pin::pin!(raw);
