@@ -322,5 +322,6 @@ Throwing is reserved for parser defects and unexpected data. Test at least:
 
 Use the in-app [debug tools](../feed-debug-tools.md) to run each operation and
 inspect redacted request traces. Consult [API Reference](api-reference.md)
-when adding host modules and [Sandbox](sandbox.md) before adding compute or
+when adding host modules, [Error handling](error-handling.md) for the failure
+taxonomy, and [Sandbox](sandbox.md) before adding compute or
 WebView steps.

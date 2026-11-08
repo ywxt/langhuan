@@ -94,8 +94,8 @@ each stream advance, before waiting on result delivery. A multi-page source
 therefore cannot reserve a search slot for its entire lifetime. This does not
 promise equal result counts or cross-source relevance ordering.
 
-See [search, comments, and listening design](../search-comments-listening.md)
-for scheduling, source-comment interfaces, typed paragraph identity, and local TTS.
+See the [API Reference](api-reference.md) for the comment exports, result
+models, and typed paragraph identity.
 
 A bridge batch is independent from a source page: it may split a large source
 page or combine smaller pages. The source's `result` and top-level `next_cursor` contract
@@ -304,7 +304,7 @@ typed application errors and can carry retry or login meaning.
 
 Thrown exceptions represent source defects or unexpected input. Network,
 policy, persistence, and sandbox failures originate in the host. See
-[Error handling](../error-handling.md) for the full mapping.
+[Error handling](error-handling.md) for the full mapping.
 
 ## Why the architecture is structured this way
 

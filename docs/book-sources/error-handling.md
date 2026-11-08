@@ -1,6 +1,6 @@
 # Error handling for JavaScript book sources
 
-Schema-5 sources distinguish expected website states from source defects and
+Schema-6 sources distinguish expected website states from source defects and
 native failures.
 
 ## Expected failures
@@ -70,7 +70,7 @@ retry policy before reaching the UI.
 
 ## Debugging
 
-Use the [developer stage runner](feed-debug-tools.md) to inspect partial output,
+Use the [developer stage runner](../feed-debug-tools.md) to inspect partial output,
 typed errors, redirects, bounded body previews, and redacted request traces.
 Use `next_state.stage` to make multi-request failures attributable to a clear
 phase.

@@ -464,9 +464,6 @@ Manual reading interactions detach following while playback continues. A floatin
 changes the playback position. Pause/resume keeps the session's spoken paragraph.
 Catalogue and bookmark navigation waits until the panel has fully closed before
 repositioning the reader, keeping its accessibility tree stable during dismissal.
-See
-[Search, comments, and listening](search-comments-listening.md) for lifecycle and
-progress rules.
 
 ## 5. Interaction & motion
 

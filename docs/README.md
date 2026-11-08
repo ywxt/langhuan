@@ -5,10 +5,8 @@ in the [project README](../README.md), then choose a guide below.
 
 | Guide | Purpose |
 | --- | --- |
-| [Book sources](book-sources/README.md) | Source architecture, examples, sandbox policy, and the API Reference. |
-| [Developer tools](feed-debug-tools.md) | Editor workflows, operation and step debugging, and the Agent HTTP API. |
-| [Error handling](error-handling.md) | Expected website failures, runtime defects, native errors, and safe messages. |
-| [Search, comments, and listening](search-comments-listening.md) | Application coordination, paragraph identity, system TTS, and validation. |
+| [Book sources](book-sources/README.md) | Source architecture, examples, sandbox policy, error handling, the API Reference, and the local Agent API. |
+| [Developer tools](feed-debug-tools.md) | Editor workflows, operation and step debugging, and the HTTP and step inspectors. |
 | [UI design guide](ui-design-spec.md) | Visual principles, theme tokens, component layout, and interaction rules. |
 
 ## Conventions
