@@ -5,14 +5,22 @@ import '../../../l10n/app_localizations.dart';
 import '../../../shared/utils/errors.dart';
 import '../../../shared/utils/snackbars.dart';
 import '../add_feed_provider.dart';
+import '../feed_providers.dart';
 import 'feed_preview_content.dart';
 
 /// Dialog for adding a feed — handles URL input, preview, install, and errors.
 class AddFeedDialog extends ConsumerStatefulWidget {
-  const AddFeedDialog({super.key, this.initialPath});
+  const AddFeedDialog({
+    super.key,
+    this.initialPath,
+    this.updateFeedId,
+    this.updateUrl,
+  });
 
   /// When set, Rust will read and preview the script at this file path.
   final String? initialPath;
+  final String? updateFeedId;
+  final String? updateUrl;
 
   @override
   ConsumerState<AddFeedDialog> createState() => _AddFeedDialogState();
@@ -22,6 +30,7 @@ class _AddFeedDialogState extends ConsumerState<AddFeedDialog> {
   final _urlController = TextEditingController();
 
   bool get _isFileMode => widget.initialPath != null;
+  bool get _isUpdate => widget.updateFeedId != null;
 
   @override
   void initState() {
@@ -31,6 +40,9 @@ class _AddFeedDialogState extends ConsumerState<AddFeedDialog> {
       ref.read(addFeedProvider.notifier).reset();
       if (_isFileMode) {
         ref.read(addFeedProvider.notifier).previewFromFile(widget.initialPath!);
+      } else if (widget.updateUrl case final url?) {
+        _urlController.text = url;
+        ref.read(addFeedProvider.notifier).previewFromUrl(url);
       }
     });
   }
@@ -50,6 +62,11 @@ class _AddFeedDialogState extends ConsumerState<AddFeedDialog> {
   }
 
   Future<void> _install() async {
+    final state = ref.read(addFeedProvider);
+    if (_isUpdate &&
+        (state is! AddFeedPreview || state.preview.id != widget.updateFeedId)) {
+      return;
+    }
     await ref.read(addFeedProvider.notifier).confirmInstall();
   }
 
@@ -67,8 +84,19 @@ class _AddFeedDialogState extends ConsumerState<AddFeedDialog> {
 
     ref.listen<AddFeedState>(addFeedProvider, (_, next) {
       if (next is AddFeedSuccess && mounted) {
+        if (widget.updateFeedId case final feedId?) {
+          ref.invalidate(
+            feedAuthStatusProvider((feedId: feedId, isValid: true)),
+          );
+          ref.invalidate(
+            feedAuthStatusProvider((feedId: feedId, isValid: false)),
+          );
+        }
         Navigator.of(context).pop();
-        showSuccessSnack(ScaffoldMessenger.of(context), l10n.addFeedSuccess);
+        showSuccessSnack(
+          ScaffoldMessenger.of(context),
+          _isUpdate ? l10n.feedUpdateSuccess : l10n.addFeedSuccess,
+        );
       }
     });
 
@@ -92,8 +120,11 @@ class _AddFeedDialogState extends ConsumerState<AddFeedDialog> {
     );
   }
 
-  String _dialogTitle(AddFeedState state, AppLocalizations l10n) =>
-      state is AddFeedPreview ? l10n.addFeedPreviewTitle : l10n.addFeedTitle;
+  String _dialogTitle(AddFeedState state, AppLocalizations l10n) => _isUpdate
+      ? l10n.feedUpdateTitle
+      : state is AddFeedPreview
+      ? l10n.addFeedPreviewTitle
+      : l10n.addFeedTitle;
 
   String _contentKey(AddFeedState state) => switch (state) {
     AddFeedIdle() => 'idle',
@@ -118,6 +149,16 @@ class _AddFeedDialogState extends ConsumerState<AddFeedDialog> {
     AddFeedLoading() ||
     AddFeedInstalling() ||
     AddFeedSuccess() => const LoadingContent(),
+    AddFeedPreview(:final preview)
+        when _isUpdate && preview.id != widget.updateFeedId =>
+      FeedErrorContent(
+        presentation: describeError(
+          null,
+          l10n,
+          genericTitle: l10n.feedUpdateIdMismatch,
+        ),
+        colorScheme: colorScheme,
+      ),
     AddFeedPreview(:final preview) => FeedPreviewContent(
       preview: preview,
       colorScheme: colorScheme,
@@ -154,6 +195,14 @@ class _AddFeedDialogState extends ConsumerState<AddFeedDialog> {
       AddFeedLoading() ||
       AddFeedInstalling() ||
       AddFeedSuccess() => const [],
+      AddFeedPreview(:final preview)
+          when _isUpdate && preview.id != widget.updateFeedId =>
+        [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(mat.cancelButtonLabel),
+          ),
+        ],
       AddFeedPreview() => [
         if (!_isFileMode)
           TextButton(onPressed: _goBack, child: Text(mat.backButtonTooltip)),
@@ -162,7 +211,10 @@ class _AddFeedDialogState extends ConsumerState<AddFeedDialog> {
             onPressed: () => Navigator.of(context).pop(),
             child: Text(mat.cancelButtonLabel),
           ),
-        FilledButton(onPressed: _install, child: Text(l10n.addFeedInstall)),
+        FilledButton(
+          onPressed: _install,
+          child: Text(_isUpdate ? l10n.feedUpdateInstall : l10n.addFeedInstall),
+        ),
       ],
       AddFeedError() => [
         TextButton(

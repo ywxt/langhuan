@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:langhuan/features/feeds/feed_providers.dart';
+import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/features/feeds/widgets/add_feed_dialog.dart';
 import 'package:langhuan/features/feeds/widgets/feed_preview_content.dart';
 import 'package:langhuan/l10n/app_localizations.dart';
@@ -19,7 +20,12 @@ const _parseError = BridgeError(
   message: 'Script parse error at line 1: missing ==Feed== header',
 );
 
-Widget _host(FakeFeedService service, {String? initialPath}) => ProviderScope(
+Widget _host(
+  FakeFeedService service, {
+  String? initialPath,
+  String? updateFeedId,
+  String? updateUrl,
+}) => ProviderScope(
   overrides: [feedServiceProvider.overrideWithValue(service)],
   child: MaterialApp(
     localizationsDelegates: const [
@@ -34,7 +40,11 @@ Widget _host(FakeFeedService service, {String? initialPath}) => ProviderScope(
         builder: (context) => TextButton(
           onPressed: () => showDialog<void>(
             context: context,
-            builder: (_) => AddFeedDialog(initialPath: initialPath),
+            builder: (_) => AddFeedDialog(
+              initialPath: initialPath,
+              updateFeedId: updateFeedId,
+              updateUrl: updateUrl,
+            ),
           ),
           child: const Text('open'),
         ),
@@ -50,6 +60,75 @@ Future<void> _settle(WidgetTester tester) =>
     tester.pump(const Duration(milliseconds: 220));
 
 void main() {
+  FeedPreviewModel preview(String id) => FeedPreviewModel(
+    requestId: id,
+    id: id,
+    name: 'Test source',
+    version: '2.0.0',
+    currentVersion: '1.0.0',
+    baseUrl: 'https://example.com',
+    accessDomains: const ['example.com'],
+    versionChange: VersionChange.upgrade,
+    script: '// source',
+  );
+
+  testWidgets('update previews the saved URL and installs after confirmation', (
+    tester,
+  ) async {
+    String? requestedUrl;
+    String? installedId;
+    final service = FakeFeedService(
+      previewFromUrlHandler: (url) async {
+        requestedUrl = url;
+        return preview('feed-a');
+      },
+      installFeedHandler: (id) async {
+        installedId = id;
+      },
+    );
+    await tester.pumpWidget(
+      _host(
+        service,
+        updateFeedId: 'feed-a',
+        updateUrl: 'https://example.com/feed.js',
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump();
+    await _settle(tester);
+    expect(requestedUrl, 'https://example.com/feed.js');
+    expect(find.text('Test source'), findsOneWidget);
+    expect(installedId, isNull);
+    await tester.tap(find.text('Update source'));
+    await tester.pump();
+    expect(installedId, 'feed-a');
+  });
+
+  testWidgets('update refuses a different source ID', (tester) async {
+    final service = FakeFeedService(
+      previewFromUrlHandler: (_) async => preview('feed-b'),
+    );
+    await tester.pumpWidget(
+      _host(
+        service,
+        updateFeedId: 'feed-a',
+        updateUrl: 'https://example.com/feed.js',
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump();
+    await _settle(tester);
+    expect(
+      find.text(
+        'The downloaded source has a different ID and cannot update this source.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Update source'), findsNothing);
+  });
+
   testWidgets('a URL preview failure shows the error instead of hanging', (
     tester,
   ) async {

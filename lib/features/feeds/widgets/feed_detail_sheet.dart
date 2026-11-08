@@ -12,6 +12,7 @@ import '../../../src/rust/api/types.dart';
 import '../../bookshelf/bookshelf_provider.dart';
 import '../feed_providers.dart';
 import '../feed_service.dart';
+import 'add_feed_dialog.dart';
 import 'feed_visuals.dart';
 
 /// Opens a modal bottom sheet with a feed's details and management
@@ -241,6 +242,18 @@ class _FeedDetailSheetState extends ConsumerState<FeedDetailSheet> {
                 icon: Icons.download_outlined,
                 label: l10n.feedDetailSource,
                 value: sourceUrl,
+              ),
+              const SizedBox(height: LanghuanTheme.spaceMd),
+              OutlinedButton.icon(
+                onPressed: () => showDialog<void>(
+                  context: context,
+                  builder: (_) => AddFeedDialog(
+                    updateFeedId: feed.id,
+                    updateUrl: sourceUrl,
+                  ),
+                ),
+                icon: const Icon(Icons.system_update_alt),
+                label: Text(l10n.feedUpdateTitle),
               ),
             ],
             const SizedBox(height: LanghuanTheme.spaceMd),

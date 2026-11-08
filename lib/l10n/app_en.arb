@@ -1,6 +1,10 @@
 {
   "@@locale": "en",
 
+  "feedUpdateTitle": "Check for updates",
+  "feedUpdateInstall": "Update source",
+  "feedUpdateSuccess": "Source updated",
+  "feedUpdateIdMismatch": "The downloaded source has a different ID and cannot update this source.",
   "appName": "Langhuan",
   "@appName": { "description": "Application name" },
 

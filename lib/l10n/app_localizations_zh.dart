@@ -9,6 +9,18 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
+  String get feedUpdateTitle => '檢查書源更新';
+
+  @override
+  String get feedUpdateInstall => '更新書源';
+
+  @override
+  String get feedUpdateSuccess => '書源已更新';
+
+  @override
+  String get feedUpdateIdMismatch => '下載的書源 ID 不同，無法更新此書源。';
+
+  @override
   String get appName => '琅嬛';
 
   @override
@@ -1455,6 +1467,18 @@ class AppLocalizationsZh extends AppLocalizations {
 /// The translations for Chinese, as used in China (`zh_CN`).
 class AppLocalizationsZhCn extends AppLocalizationsZh {
   AppLocalizationsZhCn() : super('zh_CN');
+
+  @override
+  String get feedUpdateTitle => '检查书源更新';
+
+  @override
+  String get feedUpdateInstall => '更新书源';
+
+  @override
+  String get feedUpdateSuccess => '书源已更新';
+
+  @override
+  String get feedUpdateIdMismatch => '下载的书源 ID 不同，无法更新此书源。';
 
   @override
   String get appName => '琅嬛';

@@ -40,6 +40,7 @@ class FakeFeedService implements FeedService {
     this.exportFeedsHandler,
     this.previewFromUrlHandler,
     this.previewFromFileHandler,
+    this.installFeedHandler,
     this.previewImportFeedsHandler,
     this.importFeedsHandler,
     this.listBookmarksHandler,
@@ -66,6 +67,14 @@ class FakeFeedService implements FeedService {
 
   final Future<FeedPreviewModel> Function(String url)? previewFromUrlHandler;
   final Future<FeedPreviewModel> Function(String path)? previewFromFileHandler;
+  final Future<void> Function(String id)? installFeedHandler;
+
+  @override
+  Future<void> installFeed(String requestId) {
+    final handler = installFeedHandler;
+    if (handler == null) throw UnimplementedError('installFeed not configured');
+    return handler(requestId);
+  }
 
   @override
   Stream<List<SearchResultModel>> search({

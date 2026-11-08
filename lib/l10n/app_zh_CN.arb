@@ -1,5 +1,9 @@
 {
   "@@locale": "zh_CN",
+  "feedUpdateTitle": "检查书源更新",
+  "feedUpdateInstall": "更新书源",
+  "feedUpdateSuccess": "书源已更新",
+  "feedUpdateIdMismatch": "下载的书源 ID 不同，无法更新此书源。",
   "appName": "琅嬛",
   "navBookshelf": "书架",
   "navFeeds": "书源",

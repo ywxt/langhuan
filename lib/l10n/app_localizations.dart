@@ -99,6 +99,30 @@ abstract class AppLocalizations {
     Locale('zh', 'CN'),
   ];
 
+  /// No description provided for @feedUpdateTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for updates'**
+  String get feedUpdateTitle;
+
+  /// No description provided for @feedUpdateInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Update source'**
+  String get feedUpdateInstall;
+
+  /// No description provided for @feedUpdateSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Source updated'**
+  String get feedUpdateSuccess;
+
+  /// No description provided for @feedUpdateIdMismatch.
+  ///
+  /// In en, this message translates to:
+  /// **'The downloaded source has a different ID and cannot update this source.'**
+  String get feedUpdateIdMismatch;
+
   /// Application name
   ///
   /// In en, this message translates to:

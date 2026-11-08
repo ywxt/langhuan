@@ -320,6 +320,7 @@ void main() {
       expect(find.text('cdn.example.com'), findsOneWidget);
       expect(find.text('Source'), findsOneWidget);
       expect(find.text('https://example.com/source-a.js'), findsOneWidget);
+      expect(find.text('Check for updates'), findsOneWidget);
       expect(find.text('Shelved books'), findsOneWidget);
       expect(find.text('2'), findsOneWidget);
       expect(find.byType(SwitchListTile), findsOneWidget);
@@ -329,6 +330,8 @@ void main() {
       expect(find.text('Login'), findsNothing);
 
       // The delete button closes the sheet and hands over to the page.
+      await tester.ensureVisible(find.text('Delete feed'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Delete feed'));
       await tester.pumpAndSettle();
 

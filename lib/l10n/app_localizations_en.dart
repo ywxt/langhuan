@@ -9,6 +9,19 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get feedUpdateTitle => 'Check for updates';
+
+  @override
+  String get feedUpdateInstall => 'Update source';
+
+  @override
+  String get feedUpdateSuccess => 'Source updated';
+
+  @override
+  String get feedUpdateIdMismatch =>
+      'The downloaded source has a different ID and cannot update this source.';
+
+  @override
   String get appName => 'Langhuan';
 
   @override
