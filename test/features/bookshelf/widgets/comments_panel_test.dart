@@ -22,7 +22,7 @@ class _EmptyCommentsService extends FakeFeedService {
     String? cursorJson,
   }) async {
     return FakeCommentRequest(
-      const CommentPage(items: [], nextCursorJson: null, totalCount: 0),
+      const CommentPage(items: [], nextCursorJson: null),
     );
   }
 }

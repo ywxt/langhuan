@@ -605,7 +605,6 @@ void main() {
         ),
       ],
       nextCursorJson: null,
-      totalCount: 1,
     );
 
     FakeFeedService commentsService() => FakeFeedService(

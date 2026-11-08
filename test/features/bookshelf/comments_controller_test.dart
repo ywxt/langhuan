@@ -64,7 +64,7 @@ void main() {
     final service = _Service()
       ..pages.add(
         Future.value(
-          const CommentPage(items: [], nextCursorJson: null, totalCount: 0),
+          const CommentPage(items: [], nextCursorJson: null),
         ),
       );
     final controller = _controller(service);

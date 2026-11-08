@@ -1458,7 +1458,6 @@ function parseCommentItems(json) {
   const hasMore = info?.has_more === true && cursor !== "";
   return {
     items,
-    total_count: toCount(info?.total),
     next_cursor: hasMore ? cursor : null,
   };
 }
@@ -1489,7 +1488,7 @@ function comments(event) {
   }
   return {
     type: "complete",
-    result: { items: page.items, total_count: page.total_count },
+    result: { items: page.items },
     next_cursor: page.next_cursor,
   };
 }

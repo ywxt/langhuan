@@ -169,5 +169,4 @@ CommentPage commentPageOf(String chapterId) => CommentPage(
     ),
   ],
   nextCursorJson: null,
-  totalCount: 1,
 );

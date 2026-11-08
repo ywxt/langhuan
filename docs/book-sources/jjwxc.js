@@ -594,7 +594,7 @@ function commentsComplete(event, state) {
   const total = state.reply ? null : toCount(json.data?.commentTotal);
   return {
     type: "complete",
-    result: { items, total_count: total },
+    result: { items },
     next_cursor:
       raw.length >= COMMENT_PAGE && (total == null || offset + raw.length < total)
         ? offset + raw.length

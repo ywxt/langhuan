@@ -32,7 +32,6 @@ pub struct CommentItem {
 pub struct CommentPage {
     pub items: Vec<CommentItem>,
     pub next_cursor_json: Option<String>,
-    pub total_count: Option<u32>,
 }
 
 /// The result and cancellation methods use shared access, so an in-flight
@@ -175,6 +174,5 @@ pub async fn get_comments_page(
             })
             .collect(),
         next_cursor_json: page.next_cursor.map(|v| v.to_string()),
-        total_count: page.total_count,
     })
 }

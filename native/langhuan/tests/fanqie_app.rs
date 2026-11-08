@@ -693,7 +693,6 @@ async fn app_flow_paragraph_comments_and_replies() {
         .comments_page(&query, Value::Null)
         .await
         .expect("first paragraph comments page");
-    assert_eq!(page.total_count, Some(57));
     assert_eq!(page.items.len(), 1);
     let comment = &page.items[0];
     assert_eq!(comment.id, "7580233808075719486");
@@ -721,7 +720,6 @@ async fn app_flow_paragraph_comments_and_replies() {
         .comments_page(&query, json!("20"))
         .await
         .expect("second paragraph comments page");
-    assert_eq!(last.total_count, Some(57));
     assert!(last.next_cursor.is_none(), "has_more=false must end paging");
 
     // Opening the reply list passes the comment id as parentId.
@@ -730,7 +728,6 @@ async fn app_flow_paragraph_comments_and_replies() {
         .comments_page(&query, Value::Null)
         .await
         .expect("reply page");
-    assert_eq!(replies.total_count, Some(3));
     assert_eq!(replies.items.len(), 3);
     assert_eq!(replies.items[0].id, "7600000000000000001");
     assert_eq!(replies.items[0].author.name, "夜读人");
@@ -1192,10 +1189,7 @@ async fn live_comment_model_dump() {
         .expect("live paragraph comments page");
     let (trace, _) = recorder.finish();
 
-    println!(
-        "== normalized items (total_count={:?}) ==",
-        page.total_count
-    );
+    println!("== normalized items ==");
     for item in &page.items {
         println!(
             "  id={} name={} avatar={:?} like={:?} replies={:?}",

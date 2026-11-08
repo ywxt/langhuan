@@ -120,10 +120,7 @@ class _ChapterEndCommentsState extends State<ChapterEndComments> {
   Widget _buildHeader(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    final controller = widget.controller;
-    final count = controller.totalCount;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
+    return Padding(      padding: const EdgeInsets.fromLTRB(
         LanghuanTheme.spaceMd,
         LanghuanTheme.spaceMd,
         LanghuanTheme.spaceSm,
@@ -139,9 +136,7 @@ class _ChapterEndCommentsState extends State<ChapterEndComments> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              count == null
-                  ? l10n.readerChapterComments
-                  : '${l10n.readerChapterComments} · $count',
+              AppLocalizations.of(context).readerChapterComments,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleSmall?.copyWith(

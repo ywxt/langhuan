@@ -160,7 +160,6 @@ return {
       text: "An interesting paragraph.",
       replies: { total_count: 3 },
     }],
-    total_count: null,
   },
   next_cursor: { page: 2 },
 };

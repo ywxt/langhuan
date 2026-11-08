@@ -1170,7 +1170,6 @@ async fn chapter_comments_pair_csrf_and_follow_pages() {
         .comments_page(&comments_query(None), serde_json::Value::Null)
         .await
         .expect("first chapter comments page");
-    assert_eq!(page.total_count, Some(100));
     assert_eq!(page.items.len(), 2);
     assert_eq!(page.items[0].id, "1333176793826066432");
     assert_eq!(page.items[0].author.name, "刘丹快点更新喵");
@@ -1189,7 +1188,7 @@ async fn chapter_comments_pair_csrf_and_follow_pages() {
     assert!(page.items[1].author.avatar_url.is_none());
 
     let next = page.next_cursor.expect("isEnd=0 must yield a next cursor");
-    assert_eq!(next, serde_json::json!({ "chapter": 2, "noteTotal": 0 }));
+    assert_eq!(next, serde_json::json!({ "chapter": 2 }));
     let last = feed
         .comments_page(&comments_query(None), next)
         .await
@@ -1202,8 +1201,7 @@ async fn chapter_comments_pair_csrf_and_follow_pages() {
 }
 
 /// Chapters with an author's note list its reviews first, then the chapter
-/// reviews; the note total rides along in the cursor so panel totals stay
-/// merged across the switch.
+/// reviews; the cursor names the unit the next page continues.
 #[tokio::test]
 async fn chapter_comments_list_note_reviews_before_chapter_reviews() {
     let mut server = mockito::Server::new_async().await;
@@ -1238,22 +1236,20 @@ async fn chapter_comments_list_note_reviews_before_chapter_reviews() {
         .comments_page(&comments_query(None), serde_json::Value::Null)
         .await
         .expect("note reviews page");
-    assert_eq!(note.total_count, Some(14));
     assert_eq!(note.items.len(), 2);
     let next = note
         .next_cursor
         .expect("end of the note unit must switch to the chapter unit");
-    assert_eq!(next, serde_json::json!({ "chapter": 1, "noteTotal": 14 }));
+    assert_eq!(next, serde_json::json!({ "chapter": 1 }));
 
     let chapter = feed
         .comments_page(&comments_query(None), next)
         .await
         .expect("chapter reviews page");
-    assert_eq!(chapter.total_count, Some(114), "totals merge across units");
     let next = chapter
         .next_cursor
         .expect("isEnd=0 must yield a next cursor");
-    assert_eq!(next, serde_json::json!({ "chapter": 2, "noteTotal": 14 }));
+    assert_eq!(next, serde_json::json!({ "chapter": 2 }));
 
     let last = feed
         .comments_page(&comments_query(None), next)
@@ -1286,7 +1282,6 @@ async fn paragraph_comments_receive_source_paragraph_id() {
         .comments_page(&comments_query(Some("3")), serde_json::Value::Null)
         .await
         .expect("paragraph comments page");
-    assert_eq!(page.total_count, Some(5138));
     assert!(page.next_cursor.is_none());
     assert_eq!(page.items.len(), 2);
 }
@@ -1313,12 +1308,8 @@ async fn title_paragraph_comments_route_to_the_merged_chapter_stream() {
         .comments_page(&comments_query(Some("-1")), serde_json::Value::Null)
         .await
         .expect("title paragraph comments page");
-    assert_eq!(page.total_count, Some(14));
     assert_eq!(page.items.len(), 2);
-    assert_eq!(
-        page.next_cursor,
-        Some(serde_json::json!({ "chapter": 1, "noteTotal": 14 }))
-    );
+    assert_eq!(page.next_cursor, Some(serde_json::json!({ "chapter": 1 })));
 
     note_probe.assert_async().await;
 }

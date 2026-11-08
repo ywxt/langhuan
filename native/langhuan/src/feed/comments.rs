@@ -27,7 +27,6 @@ pub struct Comment {
 pub struct CommentPage {
     pub items: Vec<Comment>,
     pub next_cursor: Option<Value>,
-    pub total_count: Option<u32>,
 }
 
 pub struct CommentsQuery {

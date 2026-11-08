@@ -683,10 +683,9 @@ function paragraphs(event) {
 // 章評合並流（commentsMerged，章評按鈕與標題段評入口共用）：作者感言
 // 評論（paragraphId=-10）在前、章評（-1）在後。兩單元 reviewId 完全不
 // 相交；無感言章節請求 -10 返回 code 0/total 0 空頁，可安全探測。
-// cursor 爲 opaque JSON：{note:n} 感言階段、{chapter:m,noteTotal:T} 章評
-// 階段（攜帶感言總數，使章評頁 total_count 保持合並值）。單元內不交
-// 錯：每個面板頁恰好來自一個單元；感言空頁在當前面板頁內直接鏈章評
-// 第 1 頁（不出現空評論頁）。
+// cursor 爲 opaque JSON：{note:n} 感言階段、{chapter:m} 章評階段。單元
+// 內不交錯：每個面板頁恰好來自一個單元；感言空頁在當前面板頁內直接鏈
+// 章評第 1 頁（不出現空評論頁）。
 //
 // 回覆不可用：reviewlist4m 每條評論僅內嵌 2 條回覆預覽（replyList）加
 // 總數（rootReviewReplyCount），官方 m 站 UI 顯示「剩餘 N 條」並引導
@@ -797,7 +796,6 @@ function parseReviewList(event) {
   }
   return {
     items,
-    total: toCount(data?.total),
     isEnd: data.isEnd === 1,
   };
 }
@@ -817,7 +815,7 @@ function commentsList(event, paragraphId) {
     if (parsed.failure) return parsed.failure;
     return {
       type: "complete",
-      result: { items: parsed.items, total_count: parsed.total },
+      result: { items: parsed.items },
       next_cursor: parsed.isEnd ? null : { page: event.state.page + 1 },
     };
   }
@@ -835,7 +833,6 @@ function commentsMerged(event) {
         stage: "list",
         unit: "chapter",
         page: chapterPage,
-        noteTotal: toCount(cursor?.noteTotal) ?? 0,
       });
     }
     const notePage = commentsCursorPage(
@@ -845,7 +842,6 @@ function commentsMerged(event) {
       stage: "list",
       unit: "note",
       page: notePage,
-      noteTotal: 0,
     });
   }
 
@@ -857,9 +853,9 @@ function commentsMerged(event) {
       if (parsed.items.length > 0) {
         return {
           type: "complete",
-          result: { items: parsed.items, total_count: parsed.total },
+          result: { items: parsed.items },
           next_cursor: parsed.isEnd
-            ? { chapter: 1, noteTotal: parsed.total ?? event.state.noteTotal }
+            ? { chapter: 1 }
             : { note: event.state.page + 1 },
         };
       }
@@ -868,22 +864,15 @@ function commentsMerged(event) {
         stage: "list",
         unit: "chapter",
         page: 1,
-        noteTotal: parsed.total ?? event.state.noteTotal ?? 0,
       });
     }
 
     return {
       type: "complete",
-      result: {
-        items: parsed.items,
-        total_count: (event.state.noteTotal ?? 0) + (parsed.total ?? 0),
-      },
+      result: { items: parsed.items },
       next_cursor: parsed.isEnd
         ? null
-        : {
-            chapter: event.state.page + 1,
-            noteTotal: event.state.noteTotal,
-          },
+        : { chapter: event.state.page + 1 },
     };
   }
 

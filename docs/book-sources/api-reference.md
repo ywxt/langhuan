@@ -293,7 +293,7 @@ type CompleteStep = {
 ```
 
 `result` is required. It is the sole operation payload; there are no top-level
-`items`, `value`, or `total_count` fields. `next_cursor` remains a sibling of
+`items` or `value` fields. `next_cursor` remains a sibling of
 `result`, not part of it.
 
 | Field | Required | Value and behaviour |
@@ -457,14 +457,12 @@ liking, or other mutation operation.
 ```ts
 type CommentResult = {
   items: Comment[];
-  total_count?: number | null;
 };
 ```
 
 | Field | Required | Behaviour |
 | --- | :---: | --- |
 | `items` | Yes | Array of at most 200 [`Comment`](#comment) objects from one website page. An empty array does not by itself end pagination. |
-| `total_count` | No | Total size of the selected comment or reply collection as an unsigned 32-bit integer (0–4,294,967,295). Omitted or `null` means unknown, not zero. |
 
 This object is the `result` of a [`complete`](#complete) step. The pagination
 token is the step's sibling `next_cursor`, never a field of `CommentResult`.
@@ -543,7 +541,6 @@ return {
       like_count: 12,
       replies: { total_count: 3 },
     }],
-    total_count: null,
   },
   next_cursor: { page: 2 },
 };

@@ -42,10 +42,6 @@ class CommentsController extends ChangeNotifier {
   bool loading = false, hasMore = true;
   Object? error;
 
-  /// Total size of the collection when the source reports it; the last
-  /// non-null page value wins. Null means unknown.
-  int? totalCount;
-
   /// Whether a page load has completed for the current generation: the
   /// thread's outcome (items, empty, or error) is known rather than
   /// merely not-yet-fetched. A surface that mounts on a settled
@@ -85,7 +81,6 @@ class CommentsController extends ChangeNotifier {
       if (next != null && _cursors.contains(_canonical(jsonDecode(next)))) {
         throw const FormatException('Comment cursor cycle');
       }
-      totalCount = page.totalCount ?? totalCount;
       for (final item in page.items) {
         if (_seen.add(item.id)) {
           _arrival[item.id] = _arrival.length;
@@ -121,7 +116,6 @@ class CommentsController extends ChangeNotifier {
     loading = false;
     hasMore = true;
     error = null;
-    totalCount = null;
     await loadMore();
   }
 

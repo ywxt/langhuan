@@ -334,7 +334,6 @@ impl JsFeed {
         #[derive(serde::Deserialize)]
         struct CommentResult {
             items: Vec<Comment>,
-            total_count: Option<u32>,
         }
         let page: CommentResult = serde_json::from_value(complete.result)
             .map_err(|e| Error::javascript(format!("invalid comment page: {e}")))?;
@@ -362,12 +361,7 @@ impl JsFeed {
                 "comment cursor does not advance or exceeds limit",
             ));
         }
-        let total_count = page.total_count;
-        Ok(CommentPage {
-            items,
-            next_cursor,
-            total_count,
-        })
+        Ok(CommentPage { items, next_cursor })
     }
 
     pub(crate) fn new(

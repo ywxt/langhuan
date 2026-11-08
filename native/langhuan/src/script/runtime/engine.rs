@@ -125,7 +125,7 @@ mod tests {
             comments: { paragraph: null, chapter(event) {
               const page = event.cursor?.page ?? 1;
               return JSON.parse(JSON.stringify({ type: "complete", result: { items: [{ id: `${event.input.parentId ?? 'root'}-${page}`,
-                  author: { name: "Reader" }, text: "Comment", replies: { total_count: null } }], total_count: 2 }, next_cursor: page === 1 ? { page: 2 } : null }));
+                  author: { name: "Reader" }, text: "Comment", replies: { total_count: null } }] }, next_cursor: page === 1 ? { page: 2 } : null }));
             } }
           };
         "#;
@@ -143,7 +143,6 @@ mod tests {
         let first = feed.comments_page(&query, Value::Null).await.unwrap();
         assert_eq!(first.items.len(), 1);
         assert_eq!(first.items[0].id, "root-1");
-        assert_eq!(first.total_count, Some(2));
         let second = feed
             .comments_page(&query, first.next_cursor.unwrap())
             .await
@@ -567,7 +566,7 @@ mod tests {
             search: empty, bookInfo: empty, chapters: empty, paragraphs: empty,
             comments: { paragraph: null, chapter() {
               return JSON.parse(JSON.stringify({ type: "complete",
-                result: { items: [{ id: "c1", author: { name: "Reader" }, text: "Comment" }], total_count: null },
+                result: { items: [{ id: "c1", author: { name: "Reader" }, text: "Comment" }] },
                 next_cursor: { page: 2 } }));
             } }
           };
