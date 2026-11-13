@@ -108,9 +108,12 @@ void main() {
           find.byType(AlertDialog),
           unchanged ? findsNothing : findsOneWidget,
         );
-        if (unchanged)
+        if (unchanged) {
           expect(find.text('Source is up to date.'), findsOneWidget);
-        if (!unchanged) expect(find.text('Update source'), findsOneWidget);
+        }
+        if (!unchanged) {
+          expect(find.text('Update source'), findsOneWidget);
+        }
       },
     );
   }
