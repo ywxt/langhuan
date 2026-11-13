@@ -77,7 +77,7 @@ in
       pkgs.cmake
       pkgs.libepoxy
       pkgs.ninja
-      pkgs.pcre
+      pkgs.pcre2
       pkgs.pkg-config
       pkgs.gtk3
       # desktop_webview_window (the Linux login window) builds

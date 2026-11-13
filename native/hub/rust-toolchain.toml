@@ -7,7 +7,7 @@
 # the crate before building. `targets` mirrors exactly the std
 # targets the flake toolchain carries plus every desktop release host.
 [toolchain]
-channel = "1.99.1"
+channel = "1.100.0"
 targets = [
     "aarch64-apple-darwin",
     "aarch64-linux-android",
