@@ -70,6 +70,13 @@ the JSON object directly as `event.input`, and passes the cursor JSON as
 page and displays raw `result` and `next_cursor`; **Use next cursor**
 copies the returned cursor into the next run.
 
+Single-page comment results still follow the comment contract: `result` must
+be a `Comment[]`, with each item's required fields and limits validated before
+it is returned. Legacy `{ items, total_count }` wrappers are rejected.
+The Agent API's typed paragraph output includes `comment_count`: `null` means
+unknown, while `0` is a known empty thread. Counts for generated identities
+remain ignored, just as in the reader.
+
 This does not invent pagination for a source. The selected reducer must read
 `event.cursor` (or a page field in `event.input`) and return `next_cursor` when
 another page exists.

@@ -437,10 +437,7 @@ void main() {
     expect(stage.chapterId, 'c');
     expect(stage.paragraphId, '839');
     expect(stage.parentId, isNull);
-    expect(body['output'], {
-      'type': 'comments',
-      'items': [],
-    });
+    expect(body['output'], {'type': 'comments', 'items': []});
 
     // Chapter comments accept an optional parentId for reply threads.
     await post(server, '/v1/run', {
@@ -461,21 +458,71 @@ void main() {
     expect(receivedStage, isA<DebugStage_Manual>());
   });
 
+  test(
+    'paragraph output includes source comment counts and typed identities',
+    () async {
+      const id = ParagraphId(
+        original: OriginalParagraphId.source('p1'),
+        path: [],
+      );
+      final server = DeveloperAgentServer(
+        runner: ({required stage}) async => const DebugRunResult(
+          auth: DebugAuthUse.notSupported,
+          output: DebugStageOutput.paragraphs(
+            items: [
+              ParagraphContent.title(id: id, text: 'Title', commentCount: 0),
+              ParagraphContent.text(id: id, content: 'Text', commentCount: 7),
+              ParagraphContent.image(
+                id: id,
+                url: 'https://example.com/a.png',
+                commentCount: null,
+              ),
+            ],
+          ),
+          trace: [],
+          droppedEntries: 0,
+          steps: [],
+          droppedSteps: 0,
+          durationMs: 1,
+        ),
+      );
+      addTearDown(server.stop);
+      await server.start();
+      final (status, body) = await post(server, '/v1/run', {
+        'operation': 'paragraphs',
+        'input': {'bookId': 'b', 'chapterId': 'c'},
+      });
+      expect(status, HttpStatus.ok);
+      final items = body['output']['items'] as List;
+      expect(items.map((item) => item['comment_count']), [0, 7, null]);
+      expect(
+        items.every((item) => (item as Map).containsKey('comment_count')),
+        isTrue,
+      );
+      expect(items.first['id'], {
+        'original': {'kind': 'source', 'value': 'p1'},
+        'path': [],
+      });
+    },
+  );
+
   test('comments pipeline output serializes every comment field', () async {
     final server = DeveloperAgentServer(
       runner: ({required stage}) async {
         return DebugRunResult(
           auth: DebugAuthUse.notSupported,
-          output: DebugStageOutput.comments(items: [
-            CommentItem(
-              id: 'c7',
-              author: const CommentAuthor(name: 'Reader', avatarUrl: null),
-              text: 'An interesting paragraph.',
-              createdAtMs: null,
-              likeCount: 12,
-              replies: const CommentReplies(totalCount: 3),
-            ),
-          ]),
+          output: DebugStageOutput.comments(
+            items: [
+              CommentItem(
+                id: 'c7',
+                author: const CommentAuthor(name: 'Reader', avatarUrl: null),
+                text: 'An interesting paragraph.',
+                createdAtMs: null,
+                likeCount: 12,
+                replies: const CommentReplies(totalCount: 3),
+              ),
+            ],
+          ),
           trace: const [],
           droppedEntries: 0,
           steps: const [],
@@ -581,7 +628,8 @@ void main() {
       runner: ({required stage}) async {
         throw const BridgeError(
           kind: ErrorKind.internal(),
-          message: 'no script loaded — load a script into the developer '
+          message:
+              'no script loaded — load a script into the developer '
               'tools first',
         );
       },
@@ -594,9 +642,6 @@ void main() {
       'input': {'keyword': 'book'},
     });
     expect(status, HttpStatus.badRequest);
-    expect(
-      response['error'] as String,
-      contains('no script loaded'),
-    );
+    expect(response['error'] as String, contains('no script loaded'));
   });
 }

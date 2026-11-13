@@ -32,6 +32,9 @@ and must default-export a Feed object.
 
 Exact IP hosts are accepted for development. Domain entries cannot contain a
 scheme, port, path, credentials, or wildcard outside the leftmost `*.` label.
+Metadata uses `@key value`, without a colon after the key. For example,
+`@schema_version: 6` is rejected with a syntax hint and its line number.
+
 Unknown metadata keys and duplicate scalar keys are rejected with their line
 number. Only `access_domain` is repeatable.
 

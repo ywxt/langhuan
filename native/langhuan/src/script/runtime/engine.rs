@@ -133,6 +133,15 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(feed.comment_support(), (true, false));
+        let debug_page = feed
+            .debug_operation_page(
+                "comments.chapter",
+                serde_json::json!({ "bookId": "b", "chapterId": "c" }),
+                Value::Null,
+            )
+            .await
+            .unwrap();
+        assert_eq!(debug_page.result[0]["id"], "root-1");
         let mut query = CommentsQuery {
             book_id: "b".into(),
             chapter_id: "c".into(),
@@ -234,6 +243,44 @@ mod tests {
             .await
             .expect_err("globalThis.feed registration must be rejected");
         assert!(error.to_string().contains("export default"));
+    }
+
+    #[tokio::test]
+    async fn rejects_global_feed_even_with_a_default_export() {
+        let body = format!("globalThis.feed = {{}};\n{RETURNED_FEED}");
+        let error = ScriptEngine::new()
+            .load_script(&source(6, &body))
+            .await
+            .expect_err("legacy registration must not coexist with the default export");
+        assert!(error.to_string().contains("globalThis.feed"));
+    }
+
+    #[tokio::test]
+    async fn single_page_comments_validate_required_fields_and_shape() {
+        for result in [
+            r#"{ items: [], total_count: 0 }"#,
+            r#"[{ author: { name: "Reader" }, text: "Text" }]"#,
+            r#"[{ id: "c", text: "Text" }]"#,
+            r#"[{ id: "c", author: {}, text: "Text" }]"#,
+            r#"[{ id: "c", author: { name: "Reader" } }]"#,
+            r#"[{ id: "", author: { name: "Reader" }, text: "Text" }]"#,
+        ] {
+            let body = format!(
+                r#"const empty = () => ({{ type: "complete", result: [] }});
+                const comments = () => ({{ type: "complete", result: {result} }});
+                export default {{ search: empty, bookInfo: empty, chapters: empty,
+                    paragraphs: empty, comments: {{ chapter: comments, paragraph: comments }} }};"#
+            );
+            let feed = ScriptEngine::new().load_js_feed(&source(6, &body)).unwrap();
+            for operation in ["comments.chapter", "comments.paragraph"] {
+                assert!(
+                    feed.debug_operation_page(operation, serde_json::json!({}), Value::Null)
+                        .await
+                        .is_err(),
+                    "{operation} must reject {result}"
+                );
+            }
+        }
     }
 
     #[tokio::test]

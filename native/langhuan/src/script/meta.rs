@@ -76,6 +76,12 @@ fn extract_header_lines(script: &str) -> Result<(Vec<HeaderEntry>, usize)> {
                 Some((k, v)) => (k.trim().to_owned(), v.trim().to_owned()),
                 None => (rest.trim().to_owned(), String::new()),
             };
+            if let Some(field) = key.strip_suffix(':') {
+                return Err(Error::script_parse(
+                    line_num,
+                    format!("unexpected ':' after @{field}; use '@{field} value' without a colon"),
+                ));
+            }
             entries.push(HeaderEntry {
                 key,
                 value,
@@ -423,6 +429,18 @@ mod tests {
 "#;
         let err = parse_meta(script).unwrap_err();
         assert!(matches!(err, Error::Script(ScriptError::Parse { .. })));
+    }
+
+    #[test]
+    fn schema_version_colon_has_a_syntax_hint_and_correct_line() {
+        let script = SAMPLE_SCRIPT.replace("@schema_version 3", "@schema_version: 6");
+        let err = parse_meta(&script).unwrap_err();
+        let Error::Script(ScriptError::Parse { line, message }) = err else {
+            panic!("expected a metadata syntax error");
+        };
+        assert_eq!(line, 8);
+        assert!(message.contains("unexpected ':' after @schema_version"));
+        assert!(message.contains("@schema_version value"));
     }
 
     #[test]

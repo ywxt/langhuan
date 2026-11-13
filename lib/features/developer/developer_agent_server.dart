@@ -668,32 +668,38 @@ Map<String, Object?> _bookInfoJson(BookInfo info) => {
 
 Map<String, Object?> _paragraphJson(ParagraphContent paragraph) =>
     switch (paragraph) {
-      ParagraphContent_Title(:final id, :final text) => {
+      ParagraphContent_Title(:final id, :final text, :final commentCount) => {
         'type': 'title',
         'id': _paragraphId(id),
         'text': text,
+        'comment_count': commentCount,
       },
-      ParagraphContent_Text(:final id, :final content) => {
+      ParagraphContent_Text(:final id, :final content, :final commentCount) => {
         'type': 'text',
         'id': _paragraphId(id),
         'content': content,
+        'comment_count': commentCount,
       },
-      ParagraphContent_Image(:final id, :final url, :final alt) => {
-        'type': 'image',
-        'id': _paragraphId(id),
-        'url': url,
-        'alt': alt,
-      },
+      ParagraphContent_Image(
+        :final id,
+        :final url,
+        :final alt,
+        :final commentCount,
+      ) =>
+        {
+          'type': 'image',
+          'id': _paragraphId(id),
+          'url': url,
+          'alt': alt,
+          'comment_count': commentCount,
+        },
     };
 
 Object _paragraphId(ParagraphId id) => jsonDecode(id.toStringValue());
 
 Map<String, Object?> _commentItemJson(CommentItem item) => {
   'id': item.id,
-  'author': {
-    'name': item.author.name,
-    'avatar_url': item.author.avatarUrl,
-  },
+  'author': {'name': item.author.name, 'avatar_url': item.author.avatarUrl},
   'text': item.text,
   'created_at_ms': item.createdAtMs,
   'like_count': item.likeCount,

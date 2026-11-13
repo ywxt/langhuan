@@ -169,7 +169,8 @@ impl OperationKind {
 /// Raw result of exactly one feed reducer operation/page in developer mode.
 ///
 /// Unlike the production [`Feed`] methods, this does not follow
-/// `next_cursor` automatically and does not deserialize items into a model.
+/// `next_cursor` automatically and returns JSON rather than typed items.
+/// Comment results are validated against the production comment model.
 /// It is intentionally exposed only as a diagnostic primitive.
 pub struct DebugOperationPage {
     pub result: Value,
@@ -282,6 +283,15 @@ impl JsFeed {
             input: &input,
         };
         let complete = self.run_operation(&operation, &cursor).await?;
+        if matches!(
+            operation_kind,
+            OperationKind::ChapterComments | OperationKind::ParagraphComments
+        ) {
+            let items: Vec<crate::feed::comments::Comment> =
+                serde_json::from_value(complete.result.clone())
+                    .map_err(|e| Error::javascript(format!("invalid comment page: {e}")))?;
+            validate_comment_page(&items)?;
+        }
         Ok(DebugOperationPage {
             result: complete.result,
             next_cursor: complete.next_cursor.map(JsData::into_json),
@@ -407,6 +417,15 @@ impl JsFeed {
         sandbox.eval_script(&format!(
             "{PRELUDE}\nglobalThis.meta = Object.freeze({meta_json});"
         ))?;
+        sandbox.eval_script(
+            r#"Object.defineProperty(globalThis, "feed", {
+                configurable: false,
+                get() { return undefined; },
+                set(_) {
+                    throw new TypeError("globalThis.feed registration is not supported; export default the handler object instead");
+                }
+            });"#,
+        )?;
         let feed_object = sandbox.eval_module_default(&source)?;
         sandbox.clear_storage_wiring()?;
         Self::require_handlers(&feed_object)?;
