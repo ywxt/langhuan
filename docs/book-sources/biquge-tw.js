@@ -1,7 +1,7 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.biquge_tw
 // @name         筆趣閣（biquge.tw）
-// @version      3.1.0
+// @version      3.1.1
 // @author       Langhuan
 // @description  適配 biquge.tw 的書源，支持搜尋、詳情、目錄、正文（含多頁章節）
 // @base_url     https://www.biquge.tw
@@ -63,7 +63,7 @@ function text(value) {
 function ensureAvailable(response) {
   const body = bodyText(response);
   if (body.includes("Just a moment") && body.includes("cf_chl_opt")) {
-    return FeedError.cfChallenge(
+    return FeedError.verificationRequired(
       "biquge.tw returned Cloudflare challenge page",
     );
   }

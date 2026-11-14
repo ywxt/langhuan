@@ -331,7 +331,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get errorCategoryAuthRequired => '需要登錄';
 
   @override
-  String get errorCategoryCfChallenge => '觸發了 Cloudflare 驗證';
+  String get errorCategoryVerificationRequired => '需要網站驗證';
 
   @override
   String get errorCategoryRateLimited => '請求過於頻繁';
@@ -1794,7 +1794,7 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get errorCategoryAuthRequired => '需要登录';
 
   @override
-  String get errorCategoryCfChallenge => '触发了 Cloudflare 验证';
+  String get errorCategoryVerificationRequired => '需要网站验证';
 
   @override
   String get errorCategoryRateLimited => '请求过于频繁';

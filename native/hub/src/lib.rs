@@ -79,8 +79,8 @@ pub(crate) fn localize_error(e: &langhuan::error::Error) -> String {
                 ExpectedErrorCode::AuthRequired => {
                     t!("error.expected.auth_required", message = message).to_string()
                 }
-                ExpectedErrorCode::CfChallenge => {
-                    t!("error.expected.cf_challenge", message = message).to_string()
+                ExpectedErrorCode::VerificationRequired => {
+                    t!("error.expected.verification_required", message = message).to_string()
                 }
                 ExpectedErrorCode::RateLimited => {
                     t!("error.expected.rate_limited", message = message).to_string()

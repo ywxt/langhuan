@@ -8,8 +8,8 @@ globalThis.FeedError = Object.freeze({
   authRequired(message) {
     return { type: "fail", code: "auth_required", message: String(message) };
   },
-  cfChallenge(message) {
-    return { type: "fail", code: "cf_challenge", message: String(message) };
+  verificationRequired(message) {
+    return { type: "fail", code: "verification_required", message: String(message) };
   },
   rateLimited(message) {
     return { type: "fail", code: "rate_limited", message: String(message) };

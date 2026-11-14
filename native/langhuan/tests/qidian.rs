@@ -363,11 +363,11 @@ async fn search_detects_waf_challenge() {
         matches!(
             err,
             Error::Script(ScriptError::Expected {
-                code: ExpectedErrorCode::CfChallenge,
+                code: ExpectedErrorCode::VerificationRequired,
                 ..
             })
         ),
-        "expected cf_challenge, got: {err:?}"
+        "expected verification_required, got: {err:?}"
     );
 }
 

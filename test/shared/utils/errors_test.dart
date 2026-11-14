@@ -81,6 +81,29 @@ void main() {
     expect(display.detail, 'slow down');
   });
 
+  for (final (locale, label) in [
+    (const Locale('en'), 'Website verification required'),
+    (const Locale('zh'), '需要網站驗證'),
+    (const Locale('zh', 'CN'), '需要网站验证'),
+  ]) {
+    test('website verification has a generic label for $locale', () async {
+      final l10n = await AppLocalizations.delegate.load(locale);
+      final display = describeError(
+        const BridgeError(
+          kind: ErrorKind.scriptExpected(
+            reason: ScriptExpectedReason.verificationRequired(),
+          ),
+          message: 'Verification required: confirm you are human',
+          detail: 'confirm you are human',
+        ),
+        l10n,
+        genericTitle: genericTitle,
+      );
+      expect(display.title, label);
+      expect(display.detail, 'confirm you are human');
+    });
+  }
+
   test('singleLine joins title and detail for one-line surfaces', () {
     // Classified: the category leads, the message follows — the form the
     // import/export snackbars show.
@@ -113,7 +136,10 @@ void main() {
     );
 
     // No detail at all: the title stands alone.
-    expect(describeError(null, en, genericTitle: 'Failed').singleLine, 'Failed');
+    expect(
+      describeError(null, en, genericTitle: 'Failed').singleLine,
+      'Failed',
+    );
   });
 
   test('zh labels carry the Traditional Chinese wording', () async {

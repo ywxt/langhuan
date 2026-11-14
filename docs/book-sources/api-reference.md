@@ -650,11 +650,11 @@ in rather than probing the website.
 ### `FeedError`
 
 ```js
-FeedError.authRequired(message)       // code: auth_required
-FeedError.cfChallenge(message)        // code: cf_challenge
-FeedError.rateLimited(message)        // code: rate_limited
-FeedError.contentNotFound(message)    // code: content_not_found
-FeedError.sourceUnavailable(message)  // code: source_unavailable
+FeedError.authRequired(message)           // code: auth_required
+FeedError.verificationRequired(message)   // code: verification_required
+FeedError.rateLimited(message)            // code: rate_limited
+FeedError.contentNotFound(message)        // code: content_not_found
+FeedError.sourceUnavailable(message)      // code: source_unavailable
 FeedError.raise(code, message)
 ```
 
@@ -664,7 +664,7 @@ Every helper converts `message` with `String(message)` and returns a new
 | Helper | Host meaning |
 | --- | --- |
 | `authRequired` | Missing/expired credentials; non-retryable without user action. |
-| `cfChallenge` | Human/anti-bot challenge; non-retryable as an ordinary HTTP request. |
+| `verificationRequired` | Human/anti-bot challenge; non-retryable as an ordinary HTTP request. |
 | `rateLimited` | Temporary throttling; classified as retryable. |
 | `contentNotFound` | Missing or inaccessible content; non-retryable. |
 | `sourceUnavailable` | Temporary source outage; classified as retryable. |

@@ -91,10 +91,10 @@ error.expected.auth_required:
   en: "Login required: %{message}"
   zh: "需要登錄：%{message}"
   zh-CN: "需要登录：%{message}"
-error.expected.cf_challenge:
-  en: "Cloudflare challenge detected: %{message}"
-  zh: "觸發了 Cloudflare 驗證：%{message}"
-  zh-CN: "触发了 Cloudflare 验证：%{message}"
+error.expected.verification_required:
+  en: "Website verification required: %{message}"
+  zh: "需要網站驗證：%{message}"
+  zh-CN: "需要网站验证：%{message}"
 error.expected.rate_limited:
   en: "Rate limited: %{message}"
   zh: "請求過於頻繁：%{message}"

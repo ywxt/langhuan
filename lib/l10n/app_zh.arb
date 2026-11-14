@@ -104,7 +104,7 @@
   "readerRetry": "重試",
 
   "errorCategoryAuthRequired": "需要登錄",
-  "errorCategoryCfChallenge": "觸發了 Cloudflare 驗證",
+  "errorCategoryVerificationRequired": "需要網站驗證",
   "errorCategoryRateLimited": "請求過於頻繁",
   "errorCategoryContentNotFound": "找不到內容",
   "errorCategorySourceUnavailable": "書源暫時不可用",

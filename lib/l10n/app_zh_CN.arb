@@ -101,7 +101,7 @@
   "readerChapterLoadError": "章节加载失败",
   "readerRetry": "重试",
   "errorCategoryAuthRequired": "需要登录",
-  "errorCategoryCfChallenge": "触发了 Cloudflare 验证",
+  "errorCategoryVerificationRequired": "需要网站验证",
   "errorCategoryRateLimited": "请求过于频繁",
   "errorCategoryContentNotFound": "找不到内容",
   "errorCategorySourceUnavailable": "书源暂时不可用",

@@ -300,7 +300,7 @@
   "@readerRetry": { "description": "Retry action label for chapter loading failures" },
 
   "errorCategoryAuthRequired": "Login required",
-  "errorCategoryCfChallenge": "Cloudflare challenge detected",
+  "errorCategoryVerificationRequired": "Website verification required",
   "errorCategoryRateLimited": "Rate limited",
   "errorCategoryContentNotFound": "Content not found",
   "errorCategorySourceUnavailable": "Source unavailable",

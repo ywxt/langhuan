@@ -687,11 +687,11 @@ abstract class AppLocalizations {
   /// **'Login required'**
   String get errorCategoryAuthRequired;
 
-  /// No description provided for @errorCategoryCfChallenge.
+  /// No description provided for @errorCategoryVerificationRequired.
   ///
   /// In en, this message translates to:
-  /// **'Cloudflare challenge detected'**
-  String get errorCategoryCfChallenge;
+  /// **'Website verification required'**
+  String get errorCategoryVerificationRequired;
 
   /// No description provided for @errorCategoryRateLimited.
   ///

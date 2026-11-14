@@ -21,7 +21,7 @@ if (event.response.status === 429) {
 | Helper | Code | Meaning | Retryable |
 | --- | --- | --- | :---: |
 | `FeedError.authRequired(message)` | `auth_required` | Login is missing or expired | No |
-| `FeedError.cfChallenge(message)` | `cf_challenge` | Human or anti-bot verification blocked the page | No |
+| `FeedError.verificationRequired(message)` | `verification_required` | Human or anti-bot verification blocked the page | No |
 | `FeedError.rateLimited(message)` | `rate_limited` | Source throttling | Yes |
 | `FeedError.contentNotFound(message)` | `content_not_found` | Book/chapter content is unavailable | No |
 | `FeedError.sourceUnavailable(message)` | `source_unavailable` | Temporary source outage | Yes |

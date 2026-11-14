@@ -54,7 +54,7 @@ pub enum ErrorKind {
 #[derive(Debug, Clone)]
 pub enum ScriptExpectedReason {
     AuthRequired,
-    CfChallenge,
+    VerificationRequired,
     RateLimited,
     ContentNotFound,
     SourceUnavailable,
@@ -224,7 +224,9 @@ impl From<langhuan::error::Error> for BridgeError {
             Error::Script(ScriptError::Expected { code, message }) => {
                 let reason = match code {
                     ExpectedErrorCode::AuthRequired => ScriptExpectedReason::AuthRequired,
-                    ExpectedErrorCode::CfChallenge => ScriptExpectedReason::CfChallenge,
+                    ExpectedErrorCode::VerificationRequired => {
+                        ScriptExpectedReason::VerificationRequired
+                    }
                     ExpectedErrorCode::RateLimited => ScriptExpectedReason::RateLimited,
                     ExpectedErrorCode::ContentNotFound => ScriptExpectedReason::ContentNotFound,
                     ExpectedErrorCode::SourceUnavailable => ScriptExpectedReason::SourceUnavailable,
@@ -811,6 +813,24 @@ mod tests {
         assert!(
             err.message.contains("VIP chapter needs login"),
             "localized message still presents the script detail"
+        );
+    }
+
+    #[test]
+    fn website_verification_carries_generic_reason_and_original_detail() {
+        let error = BridgeError::from(Error::expected(
+            ExpectedErrorCode::VerificationRequired,
+            "Website requires human verification",
+        ));
+        assert!(matches!(
+            error.kind,
+            ErrorKind::ScriptExpected {
+                reason: ScriptExpectedReason::VerificationRequired,
+            }
+        ));
+        assert_eq!(
+            error.detail.as_deref(),
+            Some("Website requires human verification")
         );
     }
 

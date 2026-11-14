@@ -1,3 +1,4 @@
+use langhuan::error::{Error, ExpectedErrorCode, ScriptError};
 /// Integration tests for the biquge-tw feed script.
 ///
 /// These tests use mockito to serve a local HTTP server and replace the
@@ -370,8 +371,14 @@ async fn search_detects_cloudflare_challenge() {
     // The Cloudflare check returns a structured expected failure, which should
     // surface as an Err in the stream.
     assert!(
-        results.iter().any(|r| r.is_err()),
-        "expected a Cloudflare error to be yielded by the stream"
+        results.iter().any(|r| matches!(
+            r,
+            Err(Error::Script(ScriptError::Expected {
+                code: ExpectedErrorCode::VerificationRequired,
+                ..
+            }))
+        )),
+        "expected a structured website-verification error"
     );
 }
 

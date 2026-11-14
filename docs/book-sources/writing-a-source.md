@@ -303,7 +303,7 @@ Return expected website states:
 
 ```js
 return FeedError.authRequired("Please sign in");
-return FeedError.cfChallenge("Verification is required");
+return FeedError.verificationRequired("Verification is required");
 return FeedError.rateLimited("Try again later");
 return FeedError.contentNotFound("Chapter is unavailable");
 return FeedError.sourceUnavailable("Site is temporarily unavailable");

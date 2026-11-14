@@ -1675,7 +1675,7 @@ class _ErrorCard extends StatelessWidget {
   /// own classification.
   String _reasonLabel(ScriptExpectedReason reason) => switch (reason) {
     ScriptExpectedReason_AuthRequired() => 'authRequired',
-    ScriptExpectedReason_CfChallenge() => 'cfChallenge',
+    ScriptExpectedReason_VerificationRequired() => 'verificationRequired',
     ScriptExpectedReason_RateLimited() => 'rateLimited',
     ScriptExpectedReason_ContentNotFound() => 'contentNotFound',
     ScriptExpectedReason_SourceUnavailable() => 'sourceUnavailable',

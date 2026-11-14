@@ -335,7 +335,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errorCategoryAuthRequired => 'Login required';
 
   @override
-  String get errorCategoryCfChallenge => 'Cloudflare challenge detected';
+  String get errorCategoryVerificationRequired =>
+      'Website verification required';
 
   @override
   String get errorCategoryRateLimited => 'Rate limited';

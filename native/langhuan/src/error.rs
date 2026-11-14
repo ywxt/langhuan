@@ -5,7 +5,7 @@ use std::collections::HashSet;
 // ---------------------------------------------------------------------------
 
 pub(crate) const ERROR_AUTH_REQUIRED: &str = "auth_required";
-pub(crate) const ERROR_CF_CHALLENGE: &str = "cf_challenge";
+pub(crate) const ERROR_VERIFICATION_REQUIRED: &str = "verification_required";
 pub(crate) const ERROR_RATE_LIMITED: &str = "rate_limited";
 pub(crate) const ERROR_CONTENT_NOT_FOUND: &str = "content_not_found";
 pub(crate) const ERROR_SOURCE_UNAVAILABLE: &str = "source_unavailable";
@@ -14,7 +14,7 @@ pub(crate) const ERROR_SOURCE_UNAVAILABLE: &str = "source_unavailable";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExpectedErrorCode {
     AuthRequired,
-    CfChallenge,
+    VerificationRequired,
     RateLimited,
     ContentNotFound,
     SourceUnavailable,
@@ -25,7 +25,7 @@ impl ExpectedErrorCode {
     pub fn from_code(code: &str) -> Self {
         match code {
             ERROR_AUTH_REQUIRED => Self::AuthRequired,
-            ERROR_CF_CHALLENGE => Self::CfChallenge,
+            ERROR_VERIFICATION_REQUIRED => Self::VerificationRequired,
             ERROR_RATE_LIMITED => Self::RateLimited,
             ERROR_CONTENT_NOT_FOUND => Self::ContentNotFound,
             ERROR_SOURCE_UNAVAILABLE => Self::SourceUnavailable,
@@ -301,6 +301,13 @@ impl Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn website_verification_is_typed_and_not_automatically_retried() {
+        let code = ExpectedErrorCode::from_code("verification_required");
+        assert_eq!(code, ExpectedErrorCode::VerificationRequired);
+        assert!(!Error::expected(code, "human verification required").is_retryable());
+    }
 
     #[test]
     fn javascript_error_not_retryable() {

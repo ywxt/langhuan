@@ -1,7 +1,7 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.qidian
 // @name         起點中文網
-// @version      4.3.0
+// @version      4.3.1
 // @author       Langhuan
 // @description  起點中文網書源（m 站），支持登入及已購 VIP 章節，登錄後可讀章評與段評，章節段落附帶評論數角標
 // @base_url     https://m.qidian.com
@@ -122,7 +122,7 @@ function isWafChallenge(body) {
 
 function responseFailure(response, notFoundMessage) {
   if (isWafChallenge(bodyText(response))) {
-    return FeedError.cfChallenge("起點風控攔截（probe challenge），請稍後重試");
+    return FeedError.verificationRequired("起點風控攔截（probe challenge），請稍後重試");
   }
   if (response.status === 404) {
     return FeedError.contentNotFound(notFoundMessage ?? "資源不存在或已下架");
