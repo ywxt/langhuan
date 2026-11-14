@@ -7,6 +7,23 @@ being tied to one catalogue or one website.
 
 > [中文版](README.zh.md)
 
+## Screenshots
+
+Real captures of the Linux desktop app in a narrow window, using the English UI. Only native window chrome and shadows have been cropped. Sources must be imported separately; login and comments depend on the source and website.
+
+<table>
+<tr>
+<td align="center"><img src="docs/screenshots/sources.png" width="280" alt="Book sources"><br>Book sources</td>
+<td align="center"><img src="docs/screenshots/login.png" width="280" alt="Original-site login"><br>Original-site login</td>
+<td align="center"><img src="docs/screenshots/reader.png" width="280" alt="Reader"><br>Reader</td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/comments.png" width="280" alt="Paragraph comments"><br>Paragraph comments</td>
+<td align="center"><img src="docs/screenshots/source-details.png" width="280" alt="Source access domains"><br>Source access domains</td>
+<td align="center"><img src="docs/screenshots/developer.png" width="280" alt="Source development and Agent API entry"><br>Source development and Agent API entry</td>
+</tr>
+</table>
+
 ## What you can do
 
 - **Read from your own sources** — Import JavaScript book sources without

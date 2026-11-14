@@ -4,6 +4,23 @@
 
 > [English version](README.md)
 
+## 界面預覽
+
+以下為 Linux 桌面版在窄窗口下的真實運行截圖，界面語言為英文；僅裁去窗口標題欄與陰影。書源需自行導入，登錄與評論取決於書源及網站支持。
+
+<table>
+<tr>
+<td align="center"><img src="docs/screenshots/sources.png" width="280" alt="書源管理"><br>書源管理</td>
+<td align="center"><img src="docs/screenshots/login.png" width="280" alt="原站登錄"><br>原站登錄</td>
+<td align="center"><img src="docs/screenshots/reader.png" width="280" alt="正文閱讀"><br>正文閱讀</td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/comments.png" width="280" alt="段落評論"><br>段落評論</td>
+<td align="center"><img src="docs/screenshots/source-details.png" width="280" alt="書源訪問域名"><br>書源訪問域名</td>
+<td align="center"><img src="docs/screenshots/developer.png" width="280" alt="書源開發與 Agent API 入口"><br>書源開發與 Agent API 入口</td>
+</tr>
+</table>
+
 ## 你可以做什麼
 
 - **使用自己的書源** — 無需等待應用更新即可導入 JavaScript 書源。普通 HTML 網站、需要登錄的網站以及需要多次請求才能取得章節的網站，都使用同一套模型。

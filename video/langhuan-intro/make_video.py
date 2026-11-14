@@ -11,6 +11,10 @@ import edge_tts
 import imageio_ffmpeg
 from pathlib import Path
 P=Path(__file__).resolve().parent
+SCREENSHOTS=P.parent.parent/'docs/screenshots'
+SCENE_SCREENSHOTS={'sources':'sources', 'login':'login', 'comments':'comments',
+                   'read':'reader', 'security':'source-details',
+                   'agent':'developer', 'end':'sources'}
 F=subprocess.check_output(['fc-match', 'Noto Sans CJK SC', '-f', '%{file}'], text=True).strip()
 ff=imageio_ffmpeg.get_ffmpeg_exe(); W,H=1920,1080
 scenes=[
@@ -55,68 +59,18 @@ def draw_scene(i, output=None):
  d.text((120,245),title,font=font(90),fill='#163300',spacing=20,stroke_width=0)
  d.text((125,550),sub,font=font(31),fill='#455344')
  rr(d,(120,652,375,714),31,'#9fe870'); d.text((151,663),'阅读，自在一点',font=font(24),fill='#163300')
- # schematic device, clearly labelled
- rr(d,(1190,100,1650,910),54,'#163300'); rr(d,(1202,112,1638,898),44,'#ffffff')
- d.text((1240,145),'界面示意',font=font(19),fill='#849080')
- if kind in ('intro','read','clean','end'):
-  d.text((1250,220),'第一章  书页之间',font=font(29),fill='#163300')
-  lines=['夜色渐深，窗边亮起一盏灯。','翻开书，世界慢慢安静下来。','','每个人都有自己的阅读节奏，','也有想要珍藏的故事。','','这一页，从容地读下去。']
-  for j,line in enumerate(lines): d.text((1250,300+j*63),line,font=font(24),fill='#4b5348')
-  if kind=='clean': rr(d,(1242,685,1595,750),20,'#edf4e9'); d.text((1260,701),'正文整理   ·   自由组合',font=font(21),fill='#163300')
- elif kind=='comments':
-  d.text((1245,220),'阅读与评论',font=font(39),fill='#163300')
-  d.text((1250,300),'故事进行到精彩处……',font=font(24),fill='#455344')
-  d.text((1250,360),'这一段，你怎么看？',font=font(24),fill='#455344')
-  rr(d,(1240,445,1600,535),18,'#edf4e9'); d.text((1260,465),'段落评论',font=font(24),fill='#163300'); d.text((1260,503),'查看这一段的原站讨论',font=font(18),fill='#687266')
-  rr(d,(1240,570,1600,660),18,'#f0f4ed'); d.text((1260,590),'章节评论与回复',font=font(24),fill='#163300'); d.text((1260,628),'查看已有评论和回复',font=font(18),fill='#687266')
-  d.text((1245,745),'实际内容取决于书源支持',font=font(19),fill='#687266')
- elif kind=='agent':
-  d.text((1245,220),'书源开发',font=font(40),fill='#163300')
-  for j,(name,detail) in enumerate([('连接本地 Agent','启用开发者工具中的接口'),('编写书源','协助生成和修改脚本'),('运行测试','检查结果、请求和执行步骤')]):
-   y=310+j*135; rr(d,(1240,y,1600,y+110),20,'#f0f4ed'); d.text((1260,y+12),name,font=font(24),fill='#163300'); d.text((1260,y+60),detail,font=font(18),fill='#687266')
-  d.text((1245,755),'需自行连接本地 AI Agent',font=font(19),fill='#687266')
- elif kind in ('problem','debug','trace','finish'):
-  d.text((1245,220),'开发者工具',font=font(40),fill='#163300')
-  if kind=='problem':
-   rr(d,(1240,310,1600,415),20,'#f0f4ed'); d.text((1260,330),'搜索没有结果？',font=font(25),fill='#163300'); d.text((1260,370),'从设置解锁开发者模式',font=font(19),fill='#687266')
-   rr(d,(1240,450,1600,550),20,'#f0f4ed'); d.text((1260,480),'打开书源开发者工具',font=font(22),fill='#163300')
-  elif kind=='debug':
-   d.text((1250,300),'加载书源 → 选择操作',font=font(22),fill='#455344')
-   for j,t in enumerate(['搜索关键词','书籍信息 / 章节','正文 / 登录状态']):
-    y=365+j*105; rr(d,(1240,y,1600,y+78),18,'#f0f4ed'); d.text((1260,y+22),t,font=font(23),fill='#163300')
-   rr(d,(1240,720,1600,780),30,'#9fe870'); d.text((1360,734),'运行测试',font=font(22),fill='#163300')
-  elif kind=='trace':
-   for j,(name,desc) in enumerate([('运行结果','输出与错误信息'),('HTTP 请求','状态、耗时与响应预览'),('执行步骤','查看每一步发生了什么')]):
-    y=310+j*140; rr(d,(1240,y,1600,y+112),20,'#f0f4ed'); d.text((1260,y+12),name,font=font(24),fill='#163300'); d.text((1260,y+60),desc,font=font(19),fill='#687266')
-  else:
-   for j,t in enumerate(['修改脚本','重新加载并测试','通过正常流程导入']):
-    y=330+j*125; rr(d,(1240,y,1600,y+90),20,'#f0f4ed'); d.text((1260,y+28),t,font=font(23),fill='#163300')
- elif kind=='login':
-  d.text((1245,220),'登录与验证',font=font(40),fill='#163300')
-  rr(d,(1240,305,1600,385),18,'#f0f4ed'); d.text((1260,327),'受信任书源的登录页面',font=font(22),fill='#455344')
-  rr(d,(1240,430,1600,520),18,'#f0f4ed'); d.text((1260,460),'在内嵌浏览器中完成登录',font=font(21),fill='#163300')
-  rr(d,(1240,545,1600,635),18,'#f0f4ed'); d.text((1260,575),'按网站要求进行人工验证',font=font(21),fill='#163300')
-  rr(d,(1240,675,1600,740),30,'#9fe870'); d.text((1320,690),'返回继续阅读',font=font(23),fill='#163300')
- elif kind=='security':
-  d.text((1245,220),'导入前先看看',font=font(35),fill='#163300')
-  for j,(name,detail) in enumerate([('访问哪些网站','导入前查看声明的域名'),('越界请求会拦截','限制在声明的访问范围内'),('本地文件有边界','书源不能直接读取本地文件')]):
-   y=310+j*140; rr(d,(1240,y,1600,y+110),20,'#f0f4ed'); d.text((1260,y+12),name,font=font(24),fill='#163300'); d.text((1260,y+58),detail,font=font(19),fill='#687266')
- elif kind=='sources':
-  d.text((1245,220),'书源',font=font(43),fill='#163300')
-  for j,(name,status) in enumerate([('某茄书源','示例'),('某点书源','示例'),('某江书源','示例')]):
-   y=315+j*130; rr(d,(1240,y,1600,y+100),22,'#f0f4ed'); d.text((1263,y+21),name,font=font(27),fill='#163300'); d.text((1480,y+29),status,font=font(19),fill='#687266')
-  d.text((1250,765),'请确认来源与访问域名',font=font(21),fill='#687266')
- elif kind=='search':
-  d.text((1245,220),'搜索',font=font(43),fill='#163300'); rr(d,(1240,310,1600,377),18,'#f0f4ed'); d.text((1263,325),'输入书名或作者',font=font(23),fill='#687266')
-  for j,t in enumerate(['全部书源','书源 A','书源 B']): rr(d,(1240+j*118,405,1350+j*118,450),20,'#9fe870' if j==0 else '#f0f4ed'); d.text((1250+j*118,413),t,font=font(17),fill='#163300')
-  for j in range(3):
-   y=490+j*105; rr(d,(1240,y,1600,y+86),17,'#f0f4ed'); rr(d,(1253,y+12,1300,y+74),7,['#9db6a0','#d0c2aa','#a9bbc2'][j]); d.text((1320,y+12),'搜索结果示例',font=font(22),fill='#163300'); d.text((1320,y+46),'书名 · 作者 · 来源',font=font(16),fill='#687266')
- else:
-  d.text((1245,220),'书架',font=font(43),fill='#163300'); rr(d,(1240,300,1600,360),16,'#f0f4ed'); d.text((1260,312),'搜索书籍',font=font(22),fill='#687266')
-  for j in range(3):
-   x=1242+j*120; rr(d,(x,410,x+100,560),12,['#a4bca4','#c6b79c','#a6bac1'][j]); d.text((x+10,450),'故事',font=font(24),fill='#ffffff'); d.text((x,575),'书籍示例',font=font(17),fill='#163300'); d.text((x,608),'阅读中',font=font(16),fill='#687266')
+ # Real Flutter window captures; retain their aspect ratio and UI content.
+ screenshot=Image.open(SCREENSHOTS/f'{SCENE_SCREENSHOTS[kind]}.png').convert('RGB')
+ screenshot.thumbnail((650,820),Image.Resampling.LANCZOS)
+ x=1475-screenshot.width//2; y=104
+ rr(d,(x-12,y-12,x+screenshot.width+12,y+screenshot.height+12),16,'#dde5d8')
+ im.paste(screenshot,(x,y)); d=ImageDraw.Draw(im)
+ caption={'comments':'原站段评 · 热门评论与回复入口',
+          'security':'书源详情 · 声明的访问域名',
+          'agent':'开发者工具 · Agent API 入口'}.get(kind,'Linux 桌面版 · 实际运行截图')
+ d.text((x,y+screenshot.height+22),caption,font=font(21),fill='#455344')
  if kind=='end': d.text((120,765),'github.com/ywxt/langhuan',font=font(30),fill='#163300')
- d.text((120,1003),'画面为功能示意  ·  书源需自行导入  ·  项目持续开发中',font=font(19),fill='#687266')
+ d.text((120,1003),'Linux 实机截图  ·  书源需自行导入  ·  项目持续开发中',font=font(19),fill='#687266')
  im.save(output or P/f'scene{i}.png')
 
 
