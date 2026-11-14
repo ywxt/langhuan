@@ -549,6 +549,26 @@ class SeamlessVerticalReaderState extends State<SeamlessVerticalReader> {
     final visibleParagraphs = <(String, String)>{};
 
     for (final chapterId in widget.window.windowChapterIds) {
+      if (widget.window.stateOf(chapterId) is ChapterLoadError) {
+        final sliver = _sliverKeyOf(
+          chapterId,
+        ).currentContext?.findRenderObject();
+        final child = sliver is RenderSliverToBoxAdapter ? sliver.child : null;
+        if (child != null && child.hasSize) {
+          final top = child.localToGlobal(Offset.zero).dy;
+          final bottom = top + child.size.height;
+          if (bottom > viewportTop + 1 && top < viewportBottom - 1) {
+            visible.add(chapterId);
+            if (top < activeTop) {
+              activeTop = top;
+              activeChapter = chapterId;
+              activeParagraph = '';
+              activeOffset = 0;
+            }
+          }
+        }
+        continue;
+      }
       final paragraphs = widget.window.paragraphsOf(chapterId);
       if (paragraphs == null || paragraphs.isEmpty) continue;
       final sliverContext = _sliverKeyOf(chapterId).currentContext;

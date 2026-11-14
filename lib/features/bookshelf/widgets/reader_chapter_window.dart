@@ -84,6 +84,7 @@ class ReaderChapterWindow extends ChangeNotifier {
 
   /// In-flight loads keyed by chapter id.
   final Map<String, Future<void>> _inFlight = {};
+  final Map<String, Object> _loadTokens = {};
 
   // ── Getters ─────────────────────────────────────────────────────────────
 
@@ -122,6 +123,7 @@ class ReaderChapterWindow extends ChangeNotifier {
     _chapters = List.of(chapters);
     _cache.clear();
     _inFlight.clear();
+    _loadTokens.clear();
     final anchorIdx = _indexOf(anchorChapterId);
     _resetAround(anchorIdx >= 0 ? anchorIdx : 0);
   }
@@ -130,6 +132,8 @@ class ReaderChapterWindow extends ChangeNotifier {
   /// the conversion setting changes — paragraphs must be re-fetched).
   void reloadWindow() {
     _cache.clear();
+    _inFlight.clear();
+    _loadTokens.clear();
     _resetAround(_anchorIdx);
   }
 
@@ -164,13 +168,13 @@ class ReaderChapterWindow extends ChangeNotifier {
     _loadChapter(id);
   }
 
-  /// Retry a window chapter that previously failed to load.
+  /// Retry a failed chapter from the source, rather than restoring stale disk data.
   void retry(String chapterId) {
     if (!_records.containsKey(chapterId)) return;
     if (_records[chapterId] is! ChapterLoadError) return;
     _records[chapterId] = const ChapterLoading();
     _notify();
-    _loadChapter(chapterId);
+    _loadChapter(chapterId, forceRefresh: true);
   }
 
   /// Reload one chapter, dropping its cached paragraphs first. With
@@ -181,6 +185,28 @@ class ReaderChapterWindow extends ChangeNotifier {
     _records[chapterId] = const ChapterLoading();
     _notify();
     await _loadChapter(chapterId, forceRefresh: forceRefresh);
+  }
+
+  /// Replace the chapter with a completed refresh result. Superseded loads
+  /// cannot restore stale content or erase the new error state.
+  void updateChapter(
+    String chapterId,
+    ChapterLoadState state, {
+    bool reanchor = false,
+  }) {
+    if (isDisposed) return;
+    _inFlight.remove(chapterId);
+    _loadTokens.remove(chapterId);
+    if (state is ChapterLoaded) {
+      _putCache(chapterId, state.paragraphs);
+    } else {
+      _cache.remove(chapterId);
+    }
+    if (_records.containsKey(chapterId)) {
+      if (reanchor) _anchorIdx = _indexOf(chapterId);
+      _records[chapterId] = state;
+      _notify();
+    }
   }
 
   // ── Jumping ─────────────────────────────────────────────────────────────
@@ -304,12 +330,14 @@ class ReaderChapterWindow extends ChangeNotifier {
       return Future.value();
     }
 
-    final future = _fetch(chapterId, forceRefresh);
+    final token = Object();
+    _loadTokens[chapterId] = token;
+    final future = _fetch(chapterId, forceRefresh, token);
     _inFlight[chapterId] = future;
     return future;
   }
 
-  Future<void> _fetch(String chapterId, bool forceRefresh) async {
+  Future<void> _fetch(String chapterId, bool forceRefresh, Object token) async {
     final stopwatch = Stopwatch()..start();
     AppLog.debug(
       'reader.chapter_window',
@@ -317,7 +345,10 @@ class ReaderChapterWindow extends ChangeNotifier {
       fields: {'chapter_id': chapterId, 'force_refresh': forceRefresh},
     );
     try {
-      final paragraphs = await _loader(chapterId, forceRefresh: forceRefresh);
+      final paragraphs = await Future<List<ParagraphContent>>.sync(
+        () => _loader(chapterId, forceRefresh: forceRefresh),
+      );
+      if (isDisposed || !identical(_loadTokens[chapterId], token)) return;
       _putCache(chapterId, paragraphs);
       if (_records.containsKey(chapterId)) {
         _records[chapterId] = ChapterLoaded(paragraphs);
@@ -332,6 +363,7 @@ class ReaderChapterWindow extends ChangeNotifier {
         },
       );
     } catch (error, stackTrace) {
+      if (isDisposed || !identical(_loadTokens[chapterId], token)) return;
       if (_records.containsKey(chapterId)) {
         _records[chapterId] = ChapterLoadError(error: error);
       }
@@ -346,8 +378,11 @@ class ReaderChapterWindow extends ChangeNotifier {
         stackTrace: stackTrace,
       );
     } finally {
-      _inFlight.remove(chapterId);
-      _notify();
+      if (identical(_loadTokens[chapterId], token)) {
+        _loadTokens.remove(chapterId);
+        _inFlight.remove(chapterId);
+        _notify();
+      }
     }
   }
 
@@ -380,6 +415,8 @@ class ReaderChapterWindow extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _loadTokens.clear();
+    _inFlight.clear();
     super.dispose();
   }
 }

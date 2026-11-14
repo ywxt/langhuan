@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:langhuan/features/bookshelf/reader_screen_controller.dart';
 import 'package:langhuan/features/bookshelf/reading_progress_provider.dart';
 import 'package:langhuan/features/bookshelf/widgets/reader_controller.dart';
+import 'package:langhuan/features/bookshelf/widgets/reader_types.dart';
 import 'package:langhuan/features/feeds/feed_providers.dart';
 import 'package:langhuan/features/feeds/feed_service.dart';
 import 'package:langhuan/src/rust/api/types.dart';
@@ -331,44 +332,90 @@ void main() {
   });
 
   group('refreshCurrentChapter', () {
-    testWidgets('forces a refresh and requests the reload, once at a time', (
-      tester,
-    ) async {
-      final refreshCalls = <(String, bool)>[];
-      final gate = Completer<void>();
-      final service = baseService(
-        paragraphs: (f, b, chapterId, {forceRefresh = false}) async {
-          refreshCalls.add((chapterId, forceRefresh));
-          await gate.future;
-          return [
-            ParagraphContent_Text(
-              id: const ParagraphId(
-                original: OriginalParagraphId.source('p0'),
-                path: [],
+    testWidgets(
+      'publishes auth failures as chapter state and allows a later refresh',
+      (tester) async {
+        const failure = BridgeError(
+          kind: ErrorKind.scriptExpected(
+            reason: ScriptExpectedReason.authRequired(),
+          ),
+          message: 'Login required',
+        );
+        var fail = true;
+        final (controller, _, reader) = await pumpHost(
+          tester,
+          service: baseService(
+            paragraphs: (f, b, c, {forceRefresh = false}) async {
+              if (fail) throw failure;
+              return [];
+            },
+          ),
+        );
+        await controller.refreshCurrentChapter('c2');
+        expect(controller.isRefreshingChapter, isFalse);
+        final failed = reader.consumeChapterUpdate()!;
+        expect(failed.chapterId, 'c2');
+        expect((failed.state as ChapterLoadError).error, same(failure));
+        expect(tester.takeException(), isNull);
+        fail = false;
+        await controller.refreshCurrentChapter('c2');
+        final updated = reader.consumeChapterUpdate()!;
+        expect(updated.chapterId, 'c2');
+        expect(updated.state, isA<ChapterLoaded>());
+      },
+    );
+
+    testWidgets(
+      'forces one fetch and publishes its paragraphs, once at a time',
+      (tester) async {
+        final refreshCalls = <(String, bool)>[];
+        final gate = Completer<void>();
+        final service = baseService(
+          paragraphs: (f, b, chapterId, {forceRefresh = false}) async {
+            refreshCalls.add((chapterId, forceRefresh));
+            await gate.future;
+            return [
+              ParagraphContent_Text(
+                id: const ParagraphId(
+                  original: OriginalParagraphId.source('p0'),
+                  path: [],
+                ),
+                content: 'refreshed',
               ),
-              content: 'refreshed',
-            ),
-          ];
-        },
-      );
-      final (controller, _, reader) = await pumpHost(tester, service: service);
+            ];
+          },
+        );
+        final (controller, _, reader) = await pumpHost(
+          tester,
+          service: service,
+        );
 
-      final first = controller.refreshCurrentChapter('c2');
-      await tester.pump();
-      expect(controller.isRefreshingChapter, true);
+        final first = controller.refreshCurrentChapter('c2');
+        await tester.pump();
+        expect(controller.isRefreshingChapter, true);
 
-      // A second call while one is in flight is ignored.
-      await controller.refreshCurrentChapter('c2');
-      expect(refreshCalls, [('c2', true)]);
+        // A second call while one is in flight is ignored.
+        await controller.refreshCurrentChapter('c2');
+        expect(refreshCalls, [('c2', true)]);
 
-      gate.complete();
-      await first;
-      expect(controller.isRefreshingChapter, false);
-      expect(refreshCalls, [('c2', true)]);
+        gate.complete();
+        await first;
+        expect(controller.isRefreshingChapter, false);
+        expect(refreshCalls, [('c2', true)]);
 
-      // The reader is asked to re-read the warmed chapter.
-      expect(reader.consumeChapterReload(), 'c2');
-    });
+        // The fetched result is published directly, with no second cache read.
+        final update = reader.consumeChapterUpdate()!;
+        expect(update.chapterId, 'c2');
+        expect(
+          (update.state as ChapterLoaded).paragraphs.single,
+          isA<ParagraphContent_Text>().having(
+            (p) => p.content,
+            'content',
+            'refreshed',
+          ),
+        );
+      },
+    );
   });
 
   testWidgets(

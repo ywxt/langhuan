@@ -251,6 +251,10 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
       maxWindowChapters: 8,
     );
     _window!.addListener(_onWindowChanged);
+    final pendingUpdate = widget.controller.consumeChapterUpdate();
+    if (pendingUpdate != null) {
+      _onChapterUpdate(pendingUpdate.chapterId, pendingUpdate.state);
+    }
 
     // The pagination machinery's first use pays one-time costs — the badge
     // label style's first layout, body-text shaping for this breaker's font
@@ -392,9 +396,9 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
   }
 
   void _onControllerCommand() {
-    final reloadId = widget.controller.consumeChapterReload();
-    if (reloadId != null && reloadId.isNotEmpty) {
-      _onChapterReloadCommand(reloadId);
+    final update = widget.controller.consumeChapterUpdate();
+    if (update != null) {
+      _onChapterUpdate(update.chapterId, update.state);
     }
 
     final targetId = widget.controller.pendingChapterId;
@@ -419,12 +423,26 @@ class _ChapterContentManagerState extends State<ChapterContentManager> {
     setState(() {});
   }
 
-  void _onChapterReloadCommand(String chapterId) {
+  void _onChapterUpdate(String chapterId, ChapterLoadState state) {
     _pagesByChapter.remove(chapterId);
     _badgeIdsByChapter.remove(chapterId);
     _paginationJobs.remove(chapterId);
     _freshPages.remove(chapterId);
-    unawaited(_window!.reload(chapterId));
+    final visibleChapterId =
+        widget.pageMode == ReaderPageMode.vertical &&
+            _lastReportedChapterId.isNotEmpty
+        ? _lastReportedChapterId
+        : _activeChapterId;
+    final showError =
+        state is ChapterLoadError && chapterId == visibleChapterId;
+    if (showError) {
+      _activeChapterId = chapterId;
+      _activeLocalPageIndex = 0;
+      _cancelPendingNavigation();
+      _issueVerticalTarget(chapterId: chapterId);
+    }
+    _window!.updateChapter(chapterId, state, reanchor: showError);
+    if (showError) _reportPosition(chapterId, '', 0);
   }
 
   // ── Window bookkeeping ──────────────────────────────────────────────────

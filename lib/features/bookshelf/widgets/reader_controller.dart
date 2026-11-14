@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'reader_types.dart';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Reader position — reported from content views to the parent
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,22 +79,19 @@ class ReaderController extends ChangeNotifier {
     _pendingCharOffset = 0;
   }
 
-  // ─ Reload command (parent → content manager) ───────────────────────────
+  // ─ Chapter result (parent → content manager) ───────────────────────────
 
-  String? _pendingReloadChapterId;
+  ({String chapterId, ChapterLoadState state})? _pendingChapterState;
 
-  String? get pendingReloadChapterId => _pendingReloadChapterId;
-
-  /// Ask the content manager to re-read a chapter (e.g. after the pull
-  /// refresh warmed the backend cache).
-  void requestChapterReload(String chapterId) {
-    _pendingReloadChapterId = chapterId;
+  /// Publish the result of an explicit refresh without fetching it again.
+  void updateChapter(String chapterId, ChapterLoadState state) {
+    _pendingChapterState = (chapterId: chapterId, state: state);
     notifyListeners();
   }
 
-  String? consumeChapterReload() {
-    final value = _pendingReloadChapterId;
-    _pendingReloadChapterId = null;
+  ({String chapterId, ChapterLoadState state})? consumeChapterUpdate() {
+    final value = _pendingChapterState;
+    _pendingChapterState = null;
     return value;
   }
 

@@ -51,6 +51,7 @@ class _PanelFrame {
   _PanelFrame(this.controller, {this.parent});
 
   final CommentsController controller;
+  final ScrollController scrollController = ScrollController();
 
   /// The comment whose replies this frame lists; null for the root frame.
   final CommentItem? parent;
@@ -112,6 +113,7 @@ class _CommentsPanelState extends State<CommentsPanel> {
     _routeAnimation?.removeStatusListener(_onRouteAnimationStatus);
     _routeAnimation = null;
     for (final frame in _frames) {
+      frame.scrollController.dispose();
       if (!identical(frame.controller, widget.controller)) {
         frame.controller.dispose();
       }
@@ -136,6 +138,7 @@ class _CommentsPanelState extends State<CommentsPanel> {
   void _popFrame() {
     if (_frames.length <= 1) return;
     final popped = _frames.removeLast();
+    popped.scrollController.dispose();
     if (!identical(popped.controller, widget.controller)) {
       popped.controller.dispose();
     }
@@ -223,12 +226,13 @@ class _CommentsPanelState extends State<CommentsPanel> {
         // Only the root thread offers ordering: replies read as a
         // conversation and keep the source's order.
         if (frame.parent == null) _SortBar(controller: frame.controller),
-        Expanded(child: _buildBody(context, frame.controller)),
+        Expanded(child: _buildBody(context, frame)),
       ],
     );
   }
 
-  Widget _buildBody(BuildContext context, CommentsController controller) {
+  Widget _buildBody(BuildContext context, _PanelFrame frame) {
+    final controller = frame.controller;
     final items = controller.items;
 
     if (items.isEmpty) {
@@ -255,21 +259,29 @@ class _CommentsPanelState extends State<CommentsPanel> {
         return false;
       },
       child: Scrollbar(
-        child: ListView.separated(
-          padding: const EdgeInsets.symmetric(vertical: LanghuanTheme.spaceSm),
-          itemCount: items.length + 1,
-          separatorBuilder: (_, i) => i < items.length
-              ? const Divider(height: 1, indent: LanghuanTheme.spaceMd)
-              : const SizedBox.shrink(),
-          itemBuilder: (context, index) {
-            if (index == items.length) {
-              return _buildFooter(context, controller);
-            }
-            return CommentCard(
-              comment: items[index],
-              onOpenReplies: _openReplies,
-            );
-          },
+        controller: frame.scrollController,
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          child: ListView.separated(
+            controller: frame.scrollController,
+            primary: false,
+            padding: const EdgeInsets.symmetric(
+              vertical: LanghuanTheme.spaceSm,
+            ),
+            itemCount: items.length + 1,
+            separatorBuilder: (_, i) => i < items.length
+                ? const Divider(height: 1, indent: LanghuanTheme.spaceMd)
+                : const SizedBox.shrink(),
+            itemBuilder: (context, index) {
+              if (index == items.length) {
+                return _buildFooter(context, controller);
+              }
+              return CommentCard(
+                comment: items[index],
+                onOpenReplies: _openReplies,
+              );
+            },
+          ),
         ),
       ),
     );

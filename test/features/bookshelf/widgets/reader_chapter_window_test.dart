@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:langhuan/features/bookshelf/widgets/reader_chapter_window.dart';
@@ -57,6 +59,53 @@ class _RecordingLoader {
 Future<void> _flush() => Future<void>.delayed(Duration.zero);
 
 void main() {
+  test(
+    'a refresh error evicts stale content and supersedes an in-flight load',
+    () async {
+      final pending = Completer<List<ParagraphContent>>();
+      var reads = 0;
+      final window = ReaderChapterWindow(
+        chapters: _chapters(1),
+        anchorChapterId: 'c0',
+        loader: (id, {forceRefresh = false}) async {
+          if (++reads == 1) return pending.future;
+          return _paragraphs(id);
+        },
+      );
+      addTearDown(window.dispose);
+      final failure = StateError('refresh failed');
+      window.updateChapter('c0', ChapterLoadError(error: failure));
+      pending.complete(_paragraphs('stale'));
+      await _flush();
+      expect((window.stateOf('c0') as ChapterLoadError).error, same(failure));
+      expect(window.paragraphsOf('c0'), isNull);
+      window.retry('c0');
+      await _flush();
+      expect(reads, 2);
+      expect(window.stateOf('c0'), isA<ChapterLoaded>());
+      window.updateChapter('c0', ChapterLoadError(error: failure));
+      window.jumpTo('c0');
+      await _flush();
+      expect(reads, 3);
+    },
+  );
+
+  test('late failures cannot replace a newer refresh result', () async {
+    final pending = Completer<List<ParagraphContent>>();
+    final window = ReaderChapterWindow(
+      chapters: _chapters(1),
+      anchorChapterId: 'c0',
+      loader: (id, {forceRefresh = false}) => pending.future,
+    );
+    addTearDown(window.dispose);
+    final current = _paragraphs('refreshed');
+    window.updateChapter('c0', ChapterLoaded(current));
+    pending.completeError(StateError('old fetch failed'));
+    await _flush();
+    expect(window.paragraphsOf('c0'), same(current));
+    expect(window.stateOf('c0'), isA<ChapterLoaded>());
+  });
+
   group('initial window', () {
     test('covers anchor-1..anchor+1 in the middle of the book', () {
       final window = ReaderChapterWindow(

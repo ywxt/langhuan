@@ -269,6 +269,7 @@ class ReaderScreenController extends ChangeNotifier {
     }
   }
 
+  /// Publish fresh paragraphs or an inline chapter error without a second fetch.
   Future<void> refreshCurrentChapter(String chapterId) async {
     if (_isRefreshingChapter || chapterId.isEmpty) return;
 
@@ -281,7 +282,7 @@ class ReaderScreenController extends ChangeNotifier {
       fields: {'chapter_id': chapterId},
     );
     try {
-      await _ref
+      final paragraphs = await _ref
           .read(feedServiceProvider)
           .paragraphs(
             feedId: feedId,
@@ -289,9 +290,8 @@ class ReaderScreenController extends ChangeNotifier {
             chapterId: chapterId,
             forceRefresh: true,
           );
-      // The backend cache is warm now — make the reader re-read the chapter
-      // so the new content actually shows.
-      _readerController.requestChapterReload(chapterId);
+      if (_disposed) return;
+      _readerController.updateChapter(chapterId, ChapterLoaded(paragraphs));
       AppLog.info(
         'reader.controller',
         'chapter refresh completed',
@@ -311,7 +311,12 @@ class ReaderScreenController extends ChangeNotifier {
         error: error,
         stackTrace: stackTrace,
       );
-      rethrow;
+      if (!_disposed) {
+        _readerController.updateChapter(
+          chapterId,
+          ChapterLoadError(error: error),
+        );
+      }
     } finally {
       _isRefreshingChapter = false;
       _notify();

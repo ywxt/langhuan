@@ -73,11 +73,15 @@ void main() {
     required FakeFeedService service,
     ReaderPageMode pageMode = ReaderPageMode.horizontal,
     String transformerRevision = '',
+    ChapterLoadState? initialChapterState,
     List<ReaderPosition>? positions,
     Future<void> Function()? onRefreshBook,
     void Function(String, ParagraphContent)? onParagraphComments,
   }) async {
     final controller = ReaderController();
+    if (initialChapterState != null) {
+      controller.updateChapter('c1', initialChapterState);
+    }
     controller.onPositionChanged = positions?.add;
     addTearDown(controller.dispose);
 
@@ -303,30 +307,117 @@ void main() {
     expect(positions.single.paragraphId, isNotEmpty);
   });
 
-  testWidgets('a reload command re-fetches the chapter from the warmed cache', (
+  for (final mode in ReaderPageMode.values) {
+    testWidgets(
+      'refresh results replace chapter content and retry errors in $mode',
+      (tester) async {
+        final calls = <(String, String, String, bool)>[];
+        final controller = await pumpManager(
+          tester,
+          service: service(calls: calls),
+          pageMode: mode,
+        );
+        final initialCalls = calls.length;
+        const failure = BridgeError(
+          kind: ErrorKind.scriptExpected(
+            reason: ScriptExpectedReason.authRequired(),
+          ),
+          message: 'Login required after refresh',
+        );
+        controller.updateChapter('c1', const ChapterLoadError(error: failure));
+        await tester.pumpAndSettle();
+        expect(find.text('Body one.'), findsNothing);
+        expect(
+          find.textContaining('Login required after refresh'),
+          findsOneWidget,
+        );
+        expect(calls.length, initialCalls);
+        await tester.tap(find.text('Retry'));
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('Login required after refresh'),
+          findsNothing,
+        );
+        expect(calls.where((call) => call.$3 == 'c1').length, 2);
+        expect(calls.lastWhere((call) => call.$3 == 'c1').$4, isTrue);
+        controller.updateChapter(
+          'c1',
+          ChapterLoaded([
+            ParagraphContent.text(
+              id: const ParagraphId(
+                original: OriginalParagraphId.source('new'),
+                path: [],
+              ),
+              content: 'Refreshed chapter body',
+            ),
+          ]),
+        );
+        final beforeUpdate = calls.length;
+        await tester.pumpAndSettle();
+        expect(find.text('Refreshed chapter body'), findsOneWidget);
+        expect(calls.length, beforeUpdate);
+      },
+    );
+  }
+
+  testWidgets('a refresh result published before mounting is applied', (
     tester,
   ) async {
-    final calls = <(String, String, String, bool)>[];
-    final controller = await pumpManager(
+    final error = StateError('refresh finished before mount');
+    await pumpManager(
       tester,
-      service: service(calls: calls),
+      service: service(calls: []),
+      initialChapterState: ChapterLoadError(error: error),
     );
-
-    final before = calls.where((c) => c.$3 == 'c1').length;
-    expect(before, 1);
-
-    controller.requestChapterReload('c1');
-    await tester.pumpAndSettle(const Duration(milliseconds: 50));
-
-    // Re-fetched, but not with forceRefresh: the pull-refresh already warmed
-    // the backend cache before issuing the reload command.
-    expect(calls.where((c) => c.$3 == 'c1').length, 2);
     expect(
-      calls.where((c) => c.$3 == 'c1').map((c) => c.$4),
-      everyElement(false),
+      find.textContaining('refresh finished before mount'),
+      findsOneWidget,
     );
-    expect(find.text('Chapter One'), findsOneWidget);
+    expect(find.text('Body one.'), findsNothing);
   });
+
+  for (final (chapter, distance) in [('c1', 1800.0), ('c2', 4200.0)]) {
+    testWidgets('a failed refresh reveals its status deep in $chapter', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      final positions = <ReaderPosition>[];
+      final controller = await pumpManager(
+        tester,
+        pageMode: ReaderPageMode.vertical,
+        positions: positions,
+        service: FakeFeedService(
+          paragraphsHandler: (f, b, c, {forceRefresh = false}) async => [
+            for (var i = 0; i < 60; i++)
+              ParagraphContent.text(
+                id: ParagraphId(
+                  original: OriginalParagraphId.source('$c-$i'),
+                  path: [],
+                ),
+                content: '$c paragraph $i',
+              ),
+          ],
+        ),
+      );
+      await tester.drag(find.byType(CustomScrollView), Offset(0, -distance));
+      await tester.pumpAndSettle();
+      expect(positions.last.chapterId, chapter);
+      controller.updateChapter(
+        chapter,
+        ChapterLoadError(error: StateError('refresh status')),
+      );
+      await tester.pumpAndSettle();
+      final error = find.textContaining('refresh status');
+      expect(error, findsOneWidget);
+      final rect = tester.getRect(error);
+      expect(rect.top, greaterThanOrEqualTo(0));
+      expect(rect.bottom, lessThanOrEqualTo(600));
+      expect(positions.last.chapterId, chapter);
+      expect(positions.last.paragraphId, isEmpty);
+      expect(tester.takeException(), isNull);
+      semantics.dispose();
+    });
+  }
 
   testWidgets('a transformer chain change re-fetches the window paragraphs', (
     tester,
