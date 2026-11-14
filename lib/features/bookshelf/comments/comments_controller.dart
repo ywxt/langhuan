@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../../src/rust/api/comments.dart';
+import '../../../shared/utils/app_log.dart';
 import '../../feeds/feed_service.dart';
 
 /// UI-side ordering of the root comment thread. Sources keep sending pages
@@ -68,10 +69,7 @@ class CommentsController extends ChangeNotifier {
         parentId: parentId,
         cursorJson: _cursor,
       );
-      if (generation != _generation) {
-        await request.cancel();
-        return;
-      }
+      if (generation != _generation) return;
       _request = request;
       final page = await request.result();
       if (generation != _generation) return;
@@ -94,7 +92,7 @@ class CommentsController extends ChangeNotifier {
     } catch (e) {
       if (generation == _generation) error = e;
     } finally {
-      if (request != null) await request.cancel();
+      await _cancelRequest(request);
       if (generation == _generation) {
         _request = null;
         loading = false;
@@ -104,9 +102,24 @@ class CommentsController extends ChangeNotifier {
     }
   }
 
+  Future<void> _cancelRequest(CommentRequest? request) async {
+    if (request == null) return;
+    try {
+      await request.cancel();
+    } catch (error, stackTrace) {
+      // Cleanup must not replace the fetch result or leave the panel loading.
+      AppLog.warning(
+        'comments.controller',
+        'request cancellation failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
   Future<void> refresh() async {
     ++_generation;
-    unawaited(_request?.cancel());
+    unawaited(_cancelRequest(_request));
     _request = null;
     items.clear();
     _seen.clear();
@@ -149,7 +162,7 @@ class CommentsController extends ChangeNotifier {
   @override
   void dispose() {
     ++_generation;
-    unawaited(_request?.cancel());
+    unawaited(_cancelRequest(_request));
     super.dispose();
   }
 }

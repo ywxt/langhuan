@@ -768,12 +768,12 @@ mod tests {
         let mut indented =
             build_transform_chain(vec![TransformerRule::ParagraphIndent { spaces: 4 }]).unwrap();
         assert!(
-            matches!(&indented.apply(original.clone())[0], Paragraph::Text {content, layout, ..} if content == "  正文" && layout.first_line_indent == 4)
+            matches!(&indented.apply(original.clone())[0], Paragraph::Text {content, layout, ..} if content == "正文" && layout.first_line_indent == 4)
         );
         let mut no_indent =
             build_transform_chain(vec![TransformerRule::ParagraphIndent { spaces: 0 }]).unwrap();
         assert!(
-            matches!(&no_indent.apply(original)[0], Paragraph::Text {content, layout, ..} if content == "  正文" && layout.first_line_indent == 0)
+            matches!(&no_indent.apply(original)[0], Paragraph::Text {content, layout, ..} if content == "正文" && layout.first_line_indent == 0)
         );
         assert!(
             build_transform_chain(vec![TransformerRule::ParagraphIndent { spaces: 9 }]).is_err()

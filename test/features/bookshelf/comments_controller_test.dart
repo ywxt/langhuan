@@ -8,11 +8,13 @@ class _Request implements CommentRequest {
   _Request(this.page);
   final Future<CommentPage> page;
   bool cancelled = false;
+  bool failCancel = false;
   @override
   Future<CommentPage> result() => page;
   @override
   Future<void> cancel() async {
     cancelled = true;
+    if (failCancel) throw StateError('cancel failed');
   }
 
   @override
@@ -21,6 +23,7 @@ class _Request implements CommentRequest {
 
 class _Service extends FakeFeedService {
   final requests = <_Request>[];
+  bool failCancel = false;
   final cursors = <String?>[];
   final parents = <String?>[];
   final pages = <Future<CommentPage>>[];
@@ -35,7 +38,7 @@ class _Service extends FakeFeedService {
   }) async {
     cursors.add(cursorJson);
     parents.add(parentId);
-    final request = _Request(pages.removeAt(0));
+    final request = _Request(pages.removeAt(0))..failCancel = failCancel;
     requests.add(request);
     return request;
   }
@@ -60,12 +63,45 @@ CommentsController _controller(_Service service, {String? parent}) =>
     );
 
 void main() {
+  test(
+    'cleanup failures do not leave a successful page loading or prevent refresh',
+    () async {
+      final service = _Service()..failCancel = true;
+      service.pages.add(Future.value(CommentPage(items: [_item('1')])));
+      final controller = _controller(service);
+      addTearDown(controller.dispose);
+      await controller.loadMore();
+      expect(controller.loading, isFalse);
+      expect(controller.hasLoadedPage, isTrue);
+      expect(controller.error, isNull);
+      expect(controller.items.single.id, '1');
+      service.pages.add(Future.value(CommentPage(items: [_item('2')])));
+      await controller.refresh();
+      expect(controller.items.single.id, '2');
+      expect(controller.loading, isFalse);
+    },
+  );
+
+  test('cleanup failures preserve the original page error', () async {
+    final failure = StateError('page fetch failed');
+    final service = _Service()..failCancel = true;
+    final result = Completer<CommentPage>();
+    service.pages.add(result.future);
+    final controller = _controller(service);
+    addTearDown(controller.dispose);
+    final loading = controller.loadMore();
+    await Future<void>.delayed(Duration.zero);
+    result.completeError(failure);
+    await loading;
+    expect(controller.error, same(failure));
+    expect(controller.loading, isFalse);
+    expect(controller.hasLoadedPage, isTrue);
+  });
+
   test('hasLoadedPage flips once the first page settles', () async {
     final service = _Service()
       ..pages.add(
-        Future.value(
-          const CommentPage(items: [], nextCursorJson: null),
-        ),
+        Future.value(const CommentPage(items: [], nextCursorJson: null)),
       );
     final controller = _controller(service);
     addTearDown(controller.dispose);
@@ -164,11 +200,13 @@ void main() {
     final service = _Service()
       ..pages.add(
         Future.value(
-          CommentPage(items: [
-            _item('low', likes: 1),
-            _item('top', likes: 9),
-            _item('mid', likes: 5),
-          ]),
+          CommentPage(
+            items: [
+              _item('low', likes: 1),
+              _item('top', likes: 9),
+              _item('mid', likes: 5),
+            ],
+          ),
         ),
       );
     final controller = _controller(service);
@@ -176,23 +214,31 @@ void main() {
     await controller.loadMore();
     expect(controller.items.map((c) => c.id), ['top', 'mid', 'low']);
   });
-  test('unknown likes rank as zero and keep arrival order among ties', () async {
-    final service = _Service()
-      ..pages.add(
-        Future.value(
-          CommentPage(items: [_item('none-1'), _item('one', likes: 1), _item('none-2')]),
-        ),
-      );
-    final controller = _controller(service);
-    addTearDown(controller.dispose);
-    await controller.loadMore();
-    expect(controller.items.map((c) => c.id), ['one', 'none-1', 'none-2']);
-  });
+  test(
+    'unknown likes rank as zero and keep arrival order among ties',
+    () async {
+      final service = _Service()
+        ..pages.add(
+          Future.value(
+            CommentPage(
+              items: [_item('none-1'), _item('one', likes: 1), _item('none-2')],
+            ),
+          ),
+        );
+      final controller = _controller(service);
+      addTearDown(controller.dispose);
+      await controller.loadMore();
+      expect(controller.items.map((c) => c.id), ['one', 'none-1', 'none-2']);
+    },
+  );
   test('pages loaded later merge into the current ranking', () async {
     final service = _Service()
       ..pages.addAll([
         Future.value(
-          CommentPage(items: [_item('a', likes: 3)], nextCursorJson: '{"page":2}'),
+          CommentPage(
+            items: [_item('a', likes: 3)],
+            nextCursorJson: '{"page":2}',
+          ),
         ),
         Future.value(CommentPage(items: [_item('b', likes: 7)])),
       ]);
@@ -221,25 +267,31 @@ void main() {
     addTearDown(controller.dispose);
     await controller.loadMore();
     // Default hot order: likes first, time breaks the zero-like ties.
-    expect(
-      controller.items.map((c) => c.id),
-      ['old-but-liked', 'new', 'older'],
-    );
+    expect(controller.items.map((c) => c.id), [
+      'old-but-liked',
+      'new',
+      'older',
+    ]);
     controller.setSort(CommentsSort.latest);
-    expect(
-      controller.items.map((c) => c.id),
-      ['new', 'old-but-liked', 'older'],
-    );
+    expect(controller.items.map((c) => c.id), [
+      'new',
+      'old-but-liked',
+      'older',
+    ]);
     await controller.loadMore();
-    expect(
-      controller.items.map((c) => c.id),
-      ['newest', 'new', 'old-but-liked', 'older'],
-    );
+    expect(controller.items.map((c) => c.id), [
+      'newest',
+      'new',
+      'old-but-liked',
+      'older',
+    ]);
     controller.setSort(CommentsSort.hot);
-    expect(
-      controller.items.map((c) => c.id),
-      ['old-but-liked', 'newest', 'new', 'older'],
-    );
+    expect(controller.items.map((c) => c.id), [
+      'old-but-liked',
+      'newest',
+      'new',
+      'older',
+    ]);
   });
   test('setSort with the current mode is a silent no-op', () {
     final controller = _controller(_Service());
@@ -270,10 +322,12 @@ void main() {
     addTearDown(controller.dispose);
     await controller.loadMore();
     await controller.loadMore();
-    expect(
-      controller.items.map((c) => c.id),
-      ['plain', 'liked', 'newest', 'tail'],
-    );
+    expect(controller.items.map((c) => c.id), [
+      'plain',
+      'liked',
+      'newest',
+      'tail',
+    ]);
   });
   test('setSort on a reply frame is a silent no-op', () async {
     final service = _Service()
@@ -288,10 +342,7 @@ void main() {
     var notified = 0;
     controller.addListener(() => ++notified);
     controller.setSort(CommentsSort.latest);
-    expect(
-      controller.items.map((c) => c.id),
-      ['first', 'second'],
-    );
+    expect(controller.items.map((c) => c.id), ['first', 'second']);
     expect(notified, 0);
   });
 }

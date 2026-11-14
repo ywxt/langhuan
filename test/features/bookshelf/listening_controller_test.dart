@@ -99,6 +99,29 @@ class _DelayedChapterService extends _Service {
   }
 }
 
+class _PendingPrefetchService extends _Service {
+  final nextChapter = Completer<List<ParagraphContent>>();
+  int nextChapterReads = 0;
+
+  @override
+  Future<List<ParagraphContent>> paragraphs({
+    required String feedId,
+    required String bookId,
+    required String chapterId,
+    bool forceRefresh = false,
+  }) {
+    if (chapterId == 'c2') {
+      nextChapterReads++;
+      return nextChapter.future;
+    }
+    return super.paragraphs(
+      feedId: feedId,
+      bookId: bookId,
+      chapterId: chapterId,
+    );
+  }
+}
+
 class _Engine implements SpeechEngine {
   final spoken = <String>[];
   LocalVoice? spokenVoice;
@@ -137,6 +160,25 @@ Future<void> _flush() => Future<void>.delayed(Duration.zero);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'a failed prefetch does not start a retry after playback stops',
+    () async {
+      final service = _PendingPrefetchService();
+      final engine = _Engine();
+      final controller = ListeningController(service, engine);
+      addTearDown(controller.dispose);
+      await controller.start(feedId: 'f', bookId: 'b', chapterId: 'c1');
+      await _flush();
+      engine.finish();
+      await _flush();
+      await controller.stop();
+      service.nextChapter.completeError(StateError('late prefetch failure'));
+      await _flush();
+      expect(service.nextChapterReads, 1);
+      expect(controller.status, ListeningStatus.idle);
+    },
+  );
 
   test(
     'rapid configuration keeps playback running with the last rate',

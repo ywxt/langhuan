@@ -203,7 +203,7 @@ class ListeningController extends ChangeNotifier {
             await _save();
             if (generation != _generation) return;
           }
-          final content = await _takeParagraphs(nextChapter);
+          final content = await _takeParagraphs(nextChapter, generation);
           if (generation != _generation) return;
           _paragraphs = content;
           _syncParagraphIndex();
@@ -447,7 +447,10 @@ class ListeningController extends ChangeNotifier {
 
   /// Consume the prefetch slot for [chapterId] if it matches, otherwise (or
   /// after a failed prefetch) fetch directly so errors surface normally.
-  Future<List<ParagraphContent>> _takeParagraphs(String chapterId) async {
+  Future<List<ParagraphContent>> _takeParagraphs(
+    String chapterId,
+    int generation,
+  ) async {
     final future = _prefetchChapterId == chapterId ? _prefetchFuture : null;
     _clearPrefetch();
     if (future != null) {
@@ -457,6 +460,7 @@ class ListeningController extends ChangeNotifier {
         // Prefetch failures are silent; the direct fetch below reports them.
       }
     }
+    if (_disposed || generation != _generation) return const [];
     return _service.paragraphs(
       feedId: feedId,
       bookId: bookId,

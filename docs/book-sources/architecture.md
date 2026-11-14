@@ -235,9 +235,11 @@ inheriting books. There is no book-detail settings action.
 All rules consume and emit structured paragraphs through the same ordered
 Transformer interface. Text rules modify `content`; layout rules modify
 presentation metadata. First-line indentation sets `layout.first_line_indent`
-to 0–8 em without adding, removing, or replacing any text. When multiple indent
+to 0–8 em after removing existing leading whitespace, so the original indent
+and the configured layout indent are not added together. When multiple indent
 rules apply, the last one wins, including zero to clear an earlier layout indent.
-Source whitespace is preserved; use an explicit Regex rule if it should be removed.
+Zero removes existing leading whitespace without adding a layout indent;
+disabling the rule preserves the source's leading whitespace.
 Title cleanup keeps only the first title paragraph per chapter.
 
 The layout metadata is application-generated, not a source-script field. Both

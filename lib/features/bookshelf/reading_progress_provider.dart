@@ -63,6 +63,9 @@ class ReadingProgressState {
 }
 
 class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
+  int _loadGeneration = 0;
+  int _saveGeneration = 0;
+
   @override
   ReadingProgressState build() => const ReadingProgressState();
 
@@ -86,10 +89,14 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
     required String fallbackChapterId,
     String fallbackParagraphId = '',
   }) async {
+    final generation = ++_loadGeneration;
+    ++_saveGeneration;
     state = state.copyWith(
       feedId: feedId,
       bookId: bookId,
       isLoading: true,
+      isSaving: false,
+      progress: () => null,
       error: () => null,
     );
 
@@ -97,6 +104,7 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
       final progress = await ref
           .read(feedServiceProvider)
           .getReadingProgress(feedId: feedId, bookId: bookId);
+      if (!ref.mounted || generation != _loadGeneration) return;
       final chapterId = progress?.chapterId ?? fallbackChapterId;
       final paragraphId = progress?.paragraphId ?? fallbackParagraphId;
       hydrateInitialPosition(
@@ -110,6 +118,7 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
         error: () => null,
       );
     } catch (e) {
+      if (!ref.mounted || generation != _loadGeneration) return;
       hydrateInitialPosition(
         chapterId: fallbackChapterId,
         paragraphId: fallbackParagraphId,
@@ -160,34 +169,37 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
       return;
     }
 
-    final timestamp = updatedAtMs ?? DateTime.now().millisecondsSinceEpoch;
-    state = state.copyWith(isSaving: true, error: () => null);
+    final generation = ++_saveGeneration;
+    ++_loadGeneration;
+    final submitted = ReadingProgressModel(
+      feedId: state.feedId,
+      bookId: state.bookId,
+      chapterId: state.activeChapterId,
+      paragraphId: state.activeParagraphId,
+      paragraphCharOffset: state.activeParagraphCharOffset,
+      updatedAtMs: updatedAtMs ?? DateTime.now().millisecondsSinceEpoch,
+    );
+    state = state.copyWith(isSaving: true, isLoading: false, error: () => null);
 
     try {
       await ref
           .read(feedServiceProvider)
           .setReadingProgress(
-            feedId: state.feedId,
-            bookId: state.bookId,
-            chapterId: state.activeChapterId,
-            paragraphId: state.activeParagraphId,
-            paragraphCharOffset: state.activeParagraphCharOffset,
-            updatedAtMs: timestamp,
+            feedId: submitted.feedId,
+            bookId: submitted.bookId,
+            chapterId: submitted.chapterId,
+            paragraphId: submitted.paragraphId,
+            paragraphCharOffset: submitted.paragraphCharOffset,
+            updatedAtMs: submitted.updatedAtMs,
           );
-
+      if (!ref.mounted || generation != _saveGeneration) return;
       state = state.copyWith(
-        progress: () => ReadingProgressModel(
-          feedId: state.feedId,
-          bookId: state.bookId,
-          chapterId: state.activeChapterId,
-          paragraphId: state.activeParagraphId,
-          paragraphCharOffset: state.activeParagraphCharOffset,
-          updatedAtMs: timestamp,
-        ),
+        progress: () => submitted,
         isSaving: false,
         error: () => null,
       );
     } catch (e) {
+      if (!ref.mounted || generation != _saveGeneration) return;
       state = state.copyWith(isSaving: false, error: () => e);
     }
   }
@@ -209,7 +221,11 @@ class ReadingProgressNotifier extends Notifier<ReadingProgressState> {
     await saveActive(updatedAtMs: updatedAtMs);
   }
 
-  void clear() => state = const ReadingProgressState();
+  void clear() {
+    ++_loadGeneration;
+    ++_saveGeneration;
+    state = const ReadingProgressState();
+  }
 }
 
 final readingProgressProvider =
