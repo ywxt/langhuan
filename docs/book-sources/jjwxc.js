@@ -1,7 +1,7 @@
 // ==Feed==
 // @id           org.eu.ywxt.langhuan.jjwxc
 // @name         晉江文學城
-// @version      1.2.0
+// @version      1.3.0
 // @author       Langhuan
 // @description  適配晉江文學城（www.jjwxc.net）的書源：搜尋、詳情、目錄、正文（含作話與 VIP 章節，支持反爬字體還原），章評、段評及回覆免登入讀取；VIP 章節需登入站方帳號
 // @base_url     https://www.jjwxc.net
@@ -276,22 +276,22 @@ function bookInfo(event) {
 // 目錄行內 span[itemprop=headline] 的第一個 a[itemprop=url]：免費章節 URL
 // 在 href（onebook.php），VIP 章節無 href、URL 在 rel（onebook_vip.php），
 // 兩者都含 chapterid=N。被鎖定的章節（鎖章待改/管理員鎖定）行內沒有錨點
-// 與 chapterid，站點亦不可讀，自然跳過。VIP 章節保留在目錄中，閱讀時按
-// 登入頁優雅失敗。
-function parseChapters(document) {
+// 與 chapterid，站點亦不可讀，自然跳過。章節 ID 統一使用站點數字編號。
+function parseChapters(document, bookId) {
   const items = [];
   const seen = new Set();
   for (const row of document.find('#oneboolt tr[itemprop="chapter"]')) {
-    const anchor = row
-      .find("span[itemprop=headline] a[itemprop=url]")
-      .first();
+    const anchor = row.find("span[itemprop=headline] a[itemprop=url]").first();
     if (!anchor) continue;
-    const url = anchor.attr("href") ?? anchor.attr("rel") ?? "";
-    const id = String(url).match(/[?&]chapterid=(\d+)/)?.[1];
+    const url = String(anchor.attr("href") || anchor.attr("rel") || "");
+    const chapterId = url.match(/[?&]chapterid=(\d+)/)?.[1];
     const title = cleanLine(anchor.text());
-    if (!id || seen.has(id) || !title) continue;
-    items.push({ id, title });
-    seen.add(id);
+    if (!chapterId || seen.has(chapterId) || !title) continue;
+    if (url.match(/[?&]novelid=(\d+)/)?.[1] !== bookId) continue;
+    const path = url.match(/(?:^|\/)(onebook(?:_vip)?\.php)\?/i)?.[1]?.toLowerCase();
+    if (!path) continue;
+    items.push({ id: chapterId, title });
+    seen.add(chapterId);
   }
   return items;
 }
@@ -307,14 +307,14 @@ function chapters(event) {
         method: "GET",
         headers: requestHeaders(),
       },
-      next_state: { requested: true },
+      next_state: { bookId },
     };
   }
   const failure = responseFailure(event.response, "目錄頁不可用");
   if (failure) return failure;
   return {
     type: "complete",
-    result: parseChapters(HTML.parse(bodyText(event.response))),
+    result: parseChapters(HTML.parse(bodyText(event.response)), event.state.bookId),
   };
 }
 
@@ -1091,11 +1091,13 @@ function spliceSeams(html, seams) {
 // ── 正文 ─────────────────────────────────────────────────────────────────────
 // onebook.php?novelid=N&chapterid=M。免費章正文在 #paragraph_comment_content，
 // 只有文本與 <br>（插圖章節可能含 <img>）；章節標題在 div.noveltext h2。
-// VIP 章由 www 入口 302 到 my.jjwxc.net/onebook_vip.php：已購買的頁面帶
-// #contentvars/#contentlets 密文欄位（見上節），未登入落在 login.php、未購
+// 先請求 www/onebook.php；已登入卻因跨域跳轉丟失 Cookie 而落到登入頁時，
+// 顯式請求 my 域 VIP 入口一次，讓宿主重新附加登入憑證，不保存路由狀態。
+// 已購買的 VIP 頁面帶 #contentvars/#contentlets 密文欄位（見上節），
+// 未登入落在 login.php、未購
 // 買落在 backend/buynovel.php（#buy_content）——重定向由宿主跟隨，按最終
-// 頁的標記分流。VIP 頁同樣渲染 #paragraph_comment_content，但只是「vip內
-// 容加載中」佔位容器，必須先探測 #contentvars。
+// 頁的標記分流。VIP 頁同樣渲染 #paragraph_comment_content，但只是
+// 「vip內容加載中」佔位容器，必須先探測 #contentvars。
 //
 // 段落編號對齊站點規則（onebook.paragraph.comment.js 的
 // buildParagraphAnchors，其 isVipContentPending 對 VIP 頁等解密注入後同樣
@@ -1300,8 +1302,7 @@ function paragraphs(event) {
       type: "request",
       request: {
         url: `${meta.base_url}/onebook.php?${HTML.encodeURIComponents([
-          ["novelid", bookId],
-          ["chapterid", chapterId],
+          ["novelid", bookId], ["chapterid", chapterId],
         ])}`,
         method: "GET",
         headers: requestHeaders(),
@@ -1322,7 +1323,7 @@ function paragraphs(event) {
     }
     const content = document.find("#paragraph_comment_content").first();
     if (content == null) {
-      // www 入口對 VIP 章重定向，宿主跟隨後 response.url 是最終頁：未登入
+      // VIP 入口仍可能重定向，response.url 是最終頁：未登入
       // 落在 login.php，未購買落在 backend/buynovel.php（頁內也有支付密碼
       // 框，故先探購買頁再探登入）。
       const url = String(event.response?.url ?? "");
@@ -1333,6 +1334,19 @@ function paragraphs(event) {
         document.find('input[type="password"]').length > 0 ||
         url.includes("login.php")
       ) {
+        if (event.auth?.cookie_header && !state.vipRetried) {
+          return {
+            type: "request",
+            request: {
+              url: `https://my.jjwxc.net/onebook_vip.php?${HTML.encodeURIComponents([
+                ["novelid", state.bookId], ["chapterid", state.chapterId],
+              ])}`,
+              method: "GET",
+              headers: requestHeaders(),
+            },
+            next_state: { ...state, vipRetried: true },
+          };
+        }
         return FeedError.authRequired("VIP 章節需要登入晉江文學城");
       }
       return FeedError.contentNotFound("章節不存在、已刪除或無法讀取");

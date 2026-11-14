@@ -90,6 +90,10 @@ fn load_script_for_server(server: &ServerGuard) -> String {
             "https://my.jjwxc.net/backend/user_setting.php",
             &format!("{base}/backend/user_setting.php"),
         )
+        .replace(
+            "https://my.jjwxc.net/onebook_vip.php",
+            &format!("{base}/onebook_vip.php"),
+        )
 }
 
 async fn load_feed(server: &ServerGuard) -> langhuan::script::js::JsFeed {
@@ -501,6 +505,93 @@ async fn paragraphs_counts_api_failure_leaves_comment_counts_unknown() {
 }
 
 // ── Paragraphs: VIP chapter ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn vip_cross_origin_redirect_retries_with_auth_once() {
+    for (vip_body, expected_error) in [
+        (VIP_PURCHASED, None),
+        (LOGIN_PAGE, Some(ExpectedErrorCode::AuthRequired)),
+        (VIP_UNPAID, Some(ExpectedErrorCode::ContentNotFound)),
+    ] {
+        let mut www = mockito::Server::new_async().await;
+        let mut account = mockito::Server::new_async().await;
+        let vip_url = format!("{}/onebook_vip.php", account.url());
+        let entry = www
+            .mock("GET", "/onebook.php")
+            .match_query(regex("^novelid=10620154&chapterid=17$"))
+            .match_header("cookie", regex(&format!("token={TOKEN_COOKIE}")))
+            .with_status(302)
+            .with_header(
+                "location",
+                &format!("{vip_url}?novelid=10620154&chapterid=17"),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        // Distinct origins reproduce credential stripping on www → my.
+        let stripped = account
+            .mock("GET", "/onebook_vip.php")
+            .match_query(mockito::Matcher::Any)
+            .match_header("cookie", mockito::Matcher::Missing)
+            .with_status(302)
+            .with_header("location", &format!("{}/login.php", account.url()))
+            .expect(1)
+            .create_async()
+            .await;
+        let login = account
+            .mock("GET", "/login.php")
+            .with_status(200)
+            .with_body(LOGIN_PAGE)
+            .expect(1)
+            .create_async()
+            .await;
+        let authenticated = account
+            .mock("GET", "/onebook_vip.php")
+            .match_query(regex("^novelid=10620154&chapterid=17$"))
+            .match_header("cookie", regex(&format!("token={TOKEN_COOKIE}")))
+            .with_status(200)
+            .with_body(vip_body)
+            .expect(1)
+            .create_async()
+            .await;
+        let font = www
+            .mock("GET", "/tmp/fonts/jjwxcfont_9erly.ttf")
+            .with_status(200)
+            .with_body(FONT_TTF)
+            .expect(usize::from(expected_error.is_none()))
+            .create_async()
+            .await;
+        let _counts = mock_counts(&mut www, "10620154", "17", &counts_body(&[])).await;
+        let script = load_script_for_server(&www)
+            .replace(&format!("{}/onebook_vip.php", www.url()), &vip_url);
+        let feed = ScriptEngine::new().load_js_feed(&script).unwrap();
+        let support = feed.supports_auth().unwrap();
+        feed.set_auth_info(
+            &support,
+            Some(serde_json::json!({
+                "cookie_header": format!("token={TOKEN_COOKIE}")
+            })),
+        )
+        .unwrap();
+        let results: Vec<_> = feed.paragraphs("10620154", "17").collect().await;
+        if let Some(expected) = expected_error {
+            assert!(
+                results.iter().any(|result| matches!(result,
+                    Err(Error::Script(ScriptError::Expected { code, .. })) if *code == expected
+                )),
+                "expected {expected:?}, got {results:?}"
+            );
+        } else {
+            let paragraphs: Vec<_> = results.into_iter().collect::<Result<_, _>>().unwrap();
+            assert_eq!(text_of(&paragraphs)[0], VIP_FIRST);
+        }
+        entry.assert_async().await;
+        stripped.assert_async().await;
+        login.assert_async().await;
+        authenticated.assert_async().await;
+        font.assert_async().await;
+    }
+}
 
 #[tokio::test]
 async fn paragraphs_vip_purchased_decrypts_and_restores_font() {

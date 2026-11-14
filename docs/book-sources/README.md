@@ -64,8 +64,11 @@ The source never receives `fetch`, sockets, or a native HTTP object.
   GPL-3.0-or-later; the other examples are covered by the repository license.
 - [`jjwxc.js`](jjwxc.js) demonstrates a GBK-encoded site: decoding GBK pages,
   percent-encoding search keywords to GBK with `HTML.encodeURIComponent`,
-  paragraph-aligned comments from JSON APIs without login, and VIP chapters
-  failing with an auth-required error.
+  paragraph-aligned comments, login, and purchased VIP chapter decoding.
+  Chapter IDs remain numeric. Reads start at the public chapter endpoint; when
+  a stored session lands on the login page after a cross-host redirect, the
+  source retries the account-host VIP endpoint once with authentication
+  attached. It does not persist chapter routing data.
 
 For a new source, copy the structure—not site-specific tokens, cached script
 URLs, device identifiers, or authentication data.
