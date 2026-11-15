@@ -64,6 +64,7 @@ class ParagraphView extends StatelessWidget {
         text: content,
         firstLineIndent: layout.firstLineIndent.toDouble(),
         style: typo.body,
+        textAlign: ReaderTypography.bodyAlign,
         commentCount: commentCount,
         onCommentTap: onCommentTap,
       ),

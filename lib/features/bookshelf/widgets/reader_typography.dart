@@ -1,6 +1,6 @@
 import 'dart:ui' show FontFeature;
 
-import 'package:flutter/material.dart' show TextTheme, TextStyle;
+import 'package:flutter/material.dart' show TextTheme, TextStyle, TextAlign;
 
 /// The reading surface's text-style recipe.
 ///
@@ -39,10 +39,13 @@ class ReaderTypography {
   /// always-on rather than growing a setting.
   static const List<FontFeature> _punctuationSqueeze = [FontFeature('chws')];
 
+  /// Used by both pagination and rendering, including comment layout.
+  static const bodyAlign = TextAlign.justify;
+
   /// Chapter title style: scaled [TextTheme.headlineSmall] with no height
   /// override, matching the historic hand-copied recipes.
-  TextStyle get title => (textTheme.headlineSmall ?? const TextStyle())
-      .copyWith(
+  TextStyle get title =>
+      (textTheme.headlineSmall ?? const TextStyle()).copyWith(
         fontSize: (textTheme.headlineSmall?.fontSize ?? 24) * fontScale,
         fontFamily: fontFamily,
         letterSpacing: letterSpacing,
@@ -51,10 +54,10 @@ class ReaderTypography {
 
   /// Body paragraph style: scaled [TextTheme.bodyLarge] at [lineHeight].
   TextStyle get body => (textTheme.bodyLarge ?? const TextStyle()).copyWith(
-        fontSize: (textTheme.bodyLarge?.fontSize ?? 16) * fontScale,
-        fontFamily: fontFamily,
-        letterSpacing: letterSpacing,
-        height: lineHeight,
-        fontFeatures: _punctuationSqueeze,
-      );
+    fontSize: (textTheme.bodyLarge?.fontSize ?? 16) * fontScale,
+    fontFamily: fontFamily,
+    letterSpacing: letterSpacing,
+    height: lineHeight,
+    fontFeatures: _punctuationSqueeze,
+  );
 }

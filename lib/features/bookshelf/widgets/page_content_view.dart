@@ -174,6 +174,9 @@ class PageContentView extends StatelessWidget {
             ? source.layout.firstLineIndent.toDouble()
             : 0,
         style: typo.body.copyWith(letterSpacing: item.letterSpacing),
+        textAlign: ReaderTypography.bodyAlign,
+        continuesOnNextPage:
+            item.endOffset != null && item.endOffset! < source.content.length,
         commentCount: badgeCount,
         badgeGap: item.badgeGap,
         badgeCompact: item.badgeCompact,

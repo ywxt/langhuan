@@ -255,7 +255,11 @@ class BadgedText extends StatelessWidget {
     this.badgeGap,
     this.badgeCompact = false,
     this.firstLineIndent = 0,
+    this.continuesOnNextPage = false,
   });
+
+  /// The visible fragment is followed by more source text on the next page.
+  final bool continuesOnNextPage;
 
   final String text;
   final double firstLineIndent;
@@ -276,9 +280,85 @@ class BadgedText extends StatelessWidget {
   /// standalone path).
   final bool badgeCompact;
 
+  static final _hardLineEnding = RegExp(
+    r'[\n\r\u000b\u000c\u0085\u2028\u2029]$',
+  );
+
+  Widget _buildContinuation(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (!constraints.maxWidth.isFinite || constraints.maxWidth <= 0) {
+        return Text(text, style: style, textAlign: textAlign);
+      }
+      final defaults = DefaultTextStyle.of(context);
+      final effectiveStyle = defaults.style.merge(style);
+      final scaler = MediaQuery.textScalerOf(context);
+      final size = effectiveStyle.fontSize ?? 14;
+      final scale = size > 0 ? scaler.scale(size) / size : 1.0;
+      final indent = ReaderTextIndent.width(
+        firstLineIndent,
+        effectiveStyle,
+        scaler,
+        constraints.maxWidth,
+      );
+      final span = ReaderTextIndent.span(
+        TextSpan(text: text, style: effectiveStyle),
+        indent,
+      );
+      final painter = TextPainter(
+        text: span,
+        textAlign: textAlign!,
+        textDirection: Directionality.of(context),
+        textScaler: scaler,
+        locale: Localizations.maybeLocaleOf(context),
+        textHeightBehavior: defaults.textHeightBehavior,
+      );
+      if (indent > 0) {
+        painter.setPlaceholderDimensions([
+          ReaderTextIndent.dimensions(indent, scale),
+        ]);
+      }
+      painter.layout(maxWidth: constraints.maxWidth);
+      final lines = painter.computeLineMetrics().length;
+      painter.dispose();
+
+      // A full-width, non-text placeholder forces a soft wrap after the
+      // fragment. maxLines hides that placeholder's line while keeping the
+      // preceding line justified. No source characters or offsets change,
+      // and explicit source newlines keep their natural trailing space.
+      return Text.rich(
+        TextSpan(
+          style: effectiveStyle,
+          children: [
+            span,
+            WidgetSpan(
+              alignment: PlaceholderAlignment.bottom,
+              child: ExcludeSemantics(
+                child: SizedBox(width: constraints.maxWidth / scale, height: 0),
+              ),
+            ),
+          ],
+        ),
+        style: effectiveStyle,
+        textAlign: textAlign,
+        maxLines: lines,
+        softWrap: true,
+        overflow: TextOverflow.clip,
+        textWidthBasis: TextWidthBasis.parent,
+        semanticsLabel: text,
+      );
+    },
+  );
+
   @override
   Widget build(BuildContext context) {
     final count = commentCount;
+    if (continuesOnNextPage &&
+        textAlign == TextAlign.justify &&
+        text.isNotEmpty &&
+        !_hardLineEnding.hasMatch(text) &&
+        (count == null || count <= 0)) {
+      return _buildContinuation(context);
+    }
     if ((count == null || count <= 0) && firstLineIndent == 0) {
       return Text(text, style: style, textAlign: textAlign);
     }

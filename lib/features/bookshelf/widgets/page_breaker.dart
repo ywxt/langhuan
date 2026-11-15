@@ -6,6 +6,7 @@ import '../../../src/rust/api/types.dart';
 import '../../feeds/feed_service.dart' show ParagraphIdStringExt;
 import 'comment_badge.dart';
 import 'reader_text_indent.dart';
+import 'reader_typography.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data models
@@ -666,7 +667,7 @@ class PaginationJob {
         locale: _breaker.locale,
         align: item is ParagraphContent_Title
             ? TextAlign.center
-            : TextAlign.start,
+            : ReaderTypography.bodyAlign,
         firstLineIndent: item is ParagraphContent_Text
             ? item.layout.firstLineIndent.toDouble()
             : 0,
@@ -729,7 +730,7 @@ class PaginationJob {
         badgeCompact: badgeLayout?.compact ?? false,
         textAlign: item is ParagraphContent_Title
             ? TextAlign.center
-            : TextAlign.start,
+            : ReaderTypography.bodyAlign,
         badgeSize: badgeSize,
         paragraphIndex: i,
         paragraphId: item.id.toStringValue(),
